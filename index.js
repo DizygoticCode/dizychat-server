@@ -1,50 +1,65 @@
 const express = require('express');
 const cors = require('cors');
+const http = require('http');
+const { Server } = require('socket.io');
+
 const app = express();
-const http = require('http').createServer(app);
-const io = require('socket.io')(http, {
-  cors: { origin: "*" }
-});
-
 app.use(cors());
-app.use(express.static('public')); // serve frontend files
+app.use(express.static('public'));
 
-// Test route
-app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/public/client.html');
-});
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: "*" } });
 
-const typingUsers = new Set();
+function generateId() { return '_' + Math.random().toString(36).substr(2, 9); }
+
+const typingUsers = {}; // room -> Set of usernames
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
+  let currentRoom = '';
 
-  // Typing notifications
+  socket.on('join room', (room) => {
+    currentRoom = room;
+    socket.join(room);
+    console.log(`${socket.id} joined room ${room}`);
+    if (!typingUsers[room]) typingUsers[room] = new Set();
+  });
+
+  socket.on('chat message', ({ room, user, text }) => {
+    const timestamp = formatTime(new Date());
+    const msg = { id: generateId(), user, text, timestamp, status: 'sent' };
+    io.to(room).emit('chat message', msg);
+    socket.emit('message status', { id: msg.id, status: 'delivered' });
+  });
+
+  socket.on('read message', ({ room, id }) => {
+    io.to(room).emit('message status', { id, status: 'read' });
+  });
+
   socket.on('typing', (user) => {
-    typingUsers.add(user);
-    socket.broadcast.emit('typing', Array.from(typingUsers));
+    if (currentRoom && typingUsers[currentRoom]) {
+      typingUsers[currentRoom].add(user);
+      io.to(currentRoom).emit('typing', Array.from(typingUsers[currentRoom]));
+    }
   });
 
   socket.on('stop typing', (user) => {
-    typingUsers.delete(user);
-    socket.broadcast.emit('typing', Array.from(typingUsers));
+    if (currentRoom && typingUsers[currentRoom]) {
+      typingUsers[currentRoom].delete(user);
+      io.to(currentRoom).emit('typing', Array.from(typingUsers[currentRoom]));
+    }
   });
 
-  // Chat messages
-  socket.on('chat message', (msg) => {
-    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const message = { ...msg, timestamp, status: 'sent' };
-    io.emit('chat message', message); // broadcast to all
-  });
-
-  socket.on('disconnect', () => {
-    typingUsers.delete(socket.id);
-    socket.broadcast.emit('typing', Array.from(typingUsers));
-    console.log('User disconnected:', socket.id);
-  });
+  socket.on('disconnect', () => console.log('User disconnected:', socket.id));
 });
+
+function formatTime(date) {
+  let hours = date.getHours();
+  const minutes = date.getMinutes().toString().padStart(2,'0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12 || 12;
+  return `${hours}:${minutes} ${ampm}`;
+}
 
 const PORT = process.env.PORT || 3000;
-http.listen(PORT, () => {
-  console.log(`🟢 Server running on port ${PORT}`);
-});
+server.listen(PORT, () => console.log(`🟢 Server running on port ${PORT}`));
