@@ -1,12 +1,13 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
-const MessageSchema = new mongoose.Schema({
+const messageSchema = new mongoose.Schema({
   room: { type: String, required: true },
   user: { type: String, required: true },
   text: { type: String, required: true },
-  timestamp: { type: String, required: true },
-  status: { type: String, enum: ['sent', 'delivered', 'read'], default: 'sent' },
-  reactions: { type: Map, of: Number, default: {} }
+  timestamp: { type: Date, default: Date.now },
+  status: { type: String, enum: ["sent", "delivered", "read"], default: "sent" }
 });
 
-export default mongoose.model('Message', MessageSchema);
+const Message = mongoose.model("Message", messageSchema);
+
+export default Message;
