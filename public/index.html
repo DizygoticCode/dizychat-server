@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>DizyChat</title>
+<title>DizyChat AI</title>
 <link rel="stylesheet" href="chat.css">
 <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
 <div id="username-prompt">
-  <input id="username-input" placeholder="Username">
-  <input id="room-input" placeholder="Room">
+  <input id="username-input" placeholder="Enter your username">
+  <input id="room-input" placeholder="Enter room name">
   <button id="join-btn">Join Chat</button>
 </div>
 
@@ -17,13 +17,10 @@
   <div id="messages"></div>
   <div id="typing-bubble"></div>
   <form id="form">
-    <input id="input" autocomplete="off" placeholder="Type a message...">
-    <button id="emoji-btn">😀</button>
+    <input id="input" autocomplete="off" placeholder="Ask something...">
     <button type="submit">Send</button>
     <button id="share-btn">Share</button>
-    <button id="toggle-theme">🌙</button>
   </form>
-  <div id="emoji-picker"></div>
 </div>
 
 <script src="chat.js"></script>
