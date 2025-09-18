@@ -1,82 +1,75 @@
-const socket = io();
-
-const messagesContainer = document.getElementById('messages');
+const usernamePrompt = document.getElementById('username-prompt');
+const joinBtn = document.getElementById('join-btn');
+const usernameInput = document.getElementById('username-input');
+const chatContainer = document.getElementById('chat-container');
+const form = document.getElementById('form');
 const input = document.getElementById('input');
-const usernameInput = document.getElementById('username');
+const messages = document.getElementById('messages');
+const typingStatus = document.getElementById('typing-status');
 const emojiPicker = document.getElementById('emoji-picker');
+const shareBtn = document.getElementById('share-btn');
 
-let username = 'User' + Math.floor(Math.random() * 1000);
+let username = '';
+let typingTimeout;
+let socket;
 
-usernameInput.addEventListener('input', (e) => {
-  username = e.target.value || 'User' + Math.floor(Math.random() * 1000);
-});
+joinBtn.addEventListener('click', () => {
+  username = usernameInput.value.trim();
+  if (!username) return alert('Please enter a username');
+  
+  usernamePrompt.style.display = 'none';
+  chatContainer.style.display = 'flex';
 
-input.addEventListener('input', () => {
-  socket.emit('typing', username);
-});
+  // Connect Socket.IO after username chosen
+  socket = io();
 
-socket.on('chat message', (msg) => {
-  displayMessage(msg);
-});
+  // Load emojis
+  fetch('emoji.json')
+    .then(res => res.json())
+    .then(data => {
+      data.forEach(e => {
+        const span = document.createElement('span');
+        span.textContent = e.char;
+        span.classList.add('emoji');
+        span.addEventListener('click', () => input.value += e.char);
+        emojiPicker.appendChild(span);
+      });
+    });
 
-socket.on('previous messages', (msgs) => {
-  msgs.forEach(displayMessage);
-});
+  // Typing indicator
+  input.addEventListener('input', () => {
+    socket.emit('typing', username);
+    clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(() => socket.emit('stop typing', username), 1000);
+  });
 
-socket.on('message status', ({ id, status }) => {
-  const messageElement = document.querySelector(`.message[data-id='${id}']`);
-  if (messageElement) {
-    messageElement.querySelector('.status').textContent = status;
-  }
-});
-
-function displayMessage(msg) {
-  const div = document.createElement('div');
-  div.classList.add('message');
-  div.classList.add(msg.user === username ? 'self' : 'other');
-  div.dataset.id = msg.id;
-
-  div.innerHTML = `
-    <strong>${msg.user}</strong>: ${msg.text}
-    <span class="time">${msg.timestamp}</span>
-    <span class="status">${statusIcon(msg.status)}</span>
-  `;
-
-  messagesContainer.appendChild(div);
-  messagesContainer.scrollTop = messagesContainer.scrollHeight;
-}
-
-function statusIcon(status) {
-  switch (status) {
-    case 'sent':
-      return '✓';
-    case 'delivered':
-      return '✓✓';
-    case 'read':
-      return '✓✓✔';
-    default:
-      return '';
-  }
-}
-
-function sendMessage() {
-  const text = input.value.trim();
-  if (text) {
-    const message = { user: username, text };
-    socket.emit('chat message', message);
+  // Send message
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    if (!input.value) return;
+    const msg = { user: username, text: input.value };
+    socket.emit('chat message', msg);
     input.value = '';
-  }
-}
+  });
 
-function sendTypingStatus() {
-  socket.emit('typing', username);
-}
+  // Receive messages
+  socket.on('chat message', msg => {
+    const div = document.createElement('div');
+    div.classList.add('message', msg.user === username ? 'self' : 'other');
+    div.innerHTML = `<strong>${msg.user}</strong>: ${msg.text} <span class="time">${msg.timestamp || ''}</span>`;
+    messages.appendChild(div);
+    messages.scrollTop = messages.scrollHeight;
+  });
 
-function handleEmojiClick(emoji) {
-  input.value += emoji;
-  input.focus();
-}
+  // Typing notifications
+  socket.on('typing', users => {
+    const others = users.filter(u => u !== username);
+    typingStatus.textContent = others.length ? `${others.join(', ')} is typing...` : '';
+  });
+});
 
-socket.on('typing', (user) => {
-  console.log(`${user} is typing...`);
+// Share link
+shareBtn.addEventListener('click', () => {
+  navigator.clipboard.writeText(window.location.href);
+  alert('Chat link copied!');
 });
