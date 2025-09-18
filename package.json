@@ -1,7 +1,7 @@
 {
   "name": "dizychat-server",
   "version": "1.0.0",
-  "description": "DizyChat Server with WhatsApp-style features and room support",
+  "description": "DizyChat WhatsApp-style server with reactions, typing, dark/light mode",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
