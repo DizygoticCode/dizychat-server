@@ -63,6 +63,7 @@ joinBtn.addEventListener('click', () => {
 
   usernamePrompt.style.display = 'none';
   chatContainer.style.display = 'flex';
+  input.focus(); // Auto-focus input
 
   socket = io();
   socket.emit('join room', room);
@@ -80,6 +81,7 @@ joinBtn.addEventListener('click', () => {
     if (!input.value) return;
     socket.emit('chat message', { room, user: username, text: input.value });
     input.value = '';
+    input.focus(); // Keep input focused
   });
 
   // Receive messages
@@ -112,8 +114,7 @@ function displayMessage(msg) {
   div.appendChild(meta);
 
   // Message text
-  const textNode = document.createTextNode(` ${msg.text}`);
-  div.appendChild(textNode);
+  div.appendChild(document.createTextNode(` ${msg.text}`));
 
   // Status ticks
   const statusSpan = document.createElement('span');
@@ -134,7 +135,9 @@ function displayMessage(msg) {
   div.appendChild(reactionsDiv);
 
   messages.appendChild(div);
-  messages.scrollTop = messages.scrollHeight;
+
+  // Smooth scroll to the latest message
+  div.scrollIntoView({ behavior: 'smooth', block: 'end' });
 
   // Mark as read if not self
   if (msg.user !== username) socket.emit('read message', { room, id: msg.id });
