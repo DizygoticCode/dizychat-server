@@ -7,10 +7,11 @@
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
-  <!-- Username Prompt -->
+  <!-- Username & Room Prompt -->
   <div id="username-prompt">
-    <h2>Enter your username to join chat</h2>
+    <h2>Enter username and room name</h2>
     <input id="username-input" placeholder="Username" />
+    <input id="room-input" placeholder="Room (e.g., general)" />
     <button id="join-btn">Join Chat</button>
   </div>
 
@@ -21,10 +22,8 @@
       <div id="typing-status"></div>
       <button id="share-btn">Share Chat Link</button>
     </div>
-
     <div id="messages"></div>
     <div id="emoji-picker"></div>
-
     <form id="form">
       <input id="input" placeholder="Type a message..." autocomplete="off"/>
       <button type="submit">Send</button>

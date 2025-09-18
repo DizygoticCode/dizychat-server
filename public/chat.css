@@ -9,7 +9,7 @@ body {
   height: 100vh;
 }
 
-#username-prompt { text-align: center; }
+#username-prompt { text-align:center; }
 
 #chat-container {
   display: flex;

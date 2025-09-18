@@ -1,6 +1,7 @@
 const usernamePrompt = document.getElementById('username-prompt');
 const joinBtn = document.getElementById('join-btn');
 const usernameInput = document.getElementById('username-input');
+const roomInput = document.getElementById('room-input');
 const chatContainer = document.getElementById('chat-container');
 const form = document.getElementById('form');
 const input = document.getElementById('input');
@@ -10,10 +11,11 @@ const emojiPicker = document.getElementById('emoji-picker');
 const shareBtn = document.getElementById('share-btn');
 
 let username = '';
+let room = '';
 let socket;
 let typingTimeout;
 
-// Load emojis
+// Load emoji JSON
 fetch('emoji.json')
   .then(res => res.json())
   .then(data => {
@@ -29,12 +31,14 @@ fetch('emoji.json')
 // Join chat
 joinBtn.addEventListener('click', () => {
   username = usernameInput.value.trim();
-  if (!username) return alert('Please enter a username');
+  room = roomInput.value.trim();
+  if (!username || !room) return alert('Enter username and room');
 
   usernamePrompt.style.display = 'none';
   chatContainer.style.display = 'flex';
 
   socket = io();
+  socket.emit('join room', room);
 
   // Typing
   input.addEventListener('input', () => {
@@ -47,16 +51,12 @@ joinBtn.addEventListener('click', () => {
   form.addEventListener('submit', e => {
     e.preventDefault();
     if (!input.value) return;
-    const msg = { user: username, text: input.value };
-    socket.emit('chat message', msg);
+    socket.emit('chat message', { room, user: username, text: input.value });
     input.value = '';
   });
 
   // Receive messages
   socket.on('chat message', msg => displayMessage(msg));
-
-  // Previous messages
-  socket.on('previous messages', msgs => msgs.forEach(displayMessage));
 
   // Typing notifications
   socket.on('typing', users => {
@@ -71,7 +71,6 @@ joinBtn.addEventListener('click', () => {
   });
 });
 
-// Display message
 function displayMessage(msg) {
   const div = document.createElement('div');
   div.classList.add('message', msg.user === username ? 'self' : 'other');
@@ -93,10 +92,9 @@ function displayMessage(msg) {
   messages.appendChild(div);
   messages.scrollTop = messages.scrollHeight;
 
-  if (msg.user !== username) socket.emit('read message', msg.id);
+  if (msg.user !== username) socket.emit('read message', { room, id: msg.id });
 }
 
-// Status icon mapping
 function statusIcon(status) {
   switch (status) {
     case 'sent': return '✓';
@@ -106,7 +104,6 @@ function statusIcon(status) {
   }
 }
 
-// Share link
 shareBtn.addEventListener('click', () => {
   navigator.clipboard.writeText(window.location.href);
   alert('Chat link copied!');
