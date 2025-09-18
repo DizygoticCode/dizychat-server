@@ -1,8 +1,9 @@
 {
   "name": "dizychat-server",
   "version": "1.0.0",
-  "description": "WhatsApp-style chat with emoji picker and MongoDB persistence",
+  "description": "Dizygotic Chat Server",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "start": "node index.js"
   },
@@ -10,7 +11,8 @@
     "express": "^4.18.2",
     "socket.io": "^4.7.0",
     "cors": "^2.8.5",
-    "mongoose": "^7.5.0"
+    "mongoose": "^7.5.0",
+    "dotenv": "^16.3.1"
   },
   "engines": {
     "node": "18.x"
