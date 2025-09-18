@@ -10,14 +10,12 @@ const typingBubble = document.getElementById('typing-bubble');
 const emojiPicker = document.getElementById('emoji-picker');
 const emojiBtn = document.getElementById('emoji-btn');
 const shareBtn = document.getElementById('share-btn');
-const toggleThemeBtn = document.getElementById('toggle-theme');
 const roomNameDisplay = document.getElementById('room-name');
 
 let username = '';
 let room = '';
 let socket;
 let typingTimeout;
-let darkMode = false;
 
 // ---------------- Emoji Picker ----------------
 fetch('emoji.json')
@@ -37,9 +35,7 @@ emojiBtn.addEventListener('click', (e) => {
   emojiPicker.style.display = emojiPicker.style.display === 'none' ? 'flex' : 'none';
 });
 
-document.addEventListener('click', () => {
-  emojiPicker.style.display = 'none';
-});
+document.addEventListener('click', () => { emojiPicker.style.display = 'none'; });
 
 function insertAtCursor(input, text) {
   const start = input.selectionStart;
@@ -48,13 +44,6 @@ function insertAtCursor(input, text) {
   input.selectionStart = input.selectionEnd = start + text.length;
   input.focus();
 }
-
-// ---------------- Theme Toggle ----------------
-toggleThemeBtn.addEventListener('click', () => {
-  darkMode = !darkMode;
-  document.body.classList.toggle('dark', darkMode);
-  toggleThemeBtn.textContent = darkMode ? '☀️' : '🌙';
-});
 
 // ---------------- Join Chat ----------------
 joinBtn.addEventListener('click', () => {
@@ -116,42 +105,15 @@ function displayMessage(msg) {
   statusSpan.textContent = statusIcon(msg.status || 'sent');
   div.appendChild(statusSpan);
 
-  const reactBtn = document.createElement('span');
-  reactBtn.classList.add('react-btn');
-  reactBtn.textContent = '😊';
-  reactBtn.addEventListener('click', () => addReaction(msg.id, '😊'));
-  div.appendChild(reactBtn);
-
-  const reactionsDiv = document.createElement('div');
-  reactionsDiv.classList.add('reactions');
-  div.appendChild(reactionsDiv);
-
   messages.appendChild(div);
   div.scrollIntoView({ behavior: 'smooth', block: 'end' });
 
   if (msg.user !== username) socket.emit('read message', { room, id: msg.id });
 }
 
-// ---------------- Emoji Reactions ----------------
-function addReaction(msgId, emoji) {
-  const msgDiv = document.querySelector(`.message[data-id='${msgId}'] .reactions`);
-  if (!msgDiv) return;
-
-  const existing = Array.from(msgDiv.children).find(span => span.textContent.startsWith(emoji));
-  if (existing) {
-    existing.dataset.count = parseInt(existing.dataset.count || '1') + 1;
-    existing.textContent = `${emoji} ${existing.dataset.count}`;
-  } else {
-    const span = document.createElement('span');
-    span.textContent = emoji;
-    span.dataset.count = 1;
-    msgDiv.appendChild(span);
-  }
-}
-
 // ---------------- Status Icon ----------------
 function statusIcon(status) {
-  switch (status) {
+  switch(status) {
     case 'sent': return '✓';
     case 'delivered': return '✓✓';
     case 'read': return '✓✓✔';

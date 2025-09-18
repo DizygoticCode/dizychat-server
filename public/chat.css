@@ -43,7 +43,6 @@ body {
   padding: 5px 10px;
   border-radius: 12px;
   max-width: 70%;
-  position: relative;
   word-wrap: break-word;
 }
 
@@ -100,22 +99,4 @@ body {
   cursor: pointer;
   font-size: 1.3em;
   margin: 2px;
-}
-
-.dark {
-  background-color: #222;
-  color: #eee;
-}
-
-.dark #chat-container {
-  background-color: #333;
-  border-color: #444;
-}
-
-.dark .message.other {
-  background-color: #555;
-}
-
-.dark .message.self {
-  background-color: #4caf50;
 }
