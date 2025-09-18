@@ -2,39 +2,28 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>DizyChat WhatsApp Style</title>
+<title>DizyChat</title>
 <link rel="stylesheet" href="chat.css">
-<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
 <div id="username-prompt">
-  <h2>Enter username and room</h2>
-  <input id="username-input" placeholder="Username" />
-  <input id="room-input" placeholder="Room (e.g., general)" />
+  <input id="username-input" placeholder="Username">
+  <input id="room-input" placeholder="Room">
   <button id="join-btn">Join Chat</button>
 </div>
 
 <div id="chat-container" style="display:none;">
-  <div id="chat-header">
-    <h2>DizyChat</h2>
-    <div id="controls">
-      <div id="typing-status"></div>
-      <button id="toggle-theme">🌙</button>
-      <button id="share-btn">Share Link</button>
-    </div>
-  </div>
-
-  <div id="messages">
-    <div id="typing-bubble" style="display:none; font-size:12px; color:#888; margin:2px 0;"></div>
-  </div>
-
+  <div id="messages"></div>
+  <div id="typing-bubble"></div>
   <form id="form">
-    <button type="button" id="emoji-btn">😊</button>
-    <input id="input" placeholder="Type a message..." autocomplete="off"/>
+    <input id="input" autocomplete="off" placeholder="Type a message...">
+    <button id="emoji-btn">😀</button>
     <button type="submit">Send</button>
+    <button id="share-btn">Share</button>
+    <button id="toggle-theme">🌙</button>
   </form>
-
-  <div id="emoji-picker" style="display:none;"></div>
+  <div id="emoji-picker"></div>
 </div>
 
 <script src="chat.js"></script>

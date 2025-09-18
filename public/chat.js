@@ -1,4 +1,4 @@
-const usernamePrompt = document.getElementById('username-prompt');
+const usernamePrompt = document.getElementById('username-prompt'); 
 const joinBtn = document.getElementById('join-btn');
 const usernameInput = document.getElementById('username-input');
 const roomInput = document.getElementById('room-input');
@@ -18,22 +18,77 @@ let socket;
 let typingTimeout;
 let darkMode = false;
 
+let allEmojis = [];
+let selectedEmojiIndex = -1;
+
 // ---------------- Emoji Picker ----------------
 fetch('emoji.json')
   .then(res => res.json())
   .then(data => {
-    data.forEach(e => {
-      const span = document.createElement('span');
-      span.textContent = e.char;
-      span.classList.add('emoji');
-      span.addEventListener('click', () => insertAtCursor(input, e.char));
-      emojiPicker.appendChild(span);
-    });
+    allEmojis = data.filter(e => e.char);
+    renderEmojis(allEmojis);
+  })
+  .catch(err => console.error('Failed to load emoji.json', err));
+
+function renderEmojis(emojis) {
+  emojiPicker.innerHTML = '<input type="text" id="emoji-search" placeholder="Search emojis..." />';
+  const searchInput = document.getElementById('emoji-search');
+
+  emojis.forEach((e, idx) => {
+    const span = document.createElement('span');
+    span.textContent = e.char;
+    span.classList.add('emoji');
+    span.setAttribute('tabindex', 0);
+    span.dataset.index = idx;
+    span.addEventListener('click', () => insertAtCursor(input, e.char));
+    emojiPicker.appendChild(span);
   });
+
+  selectedEmojiIndex = -1;
+
+  searchInput.addEventListener('input', () => {
+    const query = searchInput.value.toLowerCase();
+    const filtered = allEmojis.filter(e => (e.name || '').toLowerCase().includes(query));
+    renderEmojis(filtered);
+  });
+
+  searchInput.addEventListener('keydown', (e) => {
+    const emojiSpans = Array.from(emojiPicker.querySelectorAll('span.emoji'));
+    if (!emojiSpans.length) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      selectedEmojiIndex = (selectedEmojiIndex + 1) % emojiSpans.length;
+      focusEmoji(selectedEmojiIndex);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      selectedEmojiIndex = (selectedEmojiIndex - 1 + emojiSpans.length) % emojiSpans.length;
+      focusEmoji(selectedEmojiIndex);
+    } else if (e.key === 'Enter' && selectedEmojiIndex >= 0) {
+      e.preventDefault();
+      insertAtCursor(input, emojiSpans[selectedEmojiIndex].textContent);
+    }
+  });
+}
+
+function focusEmoji(index) {
+  const emojiSpans = Array.from(emojiPicker.querySelectorAll('span.emoji'));
+  if (index >= 0 && index < emojiSpans.length) {
+    emojiSpans[index].focus();
+    emojiSpans[index].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+}
 
 emojiBtn.addEventListener('click', (e) => {
   e.stopPropagation();
-  emojiPicker.style.display = emojiPicker.style.display === 'none' ? 'flex' : 'none';
+  if (emojiPicker.style.display === 'none') {
+    const rect = input.getBoundingClientRect();
+    emojiPicker.style.bottom = `${window.innerHeight - rect.top + 10}px`;
+    emojiPicker.style.left = `${rect.left}px`;
+    emojiPicker.style.display = 'flex';
+  } else {
+    emojiPicker.style.display = 'none';
+  }
 });
 
 document.addEventListener('click', () => {
@@ -63,16 +118,16 @@ joinBtn.addEventListener('click', () => {
 
   usernamePrompt.style.display = 'none';
   chatContainer.style.display = 'flex';
-  input.focus(); // Auto-focus input
+  input.focus();
 
   socket = io();
   socket.emit('join room', room);
 
-  // Typing
+  // Typing detection
   input.addEventListener('input', () => {
-    socket.emit('typing', username);
+    socket.emit('typing', username, room);
     clearTimeout(typingTimeout);
-    typingTimeout = setTimeout(() => socket.emit('stop typing', username), 1000);
+    typingTimeout = setTimeout(() => socket.emit('stop typing', username, room), 1000);
   });
 
   // Send message
@@ -81,7 +136,7 @@ joinBtn.addEventListener('click', () => {
     if (!input.value) return;
     socket.emit('chat message', { room, user: username, text: input.value });
     input.value = '';
-    input.focus(); // Keep input focused
+    input.focus();
   });
 
   // Receive messages
@@ -94,7 +149,7 @@ joinBtn.addEventListener('click', () => {
     typingBubble.textContent = others.length ? `${others.join(', ')} is typing...` : '';
   });
 
-  // Message status
+  // Message status updates
   socket.on('message status', ({ id, status }) => {
     const msgDiv = document.querySelector(`.message[data-id='${id}'] .status`);
     if (msgDiv) msgDiv.textContent = statusIcon(status);
@@ -107,7 +162,7 @@ function displayMessage(msg) {
   div.classList.add('message', msg.user === username ? 'self' : 'other');
   div.dataset.id = msg.id;
 
-  // Meta (timestamp + username)
+  // Meta info: timestamp + username
   const meta = document.createElement('div');
   meta.classList.add('meta');
   meta.textContent = `[${msg.timestamp}] ${msg.user}`;
@@ -136,7 +191,7 @@ function displayMessage(msg) {
 
   messages.appendChild(div);
 
-  // Smooth scroll to the latest message
+  // Scroll to latest message
   div.scrollIntoView({ behavior: 'smooth', block: 'end' });
 
   // Mark as read if not self
