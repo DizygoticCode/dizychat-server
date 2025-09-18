@@ -2,74 +2,81 @@ import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
 import mongoose from 'mongoose';
-import cors from 'cors';
 import dotenv from 'dotenv';
 import Message from './src/models/Message.js';
 
 dotenv.config();
 
 const app = express();
-app.use(cors());
-app.use(express.json());
-app.use(express.static('public')); // serve frontend files
-
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: '*' },
-});
+const io = new Server(server);
 
-// MongoDB connection
-mongoose.connect(process.env.MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-}).then(() => console.log('🟢 Connected to MongoDB'))
+const PORT = process.env.PORT || 10000;
+
+// ---------------- MongoDB ----------------
+mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log('🟢 Connected to MongoDB'))
   .catch(err => console.error('❌ MongoDB connection error:', err));
 
-app.get('/', (req, res) => {
-  res.sendFile('index.html', { root: './public' });
-});
+// ---------------- Middleware ----------------
+app.use(express.json());
+app.use(express.static('public'));
 
-// Socket.IO
+// ---------------- Socket.IO ----------------
 io.on('connection', (socket) => {
   console.log('A user connected');
 
-  // Join room & send message history
-  socket.on('join room', async (room) => {
+  socket.on('join room', (room) => {
     socket.join(room);
-    const history = await Message.find({ room }).sort({ timestamp: 1 });
-    socket.emit('chat history', history);
+    console.log(`User joined room: ${room}`);
   });
 
-  // Handle incoming messages
+  // Handle chat messages
   socket.on('chat message', async (msg) => {
-    const message = new Message(msg);
-    await message.save();
-    io.to(msg.room).emit('chat message', {
-      id: message._id,
-      room: msg.room,
-      user: msg.user,
-      text: message.text,
-      timestamp: message.timestamp,
-      status: message.status
-    });
+    try {
+      const message = new Message({
+        room: msg.room,
+        user: msg.user,
+        text: msg.text,
+        timestamp: new Date(), // <-- Server sets the proper timestamp
+        status: 'sent'
+      });
+
+      await message.save();
+
+      io.to(msg.room).emit('chat message', {
+        id: message._id,
+        room: msg.room,
+        user: message.user,
+        text: message.text,
+        timestamp: message.timestamp,
+        status: message.status
+      });
+    } catch (err) {
+      console.error('Error saving message:', err);
+    }
   });
 
-  // Typing indicators
-  socket.on('typing', (data) => {
-    socket.to(data.room).emit('typing', data.user);
+  // Handle typing events
+  socket.on('typing', (username) => {
+    // Emit to all other users in the room
+    socket.broadcast.emit('typing', [username]);
   });
 
-  socket.on('stop typing', (data) => {
-    socket.to(data.room).emit('stop typing', data.user);
+  socket.on('stop typing', (username) => {
+    socket.broadcast.emit('typing', []);
   });
 
-  // Message read
   socket.on('read message', async ({ room, id }) => {
-    const msg = await Message.findById(id);
-    if (msg) {
-      msg.status = 'read';
-      await msg.save();
-      io.to(room).emit('message status', { id, status: 'read' });
+    try {
+      const msg = await Message.findById(id);
+      if (msg) {
+        msg.status = 'read';
+        await msg.save();
+        io.to(room).emit('message status', { id: msg._id, status: 'read' });
+      }
+    } catch (err) {
+      console.error('Error updating message status:', err);
     }
   });
 
@@ -78,6 +85,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// Start server
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`🟢 Server running on port ${PORT}`));
+// ---------------- Start Server ----------------
+server.listen(PORT, () => {
+  console.log(`🟢 Server running on port ${PORT}`);
+});

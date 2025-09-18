@@ -11,7 +11,6 @@ const emojiPicker = document.getElementById('emoji-picker');
 const emojiBtn = document.getElementById('emoji-btn');
 const shareBtn = document.getElementById('share-btn');
 const toggleThemeBtn = document.getElementById('toggle-theme');
-const roomNameHeader = document.getElementById('room-name');
 
 let username = '';
 let room = '';
@@ -57,47 +56,44 @@ toggleThemeBtn.addEventListener('click', () => {
 });
 
 // ---------------- Join Chat ----------------
-joinBtn.addEventListener('click', async () => {
+joinBtn.addEventListener('click', () => {
   username = usernameInput.value.trim();
   room = roomInput.value.trim();
   if (!username || !room) return alert('Enter username and room');
 
   usernamePrompt.style.display = 'none';
   chatContainer.style.display = 'flex';
-  roomNameHeader.textContent = room;
-  input.focus();
+  input.focus(); // Auto-focus input
 
   socket = io();
-  socket.emit('join room', room, username);
+  socket.emit('join room', room);
 
-  // Load history from server
+  // Request room history
   socket.emit('get history', room);
 
-  // Typing indicator
+  // Typing
   input.addEventListener('input', () => {
-    socket.emit('typing', { room, username });
+    socket.emit('typing', username);
     clearTimeout(typingTimeout);
-    typingTimeout = setTimeout(() => socket.emit('stop typing', { room, username }), 1000);
+    typingTimeout = setTimeout(() => socket.emit('stop typing', username), 1000);
   });
 
   // Send message
   form.addEventListener('submit', e => {
     e.preventDefault();
     if (!input.value) return;
-    const msgObj = { room, user: username, text: input.value, timestamp: new Date().toLocaleTimeString() };
-    socket.emit('chat message', msgObj);
+    const msgData = { room, user: username, text: input.value, timestamp: new Date() };
+    socket.emit('chat message', msgData);
     input.value = '';
-    input.focus();
+    input.focus(); // Keep input focused
   });
 
-  // Receive message
+  // Receive messages
   socket.on('chat message', msg => displayMessage(msg));
 
-  // Load history
-  socket.on('history', history => {
-    messages.innerHTML = '';
-    history.forEach(msg => displayMessage(msg));
-    messages.lastChild?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  // Room history
+  socket.on('room history', messagesHistory => {
+    messagesHistory.forEach(msg => displayMessage(msg));
   });
 
   // Typing bubble
@@ -118,12 +114,13 @@ joinBtn.addEventListener('click', async () => {
 function displayMessage(msg) {
   const div = document.createElement('div');
   div.classList.add('message', msg.user === username ? 'self' : 'other');
-  div.dataset.id = msg.id;
+  div.dataset.id = msg._id || msg.id;
 
   // Meta (timestamp + username)
   const meta = document.createElement('div');
   meta.classList.add('meta');
-  meta.textContent = `[${msg.timestamp}] ${msg.user}`;
+  const time = new Date(msg.timestamp).toLocaleTimeString();
+  meta.textContent = `[${time}] ${msg.user}`;
   div.appendChild(meta);
 
   // Message text
@@ -139,7 +136,7 @@ function displayMessage(msg) {
   const reactBtn = document.createElement('span');
   reactBtn.classList.add('react-btn');
   reactBtn.textContent = '😊';
-  reactBtn.addEventListener('click', () => addReaction(msg.id, '😊'));
+  reactBtn.addEventListener('click', () => addReaction(msg._id || msg.id, '😊'));
   div.appendChild(reactBtn);
 
   // Reactions container
@@ -153,7 +150,7 @@ function displayMessage(msg) {
   div.scrollIntoView({ behavior: 'smooth', block: 'end' });
 
   // Mark as read if not self
-  if (msg.user !== username) socket.emit('read message', { room, id: msg.id });
+  if (msg.user !== username) socket.emit('read message', { room, id: msg._id || msg.id });
 }
 
 // ---------------- Emoji Reactions ----------------
