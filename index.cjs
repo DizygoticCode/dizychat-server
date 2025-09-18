@@ -1,67 +1,79 @@
-const express = require('express');
-const cors = require('cors');
-const mongoose = require('mongoose');
+import express from 'express';
+import http from 'http';
+import { Server } from 'socket.io';
+import cors from 'cors';
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+import Message from './src/models/Message.js';
+
+dotenv.config();
+
 const app = express();
-const http = require('http').createServer(app);
-const io = require('socket.io')(http, { cors: { origin: "*" } });
-const Message = require('./src/models/Message');
-require('dotenv').config();
+app.use(cors());
+app.use(express.json());
+app.use(express.static('public'));
+
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: "*" } });
 
 // MongoDB connection
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
-}).then(() => console.log('🟢 MongoDB connected'))
-  .catch(err => console.error('MongoDB connection error:', err));
+}).then(() => console.log('🟢 Connected to MongoDB'))
+  .catch(err => console.error('❌ MongoDB connection error:', err));
 
-app.use(cors());
-app.use(express.static('public'));
+// Root route
+app.get('/', (req, res) => res.send('🟢 Dizygotic Chat Server is running!'));
 
-app.get('/', (req, res) => res.sendFile(__dirname + '/public/index.html'));
-
-const typingUsers = {};
+// ---------------- Socket.IO ----------------
+const roomsTyping = {}; // track typing users per room
 
 io.on('connection', (socket) => {
   console.log('A user connected');
 
-  socket.on('join room', async (room) => {
+  socket.on('join room', async (room, username) => {
     socket.join(room);
+    console.log(`${username} joined room ${room}`);
+    
+    // Send message history
+    const history = await Message.find({ room }).sort({ _id: 1 }).lean();
+    socket.emit('history', history);
 
-    if (!typingUsers[room]) typingUsers[room] = [];
-
-    // Send last 50 messages
-    const history = await Message.find({ room }).sort({ timestamp: 1 }).limit(50);
-    socket.emit('chat history', history);
+    // Track typing users
+    if (!roomsTyping[room]) roomsTyping[room] = [];
   });
 
   socket.on('chat message', async (msg) => {
-    msg.timestamp = new Date();
-    msg.status = 'sent';
+    // Save message in DB
+    const dbMsg = await Message.create(msg);
 
-    // Save to MongoDB
-    const messageDoc = new Message(msg);
-    await messageDoc.save();
-
-    io.to(msg.room).emit('chat message', msg);
+    // Broadcast to room
+    io.to(msg.room).emit('chat message', dbMsg);
   });
 
-  socket.on('typing', (username, room) => {
-    if (!typingUsers[room].includes(username)) typingUsers[room].push(username);
-    io.to(room).emit('typing', typingUsers[room]);
+  socket.on('typing', ({ room, username }) => {
+    if (!roomsTyping[room].includes(username)) roomsTyping[room].push(username);
+    io.to(room).emit('typing', roomsTyping[room]);
   });
 
-  socket.on('stop typing', (username, room) => {
-    typingUsers[room] = typingUsers[room].filter(u => u !== username);
-    io.to(room).emit('typing', typingUsers[room]);
+  socket.on('stop typing', ({ room, username }) => {
+    roomsTyping[room] = roomsTyping[room].filter(u => u !== username);
+    io.to(room).emit('typing', roomsTyping[room]);
   });
 
   socket.on('read message', async ({ room, id }) => {
-    await Message.findByIdAndUpdate(id, { status: 'read' });
-    io.to(room).emit('message status', { id, status: 'read' });
+    const msg = await Message.findById(id);
+    if (msg) {
+      msg.status = 'read';
+      await msg.save();
+      io.to(room).emit('message status', { id, status: 'read' });
+    }
   });
 
   socket.on('disconnect', () => console.log('A user disconnected'));
 });
 
+// Start server
 const PORT = process.env.PORT || 3000;
-http.listen(PORT, () => console.log(`🟢 Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`🟢 Server running on port ${PORT}`));

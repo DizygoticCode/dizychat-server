@@ -1,5 +1,4 @@
-// ---------------- DOM Elements ----------------
-const landing = document.getElementById('landing');
+const usernamePrompt = document.getElementById('username-prompt'); 
 const joinBtn = document.getElementById('join-btn');
 const usernameInput = document.getElementById('username-input');
 const roomInput = document.getElementById('room-input');
@@ -11,12 +10,14 @@ const typingBubble = document.getElementById('typing-bubble');
 const emojiPicker = document.getElementById('emoji-picker');
 const emojiBtn = document.getElementById('emoji-btn');
 const shareBtn = document.getElementById('share-btn');
-const roomNameDisplay = document.getElementById('room-name');
+const toggleThemeBtn = document.getElementById('toggle-theme');
+const roomNameHeader = document.getElementById('room-name');
 
 let username = '';
 let room = '';
 let socket;
 let typingTimeout;
+let darkMode = false;
 
 // ---------------- Emoji Picker ----------------
 fetch('emoji.json')
@@ -36,7 +37,9 @@ emojiBtn.addEventListener('click', (e) => {
   emojiPicker.style.display = emojiPicker.style.display === 'none' ? 'flex' : 'none';
 });
 
-document.addEventListener('click', () => { emojiPicker.style.display = 'none'; });
+document.addEventListener('click', () => {
+  emojiPicker.style.display = 'none';
+});
 
 function insertAtCursor(input, text) {
   const start = input.selectionStart;
@@ -46,43 +49,56 @@ function insertAtCursor(input, text) {
   input.focus();
 }
 
+// ---------------- Theme Toggle ----------------
+toggleThemeBtn.addEventListener('click', () => {
+  darkMode = !darkMode;
+  document.body.classList.toggle('dark', darkMode);
+  toggleThemeBtn.textContent = darkMode ? '☀️' : '🌙';
+});
+
 // ---------------- Join Chat ----------------
-joinBtn.addEventListener('click', () => {
+joinBtn.addEventListener('click', async () => {
   username = usernameInput.value.trim();
   room = roomInput.value.trim();
   if (!username || !room) return alert('Enter username and room');
 
-  landing.style.display = 'none';
+  usernamePrompt.style.display = 'none';
   chatContainer.style.display = 'flex';
-  roomNameDisplay.textContent = room;
+  roomNameHeader.textContent = room;
   input.focus();
 
   socket = io();
-  socket.emit('join room', room);
+  socket.emit('join room', room, username);
 
-  // Load chat history
-  socket.on('chat history', (messages) => {
-    messages.forEach(msg => displayMessage(msg));
-  });
+  // Load history from server
+  socket.emit('get history', room);
 
-  // Typing events
+  // Typing indicator
   input.addEventListener('input', () => {
-    socket.emit('typing', username, room);
+    socket.emit('typing', { room, username });
     clearTimeout(typingTimeout);
-    typingTimeout = setTimeout(() => socket.emit('stop typing', username, room), 1000);
+    typingTimeout = setTimeout(() => socket.emit('stop typing', { room, username }), 1000);
   });
 
   // Send message
   form.addEventListener('submit', e => {
     e.preventDefault();
     if (!input.value) return;
-    socket.emit('chat message', { room, user: username, text: input.value });
+    const msgObj = { room, user: username, text: input.value, timestamp: new Date().toLocaleTimeString() };
+    socket.emit('chat message', msgObj);
     input.value = '';
     input.focus();
   });
 
-  // Receive messages
+  // Receive message
   socket.on('chat message', msg => displayMessage(msg));
+
+  // Load history
+  socket.on('history', history => {
+    messages.innerHTML = '';
+    history.forEach(msg => displayMessage(msg));
+    messages.lastChild?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  });
 
   // Typing bubble
   socket.on('typing', users => {
@@ -91,7 +107,7 @@ joinBtn.addEventListener('click', () => {
     typingBubble.textContent = others.length ? `${others.join(', ')} is typing...` : '';
   });
 
-  // Message status updates
+  // Message status
   socket.on('message status', ({ id, status }) => {
     const msgDiv = document.querySelector(`.message[data-id='${id}'] .status`);
     if (msgDiv) msgDiv.textContent = statusIcon(status);
@@ -102,12 +118,12 @@ joinBtn.addEventListener('click', () => {
 function displayMessage(msg) {
   const div = document.createElement('div');
   div.classList.add('message', msg.user === username ? 'self' : 'other');
-  div.dataset.id = msg._id || msg.id;
+  div.dataset.id = msg.id;
 
   // Meta (timestamp + username)
   const meta = document.createElement('div');
   meta.classList.add('meta');
-  meta.textContent = `[${new Date(msg.timestamp).toLocaleTimeString()}] ${msg.user}`;
+  meta.textContent = `[${msg.timestamp}] ${msg.user}`;
   div.appendChild(meta);
 
   // Message text
@@ -119,33 +135,26 @@ function displayMessage(msg) {
   statusSpan.textContent = statusIcon(msg.status || 'sent');
   div.appendChild(statusSpan);
 
+  // Reaction button
+  const reactBtn = document.createElement('span');
+  reactBtn.classList.add('react-btn');
+  reactBtn.textContent = '😊';
+  reactBtn.addEventListener('click', () => addReaction(msg.id, '😊'));
+  div.appendChild(reactBtn);
+
   // Reactions container
   const reactionsDiv = document.createElement('div');
   reactionsDiv.classList.add('reactions');
   div.appendChild(reactionsDiv);
 
   messages.appendChild(div);
+
+  // Smooth scroll to the latest message
   div.scrollIntoView({ behavior: 'smooth', block: 'end' });
 
   // Mark as read if not self
-  if (msg.user !== username) socket.emit('read message', { room, id: div.dataset.id });
+  if (msg.user !== username) socket.emit('read message', { room, id: msg.id });
 }
-
-// ---------------- Status Icon ----------------
-function statusIcon(status) {
-  switch (status) {
-    case 'sent': return '✓';
-    case 'delivered': return '✓✓';
-    case 'read': return '✓✓✔';
-    default: return '';
-  }
-}
-
-// ---------------- Share Chat Link ----------------
-shareBtn.addEventListener('click', () => {
-  navigator.clipboard.writeText(window.location.href);
-  alert('Chat link copied!');
-});
 
 // ---------------- Emoji Reactions ----------------
 function addReaction(msgId, emoji) {
@@ -163,3 +172,19 @@ function addReaction(msgId, emoji) {
     msgDiv.appendChild(span);
   }
 }
+
+// ---------------- Status Icon ----------------
+function statusIcon(status) {
+  switch (status) {
+    case 'sent': return '✓';
+    case 'delivered': return '✓✓';
+    case 'read': return '✓✓✔';
+    default: return '';
+  }
+}
+
+// ---------------- Share Chat Link ----------------
+shareBtn.addEventListener('click', () => {
+  navigator.clipboard.writeText(window.location.href);
+  alert('Chat link copied!');
+});
