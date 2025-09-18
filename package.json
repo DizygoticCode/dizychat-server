@@ -2,10 +2,9 @@
   "name": "dizychat-server",
   "version": "1.0.0",
   "description": "Dizygotic Chat Server",
-  "main": "index.js",
-  "type": "module",
+  "main": "index.cjs",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.cjs"
   },
   "dependencies": {
     "express": "^4.18.2",
