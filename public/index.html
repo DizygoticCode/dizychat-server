@@ -7,27 +7,30 @@
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
+  <!-- Username Prompt -->
   <div id="username-prompt">
     <h2>Enter your username to join chat</h2>
     <input id="username-input" placeholder="Username" />
     <button id="join-btn">Join Chat</button>
   </div>
 
+  <!-- Chat Container -->
   <div id="chat-container" style="display:none;">
     <div id="chat-header">
       <h2>DizyChat</h2>
       <div id="typing-status"></div>
       <button id="share-btn">Share Chat Link</button>
     </div>
+
     <div id="messages"></div>
+    <div id="emoji-picker"></div>
+
     <form id="form">
-      <input id="input" placeholder="Type a message..." />
+      <input id="input" placeholder="Type a message..." autocomplete="off"/>
       <button type="submit">Send</button>
     </form>
-    <div id="emoji-picker"></div>
   </div>
 
-  <script src="emoji.json" type="application/json" id="emoji-data"></script>
   <script src="chat.js"></script>
 </body>
 </html>
