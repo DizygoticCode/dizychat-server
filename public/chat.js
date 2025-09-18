@@ -11,7 +11,6 @@ const emojiPicker = document.getElementById('emoji-picker');
 const emojiBtn = document.getElementById('emoji-btn');
 const shareBtn = document.getElementById('share-btn');
 const toggleThemeBtn = document.getElementById('toggle-theme');
-const roomNameHeader = document.getElementById('room-name');
 
 let username = '';
 let room = '';
@@ -57,54 +56,50 @@ toggleThemeBtn.addEventListener('click', () => {
 });
 
 // ---------------- Join Chat ----------------
-joinBtn.addEventListener('click', async () => {
+joinBtn.addEventListener('click', () => {
   username = usernameInput.value.trim();
   room = roomInput.value.trim();
   if (!username || !room) return alert('Enter username and room');
 
   usernamePrompt.style.display = 'none';
   chatContainer.style.display = 'flex';
-  roomNameHeader.textContent = room;
-  input.focus();
+  input.focus(); // Auto-focus input
 
   socket = io();
-  socket.emit('join room', room, username);
+  socket.emit('join room', room);
 
-  // Load history from server
-  socket.emit('get history', room);
+  // Receive chat history
+  socket.on('chat history', (msgs) => {
+    msgs.forEach(msg => displayMessage(msg));
+  });
 
-  // Typing indicator
+  // Typing
   input.addEventListener('input', () => {
-    socket.emit('typing', { room, username });
+    socket.emit('typing', { user: username, room });
     clearTimeout(typingTimeout);
-    typingTimeout = setTimeout(() => socket.emit('stop typing', { room, username }), 1000);
+    typingTimeout = setTimeout(() => socket.emit('stop typing', { user: username, room }), 1000);
   });
 
   // Send message
   form.addEventListener('submit', e => {
     e.preventDefault();
     if (!input.value) return;
-    const msgObj = { room, user: username, text: input.value, timestamp: new Date().toLocaleTimeString() };
-    socket.emit('chat message', msgObj);
+    socket.emit('chat message', { room, user: username, text: input.value });
     input.value = '';
     input.focus();
   });
 
-  // Receive message
+  // Receive messages
   socket.on('chat message', msg => displayMessage(msg));
 
-  // Load history
-  socket.on('history', history => {
-    messages.innerHTML = '';
-    history.forEach(msg => displayMessage(msg));
-    messages.lastChild?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  // Typing bubble
+  socket.on('typing', user => {
+    typingBubble.style.display = 'block';
+    typingBubble.textContent = `${user} is typing...`;
   });
 
-  // Typing bubble
-  socket.on('typing', users => {
-    const others = users.filter(u => u !== username);
-    typingBubble.style.display = others.length ? 'block' : 'none';
-    typingBubble.textContent = others.length ? `${others.join(', ')} is typing...` : '';
+  socket.on('stop typing', () => {
+    typingBubble.style.display = 'none';
   });
 
   // Message status
@@ -123,7 +118,8 @@ function displayMessage(msg) {
   // Meta (timestamp + username)
   const meta = document.createElement('div');
   meta.classList.add('meta');
-  meta.textContent = `[${msg.timestamp}] ${msg.user}`;
+  const time = new Date(msg.timestamp).toLocaleTimeString();
+  meta.textContent = `[${time}] ${msg.user}`;
   div.appendChild(meta);
 
   // Message text
@@ -135,42 +131,10 @@ function displayMessage(msg) {
   statusSpan.textContent = statusIcon(msg.status || 'sent');
   div.appendChild(statusSpan);
 
-  // Reaction button
-  const reactBtn = document.createElement('span');
-  reactBtn.classList.add('react-btn');
-  reactBtn.textContent = '😊';
-  reactBtn.addEventListener('click', () => addReaction(msg.id, '😊'));
-  div.appendChild(reactBtn);
-
-  // Reactions container
-  const reactionsDiv = document.createElement('div');
-  reactionsDiv.classList.add('reactions');
-  div.appendChild(reactionsDiv);
-
   messages.appendChild(div);
-
-  // Smooth scroll to the latest message
   div.scrollIntoView({ behavior: 'smooth', block: 'end' });
 
-  // Mark as read if not self
   if (msg.user !== username) socket.emit('read message', { room, id: msg.id });
-}
-
-// ---------------- Emoji Reactions ----------------
-function addReaction(msgId, emoji) {
-  const msgDiv = document.querySelector(`.message[data-id='${msgId}'] .reactions`);
-  if (!msgDiv) return;
-
-  const existing = Array.from(msgDiv.children).find(span => span.textContent.startsWith(emoji));
-  if (existing) {
-    existing.dataset.count = parseInt(existing.dataset.count || '1') + 1;
-    existing.textContent = `${emoji} ${existing.dataset.count}`;
-  } else {
-    const span = document.createElement('span');
-    span.textContent = emoji;
-    span.dataset.count = 1;
-    msgDiv.appendChild(span);
-  }
 }
 
 // ---------------- Status Icon ----------------
