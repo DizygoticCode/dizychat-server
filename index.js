@@ -1,65 +1,67 @@
 const express = require('express');
 const cors = require('cors');
-const http = require('http');
-const { Server } = require('socket.io');
-
+const mongoose = require('mongoose');
 const app = express();
+const http = require('http').createServer(app);
+const io = require('socket.io')(http, { cors: { origin: "*" } });
+const Message = require('./src/models/Message');
+require('dotenv').config();
+
+// MongoDB connection
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+}).then(() => console.log('🟢 MongoDB connected'))
+  .catch(err => console.error('MongoDB connection error:', err));
+
 app.use(cors());
 app.use(express.static('public'));
 
-const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+app.get('/', (req, res) => res.sendFile(__dirname + '/public/index.html'));
 
-function generateId() { return '_' + Math.random().toString(36).substr(2, 9); }
-
-const typingUsers = {}; // room -> Set of usernames
+const typingUsers = {};
 
 io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
-  let currentRoom = '';
+  console.log('A user connected');
 
-  socket.on('join room', (room) => {
-    currentRoom = room;
+  socket.on('join room', async (room) => {
     socket.join(room);
-    console.log(`${socket.id} joined room ${room}`);
-    if (!typingUsers[room]) typingUsers[room] = new Set();
+
+    if (!typingUsers[room]) typingUsers[room] = [];
+
+    // Send last 50 messages
+    const history = await Message.find({ room }).sort({ timestamp: 1 }).limit(50);
+    socket.emit('chat history', history);
   });
 
-  socket.on('chat message', ({ room, user, text }) => {
-    const timestamp = formatTime(new Date());
-    const msg = { id: generateId(), user, text, timestamp, status: 'sent' };
-    io.to(room).emit('chat message', msg);
-    socket.emit('message status', { id: msg.id, status: 'delivered' });
+  socket.on('chat message', async (msg) => {
+    msg.timestamp = new Date();
+    msg.status = 'sent';
+
+    // Save to MongoDB
+    const messageDoc = new Message(msg);
+    await messageDoc.save();
+
+    io.to(msg.room).emit('chat message', msg);
   });
 
-  socket.on('read message', ({ room, id }) => {
+  socket.on('typing', (username, room) => {
+    if (!typingUsers[room].includes(username)) typingUsers[room].push(username);
+    io.to(room).emit('typing', typingUsers[room]);
+  });
+
+  socket.on('stop typing', (username, room) => {
+    typingUsers[room] = typingUsers[room].filter(u => u !== username);
+    io.to(room).emit('typing', typingUsers[room]);
+  });
+
+  socket.on('read message', async ({ room, id }) => {
+    await Message.findByIdAndUpdate(id, { status: 'read' });
     io.to(room).emit('message status', { id, status: 'read' });
   });
 
-  socket.on('typing', (user) => {
-    if (currentRoom && typingUsers[currentRoom]) {
-      typingUsers[currentRoom].add(user);
-      io.to(currentRoom).emit('typing', Array.from(typingUsers[currentRoom]));
-    }
-  });
-
-  socket.on('stop typing', (user) => {
-    if (currentRoom && typingUsers[currentRoom]) {
-      typingUsers[currentRoom].delete(user);
-      io.to(currentRoom).emit('typing', Array.from(typingUsers[currentRoom]));
-    }
-  });
-
-  socket.on('disconnect', () => console.log('User disconnected:', socket.id));
+  socket.on('disconnect', () => console.log('A user disconnected'));
 });
 
-function formatTime(date) {
-  let hours = date.getHours();
-  const minutes = date.getMinutes().toString().padStart(2,'0');
-  const ampm = hours >= 12 ? 'PM' : 'AM';
-  hours = hours % 12 || 12;
-  return `${hours}:${minutes} ${ampm}`;
-}
-
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`🟢 Server running on port ${PORT}`));
+http.listen(PORT, () => console.log(`🟢 Server running on port ${PORT}`));
