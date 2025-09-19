@@ -1,9 +1,9 @@
-import express from 'express';
-import http from 'http';
-import { Server } from 'socket.io';
-import mongoose from 'mongoose';
-import dotenv from 'dotenv';
-import Message from './src/models/Message.js';
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+const path = require('path');
 
 dotenv.config();
 
@@ -14,78 +14,93 @@ const io = new Server(server);
 const PORT = process.env.PORT || 10000;
 
 // ---------------- MongoDB ----------------
-mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => console.log('🟢 Connected to MongoDB'))
-  .catch(err => console.error('❌ MongoDB connection error:', err));
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+.then(() => console.log("🟢 Connected to MongoDB"))
+.catch(err => console.error("❌ MongoDB connection error:", err));
 
-// ---------------- Middleware ----------------
-app.use(express.json());
-app.use(express.static('public'));
+const messageSchema = new mongoose.Schema({
+  room: String,
+  user: String,
+  text: String,
+  timestamp: { type: Date, default: Date.now },
+  status: { type: String, default: 'sent' },
+});
+
+const Message = mongoose.model('Message', messageSchema);
+
+// ---------------- Static files ----------------
+app.use(express.static(path.join(__dirname, 'public')));
 
 // ---------------- Socket.IO ----------------
-io.on('connection', (socket) => {
-  console.log('A user connected');
+let typingUsers = {};
 
+io.on('connection', (socket) => {
+  console.log("A user connected");
+
+  // Join a room
   socket.on('join room', (room) => {
     socket.join(room);
     console.log(`User joined room: ${room}`);
   });
 
-  // Handle chat messages
-  socket.on('chat message', async (msg) => {
+  // Get message history
+  socket.on('get history', async (room) => {
+    const history = await Message.find({ room }).sort({ timestamp: 1 }).limit(50);
+    socket.emit('room history', history);
+  });
+
+  // Handle new chat message
+  socket.on('chat message', async (msgData) => {
     try {
-      const message = new Message({
-        room: msg.room,
-        user: msg.user,
-        text: msg.text,
-        timestamp: new Date(), // <-- Server sets the proper timestamp
-        status: 'sent'
+      // Ensure timestamp is a Date
+      const newMsg = new Message({
+        ...msgData,
+        timestamp: msgData.timestamp ? new Date(msgData.timestamp) : new Date(),
       });
 
-      await message.save();
+      await newMsg.save();
 
-      io.to(msg.room).emit('chat message', {
-        id: message._id,
-        room: msg.room,
-        user: message.user,
-        text: message.text,
-        timestamp: message.timestamp,
-        status: message.status
-      });
+      io.to(msgData.room).emit('chat message', newMsg);
+
+      // Immediately update status to "delivered"
+      io.to(msgData.room).emit('message status', { id: newMsg._id, status: 'delivered' });
     } catch (err) {
-      console.error('Error saving message:', err);
+      console.error("Error saving message:", err);
     }
   });
 
-  // Handle typing events
-  socket.on('typing', (username) => {
-    // Emit to all other users in the room
-    socket.broadcast.emit('typing', [username]);
-  });
-
-  socket.on('stop typing', (username) => {
-    socket.broadcast.emit('typing', []);
-  });
-
+  // Handle read receipts
   socket.on('read message', async ({ room, id }) => {
     try {
-      const msg = await Message.findById(id);
-      if (msg) {
-        msg.status = 'read';
-        await msg.save();
-        io.to(room).emit('message status', { id: msg._id, status: 'read' });
-      }
+      await Message.findByIdAndUpdate(id, { status: 'read' });
+      io.to(room).emit('message status', { id, status: 'read' });
     } catch (err) {
-      console.error('Error updating message status:', err);
+      console.error("Error marking as read:", err);
     }
+  });
+
+  // Typing indicators
+  socket.on('typing', (username) => {
+    typingUsers[socket.id] = username;
+    io.emit('typing', Object.values(typingUsers));
+  });
+
+  socket.on('stop typing', () => {
+    delete typingUsers[socket.id];
+    io.emit('typing', Object.values(typingUsers));
   });
 
   socket.on('disconnect', () => {
-    console.log('A user disconnected');
+    console.log("User disconnected");
+    delete typingUsers[socket.id];
+    io.emit('typing', Object.values(typingUsers));
   });
 });
 
-// ---------------- Start Server ----------------
+// ---------------- Start server ----------------
 server.listen(PORT, () => {
   console.log(`🟢 Server running on port ${PORT}`);
 });
