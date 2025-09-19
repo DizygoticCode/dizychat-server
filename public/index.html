@@ -2,37 +2,103 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DizyChat</title>
   <link rel="stylesheet" href="chat.css">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+    #username-prompt, #chat-container { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+    #chat-container { display: none; }
+    #messages { width: 80%; max-width: 600px; height: 400px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
+    #input { width: 80%; max-width: 600px; padding: 5px; }
+    #form { display: flex; flex-direction: row; align-items: center; justify-content: center; }
+    .emoji { cursor: pointer; margin: 2px; }
+    .dark { background-color: #222; color: #eee; }
+    .message.self { text-align: right; }
+    .message.other { text-align: left; }
+  </style>
 </head>
 <body>
-  <!-- Landing/Username Prompt -->
-  <div id="username-prompt" class="overlay">
-    <div class="prompt-box">
-      <h2>Join a Chat Room</h2>
-      <input type="text" id="username-input" placeholder="Enter your username">
-      <input type="text" id="room-input" placeholder="Enter room name">
-      <button id="join-btn">Join</button>
-    </div>
+
+  <!-- Landing Page / Username Prompt -->
+  <div id="username-prompt">
+    <h2>Welcome to DizyChat</h2>
+    <input type="text" id="username-input" placeholder="Enter your username">
+    <input type="text" id="room-input" placeholder="Enter room name">
+    <button id="join-btn">Join Chat</button>
   </div>
 
   <!-- Chat Container -->
   <div id="chat-container">
-    <header>
-      <h3 id="room-name">DizyChat</h3>
-      <button id="toggle-theme">🌙</button>
-      <button id="share-btn">🔗 Share</button>
-    </header>
-
-    <div id="messages" class="messages"></div>
-    <div id="typing-bubble" class="typing-bubble"></div>
-
+    <div id="messages"></div>
+    <div id="typing-bubble" style="display:none;"></div>
+    <div id="emoji-picker" style="display:none;"></div>
     <form id="form">
-      <button type="button" id="emoji-btn">😊</button>
-      <div id="emoji-picker" class="emoji-picker"></div>
-      <input id="input" autocomplete="off" placeholder="Type a message">
+      <input type="text" id="input" autocomplete="off" placeholder="Type a message">
       <button type="submit">Send</button>
     </form>
+    <button id="emoji-btn">😀</button>
+    <button id="share-btn">Share Room</button>
+    <button id="toggle-theme">🌙</button>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="chat.js"></script>
+  <script>
+    // Automatically join room if URL has room & nickname
+    document.addEventListener("DOMContentLoaded", () => {
+      const params = new URLSearchParams(window.location.search);
+      const nickname = params.get("nickname");
+      const room = params.get("room");
+      
+      if (nickname && room) {
+        document.getElementById('username-input').value = nickname;
+        document.getElementById('room-input').value = room;
+        document.getElementById('username-prompt').style.display = 'none';
+        document.getElementById('chat-container').style.display = 'flex';
+        
+        // Trigger the join logic from chat.js
+        document.getElementById('join-btn').click();
+      }
+    });
+  </script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DizyChat</title>
+  <link rel="stylesheet" href="chat.css">
+</head>
+<body>
+  <!-- Username / Room prompt -->
+  <div id="username-prompt">
+    <h2>Join Chat</h2>
+    <input id="username-input" placeholder="Enter username">
+    <input id="room-input" placeholder="Enter room name">
+    <button id="join-btn">Join</button>
+  </div>
+
+  <!-- Chat container -->
+  <div id="chat-container" style="display:none;">
+    <div id="chat-header">
+      <button id="toggle-theme">🌙</button>
+      <button id="share-btn">🔗 Share</button>
+    </div>
+
+    <div id="messages"></div>
+    <div id="typing-bubble"></div>
+
+    <form id="form">
+      <input id="input" autocomplete="off" placeholder="Type a message..."/>
+      <button type="submit">Send</button>
+      <button type="button" id="emoji-btn">😊</button>
+    </form>
+
+    <!-- Emoji Picker -->
+    <div id="emoji-picker"></div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
