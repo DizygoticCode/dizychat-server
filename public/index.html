@@ -3,69 +3,42 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DizyChat Landing Page</title>
+<title>DizyChat</title>
 <link rel="stylesheet" href="chat.css">
-<style>
-  body {
-    font-family: sans-serif;
-    background-color: #f2f2f2;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
-  }
-  .container {
-    background-color: white;
-    padding: 30px;
-    border-radius: 10px;
-    box-shadow: 0 0 15px rgba(0,0,0,0.2);
-    text-align: center;
-  }
-  input, button {
-    padding: 10px;
-    margin: 10px 0;
-    width: 80%;
-    border-radius: 5px;
-    border: 1px solid #ccc;
-    font-size: 1em;
-  }
-  button {
-    cursor: pointer;
-    background-color: #4CAF50;
-    color: white;
-    border: none;
-  }
-  button:hover {
-    background-color: #45a049;
-  }
-</style>
 </head>
 <body>
-<div class="container">
-  <h2>Welcome to DizyChat</h2>
-  <p>Enter your username and a room to start chatting.</p>
-  <input type="text" id="username-input" placeholder="Username">
-  <input type="text" id="room-input" placeholder="Room Name">
-  <button id="join-btn">Join Chat</button>
+<!-- Landing / Join Page -->
+<div id="username-prompt" class="landing">
+    <h1>DizyChat</h1>
+    <input type="text" id="username-input" placeholder="Enter your username">
+    <input type="text" id="room-input" placeholder="Enter room name">
+    <button id="join-btn">Join Chat</button>
 </div>
 
-<script>
-const joinBtn = document.getElementById('join-btn');
-const usernameInput = document.getElementById('username-input');
-const roomInput = document.getElementById('room-input');
+<!-- Chat Page -->
+<div id="chat-container" class="chat-page" style="display:none">
+    <header>
+        <div class="room-info">
+            <span id="room-name-display"></span>
+            <button id="share-btn">Share Room</button>
+        </div>
+        <button id="toggle-theme">🌙</button>
+    </header>
 
-joinBtn.addEventListener('click', () => {
-  const username = usernameInput.value.trim() || 'Guest';
-  const room = roomInput.value.trim() || 'general';
+    <main id="messages"></main>
 
-  if (!username || !room) {
-    return alert("Please enter both username and room name.");
-  }
+    <div id="typing-bubble"></div>
 
-  // Redirect to chat.html with query parameters
-  const url = `chat.html?nickname=${encodeURIComponent(username)}&room=${encodeURIComponent(room)}`;
-  window.location.href = url;
-});
-</script>
+    <form id="form">
+        <button type="button" id="emoji-btn">😀</button>
+        <input id="input" autocomplete="off" placeholder="Type a message"/>
+        <button>Send</button>
+    </form>
+
+    <div id="emoji-picker" class="emoji-picker"></div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="chat.js"></script>
 </body>
 </html>
