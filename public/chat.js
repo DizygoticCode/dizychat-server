@@ -180,8 +180,41 @@ function statusIcon(status) {
   }
 }
 
-// ---------------- Share Chat Link ----------------
-shareBtn.addEventListener('click', () => {
-  navigator.clipboard.writeText(window.location.href);
-  alert('Chat link copied!');
-});
+// ---------------- Share Chat Link with Nickname Prompt ----------------
+function setupShareLink() {
+  const shareInput = document.querySelector("#share-link-input"); // Your existing share link input
+  const shareBtn = document.querySelector("#share-btn"); // Your existing share button
+
+  if (!shareInput || !shareBtn) return;
+
+  shareBtn.addEventListener("click", () => {
+    // Get current room from URL
+    const roomPath = window.location.pathname; // e.g., /room/room-name
+    let roomName = roomPath.split("/room/")[1] || "general";
+
+    // Prompt for nickname if missing
+    let urlParams = new URLSearchParams(window.location.search);
+    let nickname = urlParams.get("nickname");
+    if (!nickname) {
+      nickname = prompt("Enter your nickname to join this room:", "Guest") || "Guest";
+    }
+
+    const fullURL = `${window.location.origin}/room/${encodeURIComponent(roomName)}?nickname=${encodeURIComponent(nickname)}`;
+
+    // Fill input for easy copy
+    shareInput.value = fullURL;
+
+    // Try auto-copy
+    try {
+      navigator.clipboard.writeText(fullURL).then(() => {
+        alert("Room link copied! Share it so others can join the same room.");
+      });
+    } catch (err) {
+      console.warn("Clipboard copy failed, fallback alert:", err);
+      alert(`Room link: ${fullURL}`);
+    }
+  });
+}
+
+// Wait until DOM is loaded
+document.addEventListener("DOMContentLoaded", setupShareLink);
