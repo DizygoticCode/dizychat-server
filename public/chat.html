@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DizyChat</title>
+<link rel="stylesheet" href="chat.css">
+</head>
+<body>
+<div id="username-prompt" class="modal">
+  <h2>Enter Username & Room</h2>
+  <input type="text" id="username-input" placeholder="Your nickname">
+  <input type="text" id="room-input" placeholder="Room name">
+  <button id="join-btn">Join Chat</button>
+</div>
+
+<div id="chat-container" style="display:none">
+  <div id="messages" class="messages"></div>
+  <div id="typing-bubble" class="typing-bubble"></div>
+  <form id="form">
+    <input id="input" autocomplete="off" placeholder="Type a message..." />
+    <button>Send</button>
+  </form>
+  <button id="emoji-btn">😊</button>
+  <div id="emoji-picker" class="emoji-picker"></div>
+  <button id="share-btn">Share Room</button>
+  <button id="toggle-theme">🌙</button>
+</div>
+
+<!-- Share Modal -->
+<div id="share-modal" class="modal" style="display:none">
+  <h3>Share this Room</h3>
+  <input type="text" id="share-nickname" placeholder="Your nickname">
+  <input type="text" id="share-link-input" readonly>
+  <button id="share-copy-btn">Copy Link</button>
+  <button id="share-close-btn">Close</button>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="chat.js"></script>
+<script>
+  // ---------------- Share Modal Script ----------------
+  const shareBtn = document.getElementById('share-btn');
+  const shareModal = document.getElementById('share-modal');
+  const shareInput = document.getElementById('share-link-input');
+  const nicknameInput = document.getElementById('share-nickname');
+  const copyBtn = document.getElementById('share-copy-btn');
+  const closeBtn = document.getElementById('share-close-btn');
+
+  function updateShareLink() {
+      const roomPath = window.location.pathname;
+      const roomName = roomPath.split("/room/")[1] || "general";
+      const nickname = nicknameInput.value.trim() || "Guest";
+      shareInput.value = `${window.location.origin}/room/${encodeURIComponent(roomName)}?nickname=${encodeURIComponent(nickname)}`;
+  }
+
+  shareBtn.addEventListener('click', () => {
+      let urlParams = new URLSearchParams(window.location.search);
+      nicknameInput.value = urlParams.get("nickname") || "Guest";
+      updateShareLink();
+      shareModal.style.display = 'block';
+      nicknameInput.focus();
+      nicknameInput.select();
+  });
+
+  nicknameInput.addEventListener('input', updateShareLink);
+
+  copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(shareInput.value).then(() => {
+          alert('Room link copied! Share it so others can join the same room.');
+      });
+  });
+
+  closeBtn.addEventListener('click', () => {
+      shareModal.style.display = 'none';
+  });
+</script>
+</body>
+</html>

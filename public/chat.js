@@ -10,8 +10,7 @@ const messages = document.getElementById('messages');
 const typingBubble = document.getElementById('typing-bubble');
 const emojiPicker = document.getElementById('emoji-picker');
 const emojiBtn = document.getElementById('emoji-btn');
-const shareInput = document.getElementById('share-link-input');
-const shareBtn = document.getElementById('share-link-btn');
+const shareBtn = document.getElementById('share-btn');
 const toggleThemeBtn = document.getElementById('toggle-theme');
 
 let username = '';
@@ -33,15 +32,13 @@ fetch('emoji.json')
     });
   });
 
-emojiBtn.addEventListener('click', e => {
+emojiBtn.addEventListener('click', (e) => {
   e.stopPropagation();
   emojiPicker.style.display = emojiPicker.style.display === 'none' ? 'flex' : 'none';
 });
 
-document.addEventListener('click', e => {
-  if (!emojiPicker.contains(e.target) && e.target !== emojiBtn) {
-    emojiPicker.style.display = 'none';
-  }
+document.addEventListener('click', () => {
+  emojiPicker.style.display = 'none';
 });
 
 function insertAtCursor(input, text) {
@@ -61,9 +58,9 @@ toggleThemeBtn.addEventListener('click', () => {
 
 // ---------------- Join Chat ----------------
 joinBtn.addEventListener('click', () => {
-  username = usernameInput.value.trim();
-  room = roomInput.value.trim();
-  if (!username || !room) return alert('Enter username and room');
+  username = usernameInput.value.trim() || prompt("Enter your username:", "Guest");
+  room = roomInput.value.trim() || prompt("Enter a room name:", "general");
+  if (!username || !room) return alert('Username and room required!');
 
   usernamePrompt.style.display = 'none';
   chatContainer.style.display = 'flex';
@@ -73,12 +70,14 @@ joinBtn.addEventListener('click', () => {
   socket.emit('join room', room);
   socket.emit('get history', room);
 
+  // Typing
   input.addEventListener('input', () => {
     socket.emit('typing', username);
     clearTimeout(typingTimeout);
     typingTimeout = setTimeout(() => socket.emit('stop typing', username), 1000);
   });
 
+  // Send message
   form.addEventListener('submit', e => {
     e.preventDefault();
     if (!input.value) return;
@@ -88,28 +87,38 @@ joinBtn.addEventListener('click', () => {
     input.focus();
   });
 
+  // Receive messages
   socket.on('chat message', msg => displayMessage(msg));
-  socket.on('room history', history => history.forEach(msg => displayMessage(msg)));
+
+  // Room history
+  socket.on('room history', messagesHistory => {
+    messagesHistory.forEach(msg => displayMessage(msg));
+  });
+
+  // Typing bubble
   socket.on('typing', users => {
     const others = users.filter(u => u !== username);
     typingBubble.style.display = others.length ? 'block' : 'none';
     typingBubble.textContent = others.length ? `${others.join(', ')} is typing...` : '';
   });
-  socket.on('message status', ({id,status}) => {
+
+  // Message status
+  socket.on('message status', ({ id, status }) => {
     const msgDiv = document.querySelector(`.message[data-id='${id}'] .status`);
-    if(msgDiv) msgDiv.textContent = statusIcon(status);
+    if (msgDiv) msgDiv.textContent = statusIcon(status);
   });
 });
 
 // ---------------- Display Messages ----------------
 function displayMessage(msg) {
   const div = document.createElement('div');
-  div.classList.add('message', msg.user===username?'self':'other');
+  div.classList.add('message', msg.user === username ? 'self' : 'other');
   div.dataset.id = msg._id || msg.id;
 
   const meta = document.createElement('div');
   meta.classList.add('meta');
-  meta.textContent = `[${new Date(msg.timestamp).toLocaleTimeString()}] ${msg.user}`;
+  const time = new Date(msg.timestamp).toLocaleTimeString();
+  meta.textContent = `[${time}] ${msg.user}`;
   div.appendChild(meta);
 
   div.appendChild(document.createTextNode(` ${msg.text}`));
@@ -119,15 +128,42 @@ function displayMessage(msg) {
   statusSpan.textContent = statusIcon(msg.status || 'sent');
   div.appendChild(statusSpan);
 
+  const reactBtn = document.createElement('span');
+  reactBtn.classList.add('react-btn');
+  reactBtn.textContent = '😊';
+  reactBtn.addEventListener('click', () => addReaction(msg._id || msg.id, '😊'));
+  div.appendChild(reactBtn);
+
+  const reactionsDiv = document.createElement('div');
+  reactionsDiv.classList.add('reactions');
+  div.appendChild(reactionsDiv);
+
   messages.appendChild(div);
   div.scrollIntoView({ behavior: 'smooth', block: 'end' });
 
-  if(msg.user !== username) socket.emit('read message', {room,id: msg._id||msg.id});
+  if (msg.user !== username) socket.emit('read message', { room, id: msg._id || msg.id });
+}
+
+// ---------------- Emoji Reactions ----------------
+function addReaction(msgId, emoji) {
+  const msgDiv = document.querySelector(`.message[data-id='${msgId}'] .reactions`);
+  if (!msgDiv) return;
+
+  const existing = Array.from(msgDiv.children).find(span => span.textContent.startsWith(emoji));
+  if (existing) {
+    existing.dataset.count = parseInt(existing.dataset.count || '1') + 1;
+    existing.textContent = `${emoji} ${existing.dataset.count}`;
+  } else {
+    const span = document.createElement('span');
+    span.textContent = emoji;
+    span.dataset.count = 1;
+    msgDiv.appendChild(span);
+  }
 }
 
 // ---------------- Status Icon ----------------
 function statusIcon(status) {
-  switch(status) {
+  switch (status) {
     case 'sent': return '✓';
     case 'delivered': return '✓✓';
     case 'read': return '✓✓✔';
@@ -137,11 +173,9 @@ function statusIcon(status) {
 
 // ---------------- Share Chat Link ----------------
 shareBtn.addEventListener('click', () => {
-  const fullURL = `${window.location.origin}/room/${encodeURIComponent(room)}?nickname=${encodeURIComponent(username)}`;
-  shareInput.value = fullURL;
-  try {
-    navigator.clipboard.writeText(fullURL).then(() => alert("Room link copied!"));
-  } catch {
-    alert(`Room link: ${fullURL}`);
-  }
+  let currentRoom = room || prompt("Enter room name to share:", "general");
+  let nickname = username || prompt("Enter your nickname to join:", "Guest");
+  const shareURL = `${window.location.origin}/room/${encodeURIComponent(currentRoom)}?nickname=${encodeURIComponent(nickname)}`;
+  navigator.clipboard.writeText(shareURL);
+  alert(`Room link copied!\n${shareURL}`);
 });
