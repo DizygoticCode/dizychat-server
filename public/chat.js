@@ -1,4 +1,3 @@
-// ---------------- DOM Elements ----------------
 const usernamePrompt = document.getElementById('username-prompt'); 
 const joinBtn = document.getElementById('join-btn');
 const usernameInput = document.getElementById('username-input');
@@ -20,44 +19,37 @@ let typingTimeout;
 let darkMode = false;
 
 // ---------------- Emoji Picker ----------------
-let emojiData = [];
-fetch('/emoji.json')
+fetch('emoji.json')
   .then(res => res.json())
   .then(data => {
-    emojiData = data;
-    populateEmojiPicker();
+    data.forEach(e => {
+      const span = document.createElement('span');
+      span.textContent = e.char;
+      span.classList.add('emoji');
+      span.addEventListener('click', () => insertAtCursor(input, e.char));
+      emojiPicker.appendChild(span);
+    });
   });
 
-function populateEmojiPicker(filter = '') {
-  emojiPicker.innerHTML = '';
-  const filtered = emojiData.filter(e => e.char.includes(filter) || e.name.includes(filter));
-  filtered.forEach(e => {
-    const span = document.createElement('span');
-    span.textContent = e.char;
-    span.addEventListener('click', () => insertAtCursor(input, e.char));
-    emojiPicker.appendChild(span);
-  });
-}
-
-// Insert emoji at cursor position
-function insertAtCursor(inputEl, text) {
-  const start = inputEl.selectionStart;
-  const end = inputEl.selectionEnd;
-  inputEl.value = inputEl.value.slice(0, start) + text + inputEl.value.slice(end);
-  inputEl.selectionStart = inputEl.selectionEnd = start + text.length;
-  inputEl.focus();
-}
-
-// Toggle emoji picker
-emojiBtn.addEventListener('click', e => {
+emojiBtn.addEventListener('click', (e) => {
   e.stopPropagation();
+  const rect = emojiBtn.getBoundingClientRect();
   emojiPicker.style.display = emojiPicker.style.display === 'none' ? 'flex' : 'none';
+  emojiPicker.style.top = rect.top - emojiPicker.offsetHeight - 5 + 'px';
+  emojiPicker.style.left = rect.left + 'px';
 });
 
-// Hide emoji picker on outside click
 document.addEventListener('click', () => {
   emojiPicker.style.display = 'none';
 });
+
+function insertAtCursor(input, text) {
+  const start = input.selectionStart;
+  const end = input.selectionEnd;
+  input.value = input.value.slice(0, start) + text + input.value.slice(end);
+  input.selectionStart = input.selectionEnd = start + text.length;
+  input.focus();
+}
 
 // ---------------- Theme Toggle ----------------
 toggleThemeBtn.addEventListener('click', () => {
@@ -70,26 +62,25 @@ toggleThemeBtn.addEventListener('click', () => {
 joinBtn.addEventListener('click', () => {
   username = usernameInput.value.trim();
   room = roomInput.value.trim();
-  if (!username || !room) return alert('Enter username and room');
+  if (!username) username = prompt("Enter your username:", "Guest") || "Guest";
+  if (!room) room = prompt("Enter room name:", "general") || "general";
 
   usernamePrompt.style.display = 'none';
   chatContainer.style.display = 'flex';
-  input.focus();
-
   document.getElementById('room-name').textContent = room;
+  input.focus();
 
   socket = io();
   socket.emit('join room', room);
+
   socket.emit('get history', room);
 
-  // Typing detection
   input.addEventListener('input', () => {
     socket.emit('typing', username);
     clearTimeout(typingTimeout);
     typingTimeout = setTimeout(() => socket.emit('stop typing', username), 1000);
   });
 
-  // Send message
   form.addEventListener('submit', e => {
     e.preventDefault();
     if (!input.value) return;
@@ -99,22 +90,18 @@ joinBtn.addEventListener('click', () => {
     input.focus();
   });
 
-  // Receive messages
   socket.on('chat message', msg => displayMessage(msg));
 
-  // Room history
   socket.on('room history', messagesHistory => {
     messagesHistory.forEach(msg => displayMessage(msg));
   });
 
-  // Typing bubble
   socket.on('typing', users => {
     const others = users.filter(u => u !== username);
     typingBubble.style.display = others.length ? 'block' : 'none';
     typingBubble.textContent = others.length ? `${others.join(', ')} is typing...` : '';
   });
 
-  // Message status
   socket.on('message status', ({ id, status }) => {
     const msgDiv = document.querySelector(`.message[data-id='${id}'] .status`);
     if (msgDiv) msgDiv.textContent = statusIcon(status);
@@ -129,7 +116,8 @@ function displayMessage(msg) {
 
   const meta = document.createElement('div');
   meta.classList.add('meta');
-  meta.textContent = `[${new Date(msg.timestamp).toLocaleTimeString()}] ${msg.user}`;
+  const time = new Date(msg.timestamp).toLocaleTimeString();
+  meta.textContent = `[${time}] ${msg.user}`;
   div.appendChild(meta);
 
   div.appendChild(document.createTextNode(` ${msg.text}`));
@@ -184,15 +172,16 @@ function statusIcon(status) {
 
 // ---------------- Share Chat Link ----------------
 shareBtn.addEventListener('click', () => {
-  const roomName = room || prompt("Enter room name:");
-  const nickname = username || prompt("Enter your nickname:");
-  const fullURL = `${window.location.origin}/room/${encodeURIComponent(roomName)}?nickname=${encodeURIComponent(nickname)}`;
+  let nickname = username;
+  if (!nickname) nickname = prompt("Enter your username to join this room:", "Guest") || "Guest";
+  const fullURL = `${window.location.origin}/room/${encodeURIComponent(room)}?nickname=${encodeURIComponent(nickname)}`;
 
   try {
     navigator.clipboard.writeText(fullURL).then(() => {
       alert("Room link copied! Share it so others can join the same room.");
     });
   } catch (err) {
+    console.warn("Clipboard copy failed, fallback alert:", err);
     alert(`Room link: ${fullURL}`);
   }
 });

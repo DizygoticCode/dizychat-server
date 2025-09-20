@@ -44,7 +44,6 @@ body {
   border-right: 1px solid #ccc;
 }
 
-/* Header */
 header {
   display: flex;
   justify-content: space-between;
@@ -52,8 +51,6 @@ header {
   background: #0084ff;
   color: white;
   padding: 10px;
-  position: relative;
-  z-index: 10;
 }
 header .room-info {
   display: flex;
@@ -61,7 +58,6 @@ header .room-info {
 }
 header .room-info span {
   margin-right: 10px;
-  font-weight: bold;
 }
 
 /* Messages Area */
@@ -114,9 +110,9 @@ main#messages {
 /* Form */
 form#form {
   display: flex;
-  align-items: center;
   padding: 5px;
   background: #f0f0f0;
+  align-items: center;
   position: relative;
 }
 form#form input {
@@ -124,14 +120,17 @@ form#form input {
   padding: 10px;
   border-radius: 20px;
   border: 1px solid #ccc;
-  margin: 0 5px;
 }
 form#form button {
+  margin-left: 5px;
   border-radius: 50%;
   width: 40px;
   height: 40px;
   border: none;
   cursor: pointer;
+  font-size: 18px;
+  background: #0084ff;
+  color: white;
 }
 
 /* Emoji Picker */
@@ -144,19 +143,18 @@ form#form button {
   border: 1px solid #ccc;
   padding: 5px;
   position: absolute;
-  bottom: 55px; /* position above input */
-  left: 5px;
-  right: 5px;
-  border-radius: 10px;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
   z-index: 1000;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  border-radius: 8px;
 }
 .emoji-picker span {
-  padding: 5px 6px;
-  font-size: 1.2em;
+  padding: 5px;
+  margin: 2px;
   cursor: pointer;
-  border-radius: 5px;
+  font-size: 18px;
+  transition: background 0.2s;
 }
 .emoji-picker span:hover {
-  background-color: #f0f0f0;
+  background: #e0e0e0;
+  border-radius: 5px;
 }
