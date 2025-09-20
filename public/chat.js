@@ -1,4 +1,5 @@
-const usernamePrompt = document.getElementById('username-prompt');
+// ---------------- DOM Elements ----------------
+const usernamePrompt = document.getElementById('username-prompt'); 
 const joinBtn = document.getElementById('join-btn');
 const usernameInput = document.getElementById('username-input');
 const roomInput = document.getElementById('room-input');
@@ -11,7 +12,6 @@ const emojiPicker = document.getElementById('emoji-picker');
 const emojiBtn = document.getElementById('emoji-btn');
 const shareBtn = document.getElementById('share-btn');
 const toggleThemeBtn = document.getElementById('toggle-theme');
-const roomNameDisplay = document.getElementById('room-name');
 
 let username = '';
 let room = '';
@@ -20,35 +20,44 @@ let typingTimeout;
 let darkMode = false;
 
 // ---------------- Emoji Picker ----------------
+let emojiData = [];
 fetch('/emoji.json')
   .then(res => res.json())
   .then(data => {
-    data.forEach(e => {
-      const span = document.createElement('span');
-      span.textContent = e.char;
-      span.classList.add('emoji');
-      span.addEventListener('click', () => insertAtCursor(input, e.char));
-      emojiPicker.appendChild(span);
-    });
-  })
-  .catch(err => console.error("Failed to load emoji.json:", err));
+    emojiData = data;
+    populateEmojiPicker();
+  });
 
-emojiBtn.addEventListener('click', (e) => {
+function populateEmojiPicker(filter = '') {
+  emojiPicker.innerHTML = '';
+  const filtered = emojiData.filter(e => e.char.includes(filter) || e.name.includes(filter));
+  filtered.forEach(e => {
+    const span = document.createElement('span');
+    span.textContent = e.char;
+    span.addEventListener('click', () => insertAtCursor(input, e.char));
+    emojiPicker.appendChild(span);
+  });
+}
+
+// Insert emoji at cursor position
+function insertAtCursor(inputEl, text) {
+  const start = inputEl.selectionStart;
+  const end = inputEl.selectionEnd;
+  inputEl.value = inputEl.value.slice(0, start) + text + inputEl.value.slice(end);
+  inputEl.selectionStart = inputEl.selectionEnd = start + text.length;
+  inputEl.focus();
+}
+
+// Toggle emoji picker
+emojiBtn.addEventListener('click', e => {
   e.stopPropagation();
   emojiPicker.style.display = emojiPicker.style.display === 'none' ? 'flex' : 'none';
 });
 
+// Hide emoji picker on outside click
 document.addEventListener('click', () => {
   emojiPicker.style.display = 'none';
 });
-
-function insertAtCursor(input, text) {
-  const start = input.selectionStart;
-  const end = input.selectionEnd;
-  input.value = input.value.slice(0, start) + text + input.value.slice(end);
-  input.selectionStart = input.selectionEnd = start + text.length;
-  input.focus();
-}
 
 // ---------------- Theme Toggle ----------------
 toggleThemeBtn.addEventListener('click', () => {
@@ -57,50 +66,23 @@ toggleThemeBtn.addEventListener('click', () => {
   toggleThemeBtn.textContent = darkMode ? '☀️' : '🌙';
 });
 
-// ---------------- Auto-Join from URL ----------------
-window.addEventListener('DOMContentLoaded', () => {
-  const params = new URLSearchParams(window.location.search);
-  const urlUsername = params.get('username');
-  const urlRoom = params.get('room');
-
-  if (urlRoom) {
-    roomInput.value = urlRoom;
-  }
-  if (urlUsername) {
-    usernameInput.value = urlUsername;
-  }
-
-  // If both provided, skip prompt and join
-  if (urlUsername && urlRoom) {
-    joinChat(urlUsername, urlRoom);
-  }
-});
-
 // ---------------- Join Chat ----------------
 joinBtn.addEventListener('click', () => {
-  const enteredUser = usernameInput.value.trim();
-  const enteredRoom = roomInput.value.trim();
-
-  if (!enteredUser || !enteredRoom) return alert('Enter username and room');
-  joinChat(enteredUser, enteredRoom);
-});
-
-function joinChat(user, roomName) {
-  username = user;
-  room = roomName;
+  username = usernameInput.value.trim();
+  room = roomInput.value.trim();
+  if (!username || !room) return alert('Enter username and room');
 
   usernamePrompt.style.display = 'none';
   chatContainer.style.display = 'flex';
-  roomNameDisplay.textContent = room;
   input.focus();
+
+  document.getElementById('room-name').textContent = room;
 
   socket = io();
   socket.emit('join room', room);
-
-  // Request room history
   socket.emit('get history', room);
 
-  // Typing
+  // Typing detection
   input.addEventListener('input', () => {
     socket.emit('typing', username);
     clearTimeout(typingTimeout);
@@ -137,7 +119,7 @@ function joinChat(user, roomName) {
     const msgDiv = document.querySelector(`.message[data-id='${id}'] .status`);
     if (msgDiv) msgDiv.textContent = statusIcon(status);
   });
-}
+});
 
 // ---------------- Display Messages ----------------
 function displayMessage(msg) {
@@ -145,40 +127,31 @@ function displayMessage(msg) {
   div.classList.add('message', msg.user === username ? 'self' : 'other');
   div.dataset.id = msg._id || msg.id;
 
-  // Meta (timestamp + username)
   const meta = document.createElement('div');
   meta.classList.add('meta');
-  const time = new Date(msg.timestamp).toLocaleTimeString();
-  meta.textContent = `[${time}] ${msg.user}`;
+  meta.textContent = `[${new Date(msg.timestamp).toLocaleTimeString()}] ${msg.user}`;
   div.appendChild(meta);
 
-  // Message text
   div.appendChild(document.createTextNode(` ${msg.text}`));
 
-  // Status ticks
   const statusSpan = document.createElement('span');
   statusSpan.classList.add('status');
   statusSpan.textContent = statusIcon(msg.status || 'sent');
   div.appendChild(statusSpan);
 
-  // Reaction button
   const reactBtn = document.createElement('span');
   reactBtn.classList.add('react-btn');
   reactBtn.textContent = '😊';
   reactBtn.addEventListener('click', () => addReaction(msg._id || msg.id, '😊'));
   div.appendChild(reactBtn);
 
-  // Reactions container
   const reactionsDiv = document.createElement('div');
   reactionsDiv.classList.add('reactions');
   div.appendChild(reactionsDiv);
 
   messages.appendChild(div);
-
-  // Smooth scroll to the latest message
   div.scrollIntoView({ behavior: 'smooth', block: 'end' });
 
-  // Mark as read if not self
   if (msg.user !== username) socket.emit('read message', { room, id: msg._id || msg.id });
 }
 
@@ -211,13 +184,15 @@ function statusIcon(status) {
 
 // ---------------- Share Chat Link ----------------
 shareBtn.addEventListener('click', () => {
-  const chatURL = window.location.href;
+  const roomName = room || prompt("Enter room name:");
+  const nickname = username || prompt("Enter your nickname:");
+  const fullURL = `${window.location.origin}/room/${encodeURIComponent(roomName)}?nickname=${encodeURIComponent(nickname)}`;
 
-  navigator.clipboard.writeText(chatURL)
-    .then(() => {
-      alert('Chat link copied! Share it to invite others to this room.');
-    })
-    .catch(() => {
-      alert(`Copy failed. Here’s the link:\n${chatURL}`);
+  try {
+    navigator.clipboard.writeText(fullURL).then(() => {
+      alert("Room link copied! Share it so others can join the same room.");
     });
+  } catch (err) {
+    alert(`Room link: ${fullURL}`);
+  }
 });
