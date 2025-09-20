@@ -1,4 +1,4 @@
-const usernamePrompt = document.getElementById('username-prompt'); 
+const usernamePrompt = document.getElementById('username-prompt');
 const joinBtn = document.getElementById('join-btn');
 const usernameInput = document.getElementById('username-input');
 const roomInput = document.getElementById('room-input');
@@ -11,7 +11,7 @@ const emojiPicker = document.getElementById('emoji-picker');
 const emojiBtn = document.getElementById('emoji-btn');
 const shareBtn = document.getElementById('share-btn');
 const toggleThemeBtn = document.getElementById('toggle-theme');
-const roomNameEl = document.getElementById('room-name');
+const roomNameDisplay = document.getElementById('room-name');
 
 let username = '';
 let room = '';
@@ -20,7 +20,7 @@ let typingTimeout;
 let darkMode = false;
 
 // ---------------- Emoji Picker ----------------
-fetch('emoji.json')
+fetch('/emoji.json')
   .then(res => res.json())
   .then(data => {
     data.forEach(e => {
@@ -30,11 +30,12 @@ fetch('emoji.json')
       span.addEventListener('click', () => insertAtCursor(input, e.char));
       emojiPicker.appendChild(span);
     });
-  });
+  })
+  .catch(err => console.error("Failed to load emoji.json:", err));
 
 emojiBtn.addEventListener('click', (e) => {
   e.stopPropagation();
-  emojiPicker.style.display = emojiPicker.style.display === 'flex' ? 'none' : 'flex';
+  emojiPicker.style.display = emojiPicker.style.display === 'none' ? 'flex' : 'none';
 });
 
 document.addEventListener('click', () => {
@@ -56,17 +57,42 @@ toggleThemeBtn.addEventListener('click', () => {
   toggleThemeBtn.textContent = darkMode ? '☀️' : '🌙';
 });
 
+// ---------------- Auto-Join from URL ----------------
+window.addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(window.location.search);
+  const urlUsername = params.get('username');
+  const urlRoom = params.get('room');
+
+  if (urlRoom) {
+    roomInput.value = urlRoom;
+  }
+  if (urlUsername) {
+    usernameInput.value = urlUsername;
+  }
+
+  // If both provided, skip prompt and join
+  if (urlUsername && urlRoom) {
+    joinChat(urlUsername, urlRoom);
+  }
+});
+
 // ---------------- Join Chat ----------------
 joinBtn.addEventListener('click', () => {
-  username = usernameInput.value.trim();
-  room = roomInput.value.trim();
-  if (!username || !room) return alert('Enter username and room');
+  const enteredUser = usernameInput.value.trim();
+  const enteredRoom = roomInput.value.trim();
+
+  if (!enteredUser || !enteredRoom) return alert('Enter username and room');
+  joinChat(enteredUser, enteredRoom);
+});
+
+function joinChat(user, roomName) {
+  username = user;
+  room = roomName;
 
   usernamePrompt.style.display = 'none';
   chatContainer.style.display = 'flex';
+  roomNameDisplay.textContent = room;
   input.focus();
-
-  roomNameEl.textContent = room;
 
   socket = io();
   socket.emit('join room', room);
@@ -74,7 +100,7 @@ joinBtn.addEventListener('click', () => {
   // Request room history
   socket.emit('get history', room);
 
-  // Typing events
+  // Typing
   input.addEventListener('input', () => {
     socket.emit('typing', username);
     clearTimeout(typingTimeout);
@@ -111,7 +137,7 @@ joinBtn.addEventListener('click', () => {
     const msgDiv = document.querySelector(`.message[data-id='${id}'] .status`);
     if (msgDiv) msgDiv.textContent = statusIcon(status);
   });
-});
+}
 
 // ---------------- Display Messages ----------------
 function displayMessage(msg) {
@@ -185,7 +211,13 @@ function statusIcon(status) {
 
 // ---------------- Share Chat Link ----------------
 shareBtn.addEventListener('click', () => {
-  const fullURL = `${window.location.origin}/room/${encodeURIComponent(room)}?nickname=${encodeURIComponent(username)}`;
-  navigator.clipboard.writeText(fullURL);
-  alert('Room link copied!');
+  const chatURL = window.location.href;
+
+  navigator.clipboard.writeText(chatURL)
+    .then(() => {
+      alert('Chat link copied! Share it to invite others to this room.');
+    })
+    .catch(() => {
+      alert(`Copy failed. Here’s the link:\n${chatURL}`);
+    });
 });
