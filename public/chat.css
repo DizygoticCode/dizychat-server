@@ -3,8 +3,9 @@ body {
   margin: 0;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   background-color: #f5f5f5;
+  color: #000;
 }
-.dark body {
+body.dark {
   background-color: #2c2f33;
   color: #eee;
 }
@@ -29,6 +30,9 @@ body {
   margin-top: 10px;
   cursor: pointer;
   border-radius: 5px;
+  background: #0084ff;
+  color: #fff;
+  border: none;
 }
 
 /* Chat Page */
@@ -42,6 +46,10 @@ body {
   background: #fff;
   border-left: 1px solid #ccc;
   border-right: 1px solid #ccc;
+}
+body.dark .chat-page {
+  background: #23272a;
+  border-color: #444;
 }
 
 header {
@@ -67,6 +75,9 @@ main#messages {
   padding: 10px;
   background: #e5ddd5;
 }
+body.dark main#messages {
+  background: #2c2f33;
+}
 .message {
   margin-bottom: 10px;
   max-width: 75%;
@@ -78,14 +89,25 @@ main#messages {
   margin-left: auto;
   background: #dcf8c6;
 }
+body.dark .message.self {
+  background: #3ba55d;
+  color: #fff;
+}
 .message.other {
   margin-right: auto;
   background: #fff;
+}
+body.dark .message.other {
+  background: #40444b;
+  color: #fff;
 }
 .message .meta {
   font-size: 0.7em;
   color: #555;
   margin-bottom: 3px;
+}
+body.dark .message .meta {
+  color: #bbb;
 }
 .message .status {
   font-size: 0.7em;
@@ -105,18 +127,31 @@ main#messages {
   color: #888;
   padding: 5px 10px;
 }
+body.dark #typing-bubble {
+  color: #aaa;
+}
 
 /* Form */
 form#form {
   display: flex;
   padding: 5px;
   background: #f0f0f0;
+  align-items: center;
+}
+body.dark form#form {
+  background: #2c2f33;
 }
 form#form input {
   flex: 1;
   padding: 10px;
   border-radius: 20px;
   border: 1px solid #ccc;
+  background: #fff;
+}
+body.dark form#form input {
+  background: #40444b;
+  border: 1px solid #555;
+  color: #eee;
 }
 form#form button {
   margin-left: 5px;
@@ -125,21 +160,44 @@ form#form button {
   height: 40px;
   border: none;
   cursor: pointer;
+  background: #0084ff;
+  color: #fff;
+  font-size: 16px;
+}
+form#form button:hover {
+  opacity: 0.9;
 }
 
 /* Emoji Picker */
 .emoji-picker {
   display: none;
   flex-wrap: wrap;
-  max-height: 150px;
+  max-height: 200px;
   overflow-y: auto;
   background: #fff;
   border: 1px solid #ccc;
   padding: 5px;
   position: absolute;
+  bottom: 60px;
+  left: 10px;
+  width: 250px;
+  border-radius: 8px;
+  box-shadow: 0px 2px 6px rgba(0,0,0,0.2);
   z-index: 1000;
+}
+body.dark .emoji-picker {
+  background: #2c2f33;
+  border-color: #555;
 }
 .emoji-picker span {
   padding: 5px;
   cursor: pointer;
+  font-size: 18px;
+}
+.emoji-picker span:hover {
+  background: #eee;
+  border-radius: 4px;
+}
+body.dark .emoji-picker span:hover {
+  background: #444;
 }
