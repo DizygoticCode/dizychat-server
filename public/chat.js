@@ -28,22 +28,32 @@ if (prefillRoom) roomInput.value = prefillRoom;
 
 // ---------------- Join Chat ----------------
 joinBtn.addEventListener("click", () => {
-  const username = usernameInput.value.trim();
-  const room = roomInput.value.trim();
+  let username = usernameInput.value.trim();
+  let room = roomInput.value.trim();
 
-  if (!username || !room) return alert("Please enter both username and room name.");
+  // Use URL params if input is empty
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlNickname = urlParams.get("nickname");
+  const urlRoom = urlParams.get("room");
+
+  if (!username) username = urlNickname || prompt("Enter your username:", "Guest") || "Guest";
+  if (!room) room = urlRoom || prompt("Enter room name:", "general") || "general";
 
   currentUser = username;
   currentRoom = room;
 
   usernamePrompt.style.display = "none";
   chatContainer.style.display = "flex";
-  roomNameSpan.textContent = room;
+  roomNameSpan.textContent = currentRoom;
 
-  // ---------------- Socket.IO ----------------
+  // Initialize socket connection
   socket = io();
-  socket.emit("join room", room);
-  socket.emit("get history", room);
+  socket.emit("join room", currentRoom);
+  socket.emit("get history", currentRoom);
+
+  input.focus();
+});
+
 
   // Typing indicator
   input.addEventListener("input", () => {
