@@ -20,17 +20,15 @@ let socket;
 let typingTimeout;
 let darkMode = false;
 
-// ---------------- Prefill Room from URL ----------------
+// ---------------- Landing Page Prefill ----------------
 const urlParams = new URLSearchParams(window.location.search);
 const prefillRoom = urlParams.get("room");
-if (prefillRoom) {
-  roomInput.value = prefillRoom;
-}
+if (prefillRoom) roomInput.value = prefillRoom;
 
 // ---------------- Join Chat ----------------
 joinBtn.addEventListener("click", () => {
-  const username = usernameInput.value.trim() || prompt("Enter your username:", "Guest");
-  const room = roomInput.value.trim() || prompt("Enter a room name:", "general");
+  const username = usernameInput.value.trim();
+  const room = roomInput.value.trim();
 
   if (!username || !room) return alert("Please enter both username and room name.");
 
@@ -39,12 +37,12 @@ joinBtn.addEventListener("click", () => {
 
   usernamePrompt.style.display = "none";
   chatContainer.style.display = "flex";
-  roomNameSpan.textContent = currentRoom;
+  roomNameSpan.textContent = room;
 
   // ---------------- Socket.IO ----------------
   socket = io();
-  socket.emit("join room", currentRoom);
-  socket.emit("get history", currentRoom);
+  socket.emit("join room", room);
+  socket.emit("get history", room);
 
   // Typing indicator
   input.addEventListener("input", () => {
@@ -101,16 +99,6 @@ function displayMessage(msg) {
   statusSpan.textContent = statusIcon(msg.status || 'sent');
   div.appendChild(statusSpan);
 
-  const reactBtn = document.createElement('span');
-  reactBtn.classList.add('react-btn');
-  reactBtn.textContent = '😊';
-  reactBtn.addEventListener("click", () => addReaction(msg._id || msg.id, '😊'));
-  div.appendChild(reactBtn);
-
-  const reactionsDiv = document.createElement('div');
-  reactionsDiv.classList.add('reactions');
-  div.appendChild(reactionsDiv);
-
   messages.appendChild(div);
   div.scrollIntoView({ behavior: 'smooth', block: 'end' });
 
@@ -118,8 +106,7 @@ function displayMessage(msg) {
 }
 
 // ---------------- Emoji Picker ----------------
-// ---------------- Emoji Picker ----------------
-fetch('/emoji.json')   // absolute path (important!)
+fetch('/emoji.json')
   .then(res => res.json())
   .then(data => {
     emojiPicker.innerHTML = ""; // clear existing
@@ -133,6 +120,11 @@ fetch('/emoji.json')   // absolute path (important!)
   })
   .catch(err => console.error("Emoji fetch error:", err));
 
+emojiBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  emojiPicker.style.display = emojiPicker.style.display === 'none' ? 'flex' : 'none';
+});
+
 document.addEventListener('click', () => emojiPicker.style.display = 'none');
 
 function insertAtCursor(input, text) {
@@ -141,23 +133,6 @@ function insertAtCursor(input, text) {
   input.value = input.value.slice(0, start) + text + input.value.slice(end);
   input.selectionStart = input.selectionEnd = start + text.length;
   input.focus();
-}
-
-// ---------------- Emoji Reactions ----------------
-function addReaction(msgId, emoji) {
-  const msgDiv = document.querySelector(`.message[data-id='${msgId}'] .reactions`);
-  if (!msgDiv) return;
-
-  const existing = Array.from(msgDiv.children).find(span => span.textContent.startsWith(emoji));
-  if (existing) {
-    existing.dataset.count = parseInt(existing.dataset.count || '1') + 1;
-    existing.textContent = `${emoji} ${existing.dataset.count}`;
-  } else {
-    const span = document.createElement('span');
-    span.textContent = emoji;
-    span.dataset.count = 1;
-    msgDiv.appendChild(span);
-  }
 }
 
 // ---------------- Status Icon ----------------
@@ -172,7 +147,7 @@ function statusIcon(status) {
 
 // ---------------- Share Chat Link ----------------
 shareBtn.addEventListener("click", () => {
-  const nickname = currentUser || prompt("Enter your nickname to share the room:", "Guest");
+  const nickname = currentUser || prompt("Enter your nickname to share the room:", "Guest") || "Guest";
   const fullURL = `${window.location.origin}?room=${encodeURIComponent(currentRoom)}&nickname=${encodeURIComponent(nickname)}`;
   navigator.clipboard.writeText(fullURL)
     .then(() => alert("Room link copied! Share it to join the same room."))
