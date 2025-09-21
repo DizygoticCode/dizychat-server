@@ -24,9 +24,7 @@ let frequentlyUsed = [];
 // ---------------- Landing Page Prefill ----------------
 const urlParams = new URLSearchParams(window.location.search);
 const prefillRoom = urlParams.get("room");
-if (prefillRoom) {
-  roomInput.value = prefillRoom;
-}
+if (prefillRoom) roomInput.value = prefillRoom;
 
 // ---------------- Join Chat ----------------
 joinBtn.addEventListener("click", () => {
@@ -119,24 +117,49 @@ function displayMessage(msg) {
 }
 
 // ---------------- Emoji Picker ----------------
-fetch('emoji.json')
+const emojiDataURL = '/emoji.json'; // your existing emoji.json in public
+
+fetch(emojiDataURL)
   .then(res => res.json())
   .then(data => {
     data.forEach(e => {
       const span = document.createElement('span');
       span.textContent = e.char;
       span.classList.add('emoji');
-      span.addEventListener("click", () => insertAtCursor(input, e.char));
+      span.title = e.name;
+      span.addEventListener('click', () => insertAtCursor(input, e.char));
       emojiPicker.appendChild(span);
     });
-  });
+  })
+  .catch(err => console.error("Failed to load emojis:", err));
 
+// Toggle picker visibility
 emojiBtn.addEventListener('click', e => {
   e.stopPropagation();
-  emojiPicker.style.display = emojiPicker.style.display === 'none' ? 'flex' : 'none';
+  emojiPicker.style.display = emojiPicker.style.display === 'flex' ? 'none' : 'flex';
+  positionEmojiPicker();
 });
 
-document.addEventListener('click', () => emojiPicker.style.display = 'none');
+// Keep picker open when clicking inside input
+input.addEventListener('click', e => e.stopPropagation());
+
+// Close picker when clicking outside
+document.addEventListener('click', () => {
+  emojiPicker.style.display = 'none';
+});
+
+// Reposition picker above input
+function positionEmojiPicker() {
+  const rect = input.getBoundingClientRect();
+  emojiPicker.style.bottom = `${window.innerHeight - rect.top + 5}px`;
+  emojiPicker.style.left = `${rect.left}px`;
+  emojiPicker.style.width = `${rect.width}px`;
+}
+
+// Update position on window resize
+window.addEventListener('resize', () => {
+  if (emojiPicker.style.display === 'flex') positionEmojiPicker();
+});
 
 function insertAtCursor(input, text) {
   const start = input.selectionStart;
@@ -145,6 +168,7 @@ function insertAtCursor(input, text) {
   input.selectionStart = input.selectionEnd = start + text.length;
   input.focus();
 }
+
 
 // ---------------- Emoji Reactions ----------------
 function addReaction(msgId, emoji) {
@@ -176,7 +200,8 @@ function statusIcon(status) {
 // ---------------- Share Chat Link ----------------
 shareBtn.addEventListener("click", () => {
   const nickname = currentUser || prompt("Enter your nickname to share the room:", "Guest") || "Guest";
-  const fullURL = `${window.location.origin}?room=${encodeURIComponent(currentRoom)}&nickname=${encodeURIComponent(nickname)}`;
+  const room = currentRoom || prompt("Enter room name:", "general") || "general";
+  const fullURL = `${window.location.origin}?room=${encodeURIComponent(room)}&nickname=${encodeURIComponent(nickname)}`;
   navigator.clipboard.writeText(fullURL)
     .then(() => alert("Room link copied! Share it to join the same room."))
     .catch(() => alert(`Room link: ${fullURL}`));

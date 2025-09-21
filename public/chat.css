@@ -1,15 +1,16 @@
-/* Reset & Base */
+/* ---------------- Reset & Base ---------------- */
 body {
   margin: 0;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   background-color: #f5f5f5;
+  color: #000;
 }
-.dark body {
+body.dark {
   background-color: #2c2f33;
   color: #eee;
 }
 
-/* Landing Page */
+/* ---------------- Landing Page ---------------- */
 .landing {
   display: flex;
   flex-direction: column;
@@ -29,9 +30,12 @@ body {
   margin-top: 10px;
   cursor: pointer;
   border-radius: 5px;
+  background-color: #0084ff;
+  color: #fff;
+  border: none;
 }
 
-/* Chat Page */
+/* ---------------- Chat Page ---------------- */
 .chat-page {
   display: flex;
   flex-direction: column;
@@ -51,30 +55,46 @@ header {
   background: #0084ff;
   color: white;
   padding: 10px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }
 header .room-info {
   display: flex;
   align-items: center;
 }
 header .room-info span {
+  font-weight: bold;
   margin-right: 10px;
 }
+header button {
+  background: transparent;
+  border: none;
+  font-size: 1.2em;
+  cursor: pointer;
+  margin-left: 5px;
+}
 
-/* Messages Area */
+/* ---------------- Messages Area ---------------- */
 main#messages {
   flex: 1;
   overflow-y: auto;
   padding: 10px;
   background: #e5ddd5;
 }
+body.dark main#messages {
+  background: #36393f;
+}
+
 .message {
   margin-bottom: 10px;
   max-width: 75%;
-  padding: 8px;
+  padding: 8px 10px;
   border-radius: 8px;
   position: relative;
   word-wrap: break-word;
 }
+
 .message.self {
   margin-left: auto;
   background: #dcf8c6;
@@ -83,11 +103,24 @@ main#messages {
   margin-right: auto;
   background: #fff;
 }
+body.dark .message.self {
+  background: #2f9739;
+  color: #fff;
+}
+body.dark .message.other {
+  background: #40444b;
+  color: #fff;
+}
+
 .message .meta {
   font-size: 0.7em;
   color: #555;
   margin-bottom: 3px;
 }
+body.dark .message .meta {
+  color: #ccc;
+}
+
 .message .status {
   font-size: 0.7em;
   color: green;
@@ -95,112 +128,88 @@ main#messages {
   bottom: 2px;
   right: 5px;
 }
+
 .message .reactions span {
   margin-right: 3px;
   cursor: pointer;
+  font-size: 0.9em;
 }
 
-/* Typing */
+/* ---------------- Typing ---------------- */
 #typing-bubble {
   font-size: 0.8em;
   color: #888;
   padding: 5px 10px;
 }
 
-/* Form */
+/* ---------------- Form ---------------- */
 form#form {
   display: flex;
   padding: 5px;
   background: #f0f0f0;
-  align-items: center;
   position: relative;
+  align-items: center;
 }
+body.dark form#form {
+  background: #2f3136;
+}
+
 form#form input {
   flex: 1;
   padding: 10px;
   border-radius: 20px;
   border: 1px solid #ccc;
+  margin: 0 5px;
 }
+body.dark form#form input {
+  border: 1px solid #555;
+  background: #40444b;
+  color: #fff;
+}
+
 form#form button {
-  margin-left: 5px;
   border-radius: 50%;
   width: 40px;
   height: 40px;
   border: none;
   cursor: pointer;
-  font-size: 18px;
   background: #0084ff;
-  color: white;
+  color: #fff;
+  font-size: 1.2em;
 }
 
-/* Emoji Picker Styling - WhatsApp/Discord look */
+/* ---------------- Emoji Picker ---------------- */
 .emoji-picker {
-  background: #fff;
-  border: 1px solid #ccc;
-  border-radius: 12px;     /* smooth rounded corners */
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); /* subtle floating effect */
-  padding: 8px;
   display: none;
-  flex-wrap: wrap;
+  position: absolute;
+  bottom: 60px; /* above input */
+  left: 10px;
+  right: 10px;
   max-height: 200px;
   overflow-y: auto;
-  position: absolute;
-  bottom: 60px; /* just above input */
-  right: 10px;
+  background: #fff;
+  border: 1px solid #ccc;
+  padding: 5px;
+  border-radius: 8px;
+  flex-wrap: wrap;
   z-index: 1000;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+}
+body.dark .emoji-picker {
+  background: #40444b;
+  border: 1px solid #555;
 }
 
 .emoji-picker span {
-  font-size: 20px;
-  padding: 6px;
+  padding: 5px;
   cursor: pointer;
-  border-radius: 6px;
-  transition: background 0.2s;
+  font-size: 1.2em;
+  margin: 2px;
+  border-radius: 4px;
 }
-
 .emoji-picker span:hover {
-  background: #f0f0f0;
+  background: #e1e1e1;
 }
-
-/* Dark Mode for Emoji Picker */
-.dark .emoji-picker {
-  background: #2f3136;
-  border: 1px solid #444;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-}
-
-.dark .emoji-picker span:hover {
-  background: #3a3d42;
-}
-/* Emoji Picker Animation */
-.emoji-picker {
-  opacity: 0;
-  transform: translateY(10px);
-  transition: opacity 0.25s ease, transform 0.25s ease;
-  pointer-events: none; /* prevent interaction when hidden */
-}
-
-.emoji-picker.show {
-  display: flex;
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
-}
-
-
-/* Dark Mode adjustments */
-body.dark .emoji-picker {
-  background: #2c2f33;
-  border-color: #444;
-}
-
 body.dark .emoji-picker span:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-/* Mobile Responsive Emoji Picker */
-@media (max-width: 600px) {
-  .emoji-picker {
-    max-width: 90vw;
-    right: 5%;
-  }
+  background: #50555d;
 }
