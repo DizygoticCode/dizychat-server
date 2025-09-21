@@ -121,6 +121,7 @@ function displayMessage(msg) {
 fetch('/emoji.json')
   .then(res => res.json())
   .then(data => {
+	  console.log("Loaded emojis:", emojis); // ✅ Debug log
     data.forEach(e => {
       const span = document.createElement('span');
       span.textContent = e.char;
@@ -129,8 +130,7 @@ fetch('/emoji.json')
       emojiPicker.appendChild(span);
     });
   })
-  .catch(err => console.error("Emoji fetch error:", err));
-
+  .catch(() => console.warn("Emoji JSON not found or invalid"));
 
 emojiBtn.addEventListener('click', e => {
   e.stopPropagation();
