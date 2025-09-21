@@ -11,39 +11,52 @@ body.dark {
 }
 
 /* ---------------- Landing Page ---------------- */
-/* ---------------- Landing Page Tweaks ---------------- */
+.landing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background: linear-gradient(135deg, #2c2f33, #23272a, #2f3136); /* Smooth Discord-style gradient */
+  color: #fff;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  transition: background 0.3s ease;
+}
+
+.landing h2 {
+  font-size: 2rem;
+  margin-bottom: 20px;
+  text-shadow: 0 2px 6px rgba(0,0,0,0.4);
+}
+
 .landing input {
-  margin: 10px 0;
-  padding: 12px 16px;
-  width: 280px;
-  border-radius: 25px;
+  margin: 8px 0;
+  padding: 12px 15px;
+  width: 260px;
+  border-radius: 8px;
   border: none;
   outline: none;
   font-size: 1rem;
-  background: #40444b; /* Discord-style input */
+  background: #40444b;
   color: #fff;
-  box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
-  transition: background 0.2s ease, transform 0.15s ease;
 }
 
-.landing input:focus {
-  background: #5865f2;
-  transform: scale(1.02);
+.landing input::placeholder {
+  color: #b9bbbe;
 }
 
 .landing button {
   padding: 12px 20px;
   margin-top: 12px;
-  width: 280px;
-  border-radius: 25px;
+  width: 260px;
+  border-radius: 8px;
   border: none;
   cursor: pointer;
   font-size: 1rem;
   font-weight: 600;
-  background: #7289da; /* Discord accent */
+  background: #7289da;
   color: #fff;
   transition: background 0.2s ease, transform 0.15s ease;
-  box-shadow: 0 3px 6px rgba(0,0,0,0.3);
 }
 
 .landing button:hover {
@@ -51,13 +64,38 @@ body.dark {
   transform: scale(1.05);
 }
 
-.landing p {
-  margin-bottom: 15px;
-  font-size: 1rem;
-  color: #b9bbbe;
-  text-align: center;
+.dark .landing {
+  background: #23272a;
 }
 
+.dark .landing input {
+  background: #2f3136;
+  color: #fff;
+}
+
+.dark .landing input::placeholder {
+  color: #b9bbbe;
+}
+
+.dark .landing button {
+  background: #5865f2;
+}
+
+.dark .landing button:hover {
+  background: #4752c4;
+}
+
+/* Landing Logo */
+.landing .logo {
+  width: 90px;
+  height: 90px;
+  object-fit: contain;
+  margin-bottom: 20px;
+  border-radius: 20%;
+  box-shadow: 0px 4px 12px rgba(0,0,0,0.2);
+  background: white;
+  padding: 10px;
+}
 
 /* ---------------- Chat Page ---------------- */
 .chat-page {
@@ -78,14 +116,11 @@ body.dark {
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  background: linear-gradient(135deg, #2c2f33, #23272a); /* Discord-like dark */
+  background: linear-gradient(135deg, #2f3136, #23272a); 
   color: #fff;
   font-weight: 600;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0px 2px 6px rgba(0, 0, 0, 0.2);
-  position: sticky;
-  top: 0;
-  z-index: 10;
 }
 
 .chat-page header .room-info {
@@ -95,7 +130,6 @@ body.dark {
   gap: 8px;
 }
 
-/* Optional avatar circle */
 .chat-page header .room-info .avatar {
   width: 32px;
   height: 32px;
@@ -109,7 +143,6 @@ body.dark {
   font-size: 0.9rem;
 }
 
-/* Optional online indicator */
 .chat-page header .room-info .online-dot {
   width: 8px;
   height: 8px;
@@ -131,7 +164,7 @@ body.dark {
 
 .chat-page header button:hover {
   transform: scale(1.2);
-  color: #00bfa6; /* WhatsApp accent hover */
+  color: #7289da;
 }
 
 /* Light mode header */
@@ -154,16 +187,18 @@ body:not(.dark) .chat-page header .room-info .online-dot {
   border: 2px solid #f9f9f9;
 }
 
-/* ---------------- Messages Area ---------------- */
+/* Messages Area */
 main#messages {
   flex: 1;
   overflow-y: auto;
   padding: 10px;
   background: #e5ddd5;
 }
+
 body.dark main#messages {
   background: #1e1f22;
 }
+
 .message {
   margin-bottom: 10px;
   max-width: 75%;
@@ -172,28 +207,35 @@ body.dark main#messages {
   position: relative;
   word-wrap: break-word;
 }
+
 .message.self {
   margin-left: auto;
   background: #dcf8c6;
 }
+
 body.dark .message.self {
   background: #056162;
 }
+
 .message.other {
   margin-right: auto;
   background: #fff;
 }
+
 body.dark .message.other {
   background: #2c2f33;
 }
+
 .message .meta {
   font-size: 0.7em;
   color: #555;
   margin-bottom: 3px;
 }
+
 body.dark .message .meta {
   color: #ccc;
 }
+
 .message .status {
   font-size: 0.7em;
   color: green;
@@ -201,41 +243,46 @@ body.dark .message .meta {
   bottom: 2px;
   right: 5px;
 }
+
 .message .reactions span {
   margin-right: 3px;
   cursor: pointer;
 }
 
-/* ---------------- Typing ---------------- */
+/* Typing */
 #typing-bubble {
   font-size: 0.8em;
   color: #888;
   padding: 5px 10px;
 }
 
-/* ---------------- Form ---------------- */
+/* Form */
 form#form {
   display: flex;
   padding: 5px;
   background: #f0f0f0;
-  align-items: center;
   position: relative;
+  align-items: center;
   gap: 5px;
 }
+
 body.dark form#form {
   background: #1e1f22;
 }
+
 form#form input {
   flex: 1;
   padding: 10px 15px;
   border-radius: 20px;
   border: 1px solid #ccc;
 }
+
 body.dark form#form input {
   background: #2c2f33;
   color: #eee;
   border: 1px solid #555;
 }
+
 form#form button {
   margin-left: 5px;
   border-radius: 50%;
@@ -248,12 +295,12 @@ form#form button {
   font-size: 1.2em;
 }
 
-/* ---------------- Emoji Picker ---------------- */
+/* Emoji Picker */
 .emoji-picker {
   display: none;
   position: absolute;
-  bottom: 55px; /* above form buttons */
-  right: 10px; /* near emoji button */
+  bottom: 50px;
+  right: 50px;
   width: 250px;
   max-height: 200px;
   background: #fff;
@@ -263,25 +310,27 @@ form#form button {
   overflow-y: auto;
   flex-wrap: wrap;
   z-index: 1000;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-  display: flex;
-  flex-wrap: wrap;
   gap: 5px;
 }
+
 .emoji-picker span {
   font-size: 1.4rem;
   cursor: pointer;
   transition: transform 0.15s ease;
 }
+
 .emoji-picker span:hover {
   transform: scale(1.3);
   background: #f0f0f0;
   border-radius: 5px;
 }
-body.dark .emoji-picker {
-  background: #2c2f33;
-  border-color: #444;
-}
-body.dark .emoji-picker span:hover {
-  background: #444;
+
+/* Ensure chat form is relative for absolute picker */
+.chat-page form#form {
+  position: relative;
+  display: flex;
+  padding: 5px;
+  background: #f0f0f0;
+  align-items: center;
+  gap: 5px;
 }
