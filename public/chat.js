@@ -118,10 +118,11 @@ function displayMessage(msg) {
 }
 
 // ---------------- Emoji Picker ----------------
-fetch('/emoji.json')
+// ---------------- Emoji Picker ----------------
+fetch('/emoji.json')   // absolute path (important!)
   .then(res => res.json())
   .then(data => {
-	  console.log("Loaded emojis:", emojis); // ✅ Debug log
+    emojiPicker.innerHTML = ""; // clear existing
     data.forEach(e => {
       const span = document.createElement('span');
       span.textContent = e.char;
@@ -130,12 +131,7 @@ fetch('/emoji.json')
       emojiPicker.appendChild(span);
     });
   })
-  .catch(() => console.warn("Emoji JSON not found or invalid"));
-
-emojiBtn.addEventListener('click', e => {
-  e.stopPropagation();
-  emojiPicker.style.display = emojiPicker.style.display === 'none' ? 'flex' : 'none';
-});
+  .catch(err => console.error("Emoji fetch error:", err));
 
 document.addEventListener('click', () => emojiPicker.style.display = 'none');
 
