@@ -133,36 +133,60 @@ form#form button {
   color: white;
 }
 
-/* Emoji Picker */
+/* Emoji Picker Styling - WhatsApp/Discord look */
 .emoji-picker {
-  display: none;
-  flex-wrap: wrap;
-  position: absolute;
-  bottom: 60px; /* sits above input form */
-  left: 10px;
-  width: 260px;
-  max-height: 200px;
-  overflow-y: auto;
   background: #fff;
   border: 1px solid #ccc;
-  border-radius: 8px;
+  border-radius: 12px;     /* smooth rounded corners */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); /* subtle floating effect */
   padding: 8px;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-  z-index: 2000;
+  display: none;
+  flex-wrap: wrap;
+  max-height: 200px;
+  overflow-y: auto;
+  position: absolute;
+  bottom: 60px; /* just above input */
+  right: 10px;
+  z-index: 1000;
 }
 
 .emoji-picker span {
   font-size: 20px;
   padding: 6px;
-  margin: 2px;
   cursor: pointer;
   border-radius: 6px;
   transition: background 0.2s;
 }
 
 .emoji-picker span:hover {
-  background: rgba(0, 0, 0, 0.1);
+  background: #f0f0f0;
 }
+
+/* Dark Mode for Emoji Picker */
+.dark .emoji-picker {
+  background: #2f3136;
+  border: 1px solid #444;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.dark .emoji-picker span:hover {
+  background: #3a3d42;
+}
+/* Emoji Picker Animation */
+.emoji-picker {
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  pointer-events: none; /* prevent interaction when hidden */
+}
+
+.emoji-picker.show {
+  display: flex;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
 
 /* Dark Mode adjustments */
 body.dark .emoji-picker {
@@ -172,4 +196,11 @@ body.dark .emoji-picker {
 
 body.dark .emoji-picker span:hover {
   background: rgba(255, 255, 255, 0.1);
+}
+/* Mobile Responsive Emoji Picker */
+@media (max-width: 600px) {
+  .emoji-picker {
+    max-width: 90vw;
+    right: 5%;
+  }
 }
