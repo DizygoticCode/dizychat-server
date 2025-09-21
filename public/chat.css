@@ -11,51 +11,39 @@ body.dark {
 }
 
 /* ---------------- Landing Page ---------------- */
-.landing {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100vh;
-  background: linear-gradient(135deg, #2f3136, #23272a); /* Discord-style dark gradient */
-  color: #fff;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-}
-
-.landing h2 {
-  font-size: 2rem;
-  margin-bottom: 20px;
-  text-shadow: 0 2px 6px rgba(0,0,0,0.4);
-}
-
+/* ---------------- Landing Page Tweaks ---------------- */
 .landing input {
-  margin: 8px 0;
-  padding: 12px 15px;
-  width: 260px;
-  border-radius: 8px;
+  margin: 10px 0;
+  padding: 12px 16px;
+  width: 280px;
+  border-radius: 25px;
   border: none;
   outline: none;
   font-size: 1rem;
-  background: #40444b;
+  background: #40444b; /* Discord-style input */
   color: #fff;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
+  transition: background 0.2s ease, transform 0.15s ease;
 }
 
-.landing input::placeholder {
-  color: #b9bbbe;
+.landing input:focus {
+  background: #5865f2;
+  transform: scale(1.02);
 }
 
 .landing button {
   padding: 12px 20px;
   margin-top: 12px;
-  width: 260px;
-  border-radius: 8px;
+  width: 280px;
+  border-radius: 25px;
   border: none;
   cursor: pointer;
   font-size: 1rem;
   font-weight: 600;
-  background: #7289da;
+  background: #7289da; /* Discord accent */
   color: #fff;
   transition: background 0.2s ease, transform 0.15s ease;
+  box-shadow: 0 3px 6px rgba(0,0,0,0.3);
 }
 
 .landing button:hover {
@@ -63,38 +51,13 @@ body.dark {
   transform: scale(1.05);
 }
 
-.dark .landing {
-  background: #23272a;
-}
-
-.dark .landing input {
-  background: #2f3136;
-  color: #fff;
-}
-
-.dark .landing input::placeholder {
+.landing p {
+  margin-bottom: 15px;
+  font-size: 1rem;
   color: #b9bbbe;
+  text-align: center;
 }
 
-.dark .landing button {
-  background: #5865f2;
-}
-
-.dark .landing button:hover {
-  background: #4752c4;
-}
-
-/* Landing Logo */
-.landing .logo {
-  width: 90px;
-  height: 90px;
-  object-fit: contain;
-  margin-bottom: 20px;
-  border-radius: 20%;
-  box-shadow: 0px 4px 12px rgba(0,0,0,0.2);
-  background: white;
-  padding: 10px;
-}
 
 /* ---------------- Chat Page ---------------- */
 .chat-page {
