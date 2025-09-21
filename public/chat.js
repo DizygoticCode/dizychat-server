@@ -118,7 +118,7 @@ function displayMessage(msg) {
 }
 
 // ---------------- Emoji Picker ----------------
-fetch('emoji.json')
+fetch('/emoji.json')
   .then(res => res.json())
   .then(data => {
 	  console.log("Loaded emojis:", emojis); // ✅ Debug log
