@@ -19,7 +19,9 @@
   <div id="chat-container" class="chat-page" style="display:none;">
     <header>
       <div class="room-info">
+        <div class="avatar">R</div>
         <span id="room-name">Room</span>
+        <div class="online-dot"></div>
       </div>
       <div>
         <button id="share-btn">🔗</button>
@@ -41,4 +43,13 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
-
+    // Autofill room if shared link contains ?room=xxx
+    const params = new URLSearchParams(window.location.search);
+    const sharedRoom = params.get("room");
+    if (sharedRoom) {
+      document.getElementById("room-input").value = sharedRoom;
+    }
+  </script>
+  <script src="chat.js"></script>
+</body>
+</html>

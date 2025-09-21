@@ -19,25 +19,20 @@ let currentRoom = '';
 let socket;
 let typingTimeout;
 let darkMode = false;
-let frequentlyUsed = [];
 
-// ---------------- Landing Page Prefill ----------------
+// ---------------- Prefill Room from URL ----------------
 const urlParams = new URLSearchParams(window.location.search);
 const prefillRoom = urlParams.get("room");
-if (prefillRoom) roomInput.value = prefillRoom;
+if (prefillRoom) {
+  roomInput.value = prefillRoom;
+}
 
 // ---------------- Join Chat ----------------
 joinBtn.addEventListener("click", () => {
-  let username = usernameInput.value.trim();
-  let room = roomInput.value.trim();
+  const username = usernameInput.value.trim() || prompt("Enter your username:", "Guest");
+  const room = roomInput.value.trim() || prompt("Enter a room name:", "general");
 
-  // Use URL params if input is empty
-  const urlParams = new URLSearchParams(window.location.search);
-  const urlNickname = urlParams.get("nickname");
-  const urlRoom = urlParams.get("room");
-
-  if (!username) username = urlNickname || prompt("Enter your username:", "Guest") || "Guest";
-  if (!room) room = urlRoom || prompt("Enter room name:", "general") || "general";
+  if (!username || !room) return alert("Please enter both username and room name.");
 
   currentUser = username;
   currentRoom = room;
@@ -46,14 +41,10 @@ joinBtn.addEventListener("click", () => {
   chatContainer.style.display = "flex";
   roomNameSpan.textContent = currentRoom;
 
-  // Initialize socket connection
+  // ---------------- Socket.IO ----------------
   socket = io();
   socket.emit("join room", currentRoom);
   socket.emit("get history", currentRoom);
-
-  input.focus();
-});
-
 
   // Typing indicator
   input.addEventListener("input", () => {
@@ -127,49 +118,25 @@ function displayMessage(msg) {
 }
 
 // ---------------- Emoji Picker ----------------
-const emojiDataURL = '/emoji.json'; // your existing emoji.json in public
-
-fetch(emojiDataURL)
+fetch('emoji.json')
   .then(res => res.json())
   .then(data => {
     data.forEach(e => {
       const span = document.createElement('span');
       span.textContent = e.char;
       span.classList.add('emoji');
-      span.title = e.name;
-      span.addEventListener('click', () => insertAtCursor(input, e.char));
+      span.addEventListener("click", () => insertAtCursor(input, e.char));
       emojiPicker.appendChild(span);
     });
   })
-  .catch(err => console.error("Failed to load emojis:", err));
+  .catch(() => console.warn("Emoji JSON not found or invalid"));
 
-// Toggle picker visibility
 emojiBtn.addEventListener('click', e => {
   e.stopPropagation();
-  emojiPicker.style.display = emojiPicker.style.display === 'flex' ? 'none' : 'flex';
-  positionEmojiPicker();
+  emojiPicker.style.display = emojiPicker.style.display === 'none' ? 'flex' : 'none';
 });
 
-// Keep picker open when clicking inside input
-input.addEventListener('click', e => e.stopPropagation());
-
-// Close picker when clicking outside
-document.addEventListener('click', () => {
-  emojiPicker.style.display = 'none';
-});
-
-// Reposition picker above input
-function positionEmojiPicker() {
-  const rect = input.getBoundingClientRect();
-  emojiPicker.style.bottom = `${window.innerHeight - rect.top + 5}px`;
-  emojiPicker.style.left = `${rect.left}px`;
-  emojiPicker.style.width = `${rect.width}px`;
-}
-
-// Update position on window resize
-window.addEventListener('resize', () => {
-  if (emojiPicker.style.display === 'flex') positionEmojiPicker();
-});
+document.addEventListener('click', () => emojiPicker.style.display = 'none');
 
 function insertAtCursor(input, text) {
   const start = input.selectionStart;
@@ -178,7 +145,6 @@ function insertAtCursor(input, text) {
   input.selectionStart = input.selectionEnd = start + text.length;
   input.focus();
 }
-
 
 // ---------------- Emoji Reactions ----------------
 function addReaction(msgId, emoji) {
@@ -209,9 +175,8 @@ function statusIcon(status) {
 
 // ---------------- Share Chat Link ----------------
 shareBtn.addEventListener("click", () => {
-  const nickname = currentUser || prompt("Enter your nickname to share the room:", "Guest") || "Guest";
-  const room = currentRoom || prompt("Enter room name:", "general") || "general";
-  const fullURL = `${window.location.origin}?room=${encodeURIComponent(room)}&nickname=${encodeURIComponent(nickname)}`;
+  const nickname = currentUser || prompt("Enter your nickname to share the room:", "Guest");
+  const fullURL = `${window.location.origin}?room=${encodeURIComponent(currentRoom)}&nickname=${encodeURIComponent(nickname)}`;
   navigator.clipboard.writeText(fullURL)
     .then(() => alert("Room link copied! Share it to join the same room."))
     .catch(() => alert(`Room link: ${fullURL}`));
