@@ -41,13 +41,4 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    // Autofill room if shared link contains ?room=xxx
-    const params = new URLSearchParams(window.location.search);
-    const sharedRoom = params.get("room");
-    if (sharedRoom) {
-      document.getElementById("room-input").value = sharedRoom;
-    }
-  </script>
-  <script src="chat.js"></script>
-</body>
-</html>
+
