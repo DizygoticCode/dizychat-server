@@ -9,7 +9,9 @@
 <body>
   <!-- Landing Page -->
   <div id="username-prompt" class="landing">
+    <img src="logo.png" alt="DizyChat Logo" class="logo">
     <h2>Welcome to DizyChat</h2>
+    <p>Enter your username and room to start chatting instantly</p>
     <input id="username-input" placeholder="Enter username">
     <input id="room-input" placeholder="Enter room name">
     <button id="join-btn">Join Chat</button>
@@ -19,9 +21,7 @@
   <div id="chat-container" class="chat-page" style="display:none;">
     <header>
       <div class="room-info">
-        <div class="avatar">R</div>
         <span id="room-name">Room</span>
-        <div class="online-dot"></div>
       </div>
       <div>
         <button id="share-btn">🔗</button>
@@ -42,14 +42,6 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script>
-    // Autofill room if shared link contains ?room=xxx
-    const params = new URLSearchParams(window.location.search);
-    const sharedRoom = params.get("room");
-    if (sharedRoom) {
-      document.getElementById("room-input").value = sharedRoom;
-    }
-  </script>
   <script src="chat.js"></script>
 </body>
 </html>
