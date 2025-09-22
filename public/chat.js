@@ -110,15 +110,87 @@ function displayMessage(msg) {
 // ---------------- Emoji Picker ----------------
 // Built-in fallback emojis (in case emoji.json fails to load)
 const fallbackEmojis = [
+  { char: "😀", name: "grinning" },
+  { char: "😂", name: "joy" },
+  { char: "😍", name: "heart_eyes" },
+  { char: "😭", name: "sob" },
+  { char: "👍", name: "thumbs_up" },
+  { char: "🙏", name: "pray" },
+  { char: "🔥", name: "fire" },
+  { char: "🎉", name: "tada" },
+  { char: "🍕", name: "pizza" },
+  { char: "⚽", name: "soccer" },
+  { char: "🎵", name: "music" },
+  { char: "❤️", name: "red_heart" }
+  { char: "😀", "name": "grinning" },
+  { char: "😁", "name": "beaming" },
+  { char: "😂", "name": "joy" },
+  { char: "🤣", "name": "rolling_laugh" },
+  { char: "😊", "name": "smile" },
+  { char: "😍", "name": "heart_eyes" },
+  { char: "😘", "name": "kiss" },
+  { char: "😎", "name": "sunglasses" },
+  { char: "🤩", "name": "star_struck" },
+  { char: "😢", "name": "cry" },
+  { char: "😭", "name": "sob" },
+  { char: "😡", "name": "angry" },
+  { char: "👍", "name": "thumbs_up" },
+  { char: "👎", "name": "thumbs_down" },
+  { char: "👏", "name": "clap" },
+  { char: "🙏", "name": "pray" },
+  { char: "👌", "name": "ok_hand" },
+  { char: "✌️", "name": "victory" },
+  { char: "🤞", "name": "fingers_crossed" },
+  { char: "🤟", "name": "love_you" },
+  { char: "💪", "name": "muscle" },
+  { char: "🔥", "name": "fire" },
+  { char: "✨", "name": "sparkles" },
+  { char: "🌟", "name": "star" },
+  { char: "🎉", "name": "tada" },
+  { char: "🎂", "name": "cake" },
+  { char: "🍕", "name": "pizza" },
+  { char: "🍔", "name": "burger" },
+  { char: "🍟", "name": "fries" },
+  { char: "🍣", "name": "sushi" },
+  { char: "🍩", "name": "donut" },
+  { char: "☕", "name": "coffee" },
+  { char: "🍺", "name": "beer" },
+  { char: "🍷", "name": "wine" },
+  { char: "⚽", "name": "soccer" },
+  { char: "🏀", "name": "basketball" },
+  { char: "🏈", "name": "football" },
+  { char: "🎮", "name": "video_game" },
+  { char: "🎵", "name": "music" },
+  { char: "🎤", "name": "microphone" },
+  { char: "🎧", "name": "headphones" },
+  { char: "🎸", "name": "guitar" },
+  { char: "🚗", "name": "car" },
+  { char: "✈️", "name": "airplane" },
+  { char: "🚀", "name": "rocket" },
+  { char: "🏠", "name": "house" },
+  { char: "💻", "name": "laptop" },
+  { char: "📱", "name": "phone" },
+  { char: "📷", "name": "camera" },
+  { char: "📚", "name": "books" },
+  { char: "❤️", "name": "red_heart" },
+  { char: "💔", "name": "broken_heart" },
+  { char: "💯", "name": "100" },
+  { char: "✅", "name": "check" },
+  { char: "❌", "name": "cross" },
+  { char: "⚡", "name": "zap" },
+  { char: "☀️", "name": "sun" },
+  { char: "🌙", "name": "moon" },
+  { char: "☁️", "name": "cloud" },
+  { char: "🌈", "name": "rainbow" }
   // Faces
   { char: "😀", name: "grinning" },
-  { char: "😁", name: "beaming" },
-  { char: "😂", name: "joy" },
-  { char: "🤣", name: "rofl" },
   { char: "😃", name: "smiley" },
   { char: "😄", name: "smile" },
-  { char: "😅", name: "sweat_smile" },
+  { char: "😁", name: "grin" },
   { char: "😆", name: "laughing" },
+  { char: "😅", name: "sweat_smile" },
+  { char: "😂", name: "joy" },
+  { char: "🤣", name: "rofl" },
   { char: "😊", name: "blush" },
   { char: "😇", name: "innocent" },
   { char: "🙂", name: "slightly_smile" },
@@ -139,7 +211,6 @@ const fallbackEmojis = [
   { char: "😢", name: "sad" },
   { char: "😴", name: "sleeping" },
   { char: "🤯", name: "mind_blown" },
-
   // Gestures
   { char: "👍", name: "thumbs_up" },
   { char: "👎", name: "thumbs_down" },
@@ -151,7 +222,6 @@ const fallbackEmojis = [
   { char: "🤘", name: "rock_on" },
   { char: "👌", name: "ok" },
   { char: "🤙", name: "call_me" },
-
   // Hearts & Symbols
   { char: "❤️", name: "red_heart" },
   { char: "💛", name: "yellow_heart" },
@@ -168,9 +238,6 @@ const fallbackEmojis = [
   { char: "☀️", name: "sun" },
   { char: "🌙", name: "moon" },
   { char: "💤", name: "zzz" },
-  { char: "✅", name: "check" },
-  { char: "❌", name: "cross" },
-
   // Food
   { char: "🍕", name: "pizza" },
   { char: "🍔", name: "burger" },
@@ -183,12 +250,9 @@ const fallbackEmojis = [
   { char: "🍌", name: "banana" },
   { char: "🍉", name: "watermelon" },
   { char: "🍓", name: "strawberry" },
+  { char: "🍔", name: "burger" },
   { char: "🍺", name: "beer" },
   { char: "☕", name: "coffee" },
-  { char: "🍷", name: "wine" },
-  { char: "🍣", name: "sushi" },
-  { char: "🍩", name: "donut" },
-
   // Animals
   { char: "🐶", name: "dog" },
   { char: "🐱", name: "cat" },
@@ -200,21 +264,21 @@ const fallbackEmojis = [
   { char: "🐼", name: "panda" },
   { char: "🐨", name: "koala" },
   { char: "🐯", name: "tiger" },
-
   // Travel & Objects
   { char: "🚗", name: "car" },
   { char: "✈️", name: "airplane" },
-  { char: "🚀", name: "rocket" },
   { char: "🏠", name: "house" },
-  { char: "💻", name: "laptop" },
   { char: "📱", name: "phone" },
-  { char: "📷", name: "camera" },
+  { char: "💻", name: "laptop" },
   { char: "🎮", name: "video_game" },
   { char: "🎵", name: "music" },
   { char: "⚽", name: "soccer" },
   { char: "🏀", name: "basketball" }
 ];
 
+]
+
+];
 
 // Load emoji.json or fallback if it fails
 async function loadEmojis() {
