@@ -211,6 +211,7 @@ const fallbackEmojis = [
   { char: "😢", name: "sad" },
   { char: "😴", name: "sleeping" },
   { char: "🤯", name: "mind_blown" },
+
   // Gestures
   { char: "👍", name: "thumbs_up" },
   { char: "👎", name: "thumbs_down" },
@@ -222,6 +223,7 @@ const fallbackEmojis = [
   { char: "🤘", name: "rock_on" },
   { char: "👌", name: "ok" },
   { char: "🤙", name: "call_me" },
+
   // Hearts & Symbols
   { char: "❤️", name: "red_heart" },
   { char: "💛", name: "yellow_heart" },
@@ -238,6 +240,7 @@ const fallbackEmojis = [
   { char: "☀️", name: "sun" },
   { char: "🌙", name: "moon" },
   { char: "💤", name: "zzz" },
+
   // Food
   { char: "🍕", name: "pizza" },
   { char: "🍔", name: "burger" },
@@ -253,6 +256,7 @@ const fallbackEmojis = [
   { char: "🍔", name: "burger" },
   { char: "🍺", name: "beer" },
   { char: "☕", name: "coffee" },
+
   // Animals
   { char: "🐶", name: "dog" },
   { char: "🐱", name: "cat" },
@@ -264,6 +268,7 @@ const fallbackEmojis = [
   { char: "🐼", name: "panda" },
   { char: "🐨", name: "koala" },
   { char: "🐯", name: "tiger" },
+
   // Travel & Objects
   { char: "🚗", name: "car" },
   { char: "✈️", name: "airplane" },
@@ -275,7 +280,6 @@ const fallbackEmojis = [
   { char: "⚽", name: "soccer" },
   { char: "🏀", name: "basketball" }
 ];
-
 
 // Load emoji.json or fallback if it fails
 async function loadEmojis() {
