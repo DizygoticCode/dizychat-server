@@ -187,21 +187,70 @@ form#form button { border:none;border-radius:50%;width:40px;height:40px;cursor:p
 
 /* ---------------- Emoji Picker ---------------- */
 #emoji-picker {
+  position: absolute;
+  bottom: 60px;
+  left: 10px;
+  width: 300px;
+  max-height: 350px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
   display: none;
   flex-direction: column;
-  position: absolute;
-  bottom: 50px;
-  left: 0;
-  width: 280px;
-  max-height: 300px;
-  background: #fff;
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
   z-index: 1000;
-  font-family: sans-serif;
+  overflow: hidden;
 }
+
+#emoji-picker.show {
+  display: flex;
+}
+
+.emoji-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+  background: var(--header-bg);
+}
+
+.emoji-tab-btn {
+  flex: 1;
+  padding: 6px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.emoji-tab-btn.active {
+  background: var(--accent-bg);
+  font-weight: bold;
+}
+
+.emoji-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.emoji-category {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(28px, 1fr));
+  gap: 6px;
+}
+
+.emoji-category span {
+  font-size: 20px;
+  cursor: pointer;
+  text-align: center;
+  line-height: 28px;
+  transition: transform 0.15s;
+}
+
+.emoji-category span:hover {
+  transform: scale(1.2);
+}
+
 #emoji-picker.show { display:flex; animation:fadeInUp 0.2s ease-out; }
 
 /* Tabs */

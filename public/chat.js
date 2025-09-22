@@ -21,7 +21,6 @@ let socket;
 let typingTimeout;
 let darkMode = false;
 let emojiData = {};
-let emojiGrids = {};
 
 // ---------------- Landing Page Prefill ----------------
 const urlParams = new URLSearchParams(window.location.search);
@@ -125,6 +124,8 @@ toggleThemeBtn.addEventListener("click", () => {
   darkMode = !darkMode;
   document.body.classList.toggle("dark", darkMode);
   toggleThemeBtn.textContent = darkMode ? "☀️" : "🌙";
+  // Switch logo in header
+  homeLogo.src = darkMode ? "logo.png" : "logodark.png";
 });
 
 // ---------------- Home Logo Button ----------------
@@ -136,62 +137,68 @@ homeLogo.addEventListener("click", () => {
 });
 
 // ---------------- Emoji Picker ----------------
-async function loadEmojis() {
-  try {
-    const res = await fetch("/emoji.json");
-    if (!res.ok) throw new Error("Failed to fetch emoji.json");
-    emojiData = await res.json();
-    renderEmojiTabs();
-    preRenderEmojiGrids();
-    showEmojiCategory(Object.keys(emojiData)[0]);
-  } catch (err) {
-    console.error("Emoji picker failed:", err);
-  }
-}
+fetch("emoji.json")
+  .then(res => res.json())
+  .then(data => {
+    emojiData = data;
+    buildEmojiPicker(data);
+  })
+  .catch(err => console.error("Emoji picker failed:", err));
 
-function renderEmojiTabs() {
-  const tabsDiv = document.createElement("div");
-  tabsDiv.classList.add("emoji-tabs");
+function buildEmojiPicker(data) {
+  emojiPicker.innerHTML = "";
 
-  Object.keys(emojiData).forEach(cat => {
-    const btn = document.createElement("button");
-    btn.textContent = cat;
-    btn.classList.add("emoji-tab-btn");
-    btn.addEventListener("click", () => showEmojiCategory(cat));
-    tabsDiv.appendChild(btn);
-  });
+  // Tabs
+  const tabs = document.createElement("div");
+  tabs.classList.add("emoji-tabs");
 
-  emojiPicker.appendChild(tabsDiv);
-}
+  // Content wrapper
+  const content = document.createElement("div");
+  content.classList.add("emoji-content");
 
-function preRenderEmojiGrids() {
-  Object.keys(emojiData).forEach(cat => {
-    const grid = document.createElement("div");
-    grid.classList.add("emoji-category");
-    grid.style.display = "none";
+  Object.keys(data).forEach((category, index) => {
+    // Tab button
+    const tabBtn = document.createElement("button");
+    tabBtn.textContent = category;
+    tabBtn.classList.add("emoji-tab-btn");
+    if (index === 0) tabBtn.classList.add("active");
 
-    emojiData[cat].forEach(e => {
+    tabBtn.addEventListener("click", () => {
+      document.querySelectorAll(".emoji-tab-btn").forEach(b => b.classList.remove("active"));
+      tabBtn.classList.add("active");
+
+      // Show only selected category
+      document.querySelectorAll(".emoji-category").forEach(c => c.style.display = "none");
+      content.querySelector(`[data-category="${category}"]`).style.display = "grid";
+    });
+
+    tabs.appendChild(tabBtn);
+
+    // Emoji grid
+    const categoryDiv = document.createElement("div");
+    categoryDiv.classList.add("emoji-category");
+    categoryDiv.dataset.category = category;
+    if (index !== 0) categoryDiv.style.display = "none";
+
+    data[category].forEach(e => {
       const span = document.createElement("span");
       span.textContent = e.char;
       span.title = e.name;
-      span.addEventListener("click", () => insertAtCursor(input, e.char));
-      grid.appendChild(span);
+      span.addEventListener("click", () => {
+        insertAtCursor(input, e.char);
+        emojiPicker.classList.remove("show"); // auto-close
+      });
+      categoryDiv.appendChild(span);
     });
 
-    emojiPicker.appendChild(grid);
-    emojiGrids[cat] = grid;
+    content.appendChild(categoryDiv);
   });
+
+  emojiPicker.appendChild(tabs);
+  emojiPicker.appendChild(content);
 }
 
-function showEmojiCategory(cat) {
-  document.querySelectorAll(".emoji-tab-btn").forEach(b => {
-    b.classList.toggle('active', b.textContent === cat);
-  });
-  Object.keys(emojiGrids).forEach(c => {
-    emojiGrids[c].style.display = c === cat ? "grid" : "none";
-  });
-}
-
+// Insert emoji at cursor
 function insertAtCursor(input, text) {
   const start = input.selectionStart;
   const end = input.selectionEnd;
@@ -214,6 +221,3 @@ document.addEventListener('click', e => {
     emojiPicker.classList.remove('show');
   }
 });
-
-// ---------------- Initialize ----------------
-loadEmojis();
