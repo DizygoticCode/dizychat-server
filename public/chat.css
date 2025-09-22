@@ -296,40 +296,68 @@ form#form button {
 }
 
 /* Emoji Picker */
-.emoji-picker {
-  position: absolute;
-  bottom: 60px;
-  left: 12px;
-  background: #2f3136;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  padding: 10px;
+#emoji-picker {
   display: none;
-  max-height: 250px;
-  width: 280px;
-  overflow-y: auto;
-  box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.4);
-  z-index: 1000;
-
-  /* grid layout */
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(32px, 1fr));
-  gap: 6px;
+  position: absolute;
+  bottom: 50px;
+  right: 50px;
+  width: 300px;
+  max-height: 350px;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  flex-direction: column;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
-.emoji-picker span {
+.emoji-tabs {
+  display: flex;
+  background: #f0f0f0;
+  border-bottom: 1px solid #ccc;
+}
+
+.emoji-tab {
+  flex: 1;
+  padding: 6px 0;
+  font-size: 0.85rem;
+  font-weight: bold;
   cursor: pointer;
-  font-size: 22px;
-  line-height: 1;
-  padding: 4px;
-  border-radius: 6px;
-  transition: background 0.2s;
-  text-align: center;
+  border: none;
+  background: none;
+  transition: background 0.2s ease;
 }
 
-.emoji-picker span:hover {
-  background: rgba(255, 255, 255, 0.15);
+.emoji-tab.active {
+  background: #ddd;
 }
+
+.emoji-tab:hover {
+  background: #e0e0e0;
+}
+
+.emoji-category-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 10px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.emoji-category-list span {
+  cursor: pointer;
+  font-size: 1.3rem;
+  transition: transform 0.15s ease;
+}
+
+.emoji-category-list span:hover {
+  transform: scale(1.3);
+  background: #f0f0f0;
+  border-radius: 5px;
+}
+
 /* Emoji Picker Animation */
 @keyframes fadeInUp {
   from {

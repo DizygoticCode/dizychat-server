@@ -60,7 +60,7 @@
     { "char": "✅", "name": "check" },
     { "char": "❌", "name": "cross" }
   ],
-  "Food & Drink": [
+  "Food": [
     { "char": "🍕", "name": "pizza" },
     { "char": "🍔", "name": "burger" },
     { "char": "🍟", "name": "fries" },
