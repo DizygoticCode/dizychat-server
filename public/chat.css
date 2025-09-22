@@ -133,6 +133,9 @@ body:not(.dark) .chat-page header {
   border-bottom: 1px solid #ccc;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
+body:not(.dark) .chat-page header .room-info {
+  color: #000; /* <-- fixes room name to black in light mode */
+}
 body:not(.dark) .chat-page header button:hover {
   color: #0084ff;
 }

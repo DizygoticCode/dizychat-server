@@ -169,6 +169,7 @@ function preRenderEmojiGrids() {
     const grid = document.createElement("div");
     grid.classList.add("emoji-category");
     grid.style.display = "none";
+
     emojiData[cat].forEach(e => {
       const span = document.createElement("span");
       span.textContent = e.char;
@@ -176,6 +177,7 @@ function preRenderEmojiGrids() {
       span.addEventListener("click", () => insertAtCursor(input, e.char));
       grid.appendChild(span);
     });
+
     emojiPicker.appendChild(grid);
     emojiGrids[cat] = grid;
   });
