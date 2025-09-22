@@ -185,110 +185,85 @@ form#form input { flex:1; padding:10px 14px; border-radius:20px; border:1px soli
 body.dark form#form input { background:#2f3136;color:#eee;border:1px solid #555; }
 form#form button { border:none;border-radius:50%;width:40px;height:40px;cursor:pointer;font-size:1.2em;color:#fff;background:#0084ff; }
 
-/* ---------------- Emoji Picker ---------------- */
-#emoji-picker {
-  position: absolute;
-  bottom: 60px;
-  left: 10px;
-  width: 300px;
-  max-height: 350px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-  display: none;
-  flex-direction: column;
-  z-index: 1000;
-  overflow: hidden;
+// ---------------- Emoji Picker (Hardcoded Fallback + Expandable) ----------------
+const fallbackEmojis = {
+  "Smileys": ["😀","😁","😂","🤣","😃","😅","😉","😊","😍","😘","😜","🤪","🤨","😎","🤩","🥳","😡","😭","😱","🤔"],
+  "Animals": ["🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵"],
+  "Food": ["🍏","🍎","🍐","🍊","🍋","🍌","🍉","🍇","🍓","🍒","🍑","🥭","🍍","🥥","🥝"],
+  "Activities": ["⚽","🏀","🏈","⚾","🎾","🏐","🏉","🎱","🏓","🏸","🥅","🏒","🏑"],
+  "Travel": ["🚗","🚕","🚙","🚌","🚎","🏎️","🚓","🚑","🚒","🚐","✈️","🚀","🛸"],
+  "Symbols": ["❤️","💔","💕","💖","✨","⭐","🌟","🔥","🌈","⚡","💯","✔️","❌","❓","❗"]
+};
+
+async function loadEmojis() {
+  try {
+    // Try fetching emoji.json first
+    const res = await fetch("/emoji.json");
+    if (!res.ok) throw new Error("emoji.json missing");
+    emojiData = await res.json();
+  } catch {
+    // Fallback to hardcoded list
+    emojiData = fallbackEmojis;
+  }
+  renderEmojiTabs();
+  preRenderEmojiGrids();
+  showEmojiCategory(Object.keys(emojiData)[0]);
 }
 
-#emoji-picker.show {
-  display: flex;
+function renderEmojiTabs() {
+  emojiPicker.innerHTML = ""; // clear duplicates
+  const tabsDiv = document.createElement("div");
+  tabsDiv.classList.add("emoji-tabs");
+
+  Object.keys(emojiData).forEach(cat => {
+    const btn = document.createElement("button");
+    btn.textContent = cat;
+    btn.classList.add("emoji-tab-btn");
+    btn.addEventListener("click", () => showEmojiCategory(cat));
+    tabsDiv.appendChild(btn);
+  });
+
+  emojiPicker.appendChild(tabsDiv);
+
+  const contentDiv = document.createElement("div");
+  contentDiv.classList.add("emoji-content");
+  emojiPicker.appendChild(contentDiv);
 }
 
-.emoji-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  border-bottom: 1px solid var(--border);
-  background: var(--header-bg);
+function preRenderEmojiGrids() {
+  const contentDiv = emojiPicker.querySelector(".emoji-content");
+  contentDiv.innerHTML = "";
+
+  Object.keys(emojiData).forEach(cat => {
+    const grid = document.createElement("div");
+    grid.classList.add("emoji-category");
+    grid.style.display = "none";
+
+    emojiData[cat].forEach(e => {
+      const char = typeof e === "string" ? e : e.char;
+      const name = typeof e === "string" ? "" : e.name;
+
+      const span = document.createElement("span");
+      span.textContent = char;
+      span.title = name;
+      span.addEventListener("click", () => insertAtCursor(input, char));
+      grid.appendChild(span);
+    });
+
+    contentDiv.appendChild(grid);
+    emojiGrids[cat] = grid;
+  });
 }
 
-.emoji-tab-btn {
-  flex: 1;
-  padding: 6px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font-size: 12px;
+function showEmojiCategory(cat) {
+  document.querySelectorAll(".emoji-tab-btn").forEach(b => {
+    b.classList.toggle('active', b.textContent === cat);
+  });
+  Object.keys(emojiGrids).forEach(c => {
+    emojiGrids[c].style.display = c === cat ? "grid" : "none";
+  });
 }
 
-.emoji-tab-btn.active {
-  background: var(--accent-bg);
-  font-weight: bold;
-}
-
-.emoji-content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 6px;
-}
-
-.emoji-category {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(28px, 1fr));
-  gap: 6px;
-}
-
-.emoji-category span {
-  font-size: 20px;
-  cursor: pointer;
-  text-align: center;
-  line-height: 28px;
-  transition: transform 0.15s;
-}
-
-.emoji-category span:hover {
-  transform: scale(1.2);
-}
-
-#emoji-picker.show { display:flex; animation:fadeInUp 0.2s ease-out; }
-
-/* Tabs */
-.emoji-tabs {
-  display: flex;
-  background: #f7f7f7;
-  border-bottom: 1px solid #ddd;
-}
-.emoji-tab-btn {
-  flex: 1;
-  padding: 6px;
-  font-size: 13px;
-  cursor: pointer;
-  background: transparent;
-  border: none;
-  transition: background 0.2s, color 0.2s;
-}
-.emoji-tab-btn:hover { background: #eee; }
-.emoji-tab-btn.active { background: #ddd; font-weight:bold; }
-
-/* Emoji Grid */
-.emoji-category {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(32px,1fr));
-  gap: 4px;
-  padding: 6px;
-  max-height: 240px;
-  overflow-y: auto;
-}
-.emoji-category span {
-  cursor: pointer;
-  text-align: center;
-  line-height: 32px;
-  font-size: 20px;
-  border-radius: 6px;
-  transition: background 0.2s;
-}
-.emoji-category span:hover { background:#f0f0f0; }
 
 /* ---------------- Dark Mode ---------------- */
 body.dark #emoji-picker { background:#2f3136; border-color:#40444b; }
