@@ -276,9 +276,6 @@ const fallbackEmojis = [
   { char: "🏀", name: "basketball" }
 ];
 
-]
-
-];
 
 // Load emoji.json or fallback if it fails
 async function loadEmojis() {
