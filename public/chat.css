@@ -85,17 +85,22 @@ body.dark {
   background: #4752c4;
 }
 
-/* Landing Logo */
-.landing .logo {
-  width: 90px;
-  height: 90px;
+/* Header Logo */
+.header-logo {
+  height: 28px;
+  width: auto;
+  margin-right: 10px;
   object-fit: contain;
-  margin-bottom: 20px;
-  border-radius: 20%;
-  box-shadow: 0px 4px 12px rgba(0,0,0,0.2);
-  background: white;
-  padding: 10px;
+  filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.3));
+  cursor: pointer; /* show it's clickable */
+  transition: transform 0.15s ease;
 }
+
+.header-logo:hover {
+  transform: scale(1.1);
+}
+
+
 
 /* ---------------- Chat Page ---------------- */
 .chat-page {
@@ -297,6 +302,7 @@ form#form button {
 
 /* Emoji Picker */
 /* ---------------- Emoji Picker Container ---------------- */
+
 #emoji-picker {
   display: none; /* hidden by default, toggled by JS */
   flex-direction: column;
