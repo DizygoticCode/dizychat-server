@@ -8,25 +8,26 @@
 </head>
 <body>
   <!-- Landing Page -->
-<div id="username-prompt" class="landing">
-  <img src="logo.png" alt="DizyChat Logo" class="logo">
-  <h2>Welcome to DizyChat</h2>
-  <input id="username-input" placeholder="Enter username">
-  <input id="room-input" placeholder="Enter room name">
-  <button id="join-btn">Join Chat</button>
-</div>
+  <div id="username-prompt" class="landing">
+    <img src="logo.png" alt="DizyChat Logo" class="logo">
+    <h2>Welcome to DizyChat</h2>
+    <input id="username-input" placeholder="Enter username">
+    <input id="room-input" placeholder="Enter room name">
+    <button id="join-btn">Join Chat</button>
+  </div>
 
   <!-- Chat Page -->
- <header>
-  <div class="room-info">
-    <span id="room-name">Room</span>
-  </div>
-  <div>
-    <button id="share-btn">🔗</button>
-    <button id="toggle-theme">🌙</button>
-  </div>
-</header>
-
+  <div id="chat-container" class="chat-page" style="display:none;">
+    <header>
+      <img src="logo.png" alt="Home" id="home-logo" class="logo">
+      <div class="room-info">
+        <span id="room-name">Room</span>
+      </div>
+      <div>
+        <button id="share-btn">🔗</button>
+        <button id="toggle-theme">🌙</button>
+      </div>
+    </header>
 
     <main id="messages"></main>
     <div id="typing-bubble"></div>
@@ -35,58 +36,12 @@
       <button type="button" id="emoji-btn">😀</button>
       <input id="input" autocomplete="off" placeholder="Type a message..." />
       <button type="submit">➤</button>
-    </form>
 
-    <div id="emoji-picker" class="emoji-picker"></div>
+      <div id="emoji-picker" class="emoji-picker"></div>
+    </form>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="chat.js"></script>
-
-  <script>
-    // ---------------- Landing Page Logic ----------------
-    const usernamePrompt = document.getElementById('username-prompt');
-    const joinBtn = document.getElementById('join-btn');
-    const usernameInput = document.getElementById('username-input');
-    const roomInput = document.getElementById('room-input');
-    const chatContainer = document.getElementById('chat-container');
-    const roomNameSpan = document.getElementById('room-name');
-
-    // Autofill room if shared link contains ?room=xxx
-    const params = new URLSearchParams(window.location.search);
-    const sharedRoom = params.get("room");
-    if (sharedRoom) {
-      roomInput.value = sharedRoom;
-    }
-
-    joinBtn.addEventListener("click", () => {
-      const username = usernameInput.value.trim();
-      const room = roomInput.value.trim();
-      if (!username || !room) return alert("Please enter both username and room name.");
-
-      // Store current user & room for chat.js
-      localStorage.setItem("dizychat_user", username);
-      localStorage.setItem("dizychat_room", room);
-
-      // Show chat, hide landing
-      usernamePrompt.style.display = "none";
-      chatContainer.style.display = "flex";
-      roomNameSpan.textContent = room;
-
-      // Update URL so link sharing works
-      const newURL = `${window.location.origin}?room=${encodeURIComponent(room)}`;
-      window.history.replaceState({}, "", newURL);
-
-      // Initialize chat.js after joining
-      if (typeof initChat === "function") initChat(username, room);
-	  // Click logo to return to landing page
-const homeLogo = document.getElementById("home-logo");
-homeLogo.addEventListener("click", () => {
-  chatContainer.style.display = "none";
-  usernamePrompt.style.display = "flex";
-  roomNameSpan.textContent = "Room";
-  window.history.replaceState({}, "", window.location.origin);
-});
-  </script>
 </body>
 </html>

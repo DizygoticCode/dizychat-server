@@ -1,4 +1,4 @@
-/* Reset & Base */
+/* ---------------- Base & Reset ---------------- */
 body {
   margin: 0;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -17,9 +17,8 @@ body.dark {
   align-items: center;
   justify-content: center;
   height: 100vh;
-  background: linear-gradient(135deg, #2c2f33, #23272a, #2f3136); /* Smooth Discord-style gradient */
+  background: linear-gradient(135deg, #2c2f33, #23272a, #2f3136);
   color: #fff;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   transition: background 0.3s ease;
 }
 
@@ -64,38 +63,14 @@ body.dark {
   transform: scale(1.05);
 }
 
-.dark .landing {
-  background: #23272a;
-}
-
-.dark .landing input {
-  background: #2f3136;
-  color: #fff;
-}
-
-.dark .landing input::placeholder {
-  color: #b9bbbe;
-}
-
-.dark .landing button {
-  background: #5865f2;
-}
-
-.dark .landing button:hover {
-  background: #4752c4;
-}
-
-/* Landing Logo */
 .landing .logo {
-  display: block;
-  max-width: 220px; /* scale nicely */
+  max-width: 220px;
   width: 80%;
   height: auto;
   margin-bottom: 25px;
   object-fit: contain;
   filter: drop-shadow(0px 4px 10px rgba(0,0,0,0.4));
 }
-
 
 /* ---------------- Chat Page ---------------- */
 .chat-page {
@@ -110,47 +85,31 @@ body.dark {
   border-right: 1px solid #ccc;
 }
 
-/* Chat Page Header */
+/* ---------------- Header ---------------- */
 .chat-page header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  background: linear-gradient(135deg, #2f3136, #23272a); 
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #2f3136, #23272a);
   color: #fff;
   font-weight: 600;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0px 2px 6px rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+
+.chat-page header .logo {
+  height: 32px;
+  cursor: pointer;
+  margin-right: 8px;
 }
 
 .chat-page header .room-info {
   font-size: 1rem;
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-
-.chat-page header .room-info .avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: #7289da;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: bold;
-  color: #fff;
-  font-size: 0.9rem;
-}
-
-.chat-page header .room-info .online-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #43b581;
-  margin-left: -10px;
-  margin-top: 20px;
-  border: 2px solid #2f3136;
+  gap: 6px;
+  flex: 1;
 }
 
 .chat-page header button {
@@ -159,7 +118,7 @@ body.dark {
   color: #fff;
   font-size: 1.2rem;
   cursor: pointer;
-  transition: transform 0.15s ease, color 0.2s ease;
+  margin-left: 6px;
 }
 
 .chat-page header button:hover {
@@ -172,29 +131,19 @@ body:not(.dark) .chat-page header {
   background: #f9f9f9;
   color: #333;
   border-bottom: 1px solid #ccc;
-  box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
-
-body:not(.dark) .chat-page header button {
-  color: #333;
-}
-
 body:not(.dark) .chat-page header button:hover {
   color: #0084ff;
 }
 
-body:not(.dark) .chat-page header .room-info .online-dot {
-  border: 2px solid #f9f9f9;
-}
-
-/* Messages Area */
+/* ---------------- Messages ---------------- */
 main#messages {
   flex: 1;
   overflow-y: auto;
   padding: 10px;
   background: #e5ddd5;
 }
-
 body.dark main#messages {
   background: #1e1f22;
 }
@@ -207,215 +156,62 @@ body.dark main#messages {
   position: relative;
   word-wrap: break-word;
 }
+.message.self { margin-left: auto; background: #dcf8c6; }
+body.dark .message.self { background: #056162; }
+.message.other { margin-right: auto; background: #fff; }
+body.dark .message.other { background: #2c2f33; }
+.message .meta { font-size: 0.7em; color: #555; margin-bottom: 3px; }
+body.dark .message .meta { color: #ccc; }
+.message .status { font-size: 0.7em; color: green; position: absolute; bottom: 2px; right: 5px; }
 
-.message.self {
-  margin-left: auto;
-  background: #dcf8c6;
-}
+/* ---------------- Typing ---------------- */
+#typing-bubble { font-size: 0.8em; color: #888; padding: 5px 10px; }
 
-body.dark .message.self {
-  background: #056162;
-}
-
-.message.other {
-  margin-right: auto;
-  background: #fff;
-}
-
-body.dark .message.other {
-  background: #2c2f33;
-}
-
-.message .meta {
-  font-size: 0.7em;
-  color: #555;
-  margin-bottom: 3px;
-}
-
-body.dark .message .meta {
-  color: #ccc;
-}
-
-.message .status {
-  font-size: 0.7em;
-  color: green;
-  position: absolute;
-  bottom: 2px;
-  right: 5px;
-}
-
-.message .reactions span {
-  margin-right: 3px;
-  cursor: pointer;
-}
-
-/* Typing */
-#typing-bubble {
-  font-size: 0.8em;
-  color: #888;
-  padding: 5px 10px;
-}
-
-/* Form */
+/* ---------------- Form ---------------- */
 form#form {
   display: flex;
-  padding: 5px;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
   background: #f0f0f0;
   position: relative;
-  align-items: center;
-  gap: 5px;
+  border-top: 1px solid #ccc;
 }
+body.dark form#form { background: #1e1f22; border-top:1px solid #40444b; }
+form#form input { flex:1; padding:10px 14px; border-radius:20px; border:1px solid #ccc; font-size:1rem; }
+body.dark form#form input { background:#2f3136;color:#eee;border:1px solid #555; }
+form#form button { border:none;border-radius:50%;width:40px;height:40px;cursor:pointer;font-size:1.2em;color:#fff;background:#0084ff; }
 
-body.dark form#form {
-  background: #1e1f22;
-}
+/* ---------------- Emoji Picker ---------------- */
+#emoji-picker { display:none; flex-direction:column; position:absolute; bottom:50px; left:0; width:280px; max-height:300px; background:#fff; border:1px solid #ccc; border-radius:8px; overflow:hidden; box-shadow:0 4px 12px rgba(0,0,0,0.2); z-index:1000; font-family:sans-serif; }
+#emoji-picker.show { display:flex; animation:fadeInUp 0.2s ease-out; }
 
-form#form input {
-  flex: 1;
-  padding: 10px 15px;
-  border-radius: 20px;
-  border: 1px solid #ccc;
-}
+.emoji-tabs { display:flex; background:#f7f7f7; border-bottom:1px solid #ddd; }
+.emoji-tab-btn { flex:1; padding:6px; font-size:13px; cursor:pointer; background:transparent; border:none; transition:background 0.2s; }
+.emoji-tab-btn:hover { background:#eee; }
+.emoji-tab-btn.active { background:#ddd; font-weight:bold; }
 
-body.dark form#form input {
-  background: #2c2f33;
-  color: #eee;
-  border: 1px solid #555;
-}
+.emoji-category { display:grid; grid-template-columns:repeat(auto-fill,minmax(32px,1fr)); gap:4px; padding:6px; max-height:240px; overflow-y:auto; }
+.emoji-category span { cursor:pointer; text-align:center; line-height:32px; font-size:20px; border-radius:6px; transition:background 0.2s; }
+.emoji-category span:hover { background:#f0f0f0; }
 
-form#form button {
-  margin-left: 5px;
-  border-radius: 50%;
-  width: 40px;
-  height: 40px;
-  border: none;
-  cursor: pointer;
-  background: #0084ff;
-  color: white;
-  font-size: 1.2em;
-}
+/* Dark mode emoji picker */
+body.dark #emoji-picker { background:#2f3136; border-color:#40444b; }
+body.dark .emoji-tab-btn.active { background:#5865f2; color:#fff; }
+body.dark .emoji-tab-btn:hover { background:#40444b; }
+body.dark .emoji-category span:hover { background:#40444b; }
 
-/* Emoji Picker */
-/* ---------------- Emoji Picker Container ---------------- */
+/* ---------------- Emoji Picker Animation ---------------- */
+@keyframes fadeInUp { from {opacity:0; transform:translateY(10px);} to {opacity:1; transform:translateY(0);} }
 
-#emoji-picker {
-  display: none; /* hidden by default, toggled by JS */
-  flex-direction: column;
-  position: absolute;
-  bottom: 60px; /* above input bar */
-  left: 10px;
-  width: 280px;
-  max-height: 300px;
-  background: var(--bg, #fff);
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-  z-index: 1000;
-  font-family: sans-serif;
-}
-
-/* Tabs container */
-.emoji-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  border-bottom: 1px solid #ddd;
-  background: #f7f7f7;
-}
-
-.emoji-tab {
-  flex: 1;
-  padding: 6px;
-  text-align: center;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font-size: 13px;
-  transition: background 0.2s;
-}
-
-.emoji-tab:hover {
-  background: #eee;
-}
-
-.emoji-tab.active {
-  background: #ddd;
-  font-weight: bold;
-}
-
-/* Emoji grid */
-.emoji-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(32px, 1fr));
-  gap: 4px;
-  padding: 6px;
-  overflow-y: auto;
-  max-height: 240px;
-}
-
-.emoji {
-  font-size: 20px;
-  line-height: 32px;
-  text-align: center;
-  cursor: pointer;
-  user-select: none;
-  border-radius: 6px;
-  transition: background 0.2s;
-}
-
-.emoji:hover {
-  background: #f0f0f0;
-}
-
-
-/* Dark Mode Adjustments */
-body.dark .emoji-picker {
-  background: #2f3136;
-  border-color: #40444b;
-}
-
-body.dark .emoji-tab-btn {
-  color: #ccc;
-}
-
-body.dark .emoji-tab-btn.active {
-  background: #5865f2;
-  color: #fff;
-}
-
-body.dark .emoji-tab-btn:hover {
-  background: #40444b;
-}
-
-body.dark .emoji-category span:hover {
-  background: #40444b;
-}
-
-
-/* Emoji Picker Animation */
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.emoji-picker.show {
-  display: grid; /* use grid layout we defined earlier */
-  animation: fadeInUp 0.2s ease-out;
-}
-
-
-/* Ensure chat form is relative for absolute picker */
-.chat-page form#form {
-  position: relative;
-  display: flex;
-  padding: 5px;
-  background: #f0f0f0;
-  align-items: center;
-  gap: 5px;
+/* ---------------- Mobile Tweaks ---------------- */
+@media (max-width:600px){
+  .chat-page { width:100%; border:none; }
+  .chat-page header { flex-wrap:wrap; gap:6px; padding:6px 10px; }
+  .chat-page header .room-info { flex:1 1 100%; }
+  form#form { padding:4px 6px; }
+  form#form input { padding:8px 12px; font-size:0.95rem; }
+  #emoji-picker { width:90vw; left:50%; transform:translateX(-50%); bottom:55px; max-height:40vh; }
+  .emoji-category { max-height:35vh; }
+  .emoji-category span { font-size:18px; line-height:28px; }
 }

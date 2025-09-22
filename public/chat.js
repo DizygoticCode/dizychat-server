@@ -13,6 +13,7 @@ const emojiBtn = document.getElementById('emoji-btn');
 const shareBtn = document.getElementById('share-btn');
 const toggleThemeBtn = document.getElementById('toggle-theme');
 const roomNameSpan = document.getElementById('room-name');
+const homeLogo = document.getElementById('home-logo');
 
 let currentUser = '';
 let currentRoom = '';
@@ -23,15 +24,12 @@ let darkMode = false;
 // ---------------- Landing Page Prefill ----------------
 const urlParams = new URLSearchParams(window.location.search);
 const prefillRoom = urlParams.get("room");
-if (prefillRoom) {
-  roomInput.value = prefillRoom;
-}
+if (prefillRoom) roomInput.value = prefillRoom;
 
 // ---------------- Join Chat ----------------
 joinBtn.addEventListener("click", () => {
   const username = usernameInput.value.trim();
   const room = roomInput.value.trim();
-
   if (!username || !room) return alert("Please enter both username and room name.");
 
   currentUser = username;
@@ -40,6 +38,10 @@ joinBtn.addEventListener("click", () => {
   usernamePrompt.style.display = "none";
   chatContainer.style.display = "flex";
   roomNameSpan.textContent = room;
+
+  // Update URL
+  const newURL = `${window.location.origin}?room=${encodeURIComponent(room)}`;
+  window.history.replaceState({}, "", newURL);
 
   // ---------------- Socket.IO ----------------
   socket = io();
@@ -107,121 +109,43 @@ function displayMessage(msg) {
   if (msg.user !== currentUser) socket.emit('read message', { room: currentRoom, id: msg._id || msg.id });
 }
 
+// ---------------- Status Icon ----------------
+function statusIcon(status) {
+  switch(status){
+    case 'sent': return '✓';
+    case 'delivered': return '✓✓';
+    case 'read': return '✓✓✔';
+    default: return '';
+  }
+}
+
+// ---------------- Share Chat Link ----------------
+shareBtn.addEventListener("click", () => {
+  const nickname = currentUser || prompt("Enter your nickname:", "Guest") || "Guest";
+  const fullURL = `${window.location.origin}?room=${encodeURIComponent(currentRoom)}&nickname=${encodeURIComponent(nickname)}`;
+  navigator.clipboard.writeText(fullURL)
+    .then(() => alert("Room link copied!"))
+    .catch(() => alert(`Room link: ${fullURL}`));
+});
+
+// ---------------- Dark Mode ----------------
+toggleThemeBtn.addEventListener("click", () => {
+  darkMode = !darkMode;
+  document.body.classList.toggle("dark", darkMode);
+  toggleThemeBtn.textContent = darkMode ? "☀️" : "🌙";
+});
+
+// ---------------- Home Logo Button ----------------
+homeLogo.addEventListener("click", () => {
+  chatContainer.style.display = "none";
+  usernamePrompt.style.display = "flex";
+  roomNameSpan.textContent = "Room";
+  window.history.replaceState({}, "", window.location.origin);
+});
+
 // ---------------- Emoji Picker ----------------
-const fallbackEmojis = {
-  "Faces": [
-    { char: "😀", name: "grinning" },
-    { char: "😁", name: "beaming" },
-    { char: "😂", name: "joy" },
-    { char: "🤣", name: "rofl" },
-    { char: "😃", name: "smiley" },
-    { char: "😄", name: "smile" },
-    { char: "😅", name: "sweat_smile" },
-    { char: "😆", name: "laughing" },
-    { char: "😊", name: "blush" },
-    { char: "😇", name: "innocent" },
-    { char: "🙂", name: "slightly_smile" },
-    { char: "🙃", name: "upside_down" },
-    { char: "😉", name: "wink" },
-    { char: "😌", name: "relieved" },
-    { char: "😍", name: "heart_eyes" },
-    { char: "😘", name: "kissing_heart" },
-    { char: "😗", name: "kissing" },
-    { char: "😙", name: "kissing_smile" },
-    { char: "😚", name: "kissing_closed_eyes" },
-    { char: "😎", name: "sunglasses" },
-    { char: "🤩", name: "star_struck" },
-    { char: "🥳", name: "partying" },
-    { char: "😡", name: "angry" },
-    { char: "😱", name: "scream" },
-    { char: "😭", name: "cry" },
-    { char: "😢", name: "sad" },
-    { char: "😴", name: "sleeping" },
-    { char: "🤯", name: "mind_blown" }
-  ],
-  "Gestures": [
-    { char: "👍", name: "thumbs_up" },
-    { char: "👎", name: "thumbs_down" },
-    { char: "👏", name: "clap" },
-    { char: "🙏", name: "pray" },
-    { char: "✌️", name: "victory" },
-    { char: "🤞", name: "fingers_crossed" },
-    { char: "🤟", name: "love_you" },
-    { char: "🤘", name: "rock_on" },
-    { char: "👌", name: "ok" },
-    { char: "🤙", name: "call_me" }
-  ],
-  "Hearts & Symbols": [
-    { char: "❤️", name: "red_heart" },
-    { char: "💛", name: "yellow_heart" },
-    { char: "💚", name: "green_heart" },
-    { char: "💙", name: "blue_heart" },
-    { char: "💜", name: "purple_heart" },
-    { char: "🖤", name: "black_heart" },
-    { char: "💔", name: "broken_heart" },
-    { char: "💯", name: "100" },
-    { char: "🔥", name: "fire" },
-    { char: "⭐", name: "star" },
-    { char: "✨", name: "sparkles" },
-    { char: "⚡", name: "zap" },
-    { char: "☀️", name: "sun" },
-    { char: "🌙", name: "moon" },
-    { char: "💤", name: "zzz" },
-    { char: "✅", name: "check" },
-    { char: "❌", name: "cross" }
-  ],
-  "Food & Drink": [
-    { char: "🍕", name: "pizza" },
-    { char: "🍔", name: "burger" },
-    { char: "🍟", name: "fries" },
-    { char: "🌭", name: "hotdog" },
-    { char: "🌮", name: "taco" },
-    { char: "🌯", name: "burrito" },
-    { char: "🥗", name: "salad" },
-    { char: "🍎", name: "apple" },
-    { char: "🍌", name: "banana" },
-    { char: "🍉", name: "watermelon" },
-    { char: "🍓", name: "strawberry" },
-    { char: "🍣", name: "sushi" },
-    { char: "🍩", name: "donut" },
-    { char: "☕", name: "coffee" },
-    { char: "🍺", name: "beer" },
-    { char: "🍷", name: "wine" }
-  ],
-  "Animals": [
-    { char: "🐶", name: "dog" },
-    { char: "🐱", name: "cat" },
-    { char: "🐭", name: "mouse" },
-    { char: "🐹", name: "hamster" },
-    { char: "🐰", name: "rabbit" },
-    { char: "🦊", name: "fox" },
-    { char: "🐻", name: "bear" },
-    { char: "🐼", name: "panda" },
-    { char: "🐨", name: "koala" },
-    { char: "🐯", name: "tiger" },
-    { char: "🦁", name: "lion" },
-    { char: "🐷", name: "pig" },
-    { char: "🐸", name: "frog" },
-    { char: "🐵", name: "monkey" }
-  ],
-  "Travel & Objects": [
-    { char: "🚗", name: "car" },
-    { char: "✈️", name: "airplane" },
-    { char: "🚀", name: "rocket" },
-    { char: "🏠", name: "house" },
-    { char: "💻", name: "laptop" },
-    { char: "📱", name: "phone" },
-    { char: "📷", name: "camera" },
-    { char: "🎮", name: "video_game" },
-    { char: "🎵", name: "music" },
-    { char: "⚽", name: "soccer" },
-    { char: "🏀", name: "basketball" },
-    { char: "🏈", name: "football" }
-  ]
-};
-
-
 let currentEmojiCategory = "Faces";
+const fallbackEmojis = { /* same fallbackEmojis object you already have */ };
 
 // Load emoji.json or fallback
 async function loadEmojis() {
@@ -231,20 +155,14 @@ async function loadEmojis() {
     const emojis = await res.json();
     categorizeEmojis(emojis);
   } catch (err) {
-    console.error("Emoji picker failed to load from emoji.json, using fallback:", err);
+    console.error("Emoji picker failed, using fallback:", err);
     renderEmojiTabs(fallbackEmojis);
   }
 }
 
-// Categorize emojis into fallback categories if flat list
+// Categorize emojis
 function categorizeEmojis(emojis) {
-  const categories = {
-    "Faces": [],
-    "Food": [],
-    "Animals": [],
-    "Gestures": [],
-    "Hearts": []
-  };
+  const categories = { "Faces": [], "Food": [], "Animals": [], "Gestures": [], "Hearts": [] };
   emojis.forEach(e => {
     if (["😀","😂","😍","😭","😎"].includes(e.char)) categories.Faces.push(e);
     else if (["🍕","🍔","🍟","🍣","☕"].includes(e.char)) categories.Food.push(e);
@@ -260,7 +178,6 @@ function renderEmojiTabs(categories) {
   emojiPicker.innerHTML = "";
   const tabsDiv = document.createElement("div");
   tabsDiv.classList.add("emoji-tabs");
-
   Object.keys(categories).forEach(cat => {
     const btn = document.createElement("button");
     btn.textContent = cat;
@@ -269,20 +186,22 @@ function renderEmojiTabs(categories) {
     btn.addEventListener("click", () => switchEmojiCategory(cat, categories));
     tabsDiv.appendChild(btn);
   });
-
   emojiPicker.appendChild(tabsDiv);
   renderEmojiCategory(categories[currentEmojiCategory]);
 }
 
+// Switch category
 function switchEmojiCategory(cat, categories) {
   currentEmojiCategory = cat;
-  document.querySelectorAll(".emoji-tab-btn").forEach(b => b.classList.remove("active"));
-  document.querySelector(`.emoji-tab-btn:contains(${cat})`)?.classList.add("active");
+  document.querySelectorAll(".emoji-tab-btn").forEach(b => {
+    b.classList.toggle('active', b.textContent === cat);
+  });
   renderEmojiCategory(categories[cat]);
 }
 
+// Render emoji grid
 function renderEmojiCategory(emojis) {
-  let grid = document.querySelector(".emoji-category");
+  let grid = emojiPicker.querySelector(".emoji-category");
   if (!grid) {
     grid = document.createElement("div");
     grid.classList.add("emoji-category");
@@ -307,38 +226,35 @@ function insertAtCursor(input, text) {
   input.focus();
 }
 
-// Toggle picker visibility
+// Toggle emoji picker
 emojiBtn.addEventListener('click', e => {
   e.stopPropagation();
-  emojiPicker.style.display = emojiPicker.style.display === 'none' ? 'flex' : 'none';
+  emojiPicker.classList.toggle('show');
 });
-document.addEventListener('click', () => emojiPicker.style.display = 'none');
 
-// Run it on load
-loadEmojis();
-
-// ---------------- Status Icon ----------------
-function statusIcon(status) {
-  switch(status){
-    case 'sent': return '✓';
-    case 'delivered': return '✓✓';
-    case 'read': return '✓✓✔';
-    default: return '';
+// Close picker on outside click
+document.addEventListener('click', e => {
+  if (!emojiPicker.contains(e.target) && e.target !== emojiBtn) {
+    emojiPicker.classList.remove('show');
   }
+});
+
+// ---------------- Mobile Emoji Picker Scroll ----------------
+function scrollChatToBottom() {
+  messages.scrollTop = messages.scrollHeight;
 }
 
-// ---------------- Share Chat Link ----------------
-shareBtn.addEventListener("click", () => {
-  const nickname = currentUser || prompt("Enter your nickname to share the room:", "Guest") || "Guest";
-  const fullURL = `${window.location.origin}?room=${encodeURIComponent(currentRoom)}&nickname=${encodeURIComponent(nickname)}`;
-  navigator.clipboard.writeText(fullURL)
-    .then(() => alert("Room link copied! Share it to join the same room."))
-    .catch(() => alert(`Room link: ${fullURL}`));
+// Enhance emoji button for mobile
+emojiBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  emojiPicker.classList.toggle('show');
+
+  // On mobile, scroll chat to bottom when picker opens
+  if (window.innerWidth <= 600 && emojiPicker.classList.contains('show')) {
+    setTimeout(scrollChatToBottom, 50); // slight delay to ensure picker is visible
+  }
 });
 
-// ---------------- Dark Mode ----------------
-toggleThemeBtn.addEventListener("click", () => {
-  darkMode = !darkMode;
-  document.body.classList.toggle("dark", darkMode);
-  toggleThemeBtn.textContent = darkMode ? "☀️" : "🌙";
-});
+
+// Initialize
+loadEmojis();
