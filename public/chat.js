@@ -108,99 +108,194 @@ function displayMessage(msg) {
 }
 
 // ---------------- Emoji Picker ----------------
-// Categorized fallback emojis
 const fallbackEmojis = {
   "Faces": [
-    { char: "😀", name: "grinning" }, { char: "😁", name: "beaming" }, 
-    { char: "😂", name: "joy" }, { char: "🤣", name: "rofl" }, 
-    { char: "😃", name: "smiley" }, { char: "😄", name: "smile" }, 
-    { char: "😅", name: "sweat_smile" }, { char: "😆", name: "laughing" },
-    { char: "😊", name: "blush" }, { char: "😇", name: "innocent" },
-    { char: "🙂", name: "slightly_smile" }, { char: "🙃", name: "upside_down" },
-    { char: "😉", name: "wink" }, { char: "😌", name: "relieved" },
-    { char: "😍", name: "heart_eyes" }, { char: "😘", name: "kissing_heart" },
-    { char: "😗", name: "kissing" }, { char: "😙", name: "kissing_smile" },
-    { char: "😚", name: "kissing_closed_eyes" }, { char: "😎", name: "sunglasses" },
-    { char: "🤩", name: "star_struck" }, { char: "🥳", name: "partying" },
-    { char: "😡", name: "angry" }, { char: "😱", name: "scream" },
-    { char: "😭", name: "cry" }, { char: "😢", name: "sad" },
-    { char: "😴", name: "sleeping" }, { char: "🤯", name: "mind_blown" }
+    { char: "😀", name: "grinning" },
+    { char: "😁", name: "beaming" },
+    { char: "😂", name: "joy" },
+    { char: "🤣", name: "rofl" },
+    { char: "😃", name: "smiley" },
+    { char: "😄", name: "smile" },
+    { char: "😅", name: "sweat_smile" },
+    { char: "😆", name: "laughing" },
+    { char: "😊", name: "blush" },
+    { char: "😇", name: "innocent" },
+    { char: "🙂", name: "slightly_smile" },
+    { char: "🙃", name: "upside_down" },
+    { char: "😉", name: "wink" },
+    { char: "😌", name: "relieved" },
+    { char: "😍", name: "heart_eyes" },
+    { char: "😘", name: "kissing_heart" },
+    { char: "😗", name: "kissing" },
+    { char: "😙", name: "kissing_smile" },
+    { char: "😚", name: "kissing_closed_eyes" },
+    { char: "😎", name: "sunglasses" },
+    { char: "🤩", name: "star_struck" },
+    { char: "🥳", name: "partying" },
+    { char: "😡", name: "angry" },
+    { char: "😱", name: "scream" },
+    { char: "😭", name: "cry" },
+    { char: "😢", name: "sad" },
+    { char: "😴", name: "sleeping" },
+    { char: "🤯", name: "mind_blown" }
   ],
   "Gestures": [
-    { char: "👍", name: "thumbs_up" }, { char: "👎", name: "thumbs_down" }, 
-    { char: "👏", name: "clap" }, { char: "🙏", name: "pray" },
-    { char: "✌️", name: "victory" }, { char: "🤞", name: "fingers_crossed" },
-    { char: "🤟", name: "love_you" }, { char: "🤘", name: "rock_on" },
-    { char: "👌", name: "ok" }, { char: "🤙", name: "call_me" }
+    { char: "👍", name: "thumbs_up" },
+    { char: "👎", name: "thumbs_down" },
+    { char: "👏", name: "clap" },
+    { char: "🙏", name: "pray" },
+    { char: "✌️", name: "victory" },
+    { char: "🤞", name: "fingers_crossed" },
+    { char: "🤟", name: "love_you" },
+    { char: "🤘", name: "rock_on" },
+    { char: "👌", name: "ok" },
+    { char: "🤙", name: "call_me" }
   ],
   "Hearts & Symbols": [
-    { char: "❤️", name: "red_heart" }, { char: "💛", name: "yellow_heart" },
-    { char: "💚", name: "green_heart" }, { char: "💙", name: "blue_heart" },
-    { char: "💜", name: "purple_heart" }, { char: "🖤", name: "black_heart" },
-    { char: "💔", name: "broken_heart" }, { char: "💯", name: "100" },
-    { char: "🔥", name: "fire" }, { char: "⭐", name: "star" },
-    { char: "✨", name: "sparkles" }, { char: "⚡", name: "zap" },
-    { char: "☀️", name: "sun" }, { char: "🌙", name: "moon" }, { char: "💤", name: "zzz" },
-    { char: "✅", name: "check" }, { char: "❌", name: "cross" }
+    { char: "❤️", name: "red_heart" },
+    { char: "💛", name: "yellow_heart" },
+    { char: "💚", name: "green_heart" },
+    { char: "💙", name: "blue_heart" },
+    { char: "💜", name: "purple_heart" },
+    { char: "🖤", name: "black_heart" },
+    { char: "💔", name: "broken_heart" },
+    { char: "💯", name: "100" },
+    { char: "🔥", name: "fire" },
+    { char: "⭐", name: "star" },
+    { char: "✨", name: "sparkles" },
+    { char: "⚡", name: "zap" },
+    { char: "☀️", name: "sun" },
+    { char: "🌙", name: "moon" },
+    { char: "💤", name: "zzz" },
+    { char: "✅", name: "check" },
+    { char: "❌", name: "cross" }
   ],
   "Food & Drink": [
-    { char: "🍕", name: "pizza" }, { char: "🍔", name: "burger" },
-    { char: "🍟", name: "fries" }, { char: "🌭", name: "hotdog" }, { char: "🌮", name: "taco" },
-    { char: "🌯", name: "burrito" }, { char: "🥗", name: "salad" }, { char: "🍎", name: "apple" },
-    { char: "🍌", name: "banana" }, { char: "🍉", name: "watermelon" }, { char: "🍓", name: "strawberry" },
-    { char: "🍺", name: "beer" }, { char: "☕", name: "coffee" }, { char: "🍷", name: "wine" },
-    { char: "🍣", name: "sushi" }, { char: "🍩", name: "donut" }
+    { char: "🍕", name: "pizza" },
+    { char: "🍔", name: "burger" },
+    { char: "🍟", name: "fries" },
+    { char: "🌭", name: "hotdog" },
+    { char: "🌮", name: "taco" },
+    { char: "🌯", name: "burrito" },
+    { char: "🥗", name: "salad" },
+    { char: "🍎", name: "apple" },
+    { char: "🍌", name: "banana" },
+    { char: "🍉", name: "watermelon" },
+    { char: "🍓", name: "strawberry" },
+    { char: "🍣", name: "sushi" },
+    { char: "🍩", name: "donut" },
+    { char: "☕", name: "coffee" },
+    { char: "🍺", name: "beer" },
+    { char: "🍷", name: "wine" }
   ],
   "Animals": [
-    { char: "🐶", name: "dog" }, { char: "🐱", name: "cat" }, { char: "🐭", name: "mouse" },
-    { char: "🐹", name: "hamster" }, { char: "🐰", name: "rabbit" }, { char: "🦊", name: "fox" },
-    { char: "🐻", name: "bear" }, { char: "🐼", name: "panda" }, { char: "🐨", name: "koala" },
-    { char: "🐯", name: "tiger" }
+    { char: "🐶", name: "dog" },
+    { char: "🐱", name: "cat" },
+    { char: "🐭", name: "mouse" },
+    { char: "🐹", name: "hamster" },
+    { char: "🐰", name: "rabbit" },
+    { char: "🦊", name: "fox" },
+    { char: "🐻", name: "bear" },
+    { char: "🐼", name: "panda" },
+    { char: "🐨", name: "koala" },
+    { char: "🐯", name: "tiger" },
+    { char: "🦁", name: "lion" },
+    { char: "🐷", name: "pig" },
+    { char: "🐸", name: "frog" },
+    { char: "🐵", name: "monkey" }
   ],
   "Travel & Objects": [
-    { char: "🚗", name: "car" }, { char: "✈️", name: "airplane" }, { char: "🚀", name: "rocket" },
-    { char: "🏠", name: "house" }, { char: "💻", name: "laptop" }, { char: "📱", name: "phone" },
-    { char: "📷", name: "camera" }, { char: "🎮", name: "video_game" }, { char: "🎵", name: "music" },
-    { char: "⚽", name: "soccer" }, { char: "🏀", name: "basketball" }
+    { char: "🚗", name: "car" },
+    { char: "✈️", name: "airplane" },
+    { char: "🚀", name: "rocket" },
+    { char: "🏠", name: "house" },
+    { char: "💻", name: "laptop" },
+    { char: "📱", name: "phone" },
+    { char: "📷", name: "camera" },
+    { char: "🎮", name: "video_game" },
+    { char: "🎵", name: "music" },
+    { char: "⚽", name: "soccer" },
+    { char: "🏀", name: "basketball" },
+    { char: "🏈", name: "football" }
   ]
 };
 
-// Load emoji.json or fallback if it fails
+
+let currentEmojiCategory = "Faces";
+
+// Load emoji.json or fallback
 async function loadEmojis() {
   try {
     const res = await fetch("/emoji.json");
     if (!res.ok) throw new Error("Failed to fetch emoji.json");
     const emojis = await res.json();
-    renderEmojiPicker(emojis);
+    categorizeEmojis(emojis);
   } catch (err) {
     console.error("Emoji picker failed to load from emoji.json, using fallback:", err);
-    renderEmojiPicker(fallbackEmojis);
+    renderEmojiTabs(fallbackEmojis);
   }
 }
 
-// Render emojis into picker with categories
-function renderEmojiPicker(emojis) {
+// Categorize emojis into fallback categories if flat list
+function categorizeEmojis(emojis) {
+  const categories = {
+    "Faces": [],
+    "Food": [],
+    "Animals": [],
+    "Gestures": [],
+    "Hearts": []
+  };
+  emojis.forEach(e => {
+    if (["😀","😂","😍","😭","😎"].includes(e.char)) categories.Faces.push(e);
+    else if (["🍕","🍔","🍟","🍣","☕"].includes(e.char)) categories.Food.push(e);
+    else if (["🐶","🐱","🐭","🐰","🦊"].includes(e.char)) categories.Animals.push(e);
+    else if (["👍","👎","👏","🙏"].includes(e.char)) categories.Gestures.push(e);
+    else if (["❤️","💛","💚","💙"].includes(e.char)) categories.Hearts.push(e);
+  });
+  renderEmojiTabs(categories);
+}
+
+// Render emoji tabs
+function renderEmojiTabs(categories) {
   emojiPicker.innerHTML = "";
-  for (const category in emojis) {
-    const heading = document.createElement("div");
-    heading.textContent = category;
-    heading.classList.add("emoji-category");
-    emojiPicker.appendChild(heading);
+  const tabsDiv = document.createElement("div");
+  tabsDiv.classList.add("emoji-tabs");
 
-    const container = document.createElement("div");
-    container.classList.add("emoji-category-container");
+  Object.keys(categories).forEach(cat => {
+    const btn = document.createElement("button");
+    btn.textContent = cat;
+    btn.classList.add("emoji-tab-btn");
+    if (cat === currentEmojiCategory) btn.classList.add("active");
+    btn.addEventListener("click", () => switchEmojiCategory(cat, categories));
+    tabsDiv.appendChild(btn);
+  });
 
-    emojis[category].forEach(e => {
-      const span = document.createElement("span");
-      span.textContent = e.char;
-      span.title = e.name;
-      span.classList.add("emoji");
-      span.addEventListener("click", () => insertAtCursor(input, e.char));
-      container.appendChild(span);
-    });
+  emojiPicker.appendChild(tabsDiv);
+  renderEmojiCategory(categories[currentEmojiCategory]);
+}
 
-    emojiPicker.appendChild(container);
+function switchEmojiCategory(cat, categories) {
+  currentEmojiCategory = cat;
+  document.querySelectorAll(".emoji-tab-btn").forEach(b => b.classList.remove("active"));
+  document.querySelector(`.emoji-tab-btn:contains(${cat})`)?.classList.add("active");
+  renderEmojiCategory(categories[cat]);
+}
+
+function renderEmojiCategory(emojis) {
+  let grid = document.querySelector(".emoji-category");
+  if (!grid) {
+    grid = document.createElement("div");
+    grid.classList.add("emoji-category");
+    emojiPicker.appendChild(grid);
   }
+  grid.innerHTML = "";
+  emojis.forEach(e => {
+    const span = document.createElement("span");
+    span.textContent = e.char;
+    span.title = e.name;
+    span.addEventListener("click", () => insertAtCursor(input, e.char));
+    grid.appendChild(span);
+  });
 }
 
 // Insert emoji at cursor
