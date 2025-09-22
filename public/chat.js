@@ -23,7 +23,9 @@ let darkMode = false;
 // ---------------- Landing Page Prefill ----------------
 const urlParams = new URLSearchParams(window.location.search);
 const prefillRoom = urlParams.get("room");
-if (prefillRoom) roomInput.value = prefillRoom;
+if (prefillRoom) {
+  roomInput.value = prefillRoom;
+}
 
 // ---------------- Join Chat ----------------
 joinBtn.addEventListener("click", () => {
@@ -106,27 +108,49 @@ function displayMessage(msg) {
 }
 
 // ---------------- Emoji Picker ----------------
-fetch('/emoji.json')
-  .then(res => res.json())
-  .then(data => {
-    emojiPicker.innerHTML = ""; // clear existing
-    data.forEach(e => {
-      const span = document.createElement('span');
-      span.textContent = e.char;
-      span.classList.add('emoji');
-      span.addEventListener("click", () => insertAtCursor(input, e.char));
-      emojiPicker.appendChild(span);
-    });
-  })
-  .catch(err => console.error("Emoji fetch error:", err));
+// Built-in fallback emojis (in case emoji.json fails to load)
+const fallbackEmojis = [
+  { char: "😀", name: "grinning" },
+  { char: "😂", name: "joy" },
+  { char: "😍", name: "heart_eyes" },
+  { char: "😭", name: "sob" },
+  { char: "👍", name: "thumbs_up" },
+  { char: "🙏", name: "pray" },
+  { char: "🔥", name: "fire" },
+  { char: "🎉", name: "tada" },
+  { char: "🍕", name: "pizza" },
+  { char: "⚽", name: "soccer" },
+  { char: "🎵", name: "music" },
+  { char: "❤️", name: "red_heart" }
+];
 
-emojiBtn.addEventListener('click', e => {
-  e.stopPropagation();
-  emojiPicker.style.display = emojiPicker.style.display === 'none' ? 'flex' : 'none';
-});
+// Load emoji.json or fallback if it fails
+async function loadEmojis() {
+  try {
+    const res = await fetch("/emoji.json");
+    if (!res.ok) throw new Error("Failed to fetch emoji.json");
+    const emojis = await res.json();
+    renderEmojiPicker(emojis);
+  } catch (err) {
+    console.error("Emoji picker failed to load from emoji.json, using fallback:", err);
+    renderEmojiPicker(fallbackEmojis);
+  }
+}
 
-document.addEventListener('click', () => emojiPicker.style.display = 'none');
+// Render emojis into picker
+function renderEmojiPicker(emojis) {
+  emojiPicker.innerHTML = "";
+  emojis.forEach(e => {
+    const span = document.createElement("span");
+    span.textContent = e.char;
+    span.title = e.name;
+    span.classList.add("emoji");
+    span.addEventListener("click", () => insertAtCursor(input, e.char));
+    emojiPicker.appendChild(span);
+  });
+}
 
+// Insert emoji at cursor
 function insertAtCursor(input, text) {
   const start = input.selectionStart;
   const end = input.selectionEnd;
@@ -134,6 +158,16 @@ function insertAtCursor(input, text) {
   input.selectionStart = input.selectionEnd = start + text.length;
   input.focus();
 }
+
+// Toggle picker visibility
+emojiBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  emojiPicker.style.display = emojiPicker.style.display === 'none' ? 'flex' : 'none';
+});
+document.addEventListener('click', () => emojiPicker.style.display = 'none');
+
+// Run it on load
+loadEmojis();
 
 // ---------------- Status Icon ----------------
 function statusIcon(status) {
