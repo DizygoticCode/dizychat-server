@@ -20,6 +20,8 @@ let currentRoom = '';
 let socket;
 let typingTimeout;
 let darkMode = false;
+let emojiData = {};
+let emojiGrids = {};
 
 // ---------------- Landing Page Prefill ----------------
 const urlParams = new URLSearchParams(window.location.search);
@@ -39,7 +41,6 @@ joinBtn.addEventListener("click", () => {
   chatContainer.style.display = "flex";
   roomNameSpan.textContent = room;
 
-  // Update URL
   const newURL = `${window.location.origin}?room=${encodeURIComponent(room)}`;
   window.history.replaceState({}, "", newURL);
 
@@ -48,14 +49,12 @@ joinBtn.addEventListener("click", () => {
   socket.emit("join room", room);
   socket.emit("get history", room);
 
-  // Typing indicator
   input.addEventListener("input", () => {
     socket.emit("typing", currentUser);
     clearTimeout(typingTimeout);
     typingTimeout = setTimeout(() => socket.emit("stop typing", currentUser), 1000);
   });
 
-  // Send message
   form.addEventListener("submit", e => {
     e.preventDefault();
     if (!input.value) return;
@@ -65,20 +64,13 @@ joinBtn.addEventListener("click", () => {
     input.focus();
   });
 
-  // Receive messages
   socket.on('chat message', msg => displayMessage(msg));
-
-  // Room history
   socket.on('room history', msgs => msgs.forEach(msg => displayMessage(msg)));
-
-  // Typing bubble
   socket.on('typing', users => {
     const others = users.filter(u => u !== currentUser);
     typingBubble.style.display = others.length ? 'block' : 'none';
     typingBubble.textContent = others.length ? `${others.join(', ')} is typing...` : '';
   });
-
-  // Message status
   socket.on('message status', ({ id, status }) => {
     const msgDiv = document.querySelector(`.message[data-id='${id}'] .status`);
     if (msgDiv) msgDiv.textContent = statusIcon(status);
@@ -144,80 +136,60 @@ homeLogo.addEventListener("click", () => {
 });
 
 // ---------------- Emoji Picker ----------------
-let currentEmojiCategory = "Faces";
-const fallbackEmojis = { /* same fallbackEmojis object you already have */ };
-
-// Load emoji.json or fallback
 async function loadEmojis() {
   try {
     const res = await fetch("/emoji.json");
     if (!res.ok) throw new Error("Failed to fetch emoji.json");
-    const emojis = await res.json();
-    categorizeEmojis(emojis);
+    emojiData = await res.json();
+    renderEmojiTabs();
+    preRenderEmojiGrids();
+    showEmojiCategory(Object.keys(emojiData)[0]);
   } catch (err) {
-    console.error("Emoji picker failed, using fallback:", err);
-    renderEmojiTabs(fallbackEmojis);
+    console.error("Emoji picker failed:", err);
   }
 }
 
-// Categorize emojis
-function categorizeEmojis(emojis) {
-  const categories = { "Faces": [], "Food": [], "Animals": [], "Gestures": [], "Hearts": [] };
-  emojis.forEach(e => {
-    if (["😀","😂","😍","😭","😎"].includes(e.char)) categories.Faces.push(e);
-    else if (["🍕","🍔","🍟","🍣","☕"].includes(e.char)) categories.Food.push(e);
-    else if (["🐶","🐱","🐭","🐰","🦊"].includes(e.char)) categories.Animals.push(e);
-    else if (["👍","👎","👏","🙏"].includes(e.char)) categories.Gestures.push(e);
-    else if (["❤️","💛","💚","💙"].includes(e.char)) categories.Hearts.push(e);
-  });
-  renderEmojiTabs(categories);
-}
-
-// Render emoji tabs
-function renderEmojiTabs(categories) {
-  emojiPicker.innerHTML = "";
+function renderEmojiTabs() {
   const tabsDiv = document.createElement("div");
   tabsDiv.classList.add("emoji-tabs");
-  Object.keys(categories).forEach(cat => {
+
+  Object.keys(emojiData).forEach(cat => {
     const btn = document.createElement("button");
     btn.textContent = cat;
     btn.classList.add("emoji-tab-btn");
-    if (cat === currentEmojiCategory) btn.classList.add("active");
-    btn.addEventListener("click", () => switchEmojiCategory(cat, categories));
+    btn.addEventListener("click", () => showEmojiCategory(cat));
     tabsDiv.appendChild(btn);
   });
+
   emojiPicker.appendChild(tabsDiv);
-  renderEmojiCategory(categories[currentEmojiCategory]);
 }
 
-// Switch category
-function switchEmojiCategory(cat, categories) {
-  currentEmojiCategory = cat;
+function preRenderEmojiGrids() {
+  Object.keys(emojiData).forEach(cat => {
+    const grid = document.createElement("div");
+    grid.classList.add("emoji-category");
+    grid.style.display = "none";
+    emojiData[cat].forEach(e => {
+      const span = document.createElement("span");
+      span.textContent = e.char;
+      span.title = e.name;
+      span.addEventListener("click", () => insertAtCursor(input, e.char));
+      grid.appendChild(span);
+    });
+    emojiPicker.appendChild(grid);
+    emojiGrids[cat] = grid;
+  });
+}
+
+function showEmojiCategory(cat) {
   document.querySelectorAll(".emoji-tab-btn").forEach(b => {
     b.classList.toggle('active', b.textContent === cat);
   });
-  renderEmojiCategory(categories[cat]);
-}
-
-// Render emoji grid
-function renderEmojiCategory(emojis) {
-  let grid = emojiPicker.querySelector(".emoji-category");
-  if (!grid) {
-    grid = document.createElement("div");
-    grid.classList.add("emoji-category");
-    emojiPicker.appendChild(grid);
-  }
-  grid.innerHTML = "";
-  emojis.forEach(e => {
-    const span = document.createElement("span");
-    span.textContent = e.char;
-    span.title = e.name;
-    span.addEventListener("click", () => insertAtCursor(input, e.char));
-    grid.appendChild(span);
+  Object.keys(emojiGrids).forEach(c => {
+    emojiGrids[c].style.display = c === cat ? "grid" : "none";
   });
 }
 
-// Insert emoji at cursor
 function insertAtCursor(input, text) {
   const start = input.selectionStart;
   const end = input.selectionEnd;
@@ -226,35 +198,20 @@ function insertAtCursor(input, text) {
   input.focus();
 }
 
-// Toggle emoji picker
+// Toggle picker
 emojiBtn.addEventListener('click', e => {
   e.stopPropagation();
   emojiPicker.classList.toggle('show');
+  if (window.innerWidth <= 600 && emojiPicker.classList.contains('show')) {
+    setTimeout(() => messages.scrollTop = messages.scrollHeight, 50);
+  }
 });
 
-// Close picker on outside click
 document.addEventListener('click', e => {
   if (!emojiPicker.contains(e.target) && e.target !== emojiBtn) {
     emojiPicker.classList.remove('show');
   }
 });
 
-// ---------------- Mobile Emoji Picker Scroll ----------------
-function scrollChatToBottom() {
-  messages.scrollTop = messages.scrollHeight;
-}
-
-// Enhance emoji button for mobile
-emojiBtn.addEventListener('click', e => {
-  e.stopPropagation();
-  emojiPicker.classList.toggle('show');
-
-  // On mobile, scroll chat to bottom when picker opens
-  if (window.innerWidth <= 600 && emojiPicker.classList.contains('show')) {
-    setTimeout(scrollChatToBottom, 50); // slight delay to ensure picker is visible
-  }
-});
-
-
-// Initialize
+// ---------------- Initialize ----------------
 loadEmojis();
