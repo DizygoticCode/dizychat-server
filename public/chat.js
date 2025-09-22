@@ -108,9 +108,8 @@ function displayMessage(msg) {
 }
 
 // ---------------- Emoji Picker ----------------
-// Fallback emojis grouped by category
 const fallbackEmojis = {
-  Faces: [
+  "Faces": [
     { char: "😀", name: "grinning" },
     { char: "😁", name: "beaming" },
     { char: "😂", name: "joy" },
@@ -124,24 +123,35 @@ const fallbackEmojis = {
     { char: "🙂", name: "slightly_smile" },
     { char: "🙃", name: "upside_down" },
     { char: "😉", name: "wink" },
+    { char: "😌", name: "relieved" },
     { char: "😍", name: "heart_eyes" },
     { char: "😘", name: "kissing_heart" },
+    { char: "😗", name: "kissing" },
+    { char: "😙", name: "kissing_smile" },
+    { char: "😚", name: "kissing_closed_eyes" },
     { char: "😎", name: "sunglasses" },
     { char: "🤩", name: "star_struck" },
     { char: "🥳", name: "partying" },
+    { char: "😡", name: "angry" },
+    { char: "😱", name: "scream" },
     { char: "😭", name: "cry" },
-    { char: "😱", name: "scream" }
+    { char: "😢", name: "sad" },
+    { char: "😴", name: "sleeping" },
+    { char: "🤯", name: "mind_blown" }
   ],
-  Gestures: [
+  "Gestures": [
     { char: "👍", name: "thumbs_up" },
     { char: "👎", name: "thumbs_down" },
     { char: "👏", name: "clap" },
     { char: "🙏", name: "pray" },
+    { char: "✌️", name: "victory" },
+    { char: "🤞", name: "fingers_crossed" },
     { char: "🤟", name: "love_you" },
+    { char: "🤘", name: "rock_on" },
     { char: "👌", name: "ok" },
     { char: "🤙", name: "call_me" }
   ],
-  Hearts: [
+  "Hearts & Symbols": [
     { char: "❤️", name: "red_heart" },
     { char: "💛", name: "yellow_heart" },
     { char: "💚", name: "green_heart" },
@@ -150,40 +160,68 @@ const fallbackEmojis = {
     { char: "🖤", name: "black_heart" },
     { char: "💔", name: "broken_heart" },
     { char: "💯", name: "100" },
-    { char: "🔥", name: "fire" }
+    { char: "🔥", name: "fire" },
+    { char: "⭐", name: "star" },
+    { char: "✨", name: "sparkles" },
+    { char: "⚡", name: "zap" },
+    { char: "☀️", name: "sun" },
+    { char: "🌙", name: "moon" },
+    { char: "💤", name: "zzz" },
+    { char: "✅", name: "check" },
+    { char: "❌", name: "cross" }
   ],
-  Food: [
+  "Food & Drink": [
     { char: "🍕", name: "pizza" },
     { char: "🍔", name: "burger" },
     { char: "🍟", name: "fries" },
+    { char: "🌭", name: "hotdog" },
+    { char: "🌮", name: "taco" },
+    { char: "🌯", name: "burrito" },
+    { char: "🥗", name: "salad" },
     { char: "🍎", name: "apple" },
+    { char: "🍌", name: "banana" },
+    { char: "🍉", name: "watermelon" },
     { char: "🍓", name: "strawberry" },
+    { char: "🍣", name: "sushi" },
+    { char: "🍩", name: "donut" },
+    { char: "☕", name: "coffee" },
     { char: "🍺", name: "beer" },
-    { char: "☕", name: "coffee" }
+    { char: "🍷", name: "wine" }
   ],
-  Animals: [
+  "Animals": [
     { char: "🐶", name: "dog" },
     { char: "🐱", name: "cat" },
+    { char: "🐭", name: "mouse" },
+    { char: "🐹", name: "hamster" },
     { char: "🐰", name: "rabbit" },
+    { char: "🦊", name: "fox" },
     { char: "🐻", name: "bear" },
     { char: "🐼", name: "panda" },
-    { char: "🐯", name: "tiger" }
+    { char: "🐨", name: "koala" },
+    { char: "🐯", name: "tiger" },
+    { char: "🦁", name: "lion" },
+    { char: "🐷", name: "pig" },
+    { char: "🐸", name: "frog" },
+    { char: "🐵", name: "monkey" }
   ],
-  Travel: [
+  "Travel & Objects": [
     { char: "🚗", name: "car" },
     { char: "✈️", name: "airplane" },
     { char: "🚀", name: "rocket" },
     { char: "🏠", name: "house" },
     { char: "💻", name: "laptop" },
     { char: "📱", name: "phone" },
+    { char: "📷", name: "camera" },
     { char: "🎮", name: "video_game" },
     { char: "🎵", name: "music" },
     { char: "⚽", name: "soccer" },
-    { char: "🏀", name: "basketball" }
+    { char: "🏀", name: "basketball" },
+    { char: "🏈", name: "football" }
   ]
 };
 
-let currentCategory = "Faces"; // Default
+
+let currentEmojiCategory = "Faces";
 
 // Load emoji.json or fallback
 async function loadEmojis() {
@@ -191,58 +229,12 @@ async function loadEmojis() {
     const res = await fetch("/emoji.json");
     if (!res.ok) throw new Error("Failed to fetch emoji.json");
     const emojis = await res.json();
-    renderEmojiTabs(emojis);
-    renderEmojiPicker(emojis, Object.keys(emojis)[0]); // default first category
+    categorizeEmojis(emojis);
   } catch (err) {
     console.error("Emoji picker failed to load from emoji.json, using fallback:", err);
     renderEmojiTabs(fallbackEmojis);
-    renderEmojiPicker(fallbackEmojis, "Faces");
   }
 }
-
-// Render category tabs
-function renderEmojiTabs(emojisByCategory) {
-  const tabsDiv = document.createElement("div");
-  tabsDiv.classList.add("emoji-tabs");
-  emojiPicker.innerHTML = ""; // clear picker
-
-  Object.keys(emojisByCategory).forEach(category => {
-    const btn = document.createElement("button");
-    btn.textContent = category;
-    btn.classList.add("emoji-tab");
-    if (category === currentCategory) btn.classList.add("active");
-    btn.addEventListener("click", () => {
-      currentCategory = category;
-      document.querySelectorAll(".emoji-tab").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      renderEmojiPicker(emojisByCategory, category);
-    });
-    tabsDiv.appendChild(btn);
-  });
-
-  emojiPicker.appendChild(tabsDiv);
-}
-
-// Render emojis for a category
-function renderEmojiPicker(emojisByCategory, category) {
-  let grid = document.querySelector(".emoji-grid");
-  if (!grid) {
-    grid = document.createElement("div");
-    grid.classList.add("emoji-grid");
-    emojiPicker.appendChild(grid);
-  }
-  grid.innerHTML = ""; // clear
-
-  emojisByCategory[category].forEach(e => {
-    const span = document.createElement("span");
-    span.textContent = e.char;
-    span.title = e.name;
-    span.classList.add("emoji");
-    span.addEventListener("click", () => insertAtCursor(input, e.char));
-    grid.appendChild(span);
-  });
-}
-
 
 // Categorize emojis into fallback categories if flat list
 function categorizeEmojis(emojis) {
