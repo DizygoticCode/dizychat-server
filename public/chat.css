@@ -85,21 +85,16 @@ body.dark {
   background: #4752c4;
 }
 
-/* Header Logo */
-.header-logo {
-  height: 28px;
-  width: auto;
-  margin-right: 10px;
+/* Landing Logo */
+.landing .logo {
+  display: block;
+  max-width: 220px; /* scale nicely */
+  width: 80%;
+  height: auto;
+  margin-bottom: 25px;
   object-fit: contain;
-  filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.3));
-  cursor: pointer; /* show it's clickable */
-  transition: transform 0.15s ease;
+  filter: drop-shadow(0px 4px 10px rgba(0,0,0,0.4));
 }
-
-.header-logo:hover {
-  transform: scale(1.1);
-}
-
 
 
 /* ---------------- Chat Page ---------------- */
