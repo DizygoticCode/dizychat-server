@@ -182,7 +182,6 @@ const fallbackEmojis = [
   { char: "🌙", "name": "moon" },
   { char: "☁️", "name": "cloud" },
   { char: "🌈", "name": "rainbow" }
-  const fallbackEmojis = [
   // Faces
   { char: "😀", name: "grinning" },
   { char: "😃", name: "smiley" },
@@ -212,7 +211,6 @@ const fallbackEmojis = [
   { char: "😢", name: "sad" },
   { char: "😴", name: "sleeping" },
   { char: "🤯", name: "mind_blown" },
-
   // Gestures
   { char: "👍", name: "thumbs_up" },
   { char: "👎", name: "thumbs_down" },
@@ -224,7 +222,6 @@ const fallbackEmojis = [
   { char: "🤘", name: "rock_on" },
   { char: "👌", name: "ok" },
   { char: "🤙", name: "call_me" },
-
   // Hearts & Symbols
   { char: "❤️", name: "red_heart" },
   { char: "💛", name: "yellow_heart" },
@@ -241,7 +238,6 @@ const fallbackEmojis = [
   { char: "☀️", name: "sun" },
   { char: "🌙", name: "moon" },
   { char: "💤", name: "zzz" },
-
   // Food
   { char: "🍕", name: "pizza" },
   { char: "🍔", name: "burger" },
@@ -257,7 +253,6 @@ const fallbackEmojis = [
   { char: "🍔", name: "burger" },
   { char: "🍺", name: "beer" },
   { char: "☕", name: "coffee" },
-
   // Animals
   { char: "🐶", name: "dog" },
   { char: "🐱", name: "cat" },
@@ -269,7 +264,6 @@ const fallbackEmojis = [
   { char: "🐼", name: "panda" },
   { char: "🐨", name: "koala" },
   { char: "🐯", name: "tiger" },
-
   // Travel & Objects
   { char: "🚗", name: "car" },
   { char: "✈️", name: "airplane" },
