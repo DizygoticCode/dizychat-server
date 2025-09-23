@@ -13,14 +13,18 @@ const io = new Server(server);
 
 const PORT = process.env.PORT || 10000;
 
-// ---------------- MongoDB ----------------
-mongoose.connect(process.env.MONGO_URI, {
+// ---------------- MongoDB Connection ----------------
+const isProduction = process.env.NODE_ENV === 'production';
+const mongoUri = isProduction ? process.env.MONGO_URI_ATLAS : process.env.MONGO_URI_LOCAL;
+
+mongoose.connect(mongoUri, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-.then(() => console.log("🟢 Connected to MongoDB"))
+.then(() => console.log(`🟢 Connected to MongoDB (${isProduction ? 'Atlas' : 'Local'})`))
 .catch(err => console.error("❌ MongoDB connection error:", err));
 
+// ---------------- MongoDB Schema ----------------
 const messageSchema = new mongoose.Schema({
   room: String,
   user: String,
@@ -55,7 +59,6 @@ io.on('connection', (socket) => {
   // Handle new chat message
   socket.on('chat message', async (msgData) => {
     try {
-      // Ensure timestamp is a Date
       const newMsg = new Message({
         ...msgData,
         timestamp: msgData.timestamp ? new Date(msgData.timestamp) : new Date(),
@@ -64,8 +67,6 @@ io.on('connection', (socket) => {
       await newMsg.save();
 
       io.to(msgData.room).emit('chat message', newMsg);
-
-      // Immediately update status to "delivered"
       io.to(msgData.room).emit('message status', { id: newMsg._id, status: 'delivered' });
     } catch (err) {
       console.error("Error saving message:", err);
