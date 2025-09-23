@@ -17,9 +17,13 @@ const PORT = process.env.PORT || 10000;
 const mongoUri = process.env.MONGO_URI;
 
 if (!mongoUri) {
-  console.error("❌ No MONGO_URI found in environment variables");
+  console.error("❌ MONGO_URI is not defined. Please set it in your Render Environment Variables.");
   process.exit(1);
 }
+
+// Mask password before logging
+const safeUri = mongoUri.replace(/:\/\/.*:.*@/, "://****:****@");
+console.log(`Connecting to MongoDB at: ${safeUri}`);
 
 mongoose.connect(mongoUri, {
   useNewUrlParser: true,
@@ -48,19 +52,16 @@ let typingUsers = {};
 io.on('connection', (socket) => {
   console.log("A user connected");
 
-  // Join a room
   socket.on('join room', (room) => {
     socket.join(room);
     console.log(`User joined room: ${room}`);
   });
 
-  // Get message history
   socket.on('get history', async (room) => {
     const history = await Message.find({ room }).sort({ timestamp: 1 }).limit(50);
     socket.emit('room history', history);
   });
 
-  // Handle new chat message
   socket.on('chat message', async (msgData) => {
     try {
       const newMsg = new Message({
@@ -77,7 +78,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Handle read receipts
   socket.on('read message', async ({ room, id }) => {
     try {
       await Message.findByIdAndUpdate(id, { status: 'read' });
@@ -87,7 +87,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Typing indicators
   socket.on('typing', (username) => {
     typingUsers[socket.id] = username;
     io.emit('typing', Object.values(typingUsers));
