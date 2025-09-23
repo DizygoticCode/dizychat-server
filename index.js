@@ -14,14 +14,18 @@ const io = new Server(server);
 const PORT = process.env.PORT || 10000;
 
 // ---------------- MongoDB Connection ----------------
-const isProduction = process.env.NODE_ENV === 'production';
-const mongoUri = isProduction ? process.env.MONGO_URI_ATLAS : process.env.MONGO_URI_LOCAL;
+const mongoUri = process.env.MONGO_URI;
+
+if (!mongoUri) {
+  console.error("❌ No MONGO_URI found in environment variables");
+  process.exit(1);
+}
 
 mongoose.connect(mongoUri, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-.then(() => console.log(`🟢 Connected to MongoDB (${isProduction ? 'Atlas' : 'Local'})`))
+.then(() => console.log("🟢 Connected to MongoDB"))
 .catch(err => console.error("❌ MongoDB connection error:", err));
 
 // ---------------- MongoDB Schema ----------------
