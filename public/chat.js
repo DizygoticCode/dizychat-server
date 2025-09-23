@@ -21,6 +21,7 @@ let socket;
 let typingTimeout;
 let darkMode = false;
 let emojiData = {};
+let emojiGrids = {}; // fixed missing declaration
 
 // ---------------- Landing Page Prefill ----------------
 const urlParams = new URLSearchParams(window.location.search);
@@ -124,8 +125,7 @@ toggleThemeBtn.addEventListener("click", () => {
   darkMode = !darkMode;
   document.body.classList.toggle("dark", darkMode);
   toggleThemeBtn.textContent = darkMode ? "☀️" : "🌙";
-  // Switch logo in header
-  homeLogo.src = darkMode ? "logo.png" : "logodark.png";
+  homeLogo.src = darkMode ? "logodark.png" : "logo.png"; // fixed
 });
 
 // ---------------- Home Logo Button ----------------
@@ -133,72 +133,80 @@ homeLogo.addEventListener("click", () => {
   chatContainer.style.display = "none";
   usernamePrompt.style.display = "flex";
   roomNameSpan.textContent = "Room";
+  messages.innerHTML = ""; // clear previous messages
   window.history.replaceState({}, "", window.location.origin);
 });
 
 // ---------------- Emoji Picker ----------------
-fetch("emoji.json")
-  .then(res => res.json())
-  .then(data => {
-    emojiData = data;
-    buildEmojiPicker(data);
-  })
-  .catch(err => console.error("Emoji picker failed:", err));
+const fallbackEmojis = {
+  "Smileys": ["😀","😁","😂","🤣","😃","😅","😉","😊","😍","😘","😜","🤪","🤨","😎","🤩","🥳","😡","😭","😱","🤔"],
+  "Animals": ["🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵"],
+  "Food": ["🍏","🍎","🍐","🍊","🍋","🍌","🍉","🍇","🍓","🍒","🍑","🥭","🍍","🥥","🥝"],
+  "Activities": ["⚽","🏀","🏈","⚾","🎾","🏐","🏉","🎱","🏓","🏸","🥅","🏒","🏑"],
+  "Travel": ["🚗","🚕","🚙","🚌","🚎","🏎️","🚓","🚑","🚒","🚐","✈️","🚀","🛸"],
+  "Symbols": ["❤️","💔","💕","💖","✨","⭐","🌟","🔥","🌈","⚡","💯","✔️","❌","❓","❗"]
+};
 
-function buildEmojiPicker(data) {
+async function loadEmojis() {
+  try {
+    const res = await fetch("/emoji.json");
+    if (!res.ok) throw new Error("emoji.json missing");
+    emojiData = await res.json();
+  } catch {
+    emojiData = fallbackEmojis;
+  }
+  buildEmojiPicker();
+}
+
+function buildEmojiPicker() {
   emojiPicker.innerHTML = "";
-
-  // Tabs
   const tabs = document.createElement("div");
   tabs.classList.add("emoji-tabs");
 
-  // Content wrapper
   const content = document.createElement("div");
   content.classList.add("emoji-content");
 
-  Object.keys(data).forEach((category, index) => {
-    // Tab button
+  Object.keys(emojiData).forEach((category, index) => {
     const tabBtn = document.createElement("button");
     tabBtn.textContent = category;
     tabBtn.classList.add("emoji-tab-btn");
     if (index === 0) tabBtn.classList.add("active");
-
-    tabBtn.addEventListener("click", () => {
-      document.querySelectorAll(".emoji-tab-btn").forEach(b => b.classList.remove("active"));
-      tabBtn.classList.add("active");
-
-      // Show only selected category
-      document.querySelectorAll(".emoji-category").forEach(c => c.style.display = "none");
-      content.querySelector(`[data-category="${category}"]`).style.display = "grid";
-    });
-
+    tabBtn.addEventListener("click", () => showEmojiCategory(category));
     tabs.appendChild(tabBtn);
 
-    // Emoji grid
-    const categoryDiv = document.createElement("div");
-    categoryDiv.classList.add("emoji-category");
-    categoryDiv.dataset.category = category;
-    if (index !== 0) categoryDiv.style.display = "none";
+    const catDiv = document.createElement("div");
+    catDiv.classList.add("emoji-category");
+    catDiv.dataset.category = category;
+    if (index !== 0) catDiv.style.display = "none";
 
-    data[category].forEach(e => {
+    emojiData[category].forEach(e => {
+      const char = typeof e === "string" ? e : e.char;
       const span = document.createElement("span");
-      span.textContent = e.char;
-      span.title = e.name;
+      span.textContent = char;
       span.addEventListener("click", () => {
-        insertAtCursor(input, e.char);
-        emojiPicker.classList.remove("show"); // auto-close
+        insertAtCursor(input, char);
+        emojiPicker.classList.remove("show");
       });
-      categoryDiv.appendChild(span);
+      catDiv.appendChild(span);
     });
 
-    content.appendChild(categoryDiv);
+    content.appendChild(catDiv);
+    emojiGrids[category] = catDiv;
   });
 
   emojiPicker.appendChild(tabs);
   emojiPicker.appendChild(content);
 }
 
-// Insert emoji at cursor
+function showEmojiCategory(cat) {
+  document.querySelectorAll(".emoji-tab-btn").forEach(b => {
+    b.classList.toggle('active', b.textContent === cat);
+  });
+  Object.keys(emojiGrids).forEach(c => {
+    emojiGrids[c].style.display = c === cat ? "grid" : "none";
+  });
+}
+
 function insertAtCursor(input, text) {
   const start = input.selectionStart;
   const end = input.selectionEnd;
@@ -207,13 +215,9 @@ function insertAtCursor(input, text) {
   input.focus();
 }
 
-// Toggle picker
 emojiBtn.addEventListener('click', e => {
   e.stopPropagation();
   emojiPicker.classList.toggle('show');
-  if (window.innerWidth <= 600 && emojiPicker.classList.contains('show')) {
-    setTimeout(() => messages.scrollTop = messages.scrollHeight, 50);
-  }
 });
 
 document.addEventListener('click', e => {
@@ -221,3 +225,6 @@ document.addEventListener('click', e => {
     emojiPicker.classList.remove('show');
   }
 });
+
+// Load emojis on start
+loadEmojis();

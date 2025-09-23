@@ -37,12 +37,26 @@
       <button type="button" id="emoji-btn">😀</button>
       <input id="input" autocomplete="off" placeholder="Type a message..." />
       <button type="submit">➤</button>
-
       <div id="emoji-picker" class="emoji-picker"></div>
     </form>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="chat.js"></script>
+  <script>
+    // Auto-scroll messages when keyboard opens or emoji picker toggles
+    const messages = document.getElementById('messages');
+    const input = document.getElementById('input');
+    const emojiBtn = document.getElementById('emoji-btn');
+    const emojiPicker = document.getElementById('emoji-picker');
+
+    input.addEventListener('focus', () => setTimeout(() => messages.scrollTop = messages.scrollHeight, 200));
+    emojiBtn.addEventListener('click', () => setTimeout(() => messages.scrollTop = messages.scrollHeight, 50));
+
+    // Optional: Close emoji picker when resizing on mobile (keyboard open/close)
+    window.addEventListener('resize', () => {
+      if (window.innerWidth <= 600) emojiPicker.classList.remove('show');
+    });
+  </script>
 </body>
 </html>

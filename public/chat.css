@@ -40,9 +40,7 @@ body.dark {
   color: #fff;
 }
 
-.landing input::placeholder {
-  color: #b9bbbe;
-}
+.landing input::placeholder { color: #b9bbbe; }
 
 .landing button {
   padding: 12px 20px;
@@ -58,10 +56,7 @@ body.dark {
   transition: background 0.2s ease, transform 0.15s ease;
 }
 
-.landing button:hover {
-  background: #677bc4;
-  transform: scale(1.05);
-}
+.landing button:hover { background: #677bc4; transform: scale(1.05); }
 
 .landing .logo {
   max-width: 220px;
@@ -84,6 +79,7 @@ body.dark {
   border-left: 1px solid #ccc;
   border-right: 1px solid #ccc;
 }
+body.dark .chat-page { background: #1e1f22; border-color: #40444b; }
 
 /* ---------------- Header ---------------- */
 .chat-page header {
@@ -98,33 +94,10 @@ body.dark {
   box-shadow: 0 2px 6px rgba(0,0,0,0.2);
 }
 
-.chat-page header .logo {
-  height: 32px;
-  cursor: pointer;
-  margin-right: 8px;
-}
-
-.chat-page header .room-info {
-  font-size: 1rem;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 1;
-}
-
-.chat-page header button {
-  background: transparent;
-  border: none;
-  color: #fff;
-  font-size: 1.2rem;
-  cursor: pointer;
-  margin-left: 6px;
-}
-
-.chat-page header button:hover {
-  transform: scale(1.2);
-  color: #7289da;
-}
+.chat-page header .logo { height: 32px; cursor: pointer; margin-right: 8px; }
+.chat-page header .room-info { font-size: 1rem; display: flex; align-items: center; gap: 6px; flex: 1; }
+.chat-page header button { background: transparent; border: none; color: #fff; font-size: 1.2rem; cursor: pointer; margin-left: 6px; }
+.chat-page header button:hover { transform: scale(1.2); color: #7289da; }
 
 /* Light mode header */
 body:not(.dark) .chat-page header {
@@ -133,12 +106,8 @@ body:not(.dark) .chat-page header {
   border-bottom: 1px solid #ccc;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
-body:not(.dark) .chat-page header .room-info {
-  color: #000; /* <-- fixes room name to black in light mode */
-}
-body:not(.dark) .chat-page header button:hover {
-  color: #0084ff;
-}
+body:not(.dark) .chat-page header .room-info { color: #000; }
+body:not(.dark) .chat-page header button:hover { color: #0084ff; }
 
 /* ---------------- Messages ---------------- */
 main#messages {
@@ -147,9 +116,7 @@ main#messages {
   padding: 10px;
   background: #e5ddd5;
 }
-body.dark main#messages {
-  background: #1e1f22;
-}
+body.dark main#messages { background: #1e1f22; }
 
 .message {
   margin-bottom: 10px;
@@ -180,93 +147,39 @@ form#form {
   position: relative;
   border-top: 1px solid #ccc;
 }
-body.dark form#form { background: #1e1f22; border-top:1px solid #40444b; }
+body.dark form#form { background:#1e1f22;border-top:1px solid #40444b; }
 form#form input { flex:1; padding:10px 14px; border-radius:20px; border:1px solid #ccc; font-size:1rem; }
 body.dark form#form input { background:#2f3136;color:#eee;border:1px solid #555; }
 form#form button { border:none;border-radius:50%;width:40px;height:40px;cursor:pointer;font-size:1.2em;color:#fff;background:#0084ff; }
 
-// ---------------- Emoji Picker (Hardcoded Fallback + Expandable) ----------------
-const fallbackEmojis = {
-  "Smileys": ["😀","😁","😂","🤣","😃","😅","😉","😊","😍","😘","😜","🤪","🤨","😎","🤩","🥳","😡","😭","😱","🤔"],
-  "Animals": ["🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵"],
-  "Food": ["🍏","🍎","🍐","🍊","🍋","🍌","🍉","🍇","🍓","🍒","🍑","🥭","🍍","🥥","🥝"],
-  "Activities": ["⚽","🏀","🏈","⚾","🎾","🏐","🏉","🎱","🏓","🏸","🥅","🏒","🏑"],
-  "Travel": ["🚗","🚕","🚙","🚌","🚎","🏎️","🚓","🚑","🚒","🚐","✈️","🚀","🛸"],
-  "Symbols": ["❤️","💔","💕","💖","✨","⭐","🌟","🔥","🌈","⚡","💯","✔️","❌","❓","❗"]
-};
-
-async function loadEmojis() {
-  try {
-    // Try fetching emoji.json first
-    const res = await fetch("/emoji.json");
-    if (!res.ok) throw new Error("emoji.json missing");
-    emojiData = await res.json();
-  } catch {
-    // Fallback to hardcoded list
-    emojiData = fallbackEmojis;
-  }
-  renderEmojiTabs();
-  preRenderEmojiGrids();
-  showEmojiCategory(Object.keys(emojiData)[0]);
+/* ---------------- Emoji Picker ---------------- */
+.emoji-picker {
+  position: absolute;
+  bottom: 60px;
+  right: 20px;
+  display: none;
+  background: #fff;
+  border: 1px solid #ccc;
+  max-height: 250px;
+  overflow-y: auto;
+  width: 250px;
+  z-index: 1000;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
+.emoji-picker.show { display: block; }
 
-function renderEmojiTabs() {
-  emojiPicker.innerHTML = ""; // clear duplicates
-  const tabsDiv = document.createElement("div");
-  tabsDiv.classList.add("emoji-tabs");
+.emoji-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-bottom:1px solid #ccc; }
+.emoji-tab-btn { flex:1; cursor:pointer; border:none; background:none; padding:4px; font-size:0.9rem; }
+.emoji-tab-btn.active { font-weight:bold; border-bottom:2px solid #0084ff; }
 
-  Object.keys(emojiData).forEach(cat => {
-    const btn = document.createElement("button");
-    btn.textContent = cat;
-    btn.classList.add("emoji-tab-btn");
-    btn.addEventListener("click", () => showEmojiCategory(cat));
-    tabsDiv.appendChild(btn);
-  });
+.emoji-content { padding:5px; display:flex; flex-direction:column; gap:4px; }
 
-  emojiPicker.appendChild(tabsDiv);
+.emoji-category { display:grid; grid-template-columns:repeat(auto-fill,30px); gap:4px; }
+.emoji-category span { cursor:pointer; padding:4px; text-align:center; border-radius:4px; }
+.emoji-category span:hover { background:#e0e0e0; }
 
-  const contentDiv = document.createElement("div");
-  contentDiv.classList.add("emoji-content");
-  emojiPicker.appendChild(contentDiv);
-}
-
-function preRenderEmojiGrids() {
-  const contentDiv = emojiPicker.querySelector(".emoji-content");
-  contentDiv.innerHTML = "";
-
-  Object.keys(emojiData).forEach(cat => {
-    const grid = document.createElement("div");
-    grid.classList.add("emoji-category");
-    grid.style.display = "none";
-
-    emojiData[cat].forEach(e => {
-      const char = typeof e === "string" ? e : e.char;
-      const name = typeof e === "string" ? "" : e.name;
-
-      const span = document.createElement("span");
-      span.textContent = char;
-      span.title = name;
-      span.addEventListener("click", () => insertAtCursor(input, char));
-      grid.appendChild(span);
-    });
-
-    contentDiv.appendChild(grid);
-    emojiGrids[cat] = grid;
-  });
-}
-
-function showEmojiCategory(cat) {
-  document.querySelectorAll(".emoji-tab-btn").forEach(b => {
-    b.classList.toggle('active', b.textContent === cat);
-  });
-  Object.keys(emojiGrids).forEach(c => {
-    emojiGrids[c].style.display = c === cat ? "grid" : "none";
-  });
-}
-
-
-/* ---------------- Dark Mode ---------------- */
-body.dark #emoji-picker { background:#2f3136; border-color:#40444b; }
+body.dark .emoji-picker { background:#2f3136; border-color:#40444b; }
 body.dark .emoji-tab-btn { color: #ccc; }
 body.dark .emoji-tab-btn.active { background:#5865f2; color:#fff; }
 body.dark .emoji-tab-btn:hover { background:#40444b; }
@@ -282,7 +195,7 @@ body.dark .emoji-category span:hover { background:#40444b; }
   .chat-page header .room-info { flex:1 1 100%; }
   form#form { padding:4px 6px; }
   form#form input { padding:8px 12px; font-size:0.95rem; }
-  #emoji-picker { width:90vw; left:50%; transform:translateX(-50%); bottom:55px; max-height:40vh; }
-  .emoji-category { max-height:35vh; }
+  #emoji-picker { width:90vw; left:50%; transform:translateX(-50%); max-height:40vh; bottom:55px; }
+  .emoji-category { max-height:35vh; overflow-y:auto; grid-template-columns:repeat(auto-fill,minmax(28px,1fr)); }
   .emoji-category span { font-size:18px; line-height:28px; }
 }
