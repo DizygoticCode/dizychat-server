@@ -14,6 +14,7 @@ const shareBtn = document.getElementById('share-btn');
 const toggleThemeBtn = document.getElementById('toggle-theme');
 const roomNameSpan = document.getElementById('room-name');
 const homeLogo = document.getElementById('home-logo');
+const quickEmojis = document.querySelectorAll('#quick-emojis button');
 
 let currentUser = '';
 let currentRoom = '';
@@ -119,17 +120,12 @@ shareBtn.addEventListener("click", () => {
     .catch(() => alert(`Room link: ${fullURL}`));
 });
 
-// ---------------- Dark Mode Toggle with Correct Logo ----------------
-function updateLogo() {
-  // dark mode uses logo.png, light mode uses logo-light.png
-  homeLogo.src = darkMode ? "/logo.png" : "/logo-light.png";
-}
-
+// ---------------- Dark Mode ----------------
 toggleThemeBtn.addEventListener("click", () => {
   darkMode = !darkMode;
   document.body.classList.toggle("dark", darkMode);
   toggleThemeBtn.textContent = darkMode ? "☀️" : "🌙";
-  updateLogo();
+  homeLogo.src = darkMode ? "/logo.png" : "/logo-light.png";
 });
 
 // ---------------- Home Logo Button ----------------
@@ -139,10 +135,6 @@ homeLogo.addEventListener("click", () => {
   roomNameSpan.textContent = "Room";
   messages.innerHTML = "";
   window.history.replaceState({}, "", window.location.origin);
-  // reset logo when returning home
-  darkMode = false;
-  document.body.classList.remove("dark");
-  updateLogo();
 });
 
 // ---------------- Emoji Picker ----------------
@@ -192,7 +184,8 @@ function buildEmojiPicker() {
       span.textContent = char;
       span.addEventListener("click", () => {
         insertAtCursor(input, char);
-        emojiPicker.classList.remove("show");
+        input.focus();
+        animateQuickEmoji(char); // Animate quick emojis on click
       });
       catDiv.appendChild(span);
     });
@@ -203,6 +196,7 @@ function buildEmojiPicker() {
 
   emojiPicker.appendChild(tabs);
   emojiPicker.appendChild(content);
+  emojiPicker.style.animation = "slideUp 0.3s ease"; // slide animation
 }
 
 function showEmojiCategory(cat) {
@@ -222,9 +216,13 @@ function insertAtCursor(input, text) {
   input.focus();
 }
 
+// ---------------- Emoji Picker Toggle ----------------
 emojiBtn.addEventListener('click', e => {
   e.stopPropagation();
   emojiPicker.classList.toggle('show');
+  if (emojiPicker.classList.contains('show')) {
+    emojiPicker.style.animation = "slideUp 0.3s ease";
+  }
 });
 
 document.addEventListener('click', e => {
@@ -233,5 +231,31 @@ document.addEventListener('click', e => {
   }
 });
 
-// Load emojis on start
+// ---------------- Quick Emojis Animation ----------------
+function animateQuickEmoji(char) {
+  quickEmojis.forEach(btn => {
+    if (btn.textContent === char) {
+      btn.classList.add('pop');
+      setTimeout(() => btn.classList.remove('pop'), 200);
+    }
+  });
+}
+
+quickEmojis.forEach(btn => {
+  btn.addEventListener('click', () => {
+    insertAtCursor(input, btn.textContent);
+    animateQuickEmoji(btn.textContent);
+  });
+});
+
+// ---------------- Load emojis on start ----------------
 loadEmojis();
+
+// ---------------- Animations CSS injected ----------------
+const style = document.createElement('style');
+style.textContent = `
+@keyframes slideUp { from {opacity:0; transform:translateY(10px);} to {opacity:1; transform:translateY(0);} }
+@keyframes pop { 0% {transform: scale(1);} 50% {transform: scale(1.4);} 100% {transform: scale(1);} }
+.quick-emojis button.pop { animation: pop 0.2s ease; }
+`;
+document.head.appendChild(style);

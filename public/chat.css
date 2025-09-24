@@ -21,13 +21,7 @@ body.dark {
   color: #fff;
   transition: background 0.3s ease;
 }
-
-.landing h2 {
-  font-size: 2rem;
-  margin-bottom: 20px;
-  text-shadow: 0 2px 6px rgba(0,0,0,0.4);
-}
-
+.landing h2 { font-size: 2rem; margin-bottom: 20px; text-shadow: 0 2px 6px rgba(0,0,0,0.4); }
 .landing input {
   margin: 8px 0;
   padding: 12px 15px;
@@ -39,9 +33,7 @@ body.dark {
   background: #40444b;
   color: #fff;
 }
-
 .landing input::placeholder { color: #b9bbbe; }
-
 .landing button {
   padding: 12px 20px;
   margin-top: 12px;
@@ -55,9 +47,7 @@ body.dark {
   color: #fff;
   transition: background 0.2s ease, transform 0.15s ease;
 }
-
 .landing button:hover { background: #677bc4; transform: scale(1.05); }
-
 .landing .logo {
   max-width: 220px;
   width: 80%;
@@ -93,7 +83,6 @@ body.dark .chat-page { background: #1e1f22; border-color: #40444b; }
   border-bottom: 1px solid rgba(255,255,255,0.1);
   box-shadow: 0 2px 6px rgba(0,0,0,0.2);
 }
-
 .chat-page header .logo { height: 32px; cursor: pointer; margin-right: 8px; }
 .chat-page header .room-info { font-size: 1rem; display: flex; align-items: center; gap: 6px; flex: 1; }
 .chat-page header button { background: transparent; border: none; color: #fff; font-size: 1.2rem; cursor: pointer; margin-left: 6px; }
@@ -117,7 +106,6 @@ main#messages {
   background: #e5ddd5;
 }
 body.dark main#messages { background: #1e1f22; }
-
 .message {
   margin-bottom: 10px;
   max-width: 75%;
@@ -147,10 +135,28 @@ form#form {
   position: relative;
   border-top: 1px solid #ccc;
 }
-body.dark form#form { background:#1e1f22;border-top:1px solid #40444b; }
+body.dark form#form { background:#1e1f22;border-top:1px solid:#40444b; }
 form#form input { flex:1; padding:10px 14px; border-radius:20px; border:1px solid #ccc; font-size:1rem; }
 body.dark form#form input { background:#2f3136;color:#eee;border:1px solid #555; }
 form#form button { border:none;border-radius:50%;width:40px;height:40px;cursor:pointer;font-size:1.2em;color:#fff;background:#0084ff; }
+
+/* ---------------- Quick Emojis ---------------- */
+.quick-emojis {
+  display: flex;
+  gap: 6px;
+}
+.quick-emojis button {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  background: #f0f0f0;
+  cursor: pointer;
+  font-size: 1.2rem;
+  transition: background 0.2s;
+}
+.quick-emojis button:hover { background: #e0e0e0; }
+body.dark .quick-emojis button { background:#2f3136;border:1px solid #555;color:#eee; }
+body.dark .quick-emojis button:hover { background:#40444b; }
 
 /* ---------------- Emoji Picker ---------------- */
 .emoji-picker {
@@ -169,14 +175,36 @@ form#form button { border:none;border-radius:50%;width:40px;height:40px;cursor:p
 }
 .emoji-picker.show { display: block; }
 
-.emoji-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-bottom:1px solid #ccc; }
-.emoji-tab-btn { flex:1; cursor:pointer; border:none; background:none; padding:4px; font-size:0.9rem; }
+.emoji-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 4px;
+  border-bottom:1px solid #ccc;
+}
+.emoji-tab-btn {
+  flex:1;
+  cursor:pointer;
+  border:none;
+  background:none;
+  padding:4px 6px;
+  font-size:0.8rem;
+  border-radius: 4px;
+  transition: background 0.2s, color 0.2s;
+}
 .emoji-tab-btn.active { font-weight:bold; border-bottom:2px solid #0084ff; }
+.emoji-tab-btn:hover { background:#e0e0e0; }
 
 .emoji-content { padding:5px; display:flex; flex-direction:column; gap:4px; }
-
-.emoji-category { display:grid; grid-template-columns:repeat(auto-fill,30px); gap:4px; }
-.emoji-category span { cursor:pointer; padding:4px; text-align:center; border-radius:4px; }
+.emoji-category { display:grid; grid-template-columns:repeat(auto-fill,28px); gap:4px; }
+.emoji-category span {
+  cursor:pointer;
+  padding:4px;
+  text-align:center;
+  border-radius:6px;
+  font-size:1.2rem;
+  transition: background 0.2s;
+}
 .emoji-category span:hover { background:#e0e0e0; }
 
 body.dark .emoji-picker { background:#2f3136; border-color:#40444b; }
@@ -185,9 +213,6 @@ body.dark .emoji-tab-btn.active { background:#5865f2; color:#fff; }
 body.dark .emoji-tab-btn:hover { background:#40444b; }
 body.dark .emoji-category span:hover { background:#40444b; }
 
-/* ---------------- Emoji Picker Animation ---------------- */
-@keyframes fadeInUp { from {opacity:0; transform:translateY(10px);} to {opacity:1; transform:translateY(0);} }
-
 /* ---------------- Mobile Tweaks ---------------- */
 @media (max-width:600px){
   .chat-page { width:100%; border:none; }
@@ -195,7 +220,37 @@ body.dark .emoji-category span:hover { background:#40444b; }
   .chat-page header .room-info { flex:1 1 100%; }
   form#form { padding:4px 6px; }
   form#form input { padding:8px 12px; font-size:0.95rem; }
-  #emoji-picker { width:90vw; left:50%; transform:translateX(-50%); max-height:40vh; bottom:55px; }
-  .emoji-category { max-height:35vh; overflow-y:auto; grid-template-columns:repeat(auto-fill,minmax(28px,1fr)); }
-  .emoji-category span { font-size:18px; line-height:28px; }
+
+  #emoji-picker {
+    width: 90vw;
+    left: 50%;
+    transform: translateX(-50%);
+    max-height: 45vh;
+    bottom: 55px;
+    border-radius: 12px;
+  }
+
+  .emoji-tabs {
+    gap: 3px;
+    padding: 6px;
+  }
+
+  .emoji-tab-btn {
+    font-size: 0.8rem;
+    padding: 5px 6px;
+    border-radius: 10px;
+  }
+
+  .emoji-category {
+    max-height: 35vh;
+    overflow-y: auto;
+    grid-template-columns: repeat(auto-fill, minmax(28px, 1fr));
+    gap: 3px;
+    padding: 3px 0;
+  }
+
+  .emoji-category span {
+    font-size: 1.5rem;
+    line-height: 32px;
+  }
 }
