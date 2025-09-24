@@ -45,8 +45,13 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ---------------- Link Preview Endpoint ----------------
 app.get('/link-preview', async (req, res) => {
-  const { url } = req.query;
+  let { url } = req.query;
   if (!url) return res.status(400).json({ error: 'No URL provided' });
+
+  // Normalize URL: add http:// if missing
+  if (!/^https?:\/\//i.test(url)) {
+    url = 'http://' + url;
+  }
 
   try {
     const response = await fetch(url, { timeout: 5000 });

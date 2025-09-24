@@ -90,6 +90,9 @@ function displayMessage(msg) {
 
   div.appendChild(document.createTextNode(` ${msg.text}`));
 
+  // ---------------- Link Preview ----------------
+  handleLinkPreview(div, msg.text);
+
   const statusSpan = document.createElement('span');
   statusSpan.classList.add('status');
   statusSpan.textContent = statusIcon(msg.status || 'sent');
@@ -99,6 +102,54 @@ function displayMessage(msg) {
   div.scrollIntoView({ behavior: 'smooth', block: 'end' });
 
   if (msg.user !== currentUser) socket.emit('read message', { room: currentRoom, id: msg._id || msg.id });
+}
+
+// ---------------- Link Preview ----------------
+function handleLinkPreview(msgDiv, text) {
+  const urlRegex = /(\b(https?:\/\/)?(www\.)?[-a-zA-Z0-9@:%._+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_+.~#?&//=]*))/gi;
+  const matches = text.match(urlRegex);
+  if (!matches) return;
+
+  const seenUrls = new Set();
+
+  matches.forEach(rawUrl => {
+    let url = rawUrl;
+    if (!/^https?:\/\//i.test(url)) url = url.startsWith("www.") ? "https://" + url : "https://" + url;
+    if (seenUrls.has(url)) return;
+    seenUrls.add(url);
+
+    (async () => {
+      try {
+        const res = await fetch(`/link-preview?url=${encodeURIComponent(url)}`);
+        const data = await res.json();
+
+        const previewDiv = document.createElement('div');
+        previewDiv.classList.add('link-preview');
+
+        if (data.image) {
+          const img = document.createElement('img');
+          img.src = data.image;
+          img.alt = data.title || url;
+          previewDiv.appendChild(img);
+        }
+
+        const link = document.createElement('a');
+        link.href = url;
+        link.target = '_blank';
+        link.textContent = data.title || url;
+        previewDiv.appendChild(link);
+
+        msgDiv.appendChild(previewDiv);
+      } catch (err) {
+        console.error("Link preview error:", err);
+        const fallbackLink = document.createElement('a');
+        fallbackLink.href = url;
+        fallbackLink.target = '_blank';
+        fallbackLink.textContent = url;
+        msgDiv.appendChild(fallbackLink);
+      }
+    })();
+  });
 }
 
 // ---------------- Status Icon ----------------
@@ -139,12 +190,12 @@ homeLogo.addEventListener("click", () => {
 
 // ---------------- Emoji Picker ----------------
 const fallbackEmojis = {
-  "Faces": ["😀","😁","😂","🤣","😃","😄","😅","😆","😊","😍","😘","😜","🤪","🤨","😎","🤩","🥳","😡","😭","😱","🤔","😇","🙂","🙃","😉","😌","😗","😙","😚","😴","🤯"],
-  "Gestures": ["👍","👎","👏","🙏","✌️","🤞","🤟","🤘","👌","🤙"],
-  "Hearts & Symbols": ["❤️","💛","💚","💙","💜","🖤","💔","💯","🔥","⭐","✨","⚡","☀️","🌙","💤","✅","❌","❓","❗","🌈"],
-  "Food": ["🍕","🍔","🍟","🌭","🌮","🌯","🥗","🍎","🍌","🍉","🍓","🍺","☕","🍷","🍣","🍩","🥭","🍍","🥝"],
-  "Animals": ["🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁"],
-  "Travel & Objects": ["🚗","🚕","🚙","🚌","✈️","🚀","🏎️","🚓","🚑","🚒","🚐","🛸","🏠","💻","📱","📷","🎮","🎵","⚽","🏀"]
+  "Faces":["😀","😁","😂","🤣","😃","😄","😅","😆","😊","😍","😘","😜","🤪","🤨","😎","🤩","🥳","😡","😭","😱","🤔","😇","🙂","🙃","😉","😌","😗","😙","😚","😴","🤯"],
+  "Gestures":["👍","👎","👏","🙏","✌️","🤞","🤟","🤘","👌","🤙"],
+  "Hearts & Symbols":["❤️","💛","💚","💙","💜","🖤","💔","💯","🔥","⭐","✨","⚡","☀️","🌙","💤","✅","❌","❓","❗","🌈"],
+  "Food":["🍕","🍔","🍟","🌭","🌮","🌯","🥗","🍎","🍌","🍉","🍓","🍺","☕","🍷","🍣","🍩","🥭","🍍","🥝"],
+  "Animals":["🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁"],
+  "Travel & Objects":["🚗","🚕","🚙","🚌","✈️","🚀","🏎️","🚓","🚑","🚒","🚐","🛸","🏠","💻","📱","📷","🎮","🎵","⚽","🏀"]
 };
 
 async function loadEmojis() {
@@ -152,69 +203,46 @@ async function loadEmojis() {
     const res = await fetch("/emoji.json");
     if (!res.ok) throw new Error("emoji.json missing");
     emojiData = await res.json();
-  } catch {
-    emojiData = fallbackEmojis;
-  }
+  } catch { emojiData = fallbackEmojis; }
   buildEmojiPicker();
 }
 
 function buildEmojiPicker() {
   emojiPicker.innerHTML = "";
-  const tabs = document.createElement("div");
-  tabs.classList.add("emoji-tabs");
-  const content = document.createElement("div");
-  content.classList.add("emoji-content");
+  const tabs = document.createElement("div"); tabs.classList.add("emoji-tabs");
+  const content = document.createElement("div"); content.classList.add("emoji-content");
 
   Object.keys(emojiData).forEach((category, index) => {
-    const tabBtn = document.createElement("button");
-    tabBtn.textContent = category;
-    tabBtn.classList.add("emoji-tab-btn");
+    const tabBtn = document.createElement("button"); tabBtn.textContent = category; tabBtn.classList.add("emoji-tab-btn");
     if (index === 0) tabBtn.classList.add("active");
     tabBtn.addEventListener("click", () => showEmojiCategory(category));
     tabs.appendChild(tabBtn);
 
-    const catDiv = document.createElement("div");
-    catDiv.classList.add("emoji-category");
-    catDiv.dataset.category = category;
+    const catDiv = document.createElement("div"); catDiv.classList.add("emoji-category"); catDiv.dataset.category = category;
     if (index !== 0) catDiv.style.display = "none";
 
     emojiData[category].forEach(e => {
       const char = typeof e === "string" ? e : e.char;
-      const span = document.createElement("span");
-      span.textContent = char;
+      const span = document.createElement("span"); span.textContent = char;
       span.addEventListener("click", () => {
-        insertAtCursor(input, char);
-        input.focus();
-        animateQuickEmoji(char);
-
-        emojiPicker.classList.add('show');
-        emojiPicker.style.maxHeight = '250px';
-        emojiPicker.style.opacity = '1';
-        emojiPicker.style.transform = 'translateY(0)';
+        insertAtCursor(input, char); input.focus(); animateQuickEmoji(char);
       });
       catDiv.appendChild(span);
     });
 
-    content.appendChild(catDiv);
-    emojiGrids[category] = catDiv;
+    content.appendChild(catDiv); emojiGrids[category] = catDiv;
   });
 
-  emojiPicker.appendChild(tabs);
-  emojiPicker.appendChild(content);
+  emojiPicker.appendChild(tabs); emojiPicker.appendChild(content);
 }
 
 function showEmojiCategory(cat) {
-  document.querySelectorAll(".emoji-tab-btn").forEach(b => {
-    b.classList.toggle('active', b.textContent === cat);
-  });
-  Object.keys(emojiGrids).forEach(c => {
-    emojiGrids[c].style.display = c === cat ? "grid" : "none";
-  });
+  document.querySelectorAll(".emoji-tab-btn").forEach(b => { b.classList.toggle('active', b.textContent === cat); });
+  Object.keys(emojiGrids).forEach(c => { emojiGrids[c].style.display = c === cat ? "grid" : "none"; });
 }
 
 function insertAtCursor(input, text) {
-  const start = input.selectionStart;
-  const end = input.selectionEnd;
+  const start = input.selectionStart, end = input.selectionEnd;
   input.value = input.value.slice(0, start) + text + input.value.slice(end);
   input.selectionStart = input.selectionEnd = start + text.length;
   input.focus();
@@ -222,44 +250,18 @@ function insertAtCursor(input, text) {
 
 // ---------------- Emoji Picker Toggle ----------------
 emojiBtn.addEventListener('click', e => {
-  e.stopPropagation();
-  emojiPicker.classList.toggle('show');
-  if (emojiPicker.classList.contains('show')) {
-    emojiPicker.style.maxHeight = '250px';
-    emojiPicker.style.opacity = '1';
-    emojiPicker.style.transform = 'translateY(0)';
-  } else {
-    emojiPicker.style.maxHeight = '0';
-    emojiPicker.style.opacity = '0';
-    emojiPicker.style.transform = 'translateY(10px)';
-  }
+  e.stopPropagation(); emojiPicker.classList.toggle('show');
+  if (emojiPicker.classList.contains('show')) { emojiPicker.style.maxHeight='250px'; emojiPicker.style.opacity='1'; emojiPicker.style.transform='translateY(0)'; }
+  else { emojiPicker.style.maxHeight='0'; emojiPicker.style.opacity='0'; emojiPicker.style.transform='translateY(10px)'; }
 });
 
 document.addEventListener('click', e => {
-  if (!emojiPicker.contains(e.target) && e.target !== emojiBtn) {
-    emojiPicker.classList.remove('show');
-    emojiPicker.style.maxHeight = '0';
-    emojiPicker.style.opacity = '0';
-    emojiPicker.style.transform = 'translateY(10px)';
-  }
+  if (!emojiPicker.contains(e.target) && e.target !== emojiBtn) { emojiPicker.classList.remove('show'); emojiPicker.style.maxHeight='0'; emojiPicker.style.opacity='0'; emojiPicker.style.transform='translateY(10px)'; }
 });
 
-// ---------------- Quick Emojis Animation ----------------
-function animateQuickEmoji(char) {
-  quickEmojis.forEach(btn => {
-    if (btn.textContent === char) {
-      btn.classList.add('pop');
-      setTimeout(() => btn.classList.remove('pop'), 200);
-    }
-  });
-}
+// ---------------- Quick Emojis ----------------
+function animateQuickEmoji(char) { quickEmojis.forEach(btn => { if(btn.textContent===char){ btn.classList.add('pop'); setTimeout(()=>btn.classList.remove('pop'),200); } }); }
+quickEmojis.forEach(btn => btn.addEventListener('click', () => { insertAtCursor(input, btn.textContent); animateQuickEmoji(btn.textContent); }));
 
-quickEmojis.forEach(btn => {
-  btn.addEventListener('click', () => {
-    insertAtCursor(input, btn.textContent);
-    animateQuickEmoji(btn.textContent);
-  });
-});
-
-// ---------------- Load emojis on start ----------------
+// ---------------- Load emojis ----------------
 loadEmojis();

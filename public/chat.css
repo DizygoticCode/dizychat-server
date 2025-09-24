@@ -326,3 +326,41 @@ body.dark .emoji-category span:hover { background:#40444b; }
   .emoji-category { max-height: 35vh; overflow-y: auto; grid-template-columns: repeat(auto-fill, minmax(28px, 1fr)); gap:3px; padding:3px 0; }
   .emoji-category span { font-size:1.5rem; line-height:32px; }
 }
+/* ---------------- Link Preview ---------------- */
+.message .link-preview {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background: #f0f0f0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 80%;
+  font-size: 0.9rem;
+}
+
+body.dark .message .link-preview {
+  background: #2f3136;
+  border-color: #40444b;
+  color: #eee;
+}
+
+.message .link-preview img {
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+.message .link-preview a {
+  color: #007bff;
+  text-decoration: none;
+  word-break: break-word;
+}
+
+body.dark .message .link-preview a {
+  color: #4ea1ff;
+}
+
+.message .link-preview a:hover {
+  text-decoration: underline;
+}
