@@ -123,30 +123,35 @@ function handleLinkPreview(msgDiv, text) {
         const res = await fetch(`/link-preview?url=${encodeURIComponent(url)}`);
         const data = await res.json();
 
-        const previewDiv = document.createElement('div');
-        previewDiv.classList.add('link-preview');
+        if (data.title || data.image) {
+          // Remove raw URL from message text
+          msgDiv.childNodes.forEach(node => {
+            if (node.nodeType === Node.TEXT_NODE) {
+              node.textContent = node.textContent.replace(rawUrl, '');
+            }
+          });
 
-        if (data.image) {
-          const img = document.createElement('img');
-          img.src = data.image;
-          img.alt = data.title || url;
-          previewDiv.appendChild(img);
+          const previewDiv = document.createElement('div');
+          previewDiv.classList.add('link-preview');
+
+          if (data.image) {
+            const img = document.createElement('img');
+            img.src = data.image;
+            img.alt = data.title || url;
+            previewDiv.appendChild(img);
+          }
+
+          const link = document.createElement('a');
+          link.href = url;
+          link.target = '_blank';
+          link.textContent = data.title || url;
+          previewDiv.appendChild(link);
+
+          msgDiv.appendChild(previewDiv);
         }
-
-        const link = document.createElement('a');
-        link.href = url;
-        link.target = '_blank';
-        link.textContent = data.title || url;
-        previewDiv.appendChild(link);
-
-        msgDiv.appendChild(previewDiv);
       } catch (err) {
         console.error("Link preview error:", err);
-        const fallbackLink = document.createElement('a');
-        fallbackLink.href = url;
-        fallbackLink.target = '_blank';
-        fallbackLink.textContent = url;
-        msgDiv.appendChild(fallbackLink);
+        // fallback: leave raw URL in text
       }
     })();
   });
