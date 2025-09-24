@@ -119,12 +119,17 @@ shareBtn.addEventListener("click", () => {
     .catch(() => alert(`Room link: ${fullURL}`));
 });
 
-// ---------------- Dark Mode ----------------
+// ---------------- Dark Mode Toggle with Correct Logo ----------------
+function updateLogo() {
+  // dark mode uses logo.png, light mode uses logo-light.png
+  homeLogo.src = darkMode ? "/logo.png" : "/logo-light.png";
+}
+
 toggleThemeBtn.addEventListener("click", () => {
   darkMode = !darkMode;
   document.body.classList.toggle("dark", darkMode);
   toggleThemeBtn.textContent = darkMode ? "☀️" : "🌙";
-  homeLogo.src = darkMode ? "/logodark.png" : "/logo.png";
+  updateLogo();
 });
 
 // ---------------- Home Logo Button ----------------
@@ -134,6 +139,10 @@ homeLogo.addEventListener("click", () => {
   roomNameSpan.textContent = "Room";
   messages.innerHTML = "";
   window.history.replaceState({}, "", window.location.origin);
+  // reset logo when returning home
+  darkMode = false;
+  document.body.classList.remove("dark");
+  updateLogo();
 });
 
 // ---------------- Emoji Picker ----------------
