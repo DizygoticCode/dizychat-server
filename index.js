@@ -9,7 +9,12 @@ dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
 
 const PORT = process.env.PORT || 10000;
 
@@ -44,7 +49,7 @@ const messageSchema = new mongoose.Schema({
 });
 const Message = mongoose.model('Message', messageSchema);
 
-// ---------------- Static files ----------------
+// ---------------- Serve Static Files ----------------
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ---------------- Socket.IO ----------------
@@ -59,8 +64,12 @@ io.on('connection', (socket) => {
   });
 
   socket.on('get history', async (room) => {
-    const history = await Message.find({ room }).sort({ timestamp: 1 }).limit(50);
-    socket.emit('room history', history);
+    try {
+      const history = await Message.find({ room }).sort({ timestamp: 1 }).limit(50);
+      socket.emit('room history', history);
+    } catch(err) {
+      console.error("Error fetching history:", err);
+    }
   });
 
   socket.on('chat message', async (msgData) => {
@@ -100,7 +109,12 @@ io.on('connection', (socket) => {
   });
 });
 
-// ---------------- Start server ----------------
+// ---------------- Start Server ----------------
 server.listen(PORT, () => {
   console.log(`🟢 Server running on port ${PORT}`);
+});
+
+// ---------------- Serve index.html for all other routes ----------------
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });

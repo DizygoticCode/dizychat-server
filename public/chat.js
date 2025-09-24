@@ -21,7 +21,7 @@ let socket;
 let typingTimeout;
 let darkMode = false;
 let emojiData = {};
-let emojiGrids = {}; // fixed missing declaration
+let emojiGrids = {};
 
 // ---------------- Landing Page Prefill ----------------
 const urlParams = new URLSearchParams(window.location.search);
@@ -41,11 +41,10 @@ joinBtn.addEventListener("click", () => {
   chatContainer.style.display = "flex";
   roomNameSpan.textContent = room;
 
-  const newURL = `${window.location.origin}?room=${encodeURIComponent(room)}`;
-  window.history.replaceState({}, "", newURL);
+  window.history.replaceState({}, "", `${window.location.origin}?room=${encodeURIComponent(room)}`);
 
   // ---------------- Socket.IO ----------------
-  socket = io();
+  socket = io(window.location.origin);
   socket.emit("join room", room);
   socket.emit("get history", room);
 
@@ -57,8 +56,8 @@ joinBtn.addEventListener("click", () => {
 
   form.addEventListener("submit", e => {
     e.preventDefault();
-    if (!input.value) return;
-    const msgData = { room: currentRoom, user: currentUser, text: input.value, timestamp: new Date() };
+    if (!input.value.trim()) return;
+    const msgData = { room: currentRoom, user: currentUser, text: input.value.trim(), timestamp: new Date() };
     socket.emit('chat message', msgData);
     input.value = '';
     input.focus();
@@ -125,7 +124,7 @@ toggleThemeBtn.addEventListener("click", () => {
   darkMode = !darkMode;
   document.body.classList.toggle("dark", darkMode);
   toggleThemeBtn.textContent = darkMode ? "☀️" : "🌙";
-  homeLogo.src = darkMode ? "logodark.png" : "logo.png"; // fixed
+  homeLogo.src = darkMode ? "/logodark.png" : "/logo.png";
 });
 
 // ---------------- Home Logo Button ----------------
@@ -133,7 +132,7 @@ homeLogo.addEventListener("click", () => {
   chatContainer.style.display = "none";
   usernamePrompt.style.display = "flex";
   roomNameSpan.textContent = "Room";
-  messages.innerHTML = ""; // clear previous messages
+  messages.innerHTML = "";
   window.history.replaceState({}, "", window.location.origin);
 });
 
@@ -162,7 +161,6 @@ function buildEmojiPicker() {
   emojiPicker.innerHTML = "";
   const tabs = document.createElement("div");
   tabs.classList.add("emoji-tabs");
-
   const content = document.createElement("div");
   content.classList.add("emoji-content");
 
