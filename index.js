@@ -15,9 +15,8 @@ const PORT = process.env.PORT || 10000;
 
 // ---------------- MongoDB Connection ----------------
 const mongoUri = process.env.MONGO_URI;
-
 if (!mongoUri) {
-  console.error("❌ MONGO_URI is not defined. Please set it in your Render Environment Variables.");
+  console.error("❌ MONGO_URI is not defined. Set it in Render Environment Variables or .env.");
   process.exit(1);
 }
 
@@ -30,7 +29,10 @@ mongoose.connect(mongoUri, {
   useUnifiedTopology: true,
 })
 .then(() => console.log("🟢 Connected to MongoDB"))
-.catch(err => console.error("❌ MongoDB connection error:", err));
+.catch(err => {
+  console.error("❌ MongoDB connection error:", err);
+  process.exit(1);
+});
 
 // ---------------- MongoDB Schema ----------------
 const messageSchema = new mongoose.Schema({
@@ -40,7 +42,6 @@ const messageSchema = new mongoose.Schema({
   timestamp: { type: Date, default: Date.now },
   status: { type: String, default: 'sent' },
 });
-
 const Message = mongoose.model('Message', messageSchema);
 
 // ---------------- Static files ----------------
@@ -64,13 +65,8 @@ io.on('connection', (socket) => {
 
   socket.on('chat message', async (msgData) => {
     try {
-      const newMsg = new Message({
-        ...msgData,
-        timestamp: msgData.timestamp ? new Date(msgData.timestamp) : new Date(),
-      });
-
+      const newMsg = new Message({ ...msgData, timestamp: msgData.timestamp ? new Date(msgData.timestamp) : new Date() });
       await newMsg.save();
-
       io.to(msgData.room).emit('chat message', newMsg);
       io.to(msgData.room).emit('message status', { id: newMsg._id, status: 'delivered' });
     } catch (err) {
