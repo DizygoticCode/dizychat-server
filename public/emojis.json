@@ -58,7 +58,10 @@
     { "char": "🌙", "name": "moon" },
     { "char": "💤", "name": "zzz" },
     { "char": "✅", "name": "check" },
-    { "char": "❌", "name": "cross" }
+    { "char": "❌", "name": "cross" },
+    { "char": "❓", "name": "question" },
+    { "char": "❗", "name": "exclamation" },
+    { "char": "🌈", "name": "rainbow" }
   ],
   "Food": [
     { "char": "🍕", "name": "pizza" },
@@ -88,12 +91,21 @@
     { "char": "🐻", "name": "bear" },
     { "char": "🐼", "name": "panda" },
     { "char": "🐨", "name": "koala" },
-    { "char": "🐯", "name": "tiger" }
+    { "char": "🐯", "name": "tiger" },
+    { "char": "🦁", "name": "lion" }
   ],
   "Travel & Objects": [
     { "char": "🚗", "name": "car" },
+    { "char": "🚕", "name": "taxi" },
+    { "char": "🚙", "name": "suv" },
+    { "char": "🚌", "name": "bus" },
     { "char": "✈️", "name": "airplane" },
     { "char": "🚀", "name": "rocket" },
+    { "char": "🏎️", "name": "race_car" },
+    { "char": "🚓", "name": "police_car" },
+    { "char": "🚑", "name": "ambulance" },
+    { "char": "🚒", "name": "fire_truck" },
+    { "char": "🚐", "name": "van" },
     { "char": "🏠", "name": "house" },
     { "char": "💻", "name": "laptop" },
     { "char": "📱", "name": "phone" },
@@ -101,6 +113,7 @@
     { "char": "🎮", "name": "video_game" },
     { "char": "🎵", "name": "music" },
     { "char": "⚽", "name": "soccer" },
-    { "char": "🏀", "name": "basketball" }
+    { "char": "🏀", "name": "basketball" },
+    { "char": "🛸", "name": "ufo" }
   ]
 }

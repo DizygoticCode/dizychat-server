@@ -4,6 +4,8 @@ const { Server } = require('socket.io');
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const path = require('path');
+const fetch = require('node-fetch');   // ⬅️ added
+const cheerio = require('cheerio');    // ⬅️ added
 
 dotenv.config();
 
@@ -51,6 +53,32 @@ const Message = mongoose.model('Message', messageSchema);
 
 // ---------------- Serve Static Files ----------------
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ---------------- Link Preview Endpoint ----------------
+app.get('/link-preview', async (req, res) => {
+  const { url } = req.query;
+  if (!url) return res.status(400).json({ error: 'No URL provided' });
+
+  try {
+    const response = await fetch(url, { timeout: 5000 });
+    const html = await response.text();
+    const $ = cheerio.load(html);
+
+    const title =
+      $('meta[property="og:title"]').attr('content') ||
+      $('title').text() ||
+      '';
+    const image =
+      $('meta[property="og:image"]').attr('content') ||
+      $('img').first().attr('src') ||
+      '';
+
+    res.json({ title, image });
+  } catch (err) {
+    console.error("Preview fetch error:", err.message);
+    res.json({ title: '', image: '' });
+  }
+});
 
 // ---------------- Socket.IO ----------------
 let typingUsers = {};
