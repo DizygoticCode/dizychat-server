@@ -66,6 +66,7 @@ body.dark {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  min-height: 100vh;
   width: 100%;
   max-width: 600px;
   margin: 0 auto;
@@ -113,6 +114,14 @@ body:not(.dark) .chat-page header .room-info { color: #555; }
 .chat-page header button:hover { transform: scale(1.2); color: #28a745; }
 
 /* ---------------- Messages ---------------- */
+main#messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+  background: #e5ddd5;
+}
+body.dark main#messages { background: #1e1f22; }
+
 .message {
   margin-bottom: 10px;
   max-width: 75%;
@@ -122,7 +131,7 @@ body:not(.dark) .chat-page header .room-info { color: #555; }
   word-wrap: break-word;
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
   transition: background 0.2s;
-  animation: messagePop 0.2s ease forwards;
+  animation: messageSlideIn 0.25s ease forwards;
 }
 .message.self {
   margin-left: auto;
@@ -149,7 +158,7 @@ body.dark .message .meta { color: #ccc; }
 /* ---------------- Typing ---------------- */
 #typing-bubble { font-size: 0.8em; color: #888; padding: 5px 10px; }
 
-/* ---------------- Form Input & Send Button ---------------- */
+/* ---------------- Form Input & Buttons ---------------- */
 form#form {
   display: flex;
   align-items: center;
@@ -164,7 +173,7 @@ body.dark form#form { background:#1e1f22;border-top:1px solid:#40444b; }
 form#form input {
   flex: 1;
   padding: 10px 14px;
-  border-radius: 25px; /* pill shape */
+  border-radius: 25px;
   border: 1px solid #ccc;
   font-size: 1rem;
   transition: border 0.2s, box-shadow 0.2s, background 0.2s;
@@ -181,7 +190,9 @@ body.dark form#form input:focus {
   border-color:#28a745; box-shadow:0 0 6px rgba(40,167,69,0.4);
 }
 
-form#form button[type=submit] {
+/* Send Button & Main Emoji Button */
+form#form button[type=submit],
+#emoji-btn {
   border:none;
   border-radius:50%;
   width:42px;
@@ -195,11 +206,13 @@ form#form button[type=submit] {
   justify-content:center;
   transition: transform 0.15s ease, box-shadow 0.2s;
 }
-form#form button[type=submit]:hover {
+form#form button[type=submit]:hover,
+#emoji-btn:hover {
   transform: scale(1.1);
   box-shadow:0 2px 6px rgba(40,167,69,0.5);
 }
-form#form button[type=submit]:active {
+form#form button[type=submit]:active,
+#emoji-btn:active {
   transform: scale(0.95);
   box-shadow:0 1px 3px rgba(40,167,69,0.3);
 }
@@ -220,93 +233,96 @@ form#form button[type=submit]:active {
   transition: background 0.2s;
 }
 .quick-emojis button:hover { background:#c3e6cb; }
-body.dark .quick-emojis button { background:#056162;border:1px solid:#28a745;color:#d4edda; }
-body.dark .quick-emojis button:hover { background:#28a745; }
-
-/* Quick emoji pop animation */
-@keyframes quickEmojiPop {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.4); }
-  100% { transform: scale(1); }
+body.dark .quick-emojis button {
+  background:#28a745;
+  border:1px solid #28a745;
+  color:#fff;
 }
-.quick-emojis button.pop { animation: quickEmojiPop 0.2s ease forwards; }
+body.dark .quick-emojis button:hover { background:#3cb043; }
 
 /* ---------------- Emoji Picker ---------------- */
 .emoji-picker {
-  position:absolute;
-  bottom:60px;
-  right:20px;
-  display:none;
-  background:#fff;
-  border:1px solid #ccc;
-  max-height:250px;
-  overflow-y:auto;
-  width:250px;
-  z-index:1000;
-  border-radius:12px;
-  box-shadow:0 2px 8px rgba(0,0,0,0.2);
+  position: absolute;
+  bottom: 60px;
+  right: 20px;
+  display: none;
+  background: #fff;
+  border: 1px solid #ccc;
+  max-height: 250px;
+  overflow-y: auto;
+  width: 250px;
+  z-index: 1000;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  transition: all 0.25s ease;
 }
-.emoji-picker.show { display:block; }
+.emoji-picker.show { display: block; }
 
 .emoji-tabs {
-  display:flex;
-  flex-wrap:wrap;
-  justify-content:space-between;
-  padding:6px;
-  row-gap:6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 6px;
 }
 .emoji-tab-btn {
-  border-radius:20px;
-  padding:3px 10px;
-  font-size:0.7rem;
-  max-width:48%;
-  text-align:center;
-  font-weight:500;
-  cursor:pointer;
-  overflow:hidden;
-  white-space:nowrap;
-  text-overflow:ellipsis;
-  transition: background 0.2s,color 0.2s;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border-radius: 25px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background:#000;
+  color:#fff;
+  border:none;
+}
+.emoji-tab-btn.active {
+  background:#28a745;
+  color:#fff;
+}
+.emoji-tab-btn:hover {
+  filter: brightness(1.2);
 }
 
-/* Light theme */
-body:not(.dark) .emoji-tab-btn { background:#000;color:#fff; }
-body:not(.dark) .emoji-tab-btn.active { background:#28a745;color:#fff; }
-/* Dark theme */
-body.dark .emoji-tab-btn { background:#fff;color:#000; }
-body.dark .emoji-tab-btn.active { background:#28a745;color:#fff; }
+body.dark .emoji-tab-btn { background:#000; color:#fff; }
+body.dark .emoji-tab-btn.active { background:#28a745; color:#fff; }
 
 .emoji-content { padding:5px; display:flex; flex-direction:column; gap:4px; }
 .emoji-category { display:grid; grid-template-columns:repeat(auto-fill,28px); gap:4px; }
-.emoji-category span { cursor:pointer; padding:4px; text-align:center; border-radius:6px; font-size:1.2rem; transition: background 0.2s; }
+.emoji-category span {
+  cursor:pointer;
+  padding:4px;
+  text-align:center;
+  border-radius:6px;
+  font-size:1.2rem;
+  transition: background 0.2s;
+}
 .emoji-category span:hover { background:#e0e0e0; }
 body.dark .emoji-category span:hover { background:#40444b; }
 
 /* ---------------- Animations ---------------- */
-@keyframes messagePop {
-  0% { opacity:0; transform:scale(0.9); }
-  100% { opacity:1; transform:scale(1); }
-}
+@keyframes messageSlideIn { from {opacity:0; transform:translateY(8px);} to {opacity:1; transform:translateY(0);} }
+@keyframes pop { 0%{transform:scale(1);} 50%{transform:scale(1.4);} 100%{transform:scale(1);} }
+.quick-emojis button.pop { animation: pop 0.2s ease; }
 
 /* ---------------- Mobile Tweaks ---------------- */
 @media (max-width:600px){
   .chat-page { width:100%; border:none; }
   .chat-page header { flex-wrap:wrap; gap:6px; padding:6px 10px; }
-  .chat-page header .room-info { flex:1 1 100%; position: static; transform: none; text-align: center; margin-top:4px; }
+  .chat-page header .room-info { flex:1 1 100%; position:static; transform:none; text-align:center; margin-top:4px; }
   form#form { padding:4px 6px; }
   form#form input { padding:8px 12px; font-size:0.95rem; }
 
   #emoji-picker {
-    width:90vw;
-    left:50%;
-    transform:translateX(-50%);
-    max-height:45vh;
-    bottom:55px;
-    border-radius:12px;
+    width: 90vw;
+    left: 50%;
+    transform: translateX(-50%);
+    max-height: 45vh;
+    bottom: 55px;
+    border-radius: 12px;
   }
 
-  .emoji-tabs { gap:4px; row-gap:4px; }
-  .emoji-tab-btn { font-size:0.7rem; padding:3px 8px; max-width:45%; }
-  .emoji-category { max-height:35vh; overflow-y:auto; grid-template-columns: repeat(auto-fill, minmax(28px,1fr)); gap:3px; padding:3px 0; }
+  .emoji-tabs { gap:3px; padding:6px; }
+  .emoji-tab-btn { font-size: 0.8rem; padding:5px 8px; border-radius:25px; }
+  .emoji-category { max-height: 35vh; overflow-y: auto; grid-template-columns: repeat(auto-fill, minmax(28px, 1fr)); gap:3px; padding:3px 0; }
   .emoji-category span { font-size:1.5rem; line-height:32px; }
 }

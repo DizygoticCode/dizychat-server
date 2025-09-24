@@ -185,7 +185,13 @@ function buildEmojiPicker() {
       span.addEventListener("click", () => {
         insertAtCursor(input, char);
         input.focus();
-        animateQuickEmoji(char); // Animate quick emojis on click
+        animateQuickEmoji(char);
+
+        // Keep picker open after click
+        emojiPicker.classList.add('show');
+        emojiPicker.style.maxHeight = '250px';
+        emojiPicker.style.opacity = '1';
+        emojiPicker.style.transform = 'translateY(0)';
       });
       catDiv.appendChild(span);
     });
@@ -196,7 +202,6 @@ function buildEmojiPicker() {
 
   emojiPicker.appendChild(tabs);
   emojiPicker.appendChild(content);
-  emojiPicker.style.animation = "slideUp 0.3s ease"; // slide animation
 }
 
 function showEmojiCategory(cat) {
@@ -221,13 +226,22 @@ emojiBtn.addEventListener('click', e => {
   e.stopPropagation();
   emojiPicker.classList.toggle('show');
   if (emojiPicker.classList.contains('show')) {
-    emojiPicker.style.animation = "slideUp 0.3s ease";
+    emojiPicker.style.maxHeight = '250px';
+    emojiPicker.style.opacity = '1';
+    emojiPicker.style.transform = 'translateY(0)';
+  } else {
+    emojiPicker.style.maxHeight = '0';
+    emojiPicker.style.opacity = '0';
+    emojiPicker.style.transform = 'translateY(10px)';
   }
 });
 
 document.addEventListener('click', e => {
   if (!emojiPicker.contains(e.target) && e.target !== emojiBtn) {
     emojiPicker.classList.remove('show');
+    emojiPicker.style.maxHeight = '0';
+    emojiPicker.style.opacity = '0';
+    emojiPicker.style.transform = 'translateY(10px)';
   }
 });
 
@@ -250,12 +264,3 @@ quickEmojis.forEach(btn => {
 
 // ---------------- Load emojis on start ----------------
 loadEmojis();
-
-// ---------------- Animations CSS injected ----------------
-const style = document.createElement('style');
-style.textContent = `
-@keyframes slideUp { from {opacity:0; transform:translateY(10px);} to {opacity:1; transform:translateY(0);} }
-@keyframes pop { 0% {transform: scale(1);} 50% {transform: scale(1.4);} 100% {transform: scale(1);} }
-.quick-emojis button.pop { animation: pop 0.2s ease; }
-`;
-document.head.appendChild(style);
