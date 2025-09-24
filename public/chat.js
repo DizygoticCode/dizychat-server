@@ -147,7 +147,6 @@ const fallbackEmojis = {
   "Travel & Objects": ["🚗","🚕","🚙","🚌","✈️","🚀","🏎️","🚓","🚑","🚒","🚐","🛸","🏠","💻","📱","📷","🎮","🎵","⚽","🏀"]
 };
 
-
 async function loadEmojis() {
   try {
     const res = await fetch("/emoji.json");
@@ -188,7 +187,6 @@ function buildEmojiPicker() {
         input.focus();
         animateQuickEmoji(char);
 
-        // Keep picker open after click
         emojiPicker.classList.add('show');
         emojiPicker.style.maxHeight = '250px';
         emojiPicker.style.opacity = '1';
