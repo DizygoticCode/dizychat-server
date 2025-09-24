@@ -4,8 +4,10 @@ const { Server } = require('socket.io');
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const path = require('path');
-const fetch = require('node-fetch');
 const cheerio = require('cheerio');
+
+// Fix fetch in Node CommonJS
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 dotenv.config();
 
@@ -48,7 +50,6 @@ app.get('/link-preview', async (req, res) => {
   let { url } = req.query;
   if (!url) return res.status(400).json({ error: 'No URL provided' });
 
-  // Normalize URL: add http:// if missing
   if (!/^https?:\/\//i.test(url)) {
     url = 'http://' + url;
   }
