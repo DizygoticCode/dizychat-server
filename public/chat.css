@@ -21,11 +21,7 @@ body.dark {
   color: #fff;
   transition: background 0.3s ease;
 }
-.landing h2 {
-  font-size: 2rem;
-  margin-bottom: 20px;
-  text-shadow: 0 2px 6px rgba(0,0,0,0.4);
-}
+.landing h2 { font-size: 2rem; margin-bottom: 20px; text-shadow: 0 2px 6px rgba(0,0,0,0.4); }
 .landing input {
   margin: 8px 0;
   padding: 12px 15px;
@@ -66,8 +62,6 @@ body.dark {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  min-height: 100vh;
-  width: 100%;
   max-width: 600px;
   margin: 0 auto;
   background: #fff;
@@ -91,7 +85,6 @@ body.dark .chat-page { background: #1e1f22; border-color: #40444b; }
   gap: 12px;
 }
 .chat-page header .logo { height: 32px; cursor: pointer; margin-right: 8px; }
-.chat-page header .logo-text { font-weight: 700; font-size: 1.2rem; color: #fff; }
 .chat-page header .room-info { font-weight: 500; font-size: 1rem; position: absolute; left: 50%; transform: translateX(-50%); color: #fff; }
 body:not(.dark) .chat-page header { background: #f9f9f9; color: #333; border-bottom: 1px solid #ccc; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
 body:not(.dark) .chat-page header .logo-text { color: #333; }
@@ -118,35 +111,23 @@ body.dark main#messages { background: #1e1f22; }
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
   transition: background 0.2s;
   animation: messageSlideIn 0.25s ease forwards;
+  padding-right: 50px; /* space for three-dot menu */
 }
-.message.self {
-  margin-left: auto;
-  background: linear-gradient(135deg, #a8e6cf, #28a745);
-  color: #000;
-}
-body.dark .message.self {
-  background: linear-gradient(135deg, #28a745, #056162);
-  color: #fff;
-}
-.message.other {
-  margin-right: auto;
-  background: #f1f0f0;
-  color: #000;
-}
-body.dark .message.other {
-  background: #2f3136;
-  color: #eee;
-}
+.message.self { margin-left: auto; background: linear-gradient(135deg, #a8e6cf, #28a745); color: #000; }
+body.dark .message.self { background: linear-gradient(135deg, #28a745, #056162); color: #fff; }
+.message.other { margin-right: auto; background: #f1f0f0; color: #000; }
+body.dark .message.other { background: #2f3136; color: #eee; }
 .message .meta { font-size: 0.7em; color: #555; margin-bottom: 3px; }
 body.dark .message .meta { color: #ccc; }
 .message .status { font-size: 0.7em; color: green; position: absolute; bottom: 2px; right: 5px; }
 
-/* ---------------- Message Reactions ---------------- */
+/* ---------------- Reaction Container ---------------- */
 .reaction-container {
   display: flex;
   align-items: center;
   gap: 4px;
   margin-top: 4px;
+  position: relative;
 }
 .reaction-btn {
   background: #d4edda;
@@ -169,17 +150,17 @@ body.dark .message .meta { color: #ccc; }
   border-radius: 8px;
   padding: 4px;
   position: absolute;
+  bottom: 36px;
+  left: 0;
   z-index: 100;
   display: flex;
   gap: 4px;
 }
-.reaction-menu span {
-  cursor: pointer;
-  font-size: 1rem;
-}
-.selected-reactions { margin-left: 4px; }
+body.dark .reaction-menu { background: #2f3136; border-color: #40444b; }
+.reaction-menu span { cursor: pointer; font-size: 1rem; }
+.selected-reactions { margin-left: 4px; display: inline-block; }
 
-/* ---------------- Message Menu (Three-dot) ---------------- */
+/* ---------------- Three-dot Edit/Delete Menu ---------------- */
 .msg-menu-wrapper {
   position: absolute;
   top: 6px;
@@ -188,7 +169,6 @@ body.dark .message .meta { color: #ccc; }
   flex-direction: column;
   align-items: flex-end;
 }
-
 .menu-btn {
   background: transparent;
   border: none;
@@ -199,11 +179,7 @@ body.dark .message .meta { color: #ccc; }
   border-radius: 4px;
   transition: background 0.2s ease;
 }
-
-.menu-btn:hover {
-  background: rgba(0,0,0,0.1);
-}
-
+.menu-btn:hover { background: rgba(0,0,0,0.1); }
 .msg-menu {
   display: none;
   flex-direction: column;
@@ -217,13 +193,7 @@ body.dark .message .meta { color: #ccc; }
   z-index: 100;
   min-width: 80px;
 }
-
-body.dark .msg-menu {
-  background: #2f3136;
-  border-color: #40444b;
-  color: #eee;
-}
-
+body.dark .msg-menu { background: #2f3136; border-color: #40444b; color: #eee; }
 .msg-menu button {
   background: transparent;
   border: none;
@@ -234,55 +204,13 @@ body.dark .msg-menu {
   transition: background 0.2s;
   color: inherit;
 }
-
-.msg-menu button:hover {
-  background: rgba(0, 0, 0, 0.05);
-}
-
-body.dark .msg-menu button:hover {
-  background: #40444b;
-}
-
-/* ---------------- Reaction Menu Tweaks ---------------- */
-.reaction-container {
-  position: relative;
-}
-
-.reaction-menu {
-  position: absolute;
-  bottom: 36px;
-  left: 0;
-  background: #fff;
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  display: flex;
-  gap: 4px;
-  padding: 4px;
-  z-index: 90;
-}
-
-body.dark .reaction-menu {
-  background: #2f3136;
-  border-color: #40444b;
-}
-
-.selected-reactions {
-  margin-left: 4px;
-  display: inline-block;
-}
-
-
-/* ---------------- Adjust Message Bubble for Controls ---------------- */
-.message {
-  position: relative;
-  padding-right: 40px; /* make room for the three-dot menu */
-}
-
+.msg-menu button:hover { background: rgba(0, 0, 0, 0.05); }
+body.dark .msg-menu button:hover { background: #40444b; }
 
 /* ---------------- Typing ---------------- */
 #typing-bubble { font-size: 0.8em; color: #888; padding: 5px 10px; }
 
-/* ---------------- Form Input & Buttons ---------------- */
+/* ---------------- Form & Input ---------------- */
 form#form {
   display: flex;
   align-items: center;
@@ -293,7 +221,6 @@ form#form {
   border-top: 1px solid #ccc;
 }
 body.dark form#form { background:#1e1f22;border-top:1px solid:#40444b; }
-
 form#form input {
   flex: 1;
   padding: 10px 14px;
@@ -302,60 +229,30 @@ form#form input {
   font-size: 1rem;
   transition: border 0.2s, box-shadow 0.2s, background 0.2s;
 }
-form#form input:focus {
-  border-color: #28a745;
-  box-shadow: 0 0 6px rgba(40,167,69,0.4);
-  outline: none;
-}
-body.dark form#form input {
-  background:#2f3136;color:#eee;border:1px solid #555;
-}
-body.dark form#form input:focus {
-  border-color:#28a745; box-shadow:0 0 6px rgba(40,167,69,0.4);
-}
+form#form input:focus { border-color: #28a745; box-shadow: 0 0 6px rgba(40,167,69,0.4); outline: none; }
+body.dark form#form input { background:#2f3136;color:#eee;border:1px solid #555; }
+body.dark form#form input:focus { border-color:#28a745; box-shadow:0 0 6px rgba(40,167,69,0.4); }
 
-/* Send Button & Main Emoji Button */
-form#form button[type=submit],
-#emoji-btn {
-  border:none;
-  border-radius:50%;
-  width:42px;
-  height:42px;
-  cursor:pointer;
-  font-size:1.3em;
-  color:#fff;
-  background:#28a745;
-  display:flex;
-  align-items:center;
-  justify-content:center;
+/* ---------------- Send & Emoji Buttons ---------------- */
+form#form button[type=submit], #emoji-btn {
+  border:none; border-radius:50%;
+  width:42px; height:42px;
+  cursor:pointer; font-size:1.3em; color:#fff;
+  background:#28a745; display:flex; align-items:center; justify-content:center;
   transition: transform 0.15s ease, box-shadow 0.2s;
 }
-form#form button[type=submit]:hover,
-#emoji-btn:hover { transform: scale(1.1); box-shadow:0 2px 6px rgba(40,167,69,0.5); }
-form#form button[type=submit]:active,
-#emoji-btn:active { transform: scale(0.95); box-shadow:0 1px 3px rgba(40,167,69,0.3); }
+form#form button[type=submit]:hover, #emoji-btn:hover { transform: scale(1.1); box-shadow:0 2px 6px rgba(40,167,69,0.5); }
+form#form button[type=submit]:active, #emoji-btn:active { transform: scale(0.95); box-shadow:0 1px 3px rgba(40,167,69,0.3); }
 
 /* ---------------- Quick Emojis ---------------- */
-.quick-emojis {
-  display:flex;
-  gap:6px;
-}
+.quick-emojis { display:flex; gap:6px; }
 .quick-emojis button {
-  padding:6px 10px;
-  border-radius:8px;
-  border:1px solid #28a745;
-  background:#d4edda;
-  cursor:pointer;
-  font-size:1.2rem;
-  color:#155724;
+  padding:6px 10px; border-radius:8px; border:1px solid #28a745;
+  background:#d4edda; cursor:pointer; font-size:1.2rem; color:#155724;
   transition: background 0.2s;
 }
 .quick-emojis button:hover { background:#c3e6cb; }
-body.dark .quick-emojis button {
-  background:#28a745;
-  border:1px solid #28a745;
-  color:#fff;
-}
+body.dark .quick-emojis button { background:#28a745; border:1px solid #28a745; color:#fff; }
 body.dark .quick-emojis button:hover { background:#3cb043; }
 
 /* ---------------- Emoji Picker ---------------- */
@@ -375,39 +272,18 @@ body.dark .quick-emojis button:hover { background:#3cb043; }
   transition: all 0.25s ease;
 }
 .emoji-picker.show { display: block; }
-
-.emoji-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 4px 6px;
-}
+.emoji-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 6px; }
 .emoji-tab-btn {
-  padding: 6px 12px;
-  font-size: 0.85rem;
-  font-weight: 500;
-  border-radius: 25px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  background:#000;
-  color:#fff;
-  border:none;
+  padding: 6px 12px; font-size: 0.85rem; font-weight: 500; border-radius: 25px;
+  cursor: pointer; transition: all 0.2s ease; background:#000; color:#fff; border:none;
 }
 .emoji-tab-btn.active { background:#28a745; color:#fff; }
 .emoji-tab-btn:hover { filter: brightness(1.2); }
 body.dark .emoji-tab-btn { background:#000; color:#fff; }
 body.dark .emoji-tab-btn.active { background:#28a745; color:#fff; }
-
 .emoji-content { padding:5px; display:flex; flex-direction:column; gap:4px; }
 .emoji-category { display:grid; grid-template-columns:repeat(auto-fill,28px); gap:4px; }
-.emoji-category span {
-  cursor:pointer;
-  padding:4px;
-  text-align:center;
-  border-radius:6px;
-  font-size:1.2rem;
-  transition: background 0.2s;
-}
+.emoji-category span { cursor:pointer; padding:4px; text-align:center; border-radius:6px; font-size:1.2rem; transition: background 0.2s; }
 .emoji-category span:hover { background:#e0e0e0; }
 body.dark .emoji-category span:hover { background:#40444b; }
 
@@ -457,7 +333,10 @@ body.dark .message .link-preview a { color: #4ea1ff; }
 
 /* ---------------- Room List ---------------- */
 #room-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-#room-list .room-btn { padding: 6px 10px; border-radius: 8px; border:1px solid #28a745; background:#d4edda; cursor:pointer; font-size:0.9rem; color:#155724; transition: background 0.2s; }
+#room-list .room-btn {
+  padding: 6px 10px; border-radius: 8px; border:1px solid #28a745;
+  background:#d4edda; cursor:pointer; font-size:0.9rem; color:#155724; transition: background 0.2s;
+}
 #room-list .room-btn:hover { background:#c3e6cb; }
 body.dark #room-list .room-btn { background:#28a745; border:1px solid #28a745; color:#fff; }
 body.dark #room-list .room-btn:hover { background:#3cb043; }

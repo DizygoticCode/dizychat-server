@@ -34,7 +34,6 @@ if (prefillRoom) roomInput.value = prefillRoom;
 
 // ---------------- Session Check ----------------
 if (!localStorage.getItem('sessionToken')) {
-  // Only show landing page if new user
   usernamePrompt.style.display = 'flex';
 } else {
   currentUser = localStorage.getItem('username') || 'Guest';
@@ -118,31 +117,11 @@ function displayMessage(msg) {
 
   handleLinkPreview(div, msg.text);
 
-  // ---------------- Reaction UI ----------------
-  const actionsDiv = document.createElement("div");
-  actionsDiv.classList.add("message-actions");
+  // ---------------- Reactions ----------------
+  addReactionUI(div);
 
-  // Three-dot menu placeholder (used for edit/delete later)
-  const menuBtn = document.createElement("button");
-  menuBtn.classList.add("menu-btn");
-  menuBtn.innerText = "⋮";
-  actionsDiv.appendChild(menuBtn);
-
-  // Reaction button
-  const reactBtn = document.createElement("button");
-  reactBtn.classList.add("reaction-btn");
-  reactBtn.innerText = "😊";
-  actionsDiv.appendChild(reactBtn);
-
-  div.appendChild(actionsDiv);
-
-  // Reaction container (holds selected reactions)
-  const reactionContainer = document.createElement("div");
-  reactionContainer.classList.add("reaction-container");
-  div.appendChild(reactionContainer);
-
-  // ---------------- Edit/Delete ----------------
-  if (msg.user === currentUser) addMessageControls(div, msg);
+  // ---------------- Edit/Delete Menu ----------------
+  if(msg.user === currentUser) addMessageControls(div, msg);
 
   messages.appendChild(div);
   div.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -151,7 +130,6 @@ function displayMessage(msg) {
     socket.emit('read message', { room: currentRoom, id: msg._id || msg.id });
   }
 }
-
 
 // ---------------- Link Preview ----------------
 function handleLinkPreview(msgDiv, text) {
@@ -394,56 +372,3 @@ document.addEventListener('click', (e) => {
     closeAllMenus();
   }
 });
-
-
-// ---------------- Edit/Delete Controls ----------------
-function addMessageControls(msgDiv, msg) {
-  const menuWrapper = document.createElement('div');
-  menuWrapper.classList.add('msg-menu-wrapper');
-
-  const dotsBtn = document.createElement('button');
-  dotsBtn.textContent = '⋮';
-  dotsBtn.classList.add('dots-btn');
-
-  const menu = document.createElement('div');
-  menu.classList.add('msg-menu');
-  menu.style.display = 'none';
-
-  const editBtn = document.createElement('button');
-  editBtn.textContent = 'Edit';
-  editBtn.addEventListener('click', () => {
-    const newText = prompt("Edit message:", msg.text);
-    if (newText && newText.trim() !== msg.text) {
-      socket.emit('edit message', { id: msg._id || msg.id, text: newText.trim(), room: currentRoom });
-      msgDiv.childNodes.forEach(n => {
-        if (n.nodeType === 3) n.textContent = ` ${newText}`;
-      });
-    }
-    menu.style.display = 'none';
-  });
-
-  const delBtn = document.createElement('button');
-  delBtn.textContent = 'Delete';
-  delBtn.addEventListener('click', () => {
-    if (confirm("Delete this message?")) {
-      socket.emit('delete message', { id: msg._id || msg.id, room: currentRoom });
-      msgDiv.remove();
-    }
-    menu.style.display = 'none';
-  });
-
-  menu.appendChild(editBtn);
-  menu.appendChild(delBtn);
-
-  dotsBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
-  });
-
-  document.addEventListener('click', () => { menu.style.display = 'none'; });
-
-  menuWrapper.appendChild(dotsBtn);
-  menuWrapper.appendChild(menu);
-
-  msgDiv.appendChild(menuWrapper);
-}
