@@ -13,7 +13,9 @@
     <h2>Welcome to DizyChat</h2>
     <input id="username-input" placeholder="Enter username">
     <input id="room-input" placeholder="Enter room name">
+    <input id="room-password" type="password" placeholder="Room password (optional)">
     <button id="join-btn">Join Chat</button>
+    <div id="room-list"></div>
   </div>
 
   <!-- Chat Page -->
@@ -25,13 +27,13 @@
         <span id="room-name">Room</span>
       </div>
       <div>
-        <button id="share-btn">🔗</button>
-        <button id="toggle-theme">🌙</button>
+        <button id="share-btn" title="Share Room Link">🔗</button>
+        <button id="toggle-theme" title="Toggle Dark/Light">🌙</button>
       </div>
     </header>
 
     <main id="messages"></main>
-    <div id="typing-bubble"></div>
+    <div id="typing-bubble" class="typing-dots"></div>
 
     <form id="form">
       <button type="button" id="emoji-btn">😀</button>

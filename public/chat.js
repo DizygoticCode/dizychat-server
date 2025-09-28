@@ -3,6 +3,7 @@ const usernamePrompt = document.getElementById('username-prompt');
 const joinBtn = document.getElementById('join-btn');
 const usernameInput = document.getElementById('username-input');
 const roomInput = document.getElementById('room-input');
+const roomPasswordInput = document.getElementById('room-password');
 const chatContainer = document.getElementById('chat-container');
 const form = document.getElementById('form');
 const input = document.getElementById('input');
@@ -15,10 +16,11 @@ const toggleThemeBtn = document.getElementById('toggle-theme');
 const roomNameSpan = document.getElementById('room-name');
 const homeLogo = document.getElementById('home-logo');
 const quickEmojis = document.querySelectorAll('#quick-emojis button');
-const roomListDiv = document.getElementById('room-list'); // Room list
+const roomListDiv = document.getElementById('room-list');
 
 let currentUser = '';
 let currentRoom = '';
+let roomPassword = '';
 let socket;
 let typingTimeout;
 let darkMode = false;
@@ -30,14 +32,29 @@ const urlParams = new URLSearchParams(window.location.search);
 const prefillRoom = urlParams.get("room");
 if (prefillRoom) roomInput.value = prefillRoom;
 
+// ---------------- Session Check ----------------
+if (!localStorage.getItem('sessionToken')) {
+  // Only show landing page if new user
+  usernamePrompt.style.display = 'flex';
+} else {
+  currentUser = localStorage.getItem('username') || 'Guest';
+  currentRoom = prefillRoom || 'General';
+  initChat();
+}
+
 // ---------------- Join Chat ----------------
 joinBtn.addEventListener("click", () => {
   const username = usernameInput.value.trim();
   const room = roomInput.value.trim();
+  const password = roomPasswordInput.value.trim();
   if (!username || !room) return alert("Please enter both username and room name.");
 
   currentUser = username;
   currentRoom = room;
+  roomPassword = password;
+
+  localStorage.setItem('sessionToken', Date.now());
+  localStorage.setItem('username', username);
 
   usernamePrompt.style.display = "none";
   chatContainer.style.display = "flex";
@@ -45,14 +62,17 @@ joinBtn.addEventListener("click", () => {
 
   window.history.replaceState({}, "", `${window.location.origin}?room=${encodeURIComponent(room)}`);
 
-  // Save recent room
   saveRecentRoom(room);
   loadRecentRooms();
 
-  // ---------------- Socket.IO ----------------
+  initChat();
+});
+
+// ---------------- Initialize Chat ----------------
+function initChat() {
   socket = io(window.location.origin);
-  socket.emit("join room", room);
-  socket.emit("get history", room);
+  socket.emit("join room", { room: currentRoom, password: roomPassword });
+  socket.emit("get history", currentRoom);
 
   input.addEventListener("input", () => {
     socket.emit("typing", currentUser);
@@ -80,7 +100,7 @@ joinBtn.addEventListener("click", () => {
     const msgDiv = document.querySelector(`.message[data-id='${id}'] .status`);
     if (msgDiv) msgDiv.textContent = statusIcon(status);
   });
-});
+}
 
 // ---------------- Display Messages ----------------
 function displayMessage(msg) {
@@ -93,18 +113,14 @@ function displayMessage(msg) {
   meta.textContent = `[${new Date(msg.timestamp).toLocaleTimeString()}] ${msg.user}`;
   div.appendChild(meta);
 
-  div.appendChild(document.createTextNode(` ${msg.text}`));
+  const textNode = document.createTextNode(` ${msg.text}`);
+  div.appendChild(textNode);
 
-  // ---------------- Link Preview ----------------
   handleLinkPreview(div, msg.text);
-
-  const statusSpan = document.createElement('span');
-  statusSpan.classList.add('status');
-  statusSpan.textContent = statusIcon(msg.status || 'sent');
-  div.appendChild(statusSpan);
-
-  // ---------------- Message Reactions ----------------
   addReactionUI(div);
+
+  // ---------------- Edit/Delete ----------------
+  if(msg.user === currentUser) addMessageControls(div, msg);
 
   messages.appendChild(div);
   div.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -119,7 +135,6 @@ function handleLinkPreview(msgDiv, text) {
   if (!matches) return;
 
   const seenUrls = new Set();
-
   matches.forEach(rawUrl => {
     let url = rawUrl;
     if (!/^https?:\/\//i.test(url)) url = url.startsWith("www.") ? "https://" + url : "https://" + url;
@@ -130,41 +145,21 @@ function handleLinkPreview(msgDiv, text) {
       try {
         const res = await fetch(`/link-preview?url=${encodeURIComponent(url)}`);
         const data = await res.json();
-
         if (data.title || data.image) {
-          msgDiv.childNodes.forEach(node => {
-            if (node.nodeType === Node.TEXT_NODE) {
-              node.textContent = node.textContent.replace(rawUrl, '');
-            }
-          });
-
+          msgDiv.childNodes.forEach(node => { if(node.nodeType===3) node.textContent=node.textContent.replace(rawUrl,''); });
           const previewDiv = document.createElement('div');
           previewDiv.classList.add('link-preview');
-
-          if (data.image) {
-            const img = document.createElement('img');
-            img.src = data.image;
-            img.alt = data.title || url;
-            previewDiv.appendChild(img);
-          }
-
-          const link = document.createElement('a');
-          link.href = url;
-          link.target = '_blank';
-          link.textContent = data.title || url;
-          previewDiv.appendChild(link);
-
+          if(data.image){ const img = document.createElement('img'); img.src=data.image; img.alt=data.title||url; previewDiv.appendChild(img);}
+          const link = document.createElement('a'); link.href=url; link.target='_blank'; link.textContent=data.title||url; previewDiv.appendChild(link);
           msgDiv.appendChild(previewDiv);
         }
-      } catch (err) {
-        console.error("Link preview error:", err);
-      }
+      } catch(e){ console.error("Link preview error:", e); }
     })();
   });
 }
 
 // ---------------- Status Icon ----------------
-function statusIcon(status) {
+function statusIcon(status){
   switch(status){
     case 'sent': return '✓';
     case 'delivered': return '✓✓';
@@ -173,13 +168,11 @@ function statusIcon(status) {
   }
 }
 
-// ---------------- Share Chat Link ----------------
+// ---------------- Share ----------------
 shareBtn.addEventListener("click", () => {
-  const nickname = currentUser || prompt("Enter your nickname:", "Guest") || "Guest";
+  const nickname = currentUser || "Guest";
   const fullURL = `${window.location.origin}?room=${encodeURIComponent(currentRoom)}&nickname=${encodeURIComponent(nickname)}`;
-  navigator.clipboard.writeText(fullURL)
-    .then(() => alert("Room link copied!"))
-    .catch(() => alert(`Room link: ${fullURL}`));
+  navigator.clipboard.writeText(fullURL).then(() => alert("Room link copied!")).catch(()=>alert(`Room link: ${fullURL}`));
 });
 
 // ---------------- Dark Mode ----------------
@@ -190,7 +183,7 @@ toggleThemeBtn.addEventListener("click", () => {
   homeLogo.src = darkMode ? "/logo.png" : "/logo-light.png";
 });
 
-// ---------------- Home Logo Button ----------------
+// ---------------- Home Logo ----------------
 homeLogo.addEventListener("click", () => {
   chatContainer.style.display = "none";
   usernamePrompt.style.display = "flex";
@@ -201,136 +194,115 @@ homeLogo.addEventListener("click", () => {
 
 // ---------------- Emoji Picker ----------------
 const fallbackEmojis = {
-  "Faces":["😀","😁","😂","🤣","😃","😄","😅","😆","😊","😍","😘","😜","🤪","🤨","😎","🤩","🥳","😡","😭","😱","🤔","😇","🙂","🙃","😉","😌","😗","😙","😚","😴","🤯"],
-  "Gestures":["👍","👎","👏","🙏","✌️","🤞","🤟","🤘","👌","🤙"],
-  "Hearts & Symbols":["❤️","💛","💚","💙","💜","🖤","💔","💯","🔥","⭐","✨","⚡","☀️","🌙","💤","✅","❌","❓","❗","🌈"],
-  "Food":["🍕","🍔","🍟","🌭","🌮","🌯","🥗","🍎","🍌","🍉","🍓","🍺","☕","🍷","🍣","🍩","🥭","🍍","🥝"],
-  "Animals":["🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁"],
-  "Travel & Objects":["🚗","🚕","🚙","🚌","✈️","🚀","🏎️","🚓","🚑","🚒","🚐","🛸","🏠","💻","📱","📷","🎮","🎵","⚽","🏀"]
+  "Faces":["😀","😁","😂","🤣","😃"], "Gestures":["👍","👎","👏"], "Hearts":["❤️","💛"], "Food":["🍕","🍔"], "Animals":["🐶","🐱"], "Travel":["🚗","✈️"]
 };
 
 async function loadEmojis() {
   try {
     const res = await fetch("/emoji.json");
-    if (!res.ok) throw new Error("emoji.json missing");
-    emojiData = await res.json();
+    emojiData = res.ok ? await res.json() : fallbackEmojis;
   } catch { emojiData = fallbackEmojis; }
   buildEmojiPicker();
 }
 
 function buildEmojiPicker() {
-  emojiPicker.innerHTML = "";
-  const tabs = document.createElement("div"); tabs.classList.add("emoji-tabs");
-  const content = document.createElement("div"); content.classList.add("emoji-content");
-
-  Object.keys(emojiData).forEach((category, index) => {
-    const tabBtn = document.createElement("button"); tabBtn.textContent = category; tabBtn.classList.add("emoji-tab-btn");
-    if (index === 0) tabBtn.classList.add("active");
-    tabBtn.addEventListener("click", () => showEmojiCategory(category));
+  emojiPicker.innerHTML="";
+  const tabs=document.createElement("div"); tabs.classList.add("emoji-tabs");
+  const content=document.createElement("div"); content.classList.add("emoji-content");
+  Object.keys(emojiData).forEach((category,index)=>{
+    const tabBtn=document.createElement("button"); tabBtn.textContent=category; tabBtn.classList.add("emoji-tab-btn");
+    if(index===0) tabBtn.classList.add("active");
+    tabBtn.addEventListener("click",()=>showEmojiCategory(category));
     tabs.appendChild(tabBtn);
-
-    const catDiv = document.createElement("div"); catDiv.classList.add("emoji-category"); catDiv.dataset.category = category;
-    if (index !== 0) catDiv.style.display = "none";
-
-    emojiData[category].forEach(e => {
-      const char = typeof e === "string" ? e : e.char;
-      const span = document.createElement('span'); span.textContent = char;
-      span.addEventListener("click", () => {
-        insertAtCursor(input, char); input.focus(); animateQuickEmoji(char);
-      });
+    const catDiv=document.createElement("div"); catDiv.classList.add("emoji-category"); catDiv.dataset.category=category;
+    if(index!==0) catDiv.style.display="none";
+    emojiData[category].forEach(e=>{
+      const char=typeof e==="string"?e:e.char;
+      const span=document.createElement('span'); span.textContent=char;
+      span.addEventListener("click",()=>{ insertAtCursor(input,char); input.focus(); animateQuickEmoji(char); });
       catDiv.appendChild(span);
     });
-
-    content.appendChild(catDiv); emojiGrids[category] = catDiv;
+    content.appendChild(catDiv); emojiGrids[category]=catDiv;
   });
-
   emojiPicker.appendChild(tabs); emojiPicker.appendChild(content);
 }
 
-function showEmojiCategory(cat) {
-  document.querySelectorAll(".emoji-tab-btn").forEach(b => { b.classList.toggle('active', b.textContent === cat); });
-  Object.keys(emojiGrids).forEach(c => { emojiGrids[c].style.display = c === cat ? "grid" : "none"; });
+function showEmojiCategory(cat){
+  document.querySelectorAll(".emoji-tab-btn").forEach(b=>b.classList.toggle('active',b.textContent===cat));
+  Object.keys(emojiGrids).forEach(c=>emojiGrids[c].style.display=c===cat?"grid":"none");
 }
 
-function insertAtCursor(input, text) {
-  const start = input.selectionStart, end = input.selectionEnd;
-  input.value = input.value.slice(0, start) + text + input.value.slice(end);
-  input.selectionStart = input.selectionEnd = start + text.length;
-  input.focus();
+function insertAtCursor(input,text){
+  const start=input.selectionStart,end=input.selectionEnd;
+  input.value=input.value.slice(0,start)+text+input.value.slice(end);
+  input.selectionStart=input.selectionEnd=start+text.length;
 }
 
-// ---------------- Emoji Picker Toggle ----------------
 emojiBtn.addEventListener('click', e => {
-  e.stopPropagation(); emojiPicker.classList.toggle('show');
-  if (emojiPicker.classList.contains('show')) { emojiPicker.style.maxHeight='250px'; emojiPicker.style.opacity='1'; emojiPicker.style.transform='translateY(0)'; }
-  else { emojiPicker.style.maxHeight='0'; emojiPicker.style.opacity='0'; emojiPicker.style.transform='translateY(10px)'; }
+  e.stopPropagation();
+  emojiPicker.classList.toggle('show');
 });
 
 document.addEventListener('click', e => {
-  if (!emojiPicker.contains(e.target) && e.target !== emojiBtn) { emojiPicker.classList.remove('show'); emojiPicker.style.maxHeight='0'; emojiPicker.style.opacity='0'; emojiPicker.style.transform='translateY(10px)'; }
+  if(!emojiPicker.contains(e.target) && e.target!==emojiBtn) emojiPicker.classList.remove('show');
 });
 
-// ---------------- Quick Emojis ----------------
-function animateQuickEmoji(char) { quickEmojis.forEach(btn => { if(btn.textContent===char){ btn.classList.add('pop'); setTimeout(()=>btn.classList.remove('pop'),200); } }); }
-quickEmojis.forEach(btn => btn.addEventListener('click', () => { insertAtCursor(input, btn.textContent); animateQuickEmoji(btn.textContent); }));
+function animateQuickEmoji(char){ quickEmojis.forEach(btn=>{ if(btn.textContent===char){ btn.classList.add('pop'); setTimeout(()=>btn.classList.remove('pop'),200); }}); }
+quickEmojis.forEach(btn=>btn.addEventListener('click',()=>{ insertAtCursor(input,btn.textContent); animateQuickEmoji(btn.textContent); }));
 
-// ---------------- Load emojis ----------------
 loadEmojis();
 
-// ---------------- Room List Functions ----------------
-function loadRecentRooms() {
-  const recent = JSON.parse(localStorage.getItem('recentRooms') || '[]');
-  roomListDiv.innerHTML = '';
-  recent.forEach(r => {
-    const btn = document.createElement('button');
-    btn.textContent = r;
-    btn.className = 'room-btn';
-    btn.addEventListener('click', () => {
-      roomInput.value = r;
-      joinBtn.click();
-    });
+// ---------------- Recent Rooms ----------------
+function loadRecentRooms(){
+  const recent=JSON.parse(localStorage.getItem('recentRooms')||'[]');
+  roomListDiv.innerHTML='';
+  recent.forEach(r=>{
+    const btn=document.createElement('button'); btn.textContent=r; btn.className='room-btn';
+    btn.addEventListener('click',()=>{ roomInput.value=r; joinBtn.click(); });
     roomListDiv.appendChild(btn);
   });
 }
 
-function saveRecentRoom(room) {
-  let recent = JSON.parse(localStorage.getItem('recentRooms') || '[]');
-  recent = [room, ...recent.filter(r => r!==room)].slice(0, 10);
-  localStorage.setItem('recentRooms', JSON.stringify(recent));
+function saveRecentRoom(room){
+  let recent=JSON.parse(localStorage.getItem('recentRooms')||'[]');
+  recent=[room,...recent.filter(r=>r!==room)].slice(0,10);
+  localStorage.setItem('recentRooms',JSON.stringify(recent));
 }
 
-// ---------------- Message Reactions ----------------
-function addReactionUI(msgDiv) {
-  const reactionContainer = document.createElement('div');
-  reactionContainer.classList.add('reaction-container');
-
-  const reactBtn = document.createElement('button');
-  reactBtn.textContent = '😊';
-  reactBtn.classList.add('reaction-btn');
-  reactionContainer.appendChild(reactBtn);
-
-  const emojiMenu = document.createElement('div');
-  emojiMenu.classList.add('reaction-menu');
-  ['👍','❤️','😂','😮','😢','😡'].forEach(e => {
-    const span = document.createElement('span');
-    span.textContent = e;
-    span.addEventListener('click', () => {
-      let existing = reactionContainer.querySelector('.selected-reactions');
-      if (!existing) {
-        existing = document.createElement('div');
-        existing.className = 'selected-reactions';
-        reactionContainer.appendChild(existing);
-      }
-      existing.textContent += e;
-      emojiMenu.style.display = 'none';
-    });
+// ---------------- Reactions ----------------
+function addReactionUI(msgDiv){
+  const container=document.createElement('div'); container.classList.add('reaction-container');
+  const reactBtn=document.createElement('button'); reactBtn.textContent='😊'; reactBtn.classList.add('reaction-btn');
+  container.appendChild(reactBtn);
+  const emojiMenu=document.createElement('div'); emojiMenu.classList.add('reaction-menu');
+  ['👍','❤️','😂','😮','😢','😡'].forEach(e=>{
+    const span=document.createElement('span'); span.textContent=e;
+    span.addEventListener('click',()=>{ let existing=container.querySelector('.selected-reactions'); if(!existing){ existing=document.createElement('div'); existing.className='selected-reactions'; container.appendChild(existing);} existing.textContent+=e; emojiMenu.style.display='none'; });
     emojiMenu.appendChild(span);
   });
+  container.appendChild(emojiMenu);
+  reactBtn.addEventListener('click',()=>{ emojiMenu.style.display=emojiMenu.style.display==='block'?'none':'block'; });
+  msgDiv.appendChild(container);
+}
 
-  reactionContainer.appendChild(emojiMenu);
-  reactBtn.addEventListener('click', () => {
-    emojiMenu.style.display = emojiMenu.style.display==='block'?'none':'block';
+// ---------------- Edit/Delete ----------------
+function addMessageControls(msgDiv,msg){
+  const controlDiv=document.createElement('div'); controlDiv.classList.add('msg-controls');
+  const editBtn=document.createElement('button'); editBtn.textContent='✏️';
+  editBtn.addEventListener('click',()=>{
+    const newText=prompt("Edit message:", msg.text);
+    if(newText && newText.trim()!==msg.text){
+      socket.emit('edit message',{id:msg._id||msg.id,text:newText.trim(),room:currentRoom});
+      msgDiv.childNodes.forEach(n=>{ if(n.nodeType===3) n.textContent=` ${newText}`; });
+    }
   });
-
-  msgDiv.appendChild(reactionContainer);
+  const delBtn=document.createElement('button'); delBtn.textContent='🗑️';
+  delBtn.addEventListener('click',()=>{
+    if(confirm("Delete this message?")){
+      socket.emit('delete message',{id:msg._id||msg.id,room:currentRoom});
+      msgDiv.remove();
+    }
+  });
+  controlDiv.appendChild(editBtn); controlDiv.appendChild(delBtn);
+  msgDiv.appendChild(controlDiv);
 }

@@ -91,22 +91,8 @@ body.dark .chat-page { background: #1e1f22; border-color: #40444b; }
   gap: 12px;
 }
 .chat-page header .logo { height: 32px; cursor: pointer; margin-right: 8px; }
-.chat-page header .logo-text {
-  font-family: 'Segoe UI', Tahoma, sans-serif;
-  font-weight: 700;
-  font-size: 1.2rem;
-  color: #fff;
-}
-.chat-page header .room-info {
-  font-family: 'Segoe UI', Tahoma, sans-serif;
-  font-weight: 500;
-  font-size: 1rem;
-  letter-spacing: 0.5px;
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  color: #fff;
-}
+.chat-page header .logo-text { font-weight: 700; font-size: 1.2rem; color: #fff; }
+.chat-page header .room-info { font-weight: 500; font-size: 1rem; position: absolute; left: 50%; transform: translateX(-50%); color: #fff; }
 body:not(.dark) .chat-page header { background: #f9f9f9; color: #333; border-bottom: 1px solid #ccc; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
 body:not(.dark) .chat-page header .logo-text { color: #333; }
 body:not(.dark) .chat-page header .room-info { color: #555; }
@@ -170,7 +156,6 @@ body.dark .message .meta { color: #ccc; }
   height: 24px;
   cursor: pointer;
   font-size: 0.9em;
-  line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -246,15 +231,9 @@ form#form button[type=submit],
   transition: transform 0.15s ease, box-shadow 0.2s;
 }
 form#form button[type=submit]:hover,
-#emoji-btn:hover {
-  transform: scale(1.1);
-  box-shadow:0 2px 6px rgba(40,167,69,0.5);
-}
+#emoji-btn:hover { transform: scale(1.1); box-shadow:0 2px 6px rgba(40,167,69,0.5); }
 form#form button[type=submit]:active,
-#emoji-btn:active {
-  transform: scale(0.95);
-  box-shadow:0 1px 3px rgba(40,167,69,0.3);
-}
+#emoji-btn:active { transform: scale(0.95); box-shadow:0 1px 3px rgba(40,167,69,0.3); }
 
 /* ---------------- Quick Emojis ---------------- */
 .quick-emojis {
@@ -314,12 +293,8 @@ body.dark .quick-emojis button:hover { background:#3cb043; }
   color:#fff;
   border:none;
 }
-.emoji-tab-btn.active {
-  background:#28a745;
-  color:#fff;
-}
+.emoji-tab-btn.active { background:#28a745; color:#fff; }
 .emoji-tab-btn:hover { filter: brightness(1.2); }
-
 body.dark .emoji-tab-btn { background:#000; color:#fff; }
 body.dark .emoji-tab-btn.active { background:#28a745; color:#fff; }
 
@@ -343,10 +318,7 @@ body.dark .emoji-category span:hover { background:#40444b; }
 
 /* ---------------- Mobile Tweaks ---------------- */
 @media (max-width: 600px) {
-  .chat-page {
-    width: 100%;
-    border: none;
-  }
+  .chat-page { width: 100%; border: none; }
   .chat-page header { flex-wrap: wrap; gap: 6px; padding: 6px 10px; }
   .chat-page header .room-info { flex: 1 1 100%; position: static; transform: none; text-align: center; margin-top: 4px; }
   main#messages { padding: 6px; }
@@ -384,7 +356,7 @@ body.dark .message .link-preview a { color: #4ea1ff; }
 .message .link-preview a:hover { text-decoration: underline; }
 
 /* ---------------- Room List ---------------- */
-#room-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+#room-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 #room-list .room-btn { padding: 6px 10px; border-radius: 8px; border:1px solid #28a745; background:#d4edda; cursor:pointer; font-size:0.9rem; color:#155724; transition: background 0.2s; }
 #room-list .room-btn:hover { background:#c3e6cb; }
 body.dark #room-list .room-btn { background:#28a745; border:1px solid #28a745; color:#fff; }
