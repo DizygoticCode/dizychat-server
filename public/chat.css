@@ -305,27 +305,45 @@ body.dark .emoji-category span:hover { background:#40444b; }
 .quick-emojis button.pop { animation: pop 0.2s ease; }
 
 /* ---------------- Mobile Tweaks ---------------- */
-@media (max-width:600px){
-  .chat-page { width:100%; border:none; }
-  .chat-page header { flex-wrap:wrap; gap:6px; padding:6px 10px; }
-  .chat-page header .room-info { flex:1 1 100%; position:static; transform:none; text-align:center; margin-top:4px; }
-  form#form { padding:4px 6px; }
-  form#form input { padding:8px 12px; font-size:0.95rem; }
-
-  #emoji-picker {
-    width: 90vw;
-    left: 50%;
-    transform: translateX(-50%);
-    max-height: 45vh;
-    bottom: 55px;
-    border-radius: 12px;
-  }
-
-  .emoji-tabs { gap:3px; padding:6px; }
-  .emoji-tab-btn { font-size: 0.8rem; padding:5px 8px; border-radius:25px; }
-  .emoji-category { max-height: 35vh; overflow-y: auto; grid-template-columns: repeat(auto-fill, minmax(28px, 1fr)); gap:3px; padding:3px 0; }
-  .emoji-category span { font-size:1.5rem; line-height:32px; }
+@media (max-width: 600px) {
+  .chat-page { width: 100%; border: none; }
+  .chat-page header { flex-wrap: wrap; gap: 6px; padding: 6px 10px; }
+  .chat-page header .room-info { flex: 1 1 100%; position: static; transform: none; text-align: center; margin-top: 4px; }
+  main#messages { padding: 6px; }
+  .message { max-width: 100%; font-size: 0.95rem; padding: 8px 10px; }
+  form#form { padding: 4px 6px; gap: 4px; }
+  form#form input { padding: 8px 10px; font-size: 0.9rem; }
+  form#form button[type=submit], #emoji-btn { width: 38px; height: 38px; font-size: 1.1em; }
+  #emoji-picker { width: 92vw; left: 50%; transform: translateX(-50%); max-height: 45vh; bottom: 55px; border-radius: 12px; }
+  .emoji-tabs { gap: 3px; padding: 6px; }
+  .emoji-tab-btn { font-size: 0.8rem; padding: 5px 8px; border-radius: 25px; }
+  .emoji-category { max-height: 35vh; overflow-y: auto; grid-template-columns: repeat(auto-fill, minmax(28px, 1fr)); gap: 3px; padding: 3px 0; }
+  .emoji-category span { font-size: 1.4rem; line-height: 28px; }
+  .message .link-preview { max-width: 100%; font-size: 0.85rem; }
 }
+
+/* ---------------- Extra Small Mobile Tweaks ---------------- */
+@media (max-width: 400px) {
+  .landing h2 { font-size: 1.6rem; }
+  .landing input, .landing button { width: 220px; padding: 10px 12px; font-size: 0.95rem; }
+  .chat-page header .logo-text { font-size: 1rem; }
+  form#form input { font-size: 0.85rem; padding: 7px 9px; }
+}
+
+@media (max-width: 350px) {
+  .landing h2 { font-size: 1.4rem; }
+  .landing input, .landing button { width: 200px; padding: 8px 10px; font-size: 0.9rem; }
+  .chat-page header { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .chat-page header .room-info { font-size: 0.9rem; margin-top: 2px; text-align: left; transform: none; position: static; }
+  main#messages { padding: 4px; }
+  .message { font-size: 0.85rem; padding: 6px 8px; }
+  form#form { padding: 3px 4px; gap: 3px; }
+  form#form input { padding: 7px 9px; font-size: 0.8rem; }
+  form#form button[type=submit], #emoji-btn { width: 34px; height: 34px; font-size: 1em; }
+  .emoji-tab-btn { font-size: 0.7rem; padding: 4px 6px; }
+  .emoji-category span { font-size: 1.2rem; line-height: 24px; }
+}
+
 /* ---------------- Link Preview ---------------- */
 .message .link-preview {
   margin-top: 6px;
@@ -339,28 +357,23 @@ body.dark .emoji-category span:hover { background:#40444b; }
   max-width: 80%;
   font-size: 0.9rem;
 }
-
 body.dark .message .link-preview {
   background: #2f3136;
   border-color: #40444b;
   color: #eee;
 }
-
 .message .link-preview img {
   max-width: 100%;
   border-radius: 6px;
 }
-
 .message .link-preview a {
   color: #007bff;
   text-decoration: none;
   word-break: break-word;
 }
-
 body.dark .message .link-preview a {
   color: #4ea1ff;
 }
-
 .message .link-preview a:hover {
   text-decoration: underline;
 }
