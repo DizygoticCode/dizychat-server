@@ -15,6 +15,7 @@ const toggleThemeBtn = document.getElementById('toggle-theme');
 const roomNameSpan = document.getElementById('room-name');
 const homeLogo = document.getElementById('home-logo');
 const quickEmojis = document.querySelectorAll('#quick-emojis button');
+const roomListDiv = document.getElementById('room-list'); // Room list
 
 let currentUser = '';
 let currentRoom = '';
@@ -23,7 +24,6 @@ let typingTimeout;
 let darkMode = false;
 let emojiData = {};
 let emojiGrids = {};
-const linkPreviewCache = new Map();
 
 // ---------------- Landing Page Prefill ----------------
 const urlParams = new URLSearchParams(window.location.search);
@@ -44,6 +44,10 @@ joinBtn.addEventListener("click", () => {
   roomNameSpan.textContent = room;
 
   window.history.replaceState({}, "", `${window.location.origin}?room=${encodeURIComponent(room)}`);
+
+  // Save recent room
+  saveRecentRoom(room);
+  loadRecentRooms();
 
   // ---------------- Socket.IO ----------------
   socket = io(window.location.origin);
@@ -67,34 +71,14 @@ joinBtn.addEventListener("click", () => {
 
   socket.on('chat message', msg => displayMessage(msg));
   socket.on('room history', msgs => msgs.forEach(msg => displayMessage(msg)));
-
-  // ---------------- Typing Indicator ----------------
   socket.on('typing', users => {
     const others = users.filter(u => u !== currentUser);
     typingBubble.style.display = others.length ? 'block' : 'none';
-    if (others.length) {
-      typingBubble.innerHTML = `${others.join(', ')} is typing<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>`;
-    } else typingBubble.innerHTML = '';
+    typingBubble.textContent = others.length ? `${others.join(', ')} is typing...` : '';
   });
-
   socket.on('message status', ({ id, status }) => {
     const msgDiv = document.querySelector(`.message[data-id='${id}'] .status`);
     if (msgDiv) msgDiv.textContent = statusIcon(status);
-  });
-
-  socket.on('reaction update', ({ msgId, reactions }) => {
-    const msgDiv = document.querySelector(`.message[data-id='${msgId}'] .reactions`);
-    if (msgDiv) {
-      msgDiv.innerHTML = '';
-      Object.entries(reactions).forEach(([emoji, count]) => {
-        const btn = document.createElement('button');
-        btn.textContent = count > 1 ? `${emoji} ${count}` : emoji;
-        btn.addEventListener('click', () => {
-          socket.emit('reaction', { msgId, emoji });
-        });
-        msgDiv.appendChild(btn);
-      });
-    }
   });
 });
 
@@ -109,91 +93,74 @@ function displayMessage(msg) {
   meta.textContent = `[${new Date(msg.timestamp).toLocaleTimeString()}] ${msg.user}`;
   div.appendChild(meta);
 
-  div.insertAdjacentHTML('beforeend', ` ${renderRichText(msg.text)}`);
+  div.appendChild(document.createTextNode(` ${msg.text}`));
 
+  // ---------------- Link Preview ----------------
   handleLinkPreview(div, msg.text);
 
-  // ---------------- Reactions ----------------
-  const reactionsDiv = document.createElement('div');
-  reactionsDiv.classList.add('reactions');
-  if (msg.reactions) {
-    Object.entries(msg.reactions).forEach(([emoji, count]) => {
-      const btn = document.createElement('button');
-      btn.textContent = count > 1 ? `${emoji} ${count}` : emoji;
-      btn.addEventListener('click', () => socket.emit('reaction', { msgId: msg._id || msg.id, emoji }));
-      reactionsDiv.appendChild(btn);
-    });
-  } else {
-    ['👍','❤️','😂'].forEach(emoji => {
-      const btn = document.createElement('button');
-      btn.textContent = emoji;
-      btn.addEventListener('click', () => socket.emit('reaction', { msgId: msg._id || msg.id, emoji }));
-      reactionsDiv.appendChild(btn);
-    });
-  }
-  div.appendChild(reactionsDiv);
+  const statusSpan = document.createElement('span');
+  statusSpan.classList.add('status');
+  statusSpan.textContent = statusIcon(msg.status || 'sent');
+  div.appendChild(statusSpan);
 
-  const nearBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 50;
+  // ---------------- Message Reactions ----------------
+  addReactionUI(div);
+
   messages.appendChild(div);
-  if (nearBottom) div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  div.scrollIntoView({ behavior: 'smooth', block: 'end' });
 
   if (msg.user !== currentUser) socket.emit('read message', { room: currentRoom, id: msg._id || msg.id });
 }
 
-// ---------------- Link Preview with Cache ----------------
+// ---------------- Link Preview ----------------
 function handleLinkPreview(msgDiv, text) {
   const urlRegex = /(\b(https?:\/\/)?(www\.)?[-a-zA-Z0-9@:%._+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_+.~#?&//=]*))/gi;
   const matches = text.match(urlRegex);
   if (!matches) return;
 
   const seenUrls = new Set();
+
   matches.forEach(rawUrl => {
     let url = rawUrl;
     if (!/^https?:\/\//i.test(url)) url = url.startsWith("www.") ? "https://" + url : "https://" + url;
     if (seenUrls.has(url)) return;
     seenUrls.add(url);
 
-    if (linkPreviewCache.has(url)) {
-      appendPreview(msgDiv, url, linkPreviewCache.get(url));
-    } else {
-      (async () => {
-        try {
-          const res = await fetch(`/link-preview?url=${encodeURIComponent(url)}`);
-          const data = await res.json();
-          linkPreviewCache.set(url, data);
-          appendPreview(msgDiv, url, data);
-        } catch (err) { console.error("Link preview error:", err); }
-      })();
-    }
-  });
-}
+    (async () => {
+      try {
+        const res = await fetch(`/link-preview?url=${encodeURIComponent(url)}`);
+        const data = await res.json();
 
-function appendPreview(msgDiv, url, data) {
-  if (!data.title && !data.image) return;
-  msgDiv.childNodes.forEach(node => {
-    if (node.nodeType === Node.TEXT_NODE) node.textContent = node.textContent.replace(url, '');
-  });
-  const previewDiv = document.createElement('div');
-  previewDiv.classList.add('link-preview');
-  if (data.image) {
-    const img = document.createElement('img');
-    img.src = data.image;
-    img.alt = data.title || url;
-    previewDiv.appendChild(img);
-  }
-  const link = document.createElement('a');
-  link.href = url;
-  link.target = '_blank';
-  link.textContent = data.title || url;
-  previewDiv.appendChild(link);
-  msgDiv.appendChild(previewDiv);
-}
+        if (data.title || data.image) {
+          msgDiv.childNodes.forEach(node => {
+            if (node.nodeType === Node.TEXT_NODE) {
+              node.textContent = node.textContent.replace(rawUrl, '');
+            }
+          });
 
-// ---------------- Render Markdown ----------------
-function renderRichText(text) {
-  return text
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em>$1</em>');
+          const previewDiv = document.createElement('div');
+          previewDiv.classList.add('link-preview');
+
+          if (data.image) {
+            const img = document.createElement('img');
+            img.src = data.image;
+            img.alt = data.title || url;
+            previewDiv.appendChild(img);
+          }
+
+          const link = document.createElement('a');
+          link.href = url;
+          link.target = '_blank';
+          link.textContent = data.title || url;
+          previewDiv.appendChild(link);
+
+          msgDiv.appendChild(previewDiv);
+        }
+      } catch (err) {
+        console.error("Link preview error:", err);
+      }
+    })();
+  });
 }
 
 // ---------------- Status Icon ----------------
@@ -268,7 +235,9 @@ function buildEmojiPicker() {
     emojiData[category].forEach(e => {
       const char = typeof e === "string" ? e : e.char;
       const span = document.createElement('span'); span.textContent = char;
-      span.addEventListener('click', () => { insertAtCursor(input, char); input.focus(); animateQuickEmoji(char); });
+      span.addEventListener("click", () => {
+        insertAtCursor(input, char); input.focus(); animateQuickEmoji(char);
+      });
       catDiv.appendChild(span);
     });
 
@@ -293,17 +262,12 @@ function insertAtCursor(input, text) {
 // ---------------- Emoji Picker Toggle ----------------
 emojiBtn.addEventListener('click', e => {
   e.stopPropagation(); emojiPicker.classList.toggle('show');
-  if (emojiPicker.classList.contains('show')) {
-    emojiPicker.style.maxHeight='250px'; emojiPicker.style.opacity='1'; emojiPicker.style.transform='translateY(0)';
-  } else {
-    emojiPicker.style.maxHeight='0'; emojiPicker.style.opacity='0'; emojiPicker.style.transform='translateY(10px)';
-  }
+  if (emojiPicker.classList.contains('show')) { emojiPicker.style.maxHeight='250px'; emojiPicker.style.opacity='1'; emojiPicker.style.transform='translateY(0)'; }
+  else { emojiPicker.style.maxHeight='0'; emojiPicker.style.opacity='0'; emojiPicker.style.transform='translateY(10px)'; }
 });
 
 document.addEventListener('click', e => {
-  if (!emojiPicker.contains(e.target) && e.target !== emojiBtn) {
-    emojiPicker.classList.remove('show'); emojiPicker.style.maxHeight='0'; emojiPicker.style.opacity='0'; emojiPicker.style.transform='translateY(10px)';
-  }
+  if (!emojiPicker.contains(e.target) && e.target !== emojiBtn) { emojiPicker.classList.remove('show'); emojiPicker.style.maxHeight='0'; emojiPicker.style.opacity='0'; emojiPicker.style.transform='translateY(10px)'; }
 });
 
 // ---------------- Quick Emojis ----------------
@@ -312,3 +276,61 @@ quickEmojis.forEach(btn => btn.addEventListener('click', () => { insertAtCursor(
 
 // ---------------- Load emojis ----------------
 loadEmojis();
+
+// ---------------- Room List Functions ----------------
+function loadRecentRooms() {
+  const recent = JSON.parse(localStorage.getItem('recentRooms') || '[]');
+  roomListDiv.innerHTML = '';
+  recent.forEach(r => {
+    const btn = document.createElement('button');
+    btn.textContent = r;
+    btn.className = 'room-btn';
+    btn.addEventListener('click', () => {
+      roomInput.value = r;
+      joinBtn.click();
+    });
+    roomListDiv.appendChild(btn);
+  });
+}
+
+function saveRecentRoom(room) {
+  let recent = JSON.parse(localStorage.getItem('recentRooms') || '[]');
+  recent = [room, ...recent.filter(r => r!==room)].slice(0, 10);
+  localStorage.setItem('recentRooms', JSON.stringify(recent));
+}
+
+// ---------------- Message Reactions ----------------
+function addReactionUI(msgDiv) {
+  const reactionContainer = document.createElement('div');
+  reactionContainer.classList.add('reaction-container');
+
+  const reactBtn = document.createElement('button');
+  reactBtn.textContent = '😊';
+  reactBtn.classList.add('reaction-btn');
+  reactionContainer.appendChild(reactBtn);
+
+  const emojiMenu = document.createElement('div');
+  emojiMenu.classList.add('reaction-menu');
+  ['👍','❤️','😂','😮','😢','😡'].forEach(e => {
+    const span = document.createElement('span');
+    span.textContent = e;
+    span.addEventListener('click', () => {
+      let existing = reactionContainer.querySelector('.selected-reactions');
+      if (!existing) {
+        existing = document.createElement('div');
+        existing.className = 'selected-reactions';
+        reactionContainer.appendChild(existing);
+      }
+      existing.textContent += e;
+      emojiMenu.style.display = 'none';
+    });
+    emojiMenu.appendChild(span);
+  });
+
+  reactionContainer.appendChild(emojiMenu);
+  reactBtn.addEventListener('click', () => {
+    emojiMenu.style.display = emojiMenu.style.display==='block'?'none':'block';
+  });
+
+  msgDiv.appendChild(reactionContainer);
+}

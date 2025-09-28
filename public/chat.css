@@ -155,6 +155,45 @@ body.dark .message.other {
 body.dark .message .meta { color: #ccc; }
 .message .status { font-size: 0.7em; color: green; position: absolute; bottom: 2px; right: 5px; }
 
+/* ---------------- Message Reactions ---------------- */
+.reaction-container {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+.reaction-btn {
+  background: #d4edda;
+  border: 1px solid #28a745;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+  font-size: 0.9em;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s;
+}
+.reaction-btn:hover { transform: scale(1.2); }
+.reaction-menu {
+  display: none;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 4px;
+  position: absolute;
+  z-index: 100;
+  display: flex;
+  gap: 4px;
+}
+.reaction-menu span {
+  cursor: pointer;
+  font-size: 1rem;
+}
+.selected-reactions { margin-left: 4px; }
+
 /* ---------------- Typing ---------------- */
 #typing-bubble { font-size: 0.8em; color: #888; padding: 5px 10px; }
 
@@ -279,9 +318,7 @@ body.dark .quick-emojis button:hover { background:#3cb043; }
   background:#28a745;
   color:#fff;
 }
-.emoji-tab-btn:hover {
-  filter: brightness(1.2);
-}
+.emoji-tab-btn:hover { filter: brightness(1.2); }
 
 body.dark .emoji-tab-btn { background:#000; color:#fff; }
 body.dark .emoji-tab-btn.active { background:#28a745; color:#fff; }
@@ -310,149 +347,21 @@ body.dark .emoji-category span:hover { background:#40444b; }
     width: 100%;
     border: none;
   }
-
-  .chat-page header {
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 6px 10px;
-  }
-
-  .chat-page header .room-info {
-    flex: 1 1 100%;
-    position: static;
-    transform: none;
-    text-align: center;
-    margin-top: 4px;
-    font-size: 0.95rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  main#messages {
-    padding: 6px;
-    overflow-y: auto;
-  }
-
-  .message {
-    max-width: 100%;
-    font-size: 0.95rem;
-    padding: 8px 10px;
-    word-wrap: break-word;
-  }
-
-  form#form {
-    padding: 4px 6px;
-    gap: 4px;
-    flex-wrap: nowrap;
-  }
-
-  form#form input {
-    padding: 8px 10px;
-    font-size: 0.9rem;
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-
-  form#form button[type=submit],
-  #emoji-btn {
-    width: 38px;
-    height: 38px;
-    font-size: 1.1em;
-    flex: 0 0 auto;
-  }
-
-  #emoji-picker {
-    width: 92vw;
-    left: 50%;
-    transform: translateX(-50%);
-    max-height: 45vh;
-    bottom: 55px;
-    border-radius: 12px;
-    overflow-y: auto;
-  }
-
-  .emoji-tabs {
-    gap: 3px;
-    padding: 6px;
-    flex-wrap: wrap;
-  }
-
-  .emoji-tab-btn {
-    font-size: 0.8rem;
-    padding: 5px 8px;
-    border-radius: 25px;
-  }
-
-  .emoji-category {
-    max-height: 35vh;
-    overflow-y: auto;
-    grid-template-columns: repeat(auto-fill, minmax(28px, 1fr));
-    gap: 3px;
-    padding: 3px 0;
-  }
-
-  .emoji-category span {
-    font-size: 1.4rem;
-    line-height: 28px;
-  }
-
-  .quick-emojis {
-    overflow-x: auto;
-    flex-wrap: nowrap;
-  }
-
-  .quick-emojis button {
-    flex: 0 0 auto;
-    margin-right: 4px;
-  }
-
-  .message .link-preview {
-    max-width: 100%;
-    font-size: 0.85rem;
-  }
-}
-
-
-  /* ---------------- Emoji Picker Mobile Fix ---------------- */
-  #emoji-picker {
-    width: 92vw;
-    left: 50%;
-    transform: translateX(-50%);
-    max-height: 40vh;
-    bottom: 55px;
-    border-radius: 12px;
-    overflow-y: auto;
-  }
-
-  .emoji-tabs {
-    gap: 3px;
-    padding: 6px;
-  }
-
-  .emoji-tab-btn {
-    font-size: 0.8rem;
-    padding: 5px 8px;
-    border-radius: 25px;
-  }
-
-  .emoji-category {
-    max-height: 30vh;
-    overflow-y: auto;
-    grid-template-columns: repeat(auto-fill, minmax(28px, 1fr));
-    gap: 3px;
-    padding: 3px 0;
-  }
-
-  .emoji-category span {
-    font-size: 1.4rem;
-    line-height: 28px;
-  }
-
-  .message .link-preview {
-    max-width: 100%;
-    font-size: 0.85rem;
-  }
+  .chat-page header { flex-wrap: wrap; gap: 6px; padding: 6px 10px; }
+  .chat-page header .room-info { flex: 1 1 100%; position: static; transform: none; text-align: center; margin-top: 4px; }
+  main#messages { padding: 6px; }
+  .message { max-width: 100%; font-size: 0.95rem; padding: 8px 10px; }
+  form#form { padding: 4px 6px; gap: 4px; }
+  form#form input { padding: 8px 10px; font-size: 0.9rem; }
+  form#form button[type=submit], #emoji-btn { width: 38px; height: 38px; font-size: 1.1em; }
+  #emoji-picker { width: 92vw; left: 50%; transform: translateX(-50%); max-height: 45vh; bottom: 55px; border-radius: 12px; }
+  .emoji-tabs { gap: 3px; padding: 6px; }
+  .emoji-tab-btn { font-size: 0.8rem; padding: 5px 8px; border-radius: 25px; }
+  .emoji-category { max-height: 35vh; overflow-y: auto; grid-template-columns: repeat(auto-fill, minmax(28px, 1fr)); gap: 3px; padding: 3px 0; }
+  .emoji-category span { font-size: 1.4rem; line-height: 28px; }
+  .message .link-preview { max-width: 100%; font-size: 0.85rem; }
+  .reaction-container { flex-wrap: wrap; }
+  .reaction-menu { bottom: 28px; }
 }
 
 /* ---------------- Link Preview ---------------- */
@@ -468,28 +377,15 @@ body.dark .emoji-category span:hover { background:#40444b; }
   max-width: 80%;
   font-size: 0.9rem;
 }
+body.dark .message .link-preview { background: #2f3136; border-color: #40444b; color: #eee; }
+.message .link-preview img { max-width: 100%; border-radius: 6px; }
+.message .link-preview a { color: #007bff; text-decoration: none; word-break: break-word; }
+body.dark .message .link-preview a { color: #4ea1ff; }
+.message .link-preview a:hover { text-decoration: underline; }
 
-body.dark .message .link-preview {
-  background: #2f3136;
-  border-color: #40444b;
-  color: #eee;
-}
-
-.message .link-preview img {
-  max-width: 100%;
-  border-radius: 6px;
-}
-
-.message .link-preview a {
-  color: #007bff;
-  text-decoration: none;
-  word-break: break-word;
-}
-
-body.dark .message .link-preview a {
-  color: #4ea1ff;
-}
-
-.message .link-preview a:hover {
-  text-decoration: underline;
-}
+/* ---------------- Room List ---------------- */
+#room-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+#room-list .room-btn { padding: 6px 10px; border-radius: 8px; border:1px solid #28a745; background:#d4edda; cursor:pointer; font-size:0.9rem; color:#155724; transition: background 0.2s; }
+#room-list .room-btn:hover { background:#c3e6cb; }
+body.dark #room-list .room-btn { background:#28a745; border:1px solid #28a745; color:#fff; }
+body.dark #room-list .room-btn:hover { background:#3cb043; }
