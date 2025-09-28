@@ -87,7 +87,6 @@ body.dark .chat-page { background: #1e1f22; border-color: #40444b; }
 .chat-page header .logo { height: 32px; cursor: pointer; margin-right: 8px; }
 .chat-page header .room-info { font-weight: 500; font-size: 1rem; position: absolute; left: 50%; transform: translateX(-50%); color: #fff; }
 body:not(.dark) .chat-page header { background: #f9f9f9; color: #333; border-bottom: 1px solid #ccc; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-body:not(.dark) .chat-page header .logo-text { color: #333; }
 body:not(.dark) .chat-page header .room-info { color: #555; }
 .chat-page header button { background: transparent; border: none; color: #fff; font-size: 1.2rem; cursor: pointer; margin-left: 6px; }
 .chat-page header button:hover { transform: scale(1.2); color: #28a745; }
