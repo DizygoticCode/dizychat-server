@@ -23,6 +23,7 @@ let typingTimeout;
 let darkMode = false;
 let emojiData = {};
 let emojiGrids = {};
+const linkPreviewCache = new Map();
 
 // ---------------- Landing Page Prefill ----------------
 const urlParams = new URLSearchParams(window.location.search);
@@ -66,14 +67,34 @@ joinBtn.addEventListener("click", () => {
 
   socket.on('chat message', msg => displayMessage(msg));
   socket.on('room history', msgs => msgs.forEach(msg => displayMessage(msg)));
+
+  // ---------------- Typing Indicator ----------------
   socket.on('typing', users => {
     const others = users.filter(u => u !== currentUser);
     typingBubble.style.display = others.length ? 'block' : 'none';
-    typingBubble.textContent = others.length ? `${others.join(', ')} is typing...` : '';
+    if (others.length) {
+      typingBubble.innerHTML = `${others.join(', ')} is typing<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>`;
+    } else typingBubble.innerHTML = '';
   });
+
   socket.on('message status', ({ id, status }) => {
     const msgDiv = document.querySelector(`.message[data-id='${id}'] .status`);
     if (msgDiv) msgDiv.textContent = statusIcon(status);
+  });
+
+  socket.on('reaction update', ({ msgId, reactions }) => {
+    const msgDiv = document.querySelector(`.message[data-id='${msgId}'] .reactions`);
+    if (msgDiv) {
+      msgDiv.innerHTML = '';
+      Object.entries(reactions).forEach(([emoji, count]) => {
+        const btn = document.createElement('button');
+        btn.textContent = count > 1 ? `${emoji} ${count}` : emoji;
+        btn.addEventListener('click', () => {
+          socket.emit('reaction', { msgId, emoji });
+        });
+        msgDiv.appendChild(btn);
+      });
+    }
   });
 });
 
@@ -88,73 +109,91 @@ function displayMessage(msg) {
   meta.textContent = `[${new Date(msg.timestamp).toLocaleTimeString()}] ${msg.user}`;
   div.appendChild(meta);
 
-  div.appendChild(document.createTextNode(` ${msg.text}`));
+  div.insertAdjacentHTML('beforeend', ` ${renderRichText(msg.text)}`);
 
-  // ---------------- Link Preview ----------------
   handleLinkPreview(div, msg.text);
 
-  const statusSpan = document.createElement('span');
-  statusSpan.classList.add('status');
-  statusSpan.textContent = statusIcon(msg.status || 'sent');
-  div.appendChild(statusSpan);
+  // ---------------- Reactions ----------------
+  const reactionsDiv = document.createElement('div');
+  reactionsDiv.classList.add('reactions');
+  if (msg.reactions) {
+    Object.entries(msg.reactions).forEach(([emoji, count]) => {
+      const btn = document.createElement('button');
+      btn.textContent = count > 1 ? `${emoji} ${count}` : emoji;
+      btn.addEventListener('click', () => socket.emit('reaction', { msgId: msg._id || msg.id, emoji }));
+      reactionsDiv.appendChild(btn);
+    });
+  } else {
+    ['👍','❤️','😂'].forEach(emoji => {
+      const btn = document.createElement('button');
+      btn.textContent = emoji;
+      btn.addEventListener('click', () => socket.emit('reaction', { msgId: msg._id || msg.id, emoji }));
+      reactionsDiv.appendChild(btn);
+    });
+  }
+  div.appendChild(reactionsDiv);
 
+  const nearBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 50;
   messages.appendChild(div);
-  div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  if (nearBottom) div.scrollIntoView({ behavior: 'smooth', block: 'end' });
 
   if (msg.user !== currentUser) socket.emit('read message', { room: currentRoom, id: msg._id || msg.id });
 }
 
-// ---------------- Link Preview ----------------
+// ---------------- Link Preview with Cache ----------------
 function handleLinkPreview(msgDiv, text) {
   const urlRegex = /(\b(https?:\/\/)?(www\.)?[-a-zA-Z0-9@:%._+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_+.~#?&//=]*))/gi;
   const matches = text.match(urlRegex);
   if (!matches) return;
 
   const seenUrls = new Set();
-
   matches.forEach(rawUrl => {
     let url = rawUrl;
     if (!/^https?:\/\//i.test(url)) url = url.startsWith("www.") ? "https://" + url : "https://" + url;
     if (seenUrls.has(url)) return;
     seenUrls.add(url);
 
-    (async () => {
-      try {
-        const res = await fetch(`/link-preview?url=${encodeURIComponent(url)}`);
-        const data = await res.json();
-
-        if (data.title || data.image) {
-          // Remove raw URL from message text
-          msgDiv.childNodes.forEach(node => {
-            if (node.nodeType === Node.TEXT_NODE) {
-              node.textContent = node.textContent.replace(rawUrl, '');
-            }
-          });
-
-          const previewDiv = document.createElement('div');
-          previewDiv.classList.add('link-preview');
-
-          if (data.image) {
-            const img = document.createElement('img');
-            img.src = data.image;
-            img.alt = data.title || url;
-            previewDiv.appendChild(img);
-          }
-
-          const link = document.createElement('a');
-          link.href = url;
-          link.target = '_blank';
-          link.textContent = data.title || url;
-          previewDiv.appendChild(link);
-
-          msgDiv.appendChild(previewDiv);
-        }
-      } catch (err) {
-        console.error("Link preview error:", err);
-        // fallback: leave raw URL in text
-      }
-    })();
+    if (linkPreviewCache.has(url)) {
+      appendPreview(msgDiv, url, linkPreviewCache.get(url));
+    } else {
+      (async () => {
+        try {
+          const res = await fetch(`/link-preview?url=${encodeURIComponent(url)}`);
+          const data = await res.json();
+          linkPreviewCache.set(url, data);
+          appendPreview(msgDiv, url, data);
+        } catch (err) { console.error("Link preview error:", err); }
+      })();
+    }
   });
+}
+
+function appendPreview(msgDiv, url, data) {
+  if (!data.title && !data.image) return;
+  msgDiv.childNodes.forEach(node => {
+    if (node.nodeType === Node.TEXT_NODE) node.textContent = node.textContent.replace(url, '');
+  });
+  const previewDiv = document.createElement('div');
+  previewDiv.classList.add('link-preview');
+  if (data.image) {
+    const img = document.createElement('img');
+    img.src = data.image;
+    img.alt = data.title || url;
+    previewDiv.appendChild(img);
+  }
+  const link = document.createElement('a');
+  link.href = url;
+  link.target = '_blank';
+  link.textContent = data.title || url;
+  previewDiv.appendChild(link);
+  msgDiv.appendChild(previewDiv);
+}
+
+// ---------------- Render Markdown ----------------
+function renderRichText(text) {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>');
 }
 
 // ---------------- Status Icon ----------------
@@ -228,10 +267,8 @@ function buildEmojiPicker() {
 
     emojiData[category].forEach(e => {
       const char = typeof e === "string" ? e : e.char;
-      const span = document.createElement("span"); span.textContent = char;
-      span.addEventListener("click", () => {
-        insertAtCursor(input, char); input.focus(); animateQuickEmoji(char);
-      });
+      const span = document.createElement('span'); span.textContent = char;
+      span.addEventListener('click', () => { insertAtCursor(input, char); input.focus(); animateQuickEmoji(char); });
       catDiv.appendChild(span);
     });
 
@@ -256,12 +293,17 @@ function insertAtCursor(input, text) {
 // ---------------- Emoji Picker Toggle ----------------
 emojiBtn.addEventListener('click', e => {
   e.stopPropagation(); emojiPicker.classList.toggle('show');
-  if (emojiPicker.classList.contains('show')) { emojiPicker.style.maxHeight='250px'; emojiPicker.style.opacity='1'; emojiPicker.style.transform='translateY(0)'; }
-  else { emojiPicker.style.maxHeight='0'; emojiPicker.style.opacity='0'; emojiPicker.style.transform='translateY(10px)'; }
+  if (emojiPicker.classList.contains('show')) {
+    emojiPicker.style.maxHeight='250px'; emojiPicker.style.opacity='1'; emojiPicker.style.transform='translateY(0)';
+  } else {
+    emojiPicker.style.maxHeight='0'; emojiPicker.style.opacity='0'; emojiPicker.style.transform='translateY(10px)';
+  }
 });
 
 document.addEventListener('click', e => {
-  if (!emojiPicker.contains(e.target) && e.target !== emojiBtn) { emojiPicker.classList.remove('show'); emojiPicker.style.maxHeight='0'; emojiPicker.style.opacity='0'; emojiPicker.style.transform='translateY(10px)'; }
+  if (!emojiPicker.contains(e.target) && e.target !== emojiBtn) {
+    emojiPicker.classList.remove('show'); emojiPicker.style.maxHeight='0'; emojiPicker.style.opacity='0'; emojiPicker.style.transform='translateY(10px)';
+  }
 });
 
 // ---------------- Quick Emojis ----------------
