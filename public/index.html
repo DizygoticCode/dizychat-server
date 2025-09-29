@@ -32,7 +32,7 @@
       </div>
     </header>
 
-    <main id="messages"></main>
+    <main id="messages" aria-live="polite"></main>
 
     <!-- Typing Indicator -->
     <div id="typing-bubble" class="typing-dots" style="display:none;">
@@ -52,10 +52,12 @@
     </form>
 
     <!-- Emoji Picker (moved outside form for layout stability) -->
-    <div id="emoji-picker" class="emoji-picker"></div>
+    <div id="emoji-picker" class="emoji-picker" role="dialog" aria-modal="true"></div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
+  <!-- ✅ DOMPurify for strong XSS protection -->
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
   <script src="/chat.js"></script>
 </body>
 </html>
