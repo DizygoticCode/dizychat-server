@@ -1,6 +1,67 @@
+// ---------------- Imports ----------------
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+const path = require('path');
+const cheerio = require('cheerio');
+const Message = require('./src/models/message'); // CommonJS model
+
+// Fix fetch in Node CommonJS
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+
+dotenv.config();
+
+// ---------------- App Setup ----------------
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: "*", methods: ["GET", "POST"] }
+});
+
+const PORT = process.env.PORT || 10000;
+
+// ---------------- MongoDB Connection ----------------
+const mongoUri = process.env.MONGO_URI;
+if (!mongoUri) {
+  console.error("❌ MONGO_URI is not defined. Set it in .env or environment variables.");
+  process.exit(1);
+}
+const safeUri = mongoUri.replace(/:\/\/.*:.*@/, "://****:****@");
+console.log(`Connecting to MongoDB at: ${safeUri}`);
+
+mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log("🟢 Connected to MongoDB"))
+  .catch(err => { console.error("❌ MongoDB connection error:", err); process.exit(1); });
+
+// ---------------- Serve Static Files ----------------
+app.use(express.static(path.join(__dirname, 'public')));
+
+// ---------------- Link Preview Endpoint ----------------
+app.get('/link-preview', async (req, res) => {
+  let { url } = req.query;
+  if (!url) return res.status(400).json({ error: 'No URL provided' });
+  if (!/^https?:\/\//i.test(url)) url = 'http://' + url;
+
+  try {
+    const response = await fetch(url, { timeout: 5000 });
+    const html = await response.text();
+    const $ = cheerio.load(html);
+
+    const title = $('meta[property="og:title"]').attr('content') || $('title').text() || '';
+    const image = $('meta[property="og:image"]').attr('content') || $('img').first().attr('src') || '';
+
+    res.json({ title, image });
+  } catch (err) {
+    console.error("Preview fetch error:", err.message);
+    res.json({ title: '', image: '' });
+  }
+});
+
 // ---------------- Socket.IO ----------------
 let typingUsers = {};
-let rooms = {}; // Store room passwords if needed: rooms[roomName] = password
+let rooms = {}; // Store room passwords: rooms[roomName] = password
 
 // ---------------- Rate Limiting ----------------
 const RATE_LIMIT_WINDOW = 2000; // 2 seconds
@@ -30,6 +91,7 @@ function canSendTyping(socketId) {
   return true;
 }
 
+// ---------------- Socket.IO Events ----------------
 io.on('connection', socket => {
   console.log("A user connected");
 
@@ -129,3 +191,9 @@ io.on('connection', socket => {
     delete typingUsers[socket.id];
   });
 });
+
+// ---------------- Start Server ----------------
+server.listen(PORT, () => console.log(`🟢 Server running on port ${PORT}`));
+
+// ---------------- Serve index.html for all other routes ----------------
+app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
