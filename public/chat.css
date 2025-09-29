@@ -339,3 +339,15 @@ body.dark .message .link-preview a { color: #4ea1ff; }
 #room-list .room-btn:hover { background:#c3e6cb; }
 body.dark #room-list .room-btn { background:#28a745; border:1px solid #28a745; color:#fff; }
 body.dark #room-list .room-btn:hover { background:#3cb043; }
+
+/* Typing bubble animation */
+.typing-dots::after {
+  content: '...';
+  animation: dots 1s steps(5, end) infinite;
+}
+@keyframes dots {
+  0%, 20% { color: transparent; text-shadow: .25em 0 0 transparent, .5em 0 0 transparent; }
+  40% { color: #888; text-shadow: .25em 0 0 transparent, .5em 0 0 transparent; }
+  60% { text-shadow: .25em 0 0 #888, .5em 0 0 transparent; }
+  80%, 100% { text-shadow: .25em 0 0 #888, .5em 0 0 #888; }
+}

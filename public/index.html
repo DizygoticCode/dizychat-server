@@ -27,25 +27,32 @@
         <span id="room-name">Room</span>
       </div>
       <div>
-        <button id="share-btn" title="Share Room Link">🔗</button>
-        <button id="toggle-theme" title="Toggle Dark/Light">🌙</button>
+        <button id="share-btn" title="Share Room Link" aria-label="Share Room Link">🔗</button>
+        <button id="toggle-theme" title="Toggle Dark/Light" aria-label="Toggle theme">🌙</button>
       </div>
     </header>
 
     <main id="messages"></main>
-    <div id="typing-bubble" class="typing-dots"></div>
 
+    <!-- Typing Indicator -->
+    <div id="typing-bubble" class="typing-dots" style="display:none;">
+      <span class="dots">...</span>
+    </div>
+
+    <!-- Message Form -->
     <form id="form">
-      <button type="button" id="emoji-btn">😀</button>
+      <button type="button" id="emoji-btn" aria-label="Open emoji picker">😀</button>
       <input id="input" autocomplete="off" placeholder="Type a message..." />
-      <button type="submit">➤</button>
+      <button type="submit" aria-label="Send message">➤</button>
       <div id="quick-emojis" class="quick-emojis">
         <button type="button">😀</button>
         <button type="button">❤️</button>
         <button type="button">😂</button>
       </div>
-      <div id="emoji-picker" class="emoji-picker"></div>
     </form>
+
+    <!-- Emoji Picker (moved outside form for layout stability) -->
+    <div id="emoji-picker" class="emoji-picker"></div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
