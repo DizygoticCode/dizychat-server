@@ -1,87 +1,111 @@
-// ---------------- Globals ----------------
-const socket = io();
-let currentUser = null;
-let currentRoom = null;
-const messages = document.getElementById('messages');
+// ---------------- DOM Elements ----------------
+const usernamePrompt = document.getElementById('username-prompt'); 
+const joinBtn = document.getElementById('join-btn');
+const usernameInput = document.getElementById('username-input');
+const roomInput = document.getElementById('room-input');
+const roomPasswordInput = document.getElementById('room-password');
+const chatContainer = document.getElementById('chat-container');
 const form = document.getElementById('form');
 const input = document.getElementById('input');
+const messages = document.getElementById('messages');
 const typingBubble = document.getElementById('typing-bubble');
-const roomList = document.getElementById('room-list');
 const emojiPicker = document.getElementById('emoji-picker');
-const quickEmojis = document.getElementById('quick-emojis');
-const themeToggle = document.getElementById('toggle-theme');
+const emojiBtn = document.getElementById('emoji-btn');
+const shareBtn = document.getElementById('share-btn');
+const toggleThemeBtn = document.getElementById('toggle-theme');
+const roomNameSpan = document.getElementById('room-name');
+const homeLogo = document.getElementById('home-logo');
+const quickEmojis = document.querySelectorAll('#quick-emojis button');
+const roomListDiv = document.getElementById('room-list');
 
-// ---------------- Landing Page Logic ----------------
-document.getElementById('join-btn').addEventListener('click', () => {
-  const username = document.getElementById('username-input').value.trim();
-  const room = document.getElementById('room-input').value.trim();
-  const password = document.getElementById('room-password').value;
+let currentUser = '';
+let currentRoom = '';
+let roomPassword = '';
+let socket;
+let typingTimeout;
+let darkMode = false;
+let emojiData = {};
+let emojiGrids = {};
+const linkPreviewCache = new Map(); // New: cache for link previews
 
-  if (!username || !room) return alert('Enter username and room name');
+// ---------------- Landing Page Prefill ----------------
+const urlParams = new URLSearchParams(window.location.search);
+const prefillRoom = urlParams.get("room");
+if (prefillRoom) roomInput.value = prefillRoom;
+
+// ---------------- Dark Mode Auto-Detect ----------------
+if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+  darkMode = true;
+  document.body.classList.add('dark');
+  toggleThemeBtn.textContent = "☀️";
+  homeLogo.src = "/logo.png";
+}
+
+// ---------------- Session Check ----------------
+if (!localStorage.getItem('sessionToken')) {
+  usernamePrompt.style.display = 'flex';
+} else {
+  currentUser = localStorage.getItem('username') || 'Guest';
+  currentRoom = prefillRoom || 'General';
+  initChat();
+}
+
+// ---------------- Join Chat ----------------
+joinBtn.addEventListener("click", () => {
+  const username = usernameInput.value.trim();
+  const room = roomInput.value.trim();
+  const password = roomPasswordInput.value.trim();
+  if (!username || !room) return alert("Please enter both username and room name.");
 
   currentUser = username;
   currentRoom = room;
+  roomPassword = password;
 
-  // Save room in localStorage
-  let recent = JSON.parse(localStorage.getItem('recentRooms') || '[]');
-  if (!recent.includes(room)) {
-    recent.unshift(room);
-    if (recent.length > 5) recent.pop();
-    localStorage.setItem('recentRooms', JSON.stringify(recent));
-  }
+  localStorage.setItem('sessionToken', Date.now());
+  localStorage.setItem('username', username);
 
-  socket.emit('join room', { user: username, room, password });
-  document.getElementById('username-prompt').style.display = 'none';
-  document.getElementById('chat-container').style.display = 'flex';
-  document.getElementById('room-name').textContent = room;
-  renderRecentRooms();
+  usernamePrompt.style.display = "none";
+  chatContainer.style.display = "flex";
+  roomNameSpan.textContent = room;
+
+  window.history.replaceState({}, "", `${window.location.origin}?room=${encodeURIComponent(room)}`);
+
+  saveRecentRoom(room);
+  loadRecentRooms();
+
+  initChat();
 });
 
-// ---------------- Recent Rooms ----------------
-function renderRecentRooms() {
-  const recent = JSON.parse(localStorage.getItem('recentRooms') || '[]');
-  roomList.innerHTML = '';
-  recent.forEach(r => {
-    const btn = document.createElement('button');
-    btn.className = 'room-btn';
-    btn.textContent = r;
-    btn.addEventListener('click', () => {
-      document.getElementById('room-input').value = r;
-    });
-    roomList.appendChild(btn);
+// ---------------- Initialize Chat ----------------
+function initChat() {
+  socket = io(window.location.origin);
+  socket.emit("join room", { room: currentRoom, password: roomPassword });
+  socket.emit("get history", currentRoom);
+
+  input.addEventListener("input", () => {
+    socket.emit("typing", currentUser);
+    clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(() => socket.emit("stop typing", currentUser), 1000);
+  });
+
+  form.addEventListener("submit", e => {
+    e.preventDefault();
+    if (!input.value.trim()) return;
+    const sanitizedText = DOMPurify.sanitize(input.value.trim()); // sanitize input
+    const msgData = { room: currentRoom, user: currentUser, text: sanitizedText, timestamp: new Date() };
+    socket.emit('chat message', msgData);
+    input.value = '';
+    input.focus();
+  });
+
+  socket.on('chat message', msg => displayMessage(msg));
+  socket.on('room history', msgs => msgs.forEach(msg => displayMessage(msg)));
+  socket.on('typing', users => updateTypingIndicator(users));
+  socket.on('message status', ({ id, status }) => {
+    const msgDiv = document.querySelector(`.message[data-id='${id}'] .status`);
+    if (msgDiv) msgDiv.textContent = statusIcon(status);
   });
 }
-renderRecentRooms();
-
-// ---------------- Form Submission ----------------
-form.addEventListener('submit', e => {
-  e.preventDefault();
-  if (input.value.trim()) {
-    socket.emit('chat message', { room: currentRoom, user: currentUser, text: input.value });
-    input.value = '';
-    socket.emit('stop typing', { room: currentRoom });
-  }
-});
-
-// ---------------- Typing Indicator ----------------
-let typingTimeout;
-input.addEventListener('input', () => {
-  socket.emit('typing', { room: currentRoom, user: currentUser });
-  clearTimeout(typingTimeout);
-  typingTimeout = setTimeout(() => {
-    socket.emit('stop typing', { room: currentRoom });
-  }, 2000);
-});
-
-socket.on('typing', user => {
-  if (user !== currentUser) {
-    typingBubble.style.display = 'block';
-    typingBubble.textContent = `${user} is typing...`;
-  }
-});
-socket.on('stop typing', () => {
-  typingBubble.style.display = 'none';
-});
 
 // ---------------- Display Messages ----------------
 function displayMessage(msg) {
@@ -94,129 +118,290 @@ function displayMessage(msg) {
   meta.textContent = `[${new Date(msg.timestamp).toLocaleTimeString()}] ${msg.user}`;
   div.appendChild(meta);
 
-  const textNode = document.createTextNode(` ${msg.text}`);
+  const textNode = document.createTextNode(` ${DOMPurify.sanitize(msg.text)}`);
   div.appendChild(textNode);
 
   handleLinkPreview(div, msg.text);
-  addReactionUI(div);
 
-  // Edit/Delete Menu
-  if (msg.user === currentUser) addMessageControls(div, msg);
+  addReactionUI(div);
+  if(msg.user === currentUser) addMessageControls(div, msg);
 
   messages.appendChild(div);
 
-  // Auto-scroll only if near bottom
-  if (messages.scrollHeight - messages.scrollTop - messages.clientHeight < 80) {
-    div.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }
+  // ---------------- Scroll-to-bottom logic ----------------
+  const nearBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 50;
+  if (nearBottom) div.scrollIntoView({ behavior: 'smooth', block: 'end' });
 
   if (msg.user !== currentUser) {
     socket.emit('read message', { room: currentRoom, id: msg._id || msg.id });
   }
 }
 
-socket.on('chat message', displayMessage);
+// ---------------- Typing Indicator ----------------
+function updateTypingIndicator(users) {
+  const others = users.filter(u => u !== currentUser);
+  if (others.length) {
+    typingBubble.style.display = 'flex';
+    typingBubble.innerHTML = `${others.join(', ')} <span class="dots">...</span>`;
+  } else typingBubble.style.display = 'none';
+}
+
+// ---------------- Animated dots for typing ----------------
+setInterval(() => {
+  const dotsSpan = document.querySelector('#typing-bubble .dots');
+  if(dotsSpan){
+    dotsSpan.textContent = dotsSpan.textContent.length < 3 ? dotsSpan.textContent + '.' : '.';
+  }
+}, 500);
+
+// ---------------- Link Preview ----------------
+async function handleLinkPreview(msgDiv, text) {
+  const urlRegex = /(\b(https?:\/\/)?(www\.)?[-a-zA-Z0-9@:%._+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_+.~#?&//=]*))/gi;
+  const matches = text.match(urlRegex);
+  if (!matches) return;
+
+  const seenUrls = new Set();
+  matches.forEach(rawUrl => {
+    let url = rawUrl;
+    if (!/^https?:\/\//i.test(url)) url = url.startsWith("www.") ? "https://" + url : "https://" + url;
+    if (seenUrls.has(url)) return;
+    seenUrls.add(url);
+
+    if(linkPreviewCache.has(url)){
+      renderPreview(msgDiv, url, linkPreviewCache.get(url), rawUrl);
+      return;
+    }
+
+    (async () => {
+      try {
+        const res = await fetch(`/link-preview?url=${encodeURIComponent(url)}`);
+        const data = await res.json();
+        linkPreviewCache.set(url, data);
+        renderPreview(msgDiv, url, data, rawUrl);
+      } catch(e){ console.error("Link preview error:", e); }
+    })();
+  });
+}
+
+function renderPreview(msgDiv, url, data, rawUrl){
+  if (data.title || data.image) {
+    msgDiv.childNodes.forEach(node => { if(node.nodeType===3) node.textContent=node.textContent.replace(rawUrl,''); });
+    const previewDiv = document.createElement('div');
+    previewDiv.classList.add('link-preview');
+    if(data.image){ const img = document.createElement('img'); img.src=data.image; img.alt=data.title||url; previewDiv.appendChild(img);}
+    const link = document.createElement('a'); link.href=url; link.target='_blank'; link.textContent=data.title||url; previewDiv.appendChild(link);
+    msgDiv.appendChild(previewDiv);
+  }
+}
+
+// ---------------- Status Icon ----------------
+function statusIcon(status){
+  switch(status){
+    case 'sent': return '✓';
+    case 'delivered': return '✓✓';
+    case 'read': return '✓✓✔';
+    default: return '';
+  }
+}
+
+// ---------------- Share ----------------
+shareBtn.addEventListener("click", () => {
+  const nickname = currentUser || "Guest";
+  const fullURL = `${window.location.origin}?room=${encodeURIComponent(currentRoom)}&nickname=${encodeURIComponent(nickname)}`;
+  navigator.clipboard.writeText(fullURL).then(() => alert("Room link copied!")).catch(()=>alert(`Room link: ${fullURL}`));
+});
+
+// ---------------- Dark Mode ----------------
+toggleThemeBtn.addEventListener("click", () => {
+  darkMode = !darkMode;
+  document.body.classList.toggle("dark", darkMode);
+  toggleThemeBtn.textContent = darkMode ? "☀️" : "🌙";
+  homeLogo.src = darkMode ? "/logo.png" : "/logo-light.png";
+});
+
+// ---------------- Home Logo ----------------
+homeLogo.addEventListener("click", () => {
+  chatContainer.style.display = "none";
+  usernamePrompt.style.display = "flex";
+  roomNameSpan.textContent = "Room";
+  messages.innerHTML = "";
+  window.history.replaceState({}, "", window.location.origin);
+});
+
+// ---------------- Emoji Picker ----------------
+const fallbackEmojis = {
+  "Faces":["😀","😁","😂","🤣","😃"], "Gestures":["👍","👎","👏"], "Hearts":["❤️","💛"], "Food":["🍕","🍔"], "Animals":["🐶","🐱"], "Travel":["🚗","✈️"]
+};
+
+async function loadEmojis() {
+  try {
+    const res = await fetch("/emoji.json");
+    emojiData = res.ok ? await res.json() : fallbackEmojis;
+  } catch { emojiData = fallbackEmojis; }
+  buildEmojiPicker();
+}
+
+function buildEmojiPicker() {
+  emojiPicker.innerHTML="";
+  const tabs=document.createElement("div"); tabs.classList.add("emoji-tabs");
+  const content=document.createElement("div"); content.classList.add("emoji-content");
+  Object.keys(emojiData).forEach((category,index)=>{
+    const tabBtn=document.createElement("button"); tabBtn.textContent=category; tabBtn.classList.add("emoji-tab-btn");
+    if(index===0) tabBtn.classList.add("active");
+    tabBtn.addEventListener("click",()=>showEmojiCategory(category));
+    tabs.appendChild(tabBtn);
+    const catDiv=document.createElement("div"); catDiv.classList.add("emoji-category"); catDiv.dataset.category=category;
+    if(index!==0) catDiv.style.display="none";
+    emojiData[category].forEach(e=>{
+      const char=typeof e==="string"?e:e.char;
+      const span=document.createElement('span'); span.textContent=char;
+      span.addEventListener("click",()=>{ insertAtCursor(input,char); input.focus(); animateQuickEmoji(char); });
+      catDiv.appendChild(span);
+    });
+    content.appendChild(catDiv); emojiGrids[category]=catDiv;
+  });
+  emojiPicker.appendChild(tabs); emojiPicker.appendChild(content);
+}
+
+function showEmojiCategory(cat){
+  document.querySelectorAll(".emoji-tab-btn").forEach(b=>b.classList.toggle('active',b.textContent===cat));
+  Object.keys(emojiGrids).forEach(c=>emojiGrids[c].style.display=c===cat?"grid":"none");
+}
+
+function insertAtCursor(input,text){
+  const start=input.selectionStart,end=input.selectionEnd;
+  input.value=input.value.slice(0,start)+text+input.value.slice(end);
+  input.selectionStart=input.selectionEnd=start+text.length;
+}
+
+emojiBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  emojiPicker.classList.toggle('show');
+});
+
+document.addEventListener('click', e => {
+  if(!emojiPicker.contains(e.target) && e.target!==emojiBtn) emojiPicker.classList.remove('show');
+});
+
+function animateQuickEmoji(char){ quickEmojis.forEach(btn=>{ if(btn.textContent===char){ btn.classList.add('pop'); setTimeout(()=>btn.classList.remove('pop'),200); }}); }
+quickEmojis.forEach(btn=>btn.addEventListener('click',()=>{ insertAtCursor(input,btn.textContent); animateQuickEmoji(btn.textContent); }));
+
+loadEmojis();
+
+// ---------------- Recent Rooms ----------------
+function loadRecentRooms(){
+  const recent=JSON.parse(localStorage.getItem('recentRooms')||'[]');
+  roomListDiv.innerHTML='';
+  recent.forEach(r=>{
+    const btn=document.createElement('button'); btn.textContent=r; btn.className='room-btn';
+    btn.addEventListener('click',()=>{ roomInput.value=r; joinBtn.click(); });
+    roomListDiv.appendChild(btn);
+  });
+}
+
+function saveRecentRoom(room){
+  let recent=JSON.parse(localStorage.getItem('recentRooms')||'[]');
+  recent=[room,...recent.filter(r=>r!==room)].slice(0,10);
+  localStorage.setItem('recentRooms',JSON.stringify(recent));
+}
 
 // ---------------- Reactions ----------------
-function addReactionUI(messageDiv) {
+function addReactionUI(msgDiv) {
   const container = document.createElement('div');
   container.classList.add('reaction-container');
 
-  const btn = document.createElement('button');
-  btn.classList.add('reaction-btn');
-  btn.textContent = '➕';
-  container.appendChild(btn);
+  const reactBtn = document.createElement('button');
+  reactBtn.textContent = '😊';
+  reactBtn.classList.add('reaction-btn');
+  container.appendChild(reactBtn);
 
-  const menu = document.createElement('div');
-  menu.classList.add('reaction-menu');
-  ['👍', '❤️', '😂', '🔥', '😮'].forEach(emoji => {
+  const emojiMenu = document.createElement('div');
+  emojiMenu.classList.add('reaction-menu');
+
+  ['👍','❤️','😂','😮','😢','😡'].forEach(e => {
     const span = document.createElement('span');
-    span.textContent = emoji;
+    span.textContent = e;
     span.addEventListener('click', () => {
-      const selected = document.createElement('span');
-      selected.textContent = emoji;
-      messageDiv.appendChild(selected);
-      menu.style.display = 'none';
+      let existing = container.querySelector('.selected-reactions');
+      if (!existing) {
+        existing = document.createElement('div');
+        existing.className = 'selected-reactions';
+        container.appendChild(existing);
+      }
+      existing.textContent += e;
+      emojiMenu.style.display = 'none';
     });
-    menu.appendChild(span);
-  });
-  container.appendChild(menu);
-
-  btn.addEventListener('click', () => {
-    menu.style.display = menu.style.display === 'flex' ? 'none' : 'flex';
+    emojiMenu.appendChild(span);
   });
 
-  messageDiv.appendChild(container);
+  container.appendChild(emojiMenu);
+
+  reactBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeAllMenus();
+    emojiMenu.style.display = emojiMenu.style.display === 'block' ? 'none' : 'block';
+  });
+
+  msgDiv.appendChild(container);
 }
 
-// ---------------- Edit/Delete ----------------
-function addMessageControls(messageDiv, msg) {
+// ---------------- Three-dot Edit/Delete Menu ----------------
+function addMessageControls(msgDiv, msg) {
   const wrapper = document.createElement('div');
   wrapper.classList.add('msg-menu-wrapper');
 
   const menuBtn = document.createElement('button');
   menuBtn.classList.add('menu-btn');
-  menuBtn.textContent = '⋮';
+  menuBtn.textContent = '⋯';
+  wrapper.appendChild(menuBtn);
 
   const menu = document.createElement('div');
   menu.classList.add('msg-menu');
 
   const editBtn = document.createElement('button');
-  editBtn.textContent = 'Edit';
+  editBtn.textContent = '✏️ Edit';
   editBtn.addEventListener('click', () => {
-    const newText = prompt('Edit message:', msg.text);
-    if (newText !== null) {
-      socket.emit('edit message', { room: currentRoom, id: msg._id || msg.id, text: newText });
+    const newText = prompt("Edit message:", msg.text);
+    if (newText && newText.trim() !== msg.text) {
+      socket.emit('edit message', { id: msg._id || msg.id, text: newText.trim(), room: currentRoom });
+      msgDiv.childNodes.forEach(n => { if (n.nodeType === 3) n.textContent = ` ${DOMPurify.sanitize(newText)}`; });
+      closeAllMenus();
     }
   });
 
-  const deleteBtn = document.createElement('button');
-  deleteBtn.textContent = 'Delete';
-  deleteBtn.addEventListener('click', () => {
-    if (confirm('Delete this message?')) {
-      socket.emit('delete message', { room: currentRoom, id: msg._id || msg.id });
+  const delBtn = document.createElement('button');
+  delBtn.textContent = '🗑️ Delete';
+  delBtn.addEventListener('click', () => {
+    if (confirm("Delete this message?")) {
+      socket.emit('delete message', { id: msg._id || msg.id, room: currentRoom });
+      msgDiv.remove();
+      closeAllMenus();
     }
   });
 
   menu.appendChild(editBtn);
-  menu.appendChild(deleteBtn);
-  wrapper.appendChild(menuBtn);
+  menu.appendChild(delBtn);
   wrapper.appendChild(menu);
 
-  menuBtn.addEventListener('click', () => {
-    menu.style.display = menu.style.display === 'flex' ? 'none' : 'flex';
+  menuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeAllMenus();
+    menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
   });
 
-  messageDiv.appendChild(wrapper);
+  msgDiv.appendChild(wrapper);
 }
 
-// ---------------- Link Previews ----------------
-async function handleLinkPreview(messageDiv, text) {
-  const urlRegex = /(https?:\/\/[^\s]+)/;
-  const match = text.match(urlRegex);
-  if (match) {
-    const url = match[0];
-    const preview = document.createElement('div');
-    preview.classList.add('link-preview');
-    preview.textContent = 'Loading preview...';
-    messageDiv.appendChild(preview);
+// ---------------- Close all menus ----------------
+function closeAllMenus() {
+  document.querySelectorAll('.reaction-menu, .msg-menu').forEach(menu => {
+    menu.style.display = 'none';
+  });
+}
 
-    try {
-      const res = await fetch(`/preview?url=${encodeURIComponent(url)}`);
-      const data = await res.json();
-      preview.innerHTML = `
-        <strong>${data.title || 'Link'}</strong><br>
-        <a href="${url}" target="_blank">${url}</a>
-        ${data.image ? `<img src="${data.image}" alt="Preview">` : ''}
-      `;
-    } catch {
-      preview.textContent = 'Preview unavailable';
-    }
+// ---------------- Global click to close menus ----------------
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.reaction-container') && !e.target.closest('.msg-menu-wrapper')) {
+    closeAllMenus();
   }
-}
-
-// ---------------- Dark Mode ----------------
-themeToggle.addEventListener('click', () => {
-  document.body.classList.toggle('dark');
-  themeToggle.textContent = document.body.classList.contains('dark') ? '☀️' : '🌙';
 });
