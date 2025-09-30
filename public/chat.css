@@ -101,6 +101,11 @@ main#messages {
 }
 body.dark main#messages { background: #1e1f22; }
 
+/* Accessibility: reduce motion */
+@media (prefers-reduced-motion: reduce) {
+  main#messages { scroll-behavior: auto; }
+}
+
 .message {
   margin-bottom: 10px;
   max-width: 75%;
@@ -117,10 +122,13 @@ body.dark main#messages { background: #1e1f22; }
 .message.self { margin-left: auto; background: linear-gradient(135deg, #a8e6cf, #28a745); color: #000; }
 body.dark .message.self { background: linear-gradient(135deg, #28a745, #056162); color: #fff; }
 .message.other { margin-right: auto; background: #f1f0f0; color: #000; }
-body.dark .message.other { background: #2f3136; color: #eee; }
+body.dark .message.other { background: #3a3d42; color: #f1f1f1; } /* improved contrast */
 .message .meta { font-size: 0.7em; color: #555; margin-bottom: 3px; }
-body.dark .message .meta { color: #ccc; }
+body.dark .message .meta { color: #bbb; }
 .message .status { font-size: 0.7em; color: green; position: absolute; bottom: 2px; right: 5px; }
+
+/* Highlight new/unread messages */
+.message.unread { animation: highlightFade 2s ease; }
 
 /* ---------------- Reaction Container ---------------- */
 .reaction-container {
@@ -156,7 +164,11 @@ body.dark .message .meta { color: #ccc; }
   z-index: 100;
   display: flex;
   gap: 4px;
+  opacity: 0;
+  transform: scale(0.95);
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
+.reaction-menu.show { opacity: 1; transform: scale(1); }
 body.dark .reaction-menu { background: #2f3136; border-color: #40444b; }
 .reaction-menu span { cursor: pointer; font-size: 1rem; }
 .selected-reactions { margin-left: 4px; display: inline-block; }
@@ -193,7 +205,11 @@ body.dark .reaction-menu { background: #2f3136; border-color: #40444b; }
   box-shadow: 0 2px 6px rgba(0,0,0,0.2);
   z-index: 100;
   min-width: 80px;
+  opacity: 0;
+  transform: scale(0.95);
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
+.msg-menu.show { opacity: 1; transform: scale(1); }
 body.dark .msg-menu { background: #2f3136; border-color: #40444b; color: #eee; }
 .msg-menu button {
   background: transparent;
@@ -271,8 +287,10 @@ body.dark .quick-emojis button:hover { background:#3cb043; }
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.2);
   transition: all 0.25s ease;
+  opacity: 0;
+  transform: scale(0.95);
 }
-.emoji-picker.show { display: block; }
+.emoji-picker.show { display: block; opacity: 1; transform: scale(1); }
 .emoji-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 6px; }
 .emoji-tab-btn {
   padding: 6px 12px; font-size: 0.85rem; font-weight: 500; border-radius: 25px;
@@ -292,6 +310,7 @@ body.dark .emoji-category span:hover { background:#50585d; } /* improved contras
 @keyframes messageSlideIn { from {opacity:0; transform:translateY(8px);} to {opacity:1; transform:translateY(0);} }
 @keyframes pop { 0%{transform:scale(1);} 50%{transform:scale(1.4);} 100%{transform:scale(1);} }
 .quick-emojis button.pop { animation: pop 0.2s ease; }
+@keyframes highlightFade { 0%{ background-color:#ffeeba; } 100%{ background-color:inherit; } }
 
 /* ---------------- Mobile Tweaks ---------------- */
 @media (max-width: 600px) {

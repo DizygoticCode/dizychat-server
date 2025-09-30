@@ -1,5 +1,5 @@
 // ---------------- DOM Elements ----------------
-const usernamePrompt = document.getElementById('username-prompt'); 
+const usernamePrompt = document.getElementById('username-prompt');
 const joinBtn = document.getElementById('join-btn');
 const usernameInput = document.getElementById('username-input');
 const roomInput = document.getElementById('room-input');
@@ -102,8 +102,8 @@ function initChat() {
   socket.on('room history', msgs => msgs.forEach(msg => displayMessage(msg)));
   socket.on('typing', users => updateTypingIndicator(users));
   socket.on('message status', ({ id, status }) => {
-    const msgDiv = document.querySelector(`.message[data-id='${id}'] .status`);
-    if (msgDiv) msgDiv.textContent = statusIcon(status);
+    const statusSpan = document.querySelector(`.message[data-id='${id}'] .status`);
+    if (statusSpan) statusSpan.textContent = statusIcon(status);
   });
   socket.on('update reactions', ({ id, reactions }) => updateReactionsUI(id, reactions));
   socket.on('join error', msg => alert(msg));
@@ -112,8 +112,8 @@ function initChat() {
     if(div) div.remove();
   });
   socket.on('edit message', ({ id, text }) => {
-    const div = document.querySelector(`.message[data-id='${id}']`);
-    if(div) div.childNodes[1].textContent = ` ${text}`;
+    const textSpan = document.querySelector(`.message[data-id='${id}'] .msg-text`);
+    if(textSpan) textSpan.textContent = ` ${text}`;
   });
 }
 
@@ -128,8 +128,14 @@ function displayMessage(msg) {
   meta.textContent = `[${new Date(msg.timestamp).toLocaleTimeString()}] ${msg.user}`;
   div.appendChild(meta);
 
-  const textNode = document.createTextNode(` ${DOMPurify.sanitize(msg.text)}`);
-  div.appendChild(textNode);
+  const textSpan = document.createElement('span');
+  textSpan.classList.add('msg-text');
+  textSpan.textContent = ` ${DOMPurify.sanitize(msg.text)}`;
+  div.appendChild(textSpan);
+
+  const statusSpan = document.createElement('span');
+  statusSpan.classList.add('status');
+  div.appendChild(statusSpan);
 
   handleLinkPreview(div, msg.text);
   addReactionUI(div, msg);
@@ -192,7 +198,8 @@ async function handleLinkPreview(msgDiv, text) {
 
 function renderPreview(msgDiv, url, data, rawUrl){
   if (data.title || data.image) {
-    msgDiv.childNodes.forEach(node => { if(node.nodeType===3) node.textContent=node.textContent.replace(rawUrl,''); });
+    const textSpan = msgDiv.querySelector('.msg-text');
+    if (textSpan) textSpan.textContent = textSpan.textContent.replace(rawUrl,'');
     const previewDiv = document.createElement('div');
     previewDiv.classList.add('link-preview');
     if(data.image){ const img = document.createElement('img'); img.src=data.image; img.alt=data.title||url; previewDiv.appendChild(img);}
@@ -319,15 +326,26 @@ function addReactionUI(msgDiv, msg){
     });
   }
 
-  Object.values(emojiData).flat().forEach(item=>{
-    const char = item.char || item;
-    const btn = document.createElement('button');
-    btn.classList.add('reaction-btn');
-    btn.textContent = char;
-    btn.title = item.name || '';
-    btn.addEventListener('click', ()=> socket.emit('react message', { room: currentRoom, id: msg._id || msg.id, reaction: char, username: currentUser }));
-    container.appendChild(btn);
+  const reactBtn = document.createElement('button');
+  reactBtn.textContent = "➕";
+  reactBtn.classList.add('reaction-toggle');
+  reactBtn.addEventListener('click', ()=>{
+    const picker = document.createElement('div');
+    picker.classList.add('reaction-picker');
+    Object.values(emojiData).flat().forEach(item=>{
+      const char = item.char || item;
+      const btn = document.createElement('button');
+      btn.textContent = char;
+      btn.classList.add('reaction-btn');
+      btn.addEventListener('click', ()=>{
+        socket.emit('react message', { room: currentRoom, id: msg._id || msg.id, reaction: char, username: currentUser });
+        picker.remove();
+      });
+      picker.appendChild(btn);
+    });
+    container.appendChild(picker);
   });
+  container.appendChild(reactBtn);
 
   msgDiv.appendChild(container);
 }
@@ -335,12 +353,12 @@ function addReactionUI(msgDiv, msg){
 function updateReactionsUI(id, reactions){
   const div = document.querySelector(`.message[data-id='${id}'] .reaction-container`);
   if(!div) return;
-  div.innerHTML = '';
+  div.querySelectorAll('span').forEach(s=>s.remove());
   reactions.forEach(r=>{
     const span = document.createElement('span');
     span.textContent = r.emoji;
     span.title = r.user;
-    div.appendChild(span);
+    div.insertBefore(span, div.querySelector('.reaction-toggle'));
   });
 }
 
@@ -368,7 +386,8 @@ function addMessageControls(msgDiv, msg){
     const newText = prompt("Edit your message:", msg.text);
     if(newText && newText.trim() !== msg.text){
       const sanitized = DOMPurify.sanitize(newText.trim());
-      msgDiv.childNodes[1].textContent = ` ${sanitized}`;
+      const textSpan = msgDiv.querySelector('.msg-text');
+      if (textSpan) textSpan.textContent = ` ${sanitized}`;
       socket.emit('edit message', { room: currentRoom, id: msg._id||msg.id, text: sanitized });
     }
   });
