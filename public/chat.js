@@ -31,6 +31,53 @@ let currentPage = 1;
 const PAGE_LIMIT = 50;
 let isLoadingHistory = false;
 
+// ---------------- Favicon Badge ----------------
+let unreadCount = 0;
+let originalFavicon = document.querySelector("link[rel~='icon']");
+if(!originalFavicon){
+  originalFavicon = document.createElement('link');
+  originalFavicon.rel = 'icon';
+  originalFavicon.href = '/logo.png';
+  document.head.appendChild(originalFavicon);
+}
+let faviconCanvas = document.createElement('canvas');
+faviconCanvas.width = 32;
+faviconCanvas.height = 32;
+let faviconCtx = faviconCanvas.getContext('2d');
+
+function updateFaviconBadge(count){
+  const img = new Image();
+  img.src = '/logo.png';
+  img.onload = () => {
+    faviconCtx.clearRect(0,0,32,32);
+    faviconCtx.drawImage(img,0,0,32,32);
+    if(count > 0){
+      faviconCtx.fillStyle = 'red';
+      faviconCtx.beginPath();
+      faviconCtx.arc(24,8,8,0,2*Math.PI);
+      faviconCtx.fill();
+      faviconCtx.fillStyle = 'white';
+      faviconCtx.font = 'bold 10px sans-serif';
+      faviconCtx.textAlign = 'center';
+      faviconCtx.textBaseline = 'middle';
+      faviconCtx.fillText(count > 99 ? '99+' : count, 24, 8);
+    }
+    originalFavicon.href = faviconCanvas.toDataURL('image/png');
+  };
+}
+
+function incrementFavicon(){
+  unreadCount++;
+  updateFaviconBadge(unreadCount);
+}
+
+function resetFavicon(){
+  unreadCount = 0;
+  updateFaviconBadge(unreadCount);
+}
+
+window.addEventListener('focus', () => resetFavicon());
+
 // ---------------- Landing Page Prefill ----------------
 const urlParams = new URLSearchParams(window.location.search);
 const prefillRoom = urlParams.get("room");
@@ -106,9 +153,11 @@ function initChat() {
   });
 
   // ---------------- Socket Event Listeners ----------------
-  socket.on('chat message', msg => displayMessage(msg));
+  socket.on('chat message', msg => {
+    displayMessage(msg);
+    if(document.hidden && msg.user !== currentUser) incrementFavicon();
+  });
   socket.on('room history', msgs => {
-    // prepend older messages
     const scrollBefore = messages.scrollHeight;
     msgs.reverse().forEach(msg => displayMessage(msg, true));
     if(currentPage>1) messages.scrollTop = messages.scrollHeight - scrollBefore;
@@ -432,3 +481,4 @@ function addMessageControls(msgDiv, msg){
   btn.addEventListener('click', ()=> menu.classList.toggle('show'));
   msgDiv.appendChild(wrapper);
 }
+
