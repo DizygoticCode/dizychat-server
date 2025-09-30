@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>DizyChat</title>
+  <!-- Favicon -->
+  <link rel="icon" href="/logo.png" type="image/png">
+
   <link rel="stylesheet" href="/chat.css">
 </head>
 <body>
@@ -51,10 +54,11 @@
       </div>
     </form>
 
-    <!-- Emoji Picker (moved outside form for layout stability) -->
+    <!-- Emoji Picker (outside form for layout stability) -->
     <div id="emoji-picker" class="emoji-picker" role="dialog" aria-modal="true"></div>
   </div>
 
+  <!-- Scripts -->
   <script src="/socket.io/socket.io.js"></script>
   <!-- ✅ DOMPurify for strong XSS protection -->
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>

@@ -7,12 +7,18 @@ const reactionSchema = new mongoose.Schema({
 }, { _id: false }); // no separate _id for reactions
 
 const messageSchema = new mongoose.Schema({
-  room: { type: String, required: true },
-  user: { type: String, required: true },
+  room: { type: String, required: true, index: true }, // index for fast room queries
+  user: { type: String, required: true, index: true }, // index to query by user
   text: { type: String, required: true },
-  timestamp: { type: Date, default: Date.now },
+  timestamp: { type: Date, default: Date.now, index: true }, // index for sorting/pagination
   status: { type: String, enum: ["sent", "delivered", "read"], default: "sent" },
-  reactions: { type: [reactionSchema], default: [] } // store reactions
+  reactions: { type: [reactionSchema], default: [] }
 });
+
+// ✅ Full-text search index (allows searching in messages)
+messageSchema.index({ text: "text" });
+
+// Optional: compound index for frequent queries like "all messages in a room sorted by time"
+messageSchema.index({ room: 1, timestamp: -1 });
 
 module.exports = mongoose.model('Message', messageSchema);

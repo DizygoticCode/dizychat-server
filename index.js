@@ -35,6 +35,11 @@ mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log("🟢 Connected to MongoDB"))
   .catch(err => { console.error("❌ MongoDB connection error:", err); process.exit(1); });
 
+// ---------------- MongoDB Text Index ----------------
+Message.collection.createIndex({ text: "text" })
+  .then(() => console.log("✅ Text index created on Message.text"))
+  .catch(err => console.error("❌ Error creating text index:", err));
+
 // ---------------- Serve Static Files ----------------
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -105,12 +110,30 @@ io.on('connection', socket => {
     console.log(`User joined room: ${room}`);
   });
 
-  // ---------------- Get Room History ----------------
-  socket.on('get history', async room => {
+  // ---------------- Get Room History (paginated) ----------------
+  socket.on('get history', async ({ room, page = 1, limit = 50 }) => {
     try {
-      const history = await Message.find({ room }).sort({ timestamp: 1 }).limit(50);
+      const skip = (page - 1) * limit;
+      const history = await Message.find({ room })
+        .sort({ timestamp: 1 }) // oldest first
+        .skip(skip)
+        .limit(limit);
       socket.emit('room history', history);
     } catch (err) { console.error("Error fetching history:", err); }
+  });
+
+  // ---------------- Search Messages ----------------
+  socket.on('search messages', async ({ room, query }) => {
+    try {
+      if (!query || query.trim().length < 2) return;
+      const results = await Message.find({
+        room,
+        $text: { $search: query }
+      })
+      .sort({ timestamp: -1 }) // newest first
+      .limit(50);
+      socket.emit('search results', results);
+    } catch (err) { console.error("Error searching messages:", err); }
   });
 
   // ---------------- Chat Message ----------------

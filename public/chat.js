@@ -17,6 +17,7 @@ const roomNameSpan = document.getElementById('room-name');
 const homeLogo = document.getElementById('home-logo');
 const quickEmojis = document.querySelectorAll('#quick-emojis button');
 const roomListDiv = document.getElementById('room-list');
+const searchInput = document.getElementById('search-input');
 
 let currentUser = '';
 let currentRoom = '';
@@ -26,6 +27,9 @@ let typingTimeout;
 let darkMode = false;
 let emojiData = {};
 const linkPreviewCache = new Map();
+let currentPage = 1;
+const PAGE_LIMIT = 50;
+let isLoadingHistory = false;
 
 // ---------------- Landing Page Prefill ----------------
 const urlParams = new URLSearchParams(window.location.search);
@@ -79,8 +83,12 @@ joinBtn.addEventListener("click", () => {
 function initChat() {
   socket = io(window.location.origin);
   socket.emit("join room", { room: currentRoom, password: roomPassword });
-  socket.emit("get history", currentRoom);
 
+  // Request first page of history
+  currentPage = 1;
+  socket.emit("get history", { room: currentRoom, page: currentPage, limit: PAGE_LIMIT });
+
+  // ---------------- Input Events ----------------
   input.addEventListener("input", () => {
     socket.emit("typing", currentUser);
     clearTimeout(typingTimeout);
@@ -99,7 +107,17 @@ function initChat() {
 
   // ---------------- Socket Event Listeners ----------------
   socket.on('chat message', msg => displayMessage(msg));
-  socket.on('room history', msgs => msgs.forEach(msg => displayMessage(msg)));
+  socket.on('room history', msgs => {
+    // prepend older messages
+    const scrollBefore = messages.scrollHeight;
+    msgs.reverse().forEach(msg => displayMessage(msg, true));
+    if(currentPage>1) messages.scrollTop = messages.scrollHeight - scrollBefore;
+    isLoadingHistory = false;
+  });
+  socket.on('search results', msgs => {
+    messages.innerHTML = '';
+    msgs.forEach(msg => displayMessage(msg));
+  });
   socket.on('typing', users => updateTypingIndicator(users));
   socket.on('message status', ({ id, status }) => {
     const statusSpan = document.querySelector(`.message[data-id='${id}'] .status`);
@@ -115,10 +133,26 @@ function initChat() {
     const textSpan = document.querySelector(`.message[data-id='${id}'] .msg-text`);
     if(textSpan) textSpan.textContent = ` ${text}`;
   });
+
+  // ---------------- Infinite Scroll for Older Messages ----------------
+  messages.addEventListener('scroll', () => {
+    if (messages.scrollTop < 50 && !isLoadingHistory) {
+      isLoadingHistory = true;
+      currentPage++;
+      socket.emit("get history", { room: currentRoom, page: currentPage, limit: PAGE_LIMIT });
+    }
+  });
+
+  // ---------------- Search ----------------
+  searchInput?.addEventListener('input', e => {
+    const query = e.target.value.trim();
+    if(query.length < 2) return;
+    socket.emit('search messages', { room: currentRoom, query });
+  });
 }
 
 // ---------------- Display Messages ----------------
-function displayMessage(msg) {
+function displayMessage(msg, prepend=false) {
   const div = document.createElement('div');
   div.classList.add('message', msg.user === currentUser ? 'self' : 'other');
   div.dataset.id = msg._id || msg.id;
@@ -141,10 +175,11 @@ function displayMessage(msg) {
   addReactionUI(div, msg);
   if(msg.user === currentUser) addMessageControls(div, msg);
 
-  messages.appendChild(div);
+  if(prepend) messages.prepend(div);
+  else messages.appendChild(div);
 
   const nearBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 50;
-  if (nearBottom) div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  if (nearBottom && !prepend) div.scrollIntoView({ behavior: 'smooth', block: 'end' });
 
   if (msg.user !== currentUser) {
     socket.emit('read message', { room: currentRoom, id: msg._id || msg.id });
