@@ -286,10 +286,3 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// ---------------- Optional: Helper for sanitizing HTML ----------------
-const sanitizeHtml = (html, options = {}) => {
-  // Minimal sanitization; you can replace with DOMPurify in Node or sanitize-html package
-  return String(html)
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-};
