@@ -1,3 +1,5 @@
+// ================= Part 1: Setup & DOM Elements =================
+
 // ---------------- DOM Elements ----------------
 const usernamePrompt = document.getElementById('username-prompt');
 const joinBtn = document.getElementById('join-btn');
@@ -19,6 +21,7 @@ const quickEmojis = document.querySelectorAll('#quick-emojis button');
 const roomListDiv = document.getElementById('room-list');
 const searchInput = document.getElementById('search-input');
 
+// ---------------- App State ----------------
 let currentUser = '';
 let currentRoom = '';
 let roomPassword = '';
@@ -66,15 +69,8 @@ function updateFaviconBadge(count){
   };
 }
 
-function incrementFavicon(){
-  unreadCount++;
-  updateFaviconBadge(unreadCount);
-}
-
-function resetFavicon(){
-  unreadCount = 0;
-  updateFaviconBadge(unreadCount);
-}
+function incrementFavicon(){ unreadCount++; updateFaviconBadge(unreadCount); }
+function resetFavicon(){ unreadCount = 0; updateFaviconBadge(unreadCount); }
 
 window.addEventListener('focus', () => resetFavicon());
 
@@ -125,8 +121,8 @@ joinBtn.addEventListener("click", () => {
 
   initChat();
 });
+// ================= Part 2: Socket.IO & Messaging =================
 
-// ---------------- Initialize Chat ----------------
 function initChat() {
   socket = io(window.location.origin);
   socket.emit("join room", { room: currentRoom, password: roomPassword });
@@ -157,27 +153,33 @@ function initChat() {
     displayMessage(msg);
     if(document.hidden && msg.user !== currentUser) incrementFavicon();
   });
+
   socket.on('room history', msgs => {
     const scrollBefore = messages.scrollHeight;
     msgs.reverse().forEach(msg => displayMessage(msg, true));
     if(currentPage>1) messages.scrollTop = messages.scrollHeight - scrollBefore;
     isLoadingHistory = false;
   });
+
   socket.on('search results', msgs => {
     messages.innerHTML = '';
     msgs.forEach(msg => displayMessage(msg));
   });
+
   socket.on('typing', users => updateTypingIndicator(users));
+
   socket.on('message status', ({ id, status }) => {
     const statusSpan = document.querySelector(`.message[data-id='${id}'] .status`);
     if (statusSpan) statusSpan.textContent = statusIcon(status);
   });
+
   socket.on('update reactions', ({ id, reactions }) => updateReactionsUI(id, reactions));
   socket.on('join error', msg => alert(msg));
   socket.on('delete message', id => {
     const div = document.querySelector(`.message[data-id='${id}']`);
     if(div) div.remove();
   });
+
   socket.on('edit message', ({ id, text }) => {
     const textSpan = document.querySelector(`.message[data-id='${id}'] .msg-text`);
     if(textSpan) textSpan.textContent = ` ${text}`;
@@ -192,46 +194,63 @@ function initChat() {
     }
   });
 
-  // ---------------- Search ----------------
-  searchInput?.addEventListener('input', e => {
-    const query = e.target.value.trim();
-    if(query.length < 2) return;
-    socket.emit('search messages', { room: currentRoom, query });
+  // ---------------- File & Image Upload ----------------
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.multiple = false;
+  fileInput.style.display = 'none';
+  form.appendChild(fileInput);
+
+  const uploadBtn = document.createElement('button');
+  uploadBtn.type = 'button';
+  uploadBtn.textContent = '📎';
+  uploadBtn.title = 'Attach file';
+  form.insertBefore(uploadBtn, input);
+
+  uploadBtn.addEventListener('click', () => fileInput.click());
+
+  fileInput.addEventListener('change', async () => {
+    if (!fileInput.files.length) return;
+    const file = fileInput.files[0];
+    await sendFile(file);
+    fileInput.value = '';
+  });
+
+  chatContainer.addEventListener('dragover', e => e.preventDefault());
+  chatContainer.addEventListener('drop', e => {
+    e.preventDefault();
+    if (!e.dataTransfer.files.length) return;
+    sendFile(e.dataTransfer.files[0]);
   });
 }
 
-// ---------------- Display Messages ----------------
-function displayMessage(msg, prepend=false) {
-  const div = document.createElement('div');
-  div.classList.add('message', msg.user === currentUser ? 'self' : 'other');
-  div.dataset.id = msg._id || msg.id;
+// ---------------- Send File Function ----------------
+async function sendFile(file) {
+  const allowedTypes = ['image/jpeg','image/png','image/gif','application/pdf','text/plain'];
+  if (!allowedTypes.includes(file.type)) {
+    alert('File type not supported.');
+    return;
+  }
 
-  const meta = document.createElement('div');
-  meta.classList.add('meta');
-  meta.textContent = `[${new Date(msg.timestamp).toLocaleTimeString()}] ${msg.user}`;
-  div.appendChild(meta);
+  const formData = new FormData();
+  formData.append('file', file);
 
-  const textSpan = document.createElement('span');
-  textSpan.classList.add('msg-text');
-  textSpan.textContent = ` ${DOMPurify.sanitize(msg.text)}`;
-  div.appendChild(textSpan);
+  try {
+    const res = await fetch('/upload', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!data.url) throw new Error('Upload failed.');
 
-  const statusSpan = document.createElement('span');
-  statusSpan.classList.add('status');
-  div.appendChild(statusSpan);
-
-  handleLinkPreview(div, msg.text);
-  addReactionUI(div, msg);
-  if(msg.user === currentUser) addMessageControls(div, msg);
-
-  if(prepend) messages.prepend(div);
-  else messages.appendChild(div);
-
-  const nearBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 50;
-  if (nearBottom && !prepend) div.scrollIntoView({ behavior: 'smooth', block: 'end' });
-
-  if (msg.user !== currentUser) {
-    socket.emit('read message', { room: currentRoom, id: msg._id || msg.id });
+    const msgData = {
+      room: currentRoom,
+      user: currentUser,
+      text: file.type.startsWith('image/') ? '' : DOMPurify.sanitize(file.name),
+      file: data,
+      timestamp: new Date()
+    };
+    socket.emit('chat message', msgData);
+  } catch (err) {
+    console.error('File upload error:', err);
+    alert('Failed to upload file.');
   }
 }
 
@@ -250,158 +269,72 @@ setInterval(() => {
     dotsSpan.textContent = dotsSpan.textContent.length < 3 ? dotsSpan.textContent + '.' : '.';
   }
 }, 500);
+// ================= Part 3: Message Rendering & UI =================
 
-// ---------------- Link Preview ----------------
-async function handleLinkPreview(msgDiv, text) {
-  const urlRegex = /(\b(https?:\/\/)?(www\.)?[-a-zA-Z0-9@:%._+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_+.~#?&//=]*))/gi;
-  const matches = text.match(urlRegex);
-  if (!matches) return;
+// ---------------- Display Messages ----------------
+function displayMessage(msg, prepend=false) {
+  const div = document.createElement('div');
+  div.classList.add('message', msg.user === currentUser ? 'self' : 'other');
+  div.dataset.id = msg._id || msg.id;
 
-  const seenUrls = new Set();
-  matches.forEach(rawUrl => {
-    let url = rawUrl;
-    if (!/^https?:\/\//i.test(url)) url = url.startsWith("www.") ? "https://" + url : "https://" + url;
-    if (seenUrls.has(url)) return;
-    seenUrls.add(url);
+  const meta = document.createElement('div');
+  meta.classList.add('meta');
+  meta.textContent = `[${new Date(msg.timestamp).toLocaleTimeString()}] ${msg.user}`;
+  div.appendChild(meta);
 
-    if(linkPreviewCache.has(url)){
-      renderPreview(msgDiv, url, linkPreviewCache.get(url), rawUrl);
-      return;
+  const textSpan = document.createElement('span');
+  textSpan.classList.add('msg-text');
+  textSpan.textContent = ` ${DOMPurify.sanitize(msg.text)}`;
+  div.appendChild(textSpan);
+
+  // File preview
+  if(msg.file) {
+    const fileDiv = document.createElement('div');
+    fileDiv.classList.add('file-preview');
+    if(msg.file.type.startsWith('image/')) {
+      const img = document.createElement('img');
+      img.src = msg.file.url;
+      img.alt = msg.file.name;
+      img.classList.add('inline-image');
+      fileDiv.appendChild(img);
+    } else {
+      const link = document.createElement('a');
+      link.href = msg.file.url;
+      link.target = '_blank';
+      link.textContent = msg.file.name;
+      fileDiv.appendChild(link);
     }
-
-    (async () => {
-      try {
-        const res = await fetch(`/link-preview?url=${encodeURIComponent(url)}`);
-        const data = await res.json();
-        linkPreviewCache.set(url, data);
-        renderPreview(msgDiv, url, data, rawUrl);
-      } catch(e){ console.error("Link preview error:", e); }
-    })();
-  });
-}
-
-function renderPreview(msgDiv, url, data, rawUrl){
-  if (data.title || data.image) {
-    const textSpan = msgDiv.querySelector('.msg-text');
-    if (textSpan) textSpan.textContent = textSpan.textContent.replace(rawUrl,'');
-    const previewDiv = document.createElement('div');
-    previewDiv.classList.add('link-preview');
-    if(data.image){ const img = document.createElement('img'); img.src=data.image; img.alt=data.title||url; previewDiv.appendChild(img);}
-    const link = document.createElement('a'); link.href=url; link.target='_blank'; link.textContent=data.title||url; previewDiv.appendChild(link);
-    msgDiv.appendChild(previewDiv);
+    div.appendChild(fileDiv);
   }
-}
 
-// ---------------- Status Icon ----------------
-function statusIcon(status){
-  switch(status){
-    case 'sent': return '✓';
-    case 'delivered': return '✓✓';
-    case 'read': return '✓✓✔';
-    default: return '';
+  const statusSpan = document.createElement('span');
+  statusSpan.classList.add('status');
+  div.appendChild(statusSpan);
+
+  handleLinkPreview(div, msg.text);
+  addReactionUI(div, msg);
+  if(msg.user === currentUser) addMessageControls(div, msg);
+
+  if(prepend) messages.prepend(div);
+  else messages.appendChild(div);
+
+  const nearBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 50;
+  if (nearBottom && !prepend) div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+
+  if(msg.user !== currentUser) {
+    socket.emit('read message', { room: currentRoom, id: msg._id || msg.id });
   }
+
+  // Fetch pinned messages after joining
+  socket.emit('get pinned', { room: currentRoom });
 }
 
-// ---------------- Share ----------------
-shareBtn.addEventListener("click", () => {
-  const nickname = currentUser || "Guest";
-  const fullURL = `${window.location.origin}?room=${encodeURIComponent(currentRoom)}&nickname=${encodeURIComponent(nickname)}`;
-  navigator.clipboard.writeText(fullURL).then(() => alert("Room link copied!")).catch(()=>alert(`Room link: ${fullURL}`));
-});
-
-// ---------------- Dark Mode ----------------
-toggleThemeBtn.addEventListener("click", () => {
-  darkMode = !darkMode;
-  document.body.classList.toggle("dark", darkMode);
-  toggleThemeBtn.textContent = darkMode ? "☀️" : "🌙";
-  homeLogo.src = darkMode ? "/logo.png" : "/logo-light.png";
-});
-
-// ---------------- Home Logo ----------------
-homeLogo.addEventListener("click", () => {
-  chatContainer.style.display = "none";
-  usernamePrompt.style.display = "flex";
-  roomNameSpan.textContent = "Room";
-  messages.innerHTML = "";
-  window.history.replaceState({}, "", window.location.origin);
-});
-
-// ---------------- Emoji Picker ----------------
-const fallbackEmojis = {
-  "Faces":["😀","😁","😂","🤣","😃"],
-  "Gestures":["👍","👎","👏"],
-  "Hearts & Symbols":["❤️","💛","💚"]
-};
-
-async function loadEmojis() {
-  try {
-    const res = await fetch('/emoji.json');
-    emojiData = await res.json();
-  } catch(e) {
-    console.warn("Emoji JSON load failed, using fallback.");
-    emojiData = fallbackEmojis;
-  }
-  renderEmojiPicker();
-}
-
-function renderEmojiPicker(){
-  emojiPicker.innerHTML = '';
-  Object.entries(emojiData).forEach(([category, arr]) => {
-    const catDiv = document.createElement('div');
-    catDiv.classList.add('emoji-category');
-    arr.forEach(item=>{
-      const char = item.char || item;
-      const span = document.createElement('span');
-      span.textContent = char;
-      span.title = item.name || '';
-      span.addEventListener('click', ()=>{ input.value += char; input.focus(); });
-      catDiv.appendChild(span);
-    });
-    emojiPicker.appendChild(catDiv);
-  });
-}
-
-emojiBtn.addEventListener('click', ()=> emojiPicker.classList.toggle('show'));
-loadEmojis();
-
-// ---------------- Quick Emojis ----------------
-quickEmojis.forEach(btn=>{
-  btn.addEventListener('click', ()=> {
-    input.value += btn.textContent;
-    input.focus();
-    btn.classList.add('pop');
-    setTimeout(()=>btn.classList.remove('pop'), 200);
-  });
-});
-
-// ---------------- Recent Rooms ----------------
-function saveRecentRoom(room){
-  let recent = JSON.parse(localStorage.getItem('recentRooms') || "[]");
-  if(!recent.includes(room)) recent.unshift(room);
-  if(recent.length>5) recent.pop();
-  localStorage.setItem('recentRooms', JSON.stringify(recent));
-}
-
-function loadRecentRooms(){
-  roomListDiv.innerHTML='';
-  let recent = JSON.parse(localStorage.getItem('recentRooms') || "[]");
-  recent.forEach(r=>{
-    const btn = document.createElement('button');
-    btn.textContent = r;
-    btn.classList.add('room-btn');
-    btn.addEventListener('click', ()=> { roomInput.value = r; joinBtn.click(); });
-    roomListDiv.appendChild(btn);
-  });
-}
-
-loadRecentRooms();
-
-// ---------------- Reactions & Message Menu ----------------
+// ---------------- Reactions ----------------
 function addReactionUI(msgDiv, msg){
   const container = document.createElement('div');
   container.classList.add('reaction-container');
 
-  if(msg.reactions){
+  if(msg.reactions) {
     msg.reactions.forEach(r=>{
       const span = document.createElement('span');
       span.textContent = r.emoji;
@@ -446,6 +379,7 @@ function updateReactionsUI(id, reactions){
   });
 }
 
+// ---------------- Message Controls (Edit/Delete) ----------------
 function addMessageControls(msgDiv, msg){
   const wrapper = document.createElement('div');
   wrapper.classList.add('msg-menu-wrapper');
@@ -460,7 +394,10 @@ function addMessageControls(msgDiv, msg){
   // Delete
   const delBtn = document.createElement('button');
   delBtn.textContent = 'Delete';
-  delBtn.addEventListener('click', ()=>{ msgDiv.remove(); socket.emit('delete message', { room: currentRoom, id: msg._id||msg.id }); });
+  delBtn.addEventListener('click', ()=> {
+    msgDiv.remove();
+    socket.emit('delete message', { room: currentRoom, id: msg._id||msg.id });
+  });
   menu.appendChild(delBtn);
 
   // Edit
@@ -471,76 +408,160 @@ function addMessageControls(msgDiv, msg){
     if(newText && newText.trim() !== msg.text){
       const sanitized = DOMPurify.sanitize(newText.trim());
       const textSpan = msgDiv.querySelector('.msg-text');
-      if (textSpan) textSpan.textContent = ` ${sanitized}`;
+      if(textSpan) textSpan.textContent = ` ${sanitized}`;
       socket.emit('edit message', { room: currentRoom, id: msg._id||msg.id, text: sanitized });
     }
   });
   menu.appendChild(editBtn);
 
+  // Pin
+  const pinBtn = document.createElement('button');
+  pinBtn.textContent = msg.pinned ? 'Unpin' : 'Pin';
+  pinBtn.addEventListener('click', () => {
+    socket.emit(msg.pinned ? 'unpin message' : 'pin message', { room: currentRoom, id: msg._id || msg.id });
+  });
+  menu.appendChild(pinBtn);
+
+  // Star
+  const starBtn = document.createElement('button');
+  starBtn.textContent = '⭐';
+  starBtn.addEventListener('click', () => {
+    if(msg.starredBy?.includes(currentUser)) {
+      socket.emit('unstar message', { room: currentRoom, id: msg._id||msg.id, user: currentUser });
+    } else {
+      socket.emit('star message', { room: currentRoom, id: msg._id||msg.id, user: currentUser });
+    }
+  });
+  menu.appendChild(starBtn);
+
   wrapper.appendChild(menu);
   btn.addEventListener('click', ()=> menu.classList.toggle('show'));
   msgDiv.appendChild(wrapper);
 }
-// ---------------- Search / Filter ----------------
-const searchWrapper = document.createElement('div');
-searchWrapper.classList.add('search-wrapper');
-searchInput.parentNode.insertBefore(searchWrapper, searchInput);
-searchWrapper.appendChild(searchInput);
 
-// Add clear button
-const clearBtn = document.createElement('button');
-clearBtn.textContent = '✖';
-clearBtn.title = 'Clear search';
-clearBtn.classList.add('clear-search-btn');
-searchWrapper.appendChild(clearBtn);
+// ---------------- Link Preview ----------------
+async function handleLinkPreview(msgDiv, text) {
+  const urlRegex = /(\b(https?:\/\/)?(www\.)?[-a-zA-Z0-9@:%._+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_+.~#?&//=]*))/gi;
+  const matches = text.match(urlRegex);
+  if(!matches) return;
 
-clearBtn.addEventListener('click', () => {
-  searchInput.value = '';
-  clearBtn.style.display = 'none';
-  // Reset chat to normal
-  socket.emit("get history", { room: currentRoom, page: 1, limit: PAGE_LIMIT });
-});
+  const seenUrls = new Set();
+  matches.forEach(rawUrl=>{
+    let url = rawUrl;
+    if(!/^https?:\/\//i.test(url)) url = url.startsWith("www.") ? "https://" + url : "https://" + url;
+    if(seenUrls.has(url)) return;
+    seenUrls.add(url);
 
-let searchTimeout;
-searchInput?.addEventListener('input', e => {
-  const query = e.target.value.trim();
-  clearTimeout(searchTimeout);
-
-  clearBtn.style.display = query ? 'inline-block' : 'none';
-
-  searchTimeout = setTimeout(() => {
-    if (!query || query.length < 2) {
-      // Reset chat if input is empty
-      socket.emit("get history", { room: currentRoom, page: 1, limit: PAGE_LIMIT });
+    if(linkPreviewCache.has(url)){
+      renderPreview(msgDiv, url, linkPreviewCache.get(url), rawUrl);
       return;
     }
 
-    // Send search request to server
-    socket.emit('search messages', { room: currentRoom, query });
-  }, 300); // 300ms debounce
+    (async ()=>{
+      try {
+        const res = await fetch(`/link-preview?url=${encodeURIComponent(url)}`);
+        const data = await res.json();
+        linkPreviewCache.set(url, data);
+        renderPreview(msgDiv, url, data, rawUrl);
+      } catch(e){ console.error("Link preview error:", e); }
+    })();
+  });
+}
+
+function renderPreview(msgDiv, url, data, rawUrl){
+  if(data.title || data.image){
+    const textSpan = msgDiv.querySelector('.msg-text');
+    if(textSpan) textSpan.textContent = textSpan.textContent.replace(rawUrl,'');
+    const previewDiv = document.createElement('div');
+    previewDiv.classList.add('link-preview');
+    if(data.image){
+      const img = document.createElement('img');
+      img.src = data.image;
+      img.alt = data.title||url;
+      previewDiv.appendChild(img);
+    }
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.textContent = data.title||url;
+    previewDiv.appendChild(link);
+    msgDiv.appendChild(previewDiv);
+  }
+}
+
+// ---------------- Pinned Messages ----------------
+function addPinnedMessage(msg) {
+  const banner = document.getElementById('pinned-messages');
+  const list = document.getElementById('pinned-list');
+  banner.style.display = 'block';
+  if(document.querySelector(`#pinned-list li[data-id="${msg._id}"]`)) return;
+
+  const li = document.createElement('li');
+  li.dataset.id = msg._id;
+  li.textContent = `${msg.user}: ${msg.text.slice(0,50)}${msg.text.length>50?"...":""}`;
+  li.addEventListener('click', () => {
+    const original = document.querySelector(`.message[data-id="${msg._id}"]`);
+    if(original){
+      original.scrollIntoView({ behavior: "smooth", block: "center" });
+      original.classList.add('highlight');
+      setTimeout(()=>original.classList.remove('highlight'),1500);
+    }
+  });
+
+  list.appendChild(li);
+}
+
+function removePinnedMessage(msg) {
+  const li = document.querySelector(`#pinned-list li[data-id="${msg._id}"]`);
+  if(li) li.remove();
+
+  const list = document.getElementById('pinned-list');
+  if(!list.children.length) document.getElementById('pinned-messages').style.display = 'none';
+}
+
+// ---------------- Socket Events for Pin & Star ----------------
+socket.on('message pinned', msg => {
+  const div = document.querySelector(`.message[data-id='${msg._id}']`);
+  if(div) div.classList.add('pinned');
+  addPinnedMessage(msg);
 });
 
-// ---------------- Display Search Results ----------------
-socket.on('search results', msgs => {
-  messages.innerHTML = '';
+socket.on('message unpinned', msg => {
+  const div = document.querySelector(`.message[data-id='${msg._id}']`);
+  if(div) div.classList.remove('pinned');
+  removePinnedMessage(msg);
+});
 
-  if (!msgs.length) {
-    const noResults = document.createElement('div');
-    noResults.classList.add('no-results');
-    noResults.textContent = "No messages found.";
-    messages.appendChild(noResults);
-    return;
+socket.on('pinned messages', msgs => {
+  msgs.forEach(addPinnedMessage);
+});
+
+socket.on('message starred', ({ id, starredBy }) => {
+  const div = document.querySelector(`.message[data-id='${id}']`);
+  if(div) div.querySelector('.menu-btn').textContent = `⭐(${starredBy.length})`;
+});
+
+socket.on('message unstarred', ({ id, starredBy }) => {
+  const div = document.querySelector(`.message[data-id='${id}']`);
+  if(div) div.querySelector('.menu-btn').textContent = starredBy.length ? `⭐(${starredBy.length})` : '⋮';
+});
+
+// ---------------- Typing Indicator ----------------
+function updateTypingIndicator(users){
+  const others = users.filter(u => u !== currentUser);
+  if(others.length){
+    typingBubble.style.display = 'flex';
+    typingBubble.innerHTML = `${others.join(', ')} <span class="dots">...</span>`;
+  } else typingBubble.style.display = 'none';
+}
+
+setInterval(() => {
+  const dotsSpan = document.querySelector('#typing-bubble .dots');
+  if(dotsSpan){
+    dotsSpan.textContent = dotsSpan.textContent.length < 3 ? dotsSpan.textContent + '.' : '.';
   }
-
-  msgs.forEach(msg => {
-    displayMessage(msg);
-    // Optional: highlight matching text
-    const textSpan = document.querySelector(`.message[data-id='${msg._id || msg.id}'] .msg-text`);
-    if (textSpan && searchInput.value.trim()) {
-      const regex = new RegExp(`(${searchInput.value.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-      textSpan.innerHTML = textSpan.textContent.replace(regex, `<mark>$1</mark>`);
-    }
-	// ---------------- File & Image Uploads ----------------
+}, 500);
+// ---------------- File & Image Uploads ----------------
 const fileInput = document.createElement('input');
 fileInput.type = 'file';
 fileInput.multiple = false; // change to true if multiple files
@@ -557,12 +578,11 @@ form.insertBefore(uploadBtn, input);
 uploadBtn.addEventListener('click', () => fileInput.click());
 
 // Handle file selection
-fileInput.addEventListener('change', async (e) => {
+fileInput.addEventListener('change', async () => {
   if (!fileInput.files.length) return;
-
   const file = fileInput.files[0];
   await sendFile(file);
-  fileInput.value = ''; // reset input
+  fileInput.value = '';
 });
 
 // Drag-and-drop support
@@ -574,9 +594,9 @@ chatContainer.addEventListener('drop', e => {
 });
 
 // ---------------- Send File Function ----------------
-async function sendFile(file) {
+async function sendFile(file){
   const allowedTypes = ['image/jpeg','image/png','image/gif','application/pdf','text/plain'];
-  if (!allowedTypes.includes(file.type)) {
+  if(!allowedTypes.includes(file.type)){
     alert('File type not supported.');
     return;
   }
@@ -586,27 +606,26 @@ async function sendFile(file) {
 
   try {
     const res = await fetch('/upload', { method: 'POST', body: formData });
-    const data = await res.json(); // should return { url: '/uploads/xyz.png', name: 'file.png', type: 'image/png' }
+    const data = await res.json();
 
-    if (!data.url) throw new Error('Upload failed.');
+    if(!data.url) throw new Error('Upload failed.');
 
     const msgData = {
       room: currentRoom,
       user: currentUser,
       text: file.type.startsWith('image/') ? '' : DOMPurify.sanitize(file.name),
-      file: data, // attach file metadata
+      file: data,
       timestamp: new Date()
     };
-
     socket.emit('chat message', msgData);
-  } catch (err) {
+  } catch(err){
     console.error('File upload error:', err);
     alert('Failed to upload file.');
   }
 }
 
 // ---------------- Display File Messages ----------------
-function displayFileMessage(msg, prepend=false) {
+function displayFileMessage(msg, prepend=false){
   const div = document.createElement('div');
   div.classList.add('message', msg.user === currentUser ? 'self' : 'other');
   div.dataset.id = msg._id || msg.id;
@@ -617,7 +636,7 @@ function displayFileMessage(msg, prepend=false) {
   div.appendChild(meta);
 
   // Text content
-  if (msg.text) {
+  if(msg.text){
     const textSpan = document.createElement('span');
     textSpan.classList.add('msg-text');
     textSpan.textContent = ` ${DOMPurify.sanitize(msg.text)}`;
@@ -625,11 +644,10 @@ function displayFileMessage(msg, prepend=false) {
   }
 
   // File preview
-  if (msg.file) {
+  if(msg.file){
     const fileDiv = document.createElement('div');
     fileDiv.classList.add('file-preview');
-
-    if (msg.file.type.startsWith('image/')) {
+    if(msg.file.type.startsWith('image/')){
       const img = document.createElement('img');
       img.src = msg.file.url;
       img.alt = msg.file.name;
@@ -642,132 +660,198 @@ function displayFileMessage(msg, prepend=false) {
       link.textContent = msg.file.name;
       fileDiv.appendChild(link);
     }
-
     div.appendChild(fileDiv);
   }
-  // Pin
-const pinBtn = document.createElement('button');
-pinBtn.textContent = msg.pinned ? 'Unpin' : 'Pin';
-pinBtn.addEventListener('click', () => {
-  socket.emit(msg.pinned ? 'unpin message' : 'pin message', { room: currentRoom, id: msg._id || msg.id });
-});
-menu.appendChild(pinBtn);
-
-// Star
-const starBtn = document.createElement('button');
-starBtn.textContent = '⭐';
-starBtn.addEventListener('click', () => {
-  if (msg.starredBy?.includes(currentUser)) {
-    socket.emit('unstar message', { room: currentRoom, id: msg._id || msg.id, user: currentUser });
-  } else {
-    socket.emit('star message', { room: currentRoom, id: msg._id || msg.id, user: currentUser });
-  }
-});
-menu.appendChild(starBtn);
-
-socket.on('message pinned', msg => {
-  const div = document.querySelector(`.message[data-id='${msg._id}']`);
-  if (div) div.classList.add('pinned');
-});
-
-socket.on('message unpinned', msg => {
-  const div = document.querySelector(`.message[data-id='${msg._id}']`);
-  if (div) div.classList.remove('pinned');
-});
-
-socket.on('message starred', ({ id, starredBy }) => {
-  const div = document.querySelector(`.message[data-id='${id}']`);
-  if (div) div.querySelector('.menu-btn').textContent = `⭐(${starredBy.length})`;
-});
-
-socket.on('message unstarred', ({ id, starredBy }) => {
-  const div = document.querySelector(`.message[data-id='${id}']`);
-  if (div) div.querySelector('.menu-btn').textContent = starredBy.length ? `⭐(${starredBy.length})` : '⋮';
-});
-function addPinnedMessage(msg) {
-  const banner = document.getElementById('pinned-messages');
-  const list = document.getElementById('pinned-list');
-  banner.style.display = 'block';
-
-  // Avoid duplicates
-  if (document.querySelector(`#pinned-list li[data-id="${msg._id}"]`)) return;
-
-  const li = document.createElement('li');
-  li.dataset.id = msg._id;
-  li.textContent = `${msg.user}: ${msg.text.slice(0, 50)}${msg.text.length > 50 ? "..." : ""}`;
-
-  // Scroll to original message when clicked
-  li.addEventListener('click', () => {
-    const original = document.querySelector(`.message[data-id="${msg._id}"]`);
-    if (original) {
-      original.scrollIntoView({ behavior: "smooth", block: "center" });
-      original.classList.add('highlight');
-      setTimeout(() => original.classList.remove('highlight'), 1500);
-    }
-  });
-
-  list.appendChild(li);
-}
-
-function removePinnedMessage(msg) {
-  const li = document.querySelector(`#pinned-list li[data-id="${msg._id}"]`);
-  if (li) li.remove();
-
-  // Hide banner if no pinned left
-  const list = document.getElementById('pinned-list');
-  if (!list.children.length) {
-    document.getElementById('pinned-messages').style.display = 'none';
-  }
-}
-socket.on('message pinned', msg => {
-  const div = document.querySelector(`.message[data-id='${msg._id}']`);
-  if (div) div.classList.add('pinned');
-  addPinnedMessage(msg);
-});
-
-socket.on('message unpinned', msg => {
-  const div = document.querySelector(`.message[data-id='${msg._id}']`);
-  if (div) div.classList.remove('pinned');
-  removePinnedMessage(msg);
-});
-socket.on('pinned messages', msgs => {
-  msgs.forEach(addPinnedMessage);
-});
-
-const pinBtn = document.createElement('button');
-pinBtn.textContent = "📌";
-pinBtn.classList.add("pin-btn");
-
-pinBtn.addEventListener('click', () => {
-  if (msg.pinned) {
-    socket.emit('unpin message', { room, id: msg._id });
-  } else {
-    socket.emit('pin message', { room, id: msg._id });
-  }
-});
-
-div.appendChild(pinBtn);
-
-  // Status & reactions
-  const statusSpan = document.createElement('span');
-  statusSpan.classList.add('status');
-  div.appendChild(statusSpan);
-  addReactionUI(div, msg);
-  if(msg.user === currentUser) addMessageControls(div, msg);
 
   if(prepend) messages.prepend(div);
   else messages.appendChild(div);
 
   const nearBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 50;
-  if (nearBottom && !prepend) div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  if(nearBottom && !prepend) div.scrollIntoView({ behavior: 'smooth', block: 'end' });
 
-  if (msg.user !== currentUser) {
+  if(msg.user !== currentUser){
     socket.emit('read message', { room: currentRoom, id: msg._id || msg.id });
   }
-  // After joining room
-socket.emit('get pinned', { room });
-
 }
+
+// ---------------- Search Highlight ----------------
+searchInput?.addEventListener('input', e => {
+  const query = e.target.value.trim();
+  if(!query || query.length < 2) return;
+  socket.emit('search messages', { room: currentRoom, query });
+});
+
+socket.on('search results', msgs => {
+  messages.innerHTML = '';
+  if(!msgs.length){
+    const noResults = document.createElement('div');
+    noResults.classList.add('no-results');
+    noResults.textContent = "No messages found.";
+    messages.appendChild(noResults);
+    return;
+  }
+  msgs.forEach(msg => {
+    displayMessage(msg);
+    const textSpan = document.querySelector(`.message[data-id='${msg._id || msg.id}'] .msg-text`);
+    if(textSpan && searchInput.value.trim()){
+      const regex = new RegExp(`(${searchInput.value.trim().replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi');
+      textSpan.innerHTML = textSpan.textContent.replace(regex, `<mark>$1</mark>`);
+    }
   });
 });
 
+// ---------------- Infinite Scroll ----------------
+messages.addEventListener('scroll', () => {
+  if(messages.scrollTop < 50 && !isLoadingHistory){
+    isLoadingHistory = true;
+    currentPage++;
+    socket.emit('get history', { room: currentRoom, page: currentPage, limit: PAGE_LIMIT });
+  }
+});
+// ---------------- Emoji Picker ----------------
+const fallbackEmojis = {
+  "Faces":["😀","😁","😂","🤣","😃"],
+  "Gestures":["👍","👎","👏"],
+  "Hearts & Symbols":["❤️","💛","💚"]
+};
+
+async function loadEmojis() {
+  try {
+    const res = await fetch('/emoji.json');
+    emojiData = await res.json();
+  } catch(e) {
+    console.warn("Emoji JSON load failed, using fallback.");
+    emojiData = fallbackEmojis;
+  }
+  renderEmojiPicker();
+}
+
+function renderEmojiPicker(){
+  emojiPicker.innerHTML = '';
+  Object.entries(emojiData).forEach(([category, arr]) => {
+    const catDiv = document.createElement('div');
+    catDiv.classList.add('emoji-category');
+    arr.forEach(item=>{
+      const char = item.char || item;
+      const span = document.createElement('span');
+      span.textContent = char;
+      span.title = item.name || '';
+      span.addEventListener('click', ()=>{ 
+        input.value += char; 
+        input.focus(); 
+      });
+      catDiv.appendChild(span);
+    });
+    emojiPicker.appendChild(catDiv);
+  });
+}
+
+emojiBtn.addEventListener('click', ()=> emojiPicker.classList.toggle('show'));
+loadEmojis();
+
+// ---------------- Quick Emojis ----------------
+quickEmojis.forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    input.value += btn.textContent;
+    input.focus();
+    btn.classList.add('pop');
+    setTimeout(()=>btn.classList.remove('pop'), 200);
+  });
+});
+
+// ---------------- Recent Rooms ----------------
+function saveRecentRoom(room){
+  let recent = JSON.parse(localStorage.getItem('recentRooms') || "[]");
+  if(!recent.includes(room)) recent.unshift(room);
+  if(recent.length>5) recent.pop();
+  localStorage.setItem('recentRooms', JSON.stringify(recent));
+}
+
+function loadRecentRooms(){
+  roomListDiv.innerHTML='';
+  let recent = JSON.parse(localStorage.getItem('recentRooms') || "[]");
+  recent.forEach(r=>{
+    const btn = document.createElement('button');
+    btn.textContent = r;
+    btn.classList.add('room-btn');
+    btn.addEventListener('click', ()=> { 
+      roomInput.value = r; 
+      joinBtn.click(); 
+    });
+    roomListDiv.appendChild(btn);
+  });
+}
+
+loadRecentRooms();
+
+// ---------------- Pinned & Starred Messages ----------------
+function addPinnedMessage(msg) {
+  const banner = document.getElementById('pinned-messages');
+  const list = document.getElementById('pinned-list');
+  banner.style.display = 'block';
+  if(document.querySelector(`#pinned-list li[data-id="${msg._id}"]`)) return;
+
+  const li = document.createElement('li');
+  li.dataset.id = msg._id;
+  li.textContent = `${msg.user}: ${msg.text.slice(0, 50)}${msg.text.length > 50 ? "..." : ""}`;
+  li.addEventListener('click', () => {
+    const original = document.querySelector(`.message[data-id="${msg._id}"]`);
+    if(original){
+      original.scrollIntoView({ behavior: "smooth", block: "center" });
+      original.classList.add('highlight');
+      setTimeout(()=> original.classList.remove('highlight'), 1500);
+    }
+  });
+  list.appendChild(li);
+}
+
+function removePinnedMessage(msg){
+  const li = document.querySelector(`#pinned-list li[data-id="${msg._id}"]`);
+  if(li) li.remove();
+  const list = document.getElementById('pinned-list');
+  if(!list.children.length) document.getElementById('pinned-messages').style.display='none';
+}
+
+socket.on('message pinned', msg => {
+  const div = document.querySelector(`.message[data-id='${msg._id}']`);
+  if(div) div.classList.add('pinned');
+  addPinnedMessage(msg);
+});
+
+socket.on('message unpinned', msg => {
+  const div = document.querySelector(`.message[data-id='${msg._id}']`);
+  if(div) div.classList.remove('pinned');
+  removePinnedMessage(msg);
+});
+
+socket.on('message starred', ({id, starredBy}) => {
+  const div = document.querySelector(`.message[data-id='${id}']`);
+  if(div) div.querySelector('.menu-btn').textContent = `⭐(${starredBy.length})`;
+});
+
+socket.on('message unstarred', ({id, starredBy}) => {
+  const div = document.querySelector(`.message[data-id='${id}']`);
+  if(div) div.querySelector('.menu-btn').textContent = starredBy.length ? `⭐(${starredBy.length})` : '⋮';
+});
+
+socket.emit('get pinned', { room: currentRoom });
+
+// ---------------- Dark Mode Toggle ----------------
+toggleThemeBtn.addEventListener("click", () => {
+  darkMode = !darkMode;
+  document.body.classList.toggle("dark", darkMode);
+  toggleThemeBtn.textContent = darkMode ? "☀️" : "🌙";
+  homeLogo.src = darkMode ? "/logo.png" : "/logo-light.png";
+});
+
+// ---------------- Home Logo ----------------
+homeLogo.addEventListener("click", () => {
+  chatContainer.style.display = "none";
+  usernamePrompt.style.display = "flex";
+  roomNameSpan.textContent = "Room";
+  messages.innerHTML = "";
+  window.history.replaceState({}, "", window.location.origin);
+});
+
+// ---------------- Favicon Badge ----------------
+window.addEventListener('focus', () => resetFavicon());

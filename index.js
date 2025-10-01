@@ -6,6 +6,9 @@ const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const path = require('path');
 const cheerio = require('cheerio');
+const fs = require('fs');
+const multer = require('multer');
+const sanitizeHtml = require('sanitize-html'); // optional sanitization
 const Message = require('./src/models/message'); // CommonJS model
 
 // Fix fetch in Node CommonJS
@@ -19,7 +22,6 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: "*", methods: ["GET", "POST"] }
 });
-
 const PORT = process.env.PORT || 10000;
 
 // ---------------- MongoDB Connection ----------------
@@ -35,7 +37,7 @@ mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log("🟢 Connected to MongoDB"))
   .catch(err => { console.error("❌ MongoDB connection error:", err); process.exit(1); });
 
-// ---------------- MongoDB Text Index ----------------
+// Ensure text index
 Message.collection.createIndex({ text: "text" })
   .then(() => console.log("✅ Text index created on Message.text"))
   .catch(err => console.error("❌ Error creating text index:", err));
@@ -53,80 +55,50 @@ app.get('/link-preview', async (req, res) => {
     const response = await fetch(url, { timeout: 5000 });
     const html = await response.text();
     const $ = cheerio.load(html);
-
     const title = $('meta[property="og:title"]').attr('content') || $('title').text() || '';
     const image = $('meta[property="og:image"]').attr('content') || $('img').first().attr('src') || '';
-
     res.json({ title, image });
   } catch (err) {
     console.error("Preview fetch error:", err.message);
     res.json({ title: '', image: '' });
   }
 });
-// Pin a message
-socket.on('pin message', async ({ room, id }) => {
-  const msg = await Message.findByIdAndUpdate(id, { pinned: true }, { new: true });
-  if (msg) io.to(room).emit('message pinned', msg);
-});
 
-// Unpin
-socket.on('unpin message', async ({ room, id }) => {
-  const msg = await Message.findByIdAndUpdate(id, { pinned: false }, { new: true });
-  if (msg) io.to(room).emit('message unpinned', msg);
-});
+// ---------------- File Uploads ----------------
+const uploadDir = path.join(__dirname, 'public', 'uploads');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
-// Star / unstar
-socket.on('star message', async ({ room, id, user }) => {
-  const msg = await Message.findById(id);
-  if (!msg) return;
-  if (!msg.starredBy.includes(user)) msg.starredBy.push(user);
-  await msg.save();
-  io.to(room).emit('message starred', { id, starredBy: msg.starredBy });
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) => {
+    const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, file.fieldname + '-' + unique + ext);
+  }
 });
+const upload = multer({ storage });
 
-socket.on('unstar message', async ({ room, id, user }) => {
-  const msg = await Message.findById(id);
-  if (!msg) return;
-  msg.starredBy = msg.starredBy.filter(u => u !== user);
-  await msg.save();
-  io.to(room).emit('message unstarred', { id, starredBy: msg.starredBy });
+app.post('/upload', upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  const fileUrl = `/uploads/${req.file.filename}`;
+  res.json({
+    url: fileUrl,
+    name: req.file.originalname,
+    type: req.file.mimetype,
+    size: req.file.size
+  });
 });
-// ---------------- Pin Message ----------------
-socket.on('pin message', async ({ room, id }) => {
-  try {
-    const msg = await Message.findByIdAndUpdate(id, { pinned: true }, { new: true });
-    if (msg) io.to(room).emit('message pinned', msg);
-  } catch (err) { console.error("Error pinning message:", err); }
-});
-
-// ---------------- Unpin Message ----------------
-socket.on('unpin message', async ({ room, id }) => {
-  try {
-    const msg = await Message.findByIdAndUpdate(id, { pinned: false }, { new: true });
-    if (msg) io.to(room).emit('message unpinned', msg);
-  } catch (err) { console.error("Error unpinning message:", err); }
-});
-
-// ---------------- Get Pinned Messages ----------------
-socket.on('get pinned', async ({ room }) => {
-  try {
-    const pinned = await Message.find({ room, pinned: true }).sort({ timestamp: -1 }).limit(20);
-    socket.emit('pinned messages', pinned);
-  } catch (err) { console.error("Error fetching pinned:", err); }
-});
-
-
 // ---------------- Socket.IO ----------------
 let typingUsers = {};
-let rooms = {}; // Store room passwords: rooms[roomName] = password
+let rooms = {}; // rooms[roomName] = password
 
 // ---------------- Rate Limiting ----------------
-const RATE_LIMIT_WINDOW = 2000; // 2 seconds
+const RATE_LIMIT_WINDOW = 2000;
 const MAX_MESSAGES_PER_WINDOW = 3;
 const MAX_TYPING_EVENTS_PER_WINDOW = 5;
 
-const messageTimestamps = new Map(); // socket.id => [timestamps]
-const typingTimestamps = new Map();  // socket.id => [timestamps]
+const messageTimestamps = new Map();
+const typingTimestamps = new Map();
 
 function canSendMessage(socketId) {
   const now = Date.now();
@@ -162,12 +134,12 @@ io.on('connection', socket => {
     console.log(`User joined room: ${room}`);
   });
 
-  // ---------------- Get Room History (paginated) ----------------
+  // ---------------- Get Room History ----------------
   socket.on('get history', async ({ room, page = 1, limit = 50 }) => {
     try {
       const skip = (page - 1) * limit;
       const history = await Message.find({ room })
-        .sort({ timestamp: 1 }) // oldest first
+        .sort({ timestamp: 1 })
         .skip(skip)
         .limit(limit);
       socket.emit('room history', history);
@@ -181,26 +153,29 @@ io.on('connection', socket => {
       const results = await Message.find({
         room,
         $text: { $search: query }
-      })
-      .sort({ timestamp: -1 }) // newest first
-      .limit(50);
+      }).sort({ timestamp: -1 }).limit(50);
       socket.emit('search results', results);
     } catch (err) { console.error("Error searching messages:", err); }
   });
 
   // ---------------- Chat Message ----------------
   socket.on('chat message', async msgData => {
-    if (!canSendMessage(socket.id)) return; // rate limit
+    if (!canSendMessage(socket.id)) return;
     try {
-      if (msgData.text.length > 1000) msgData.text = msgData.text.substring(0, 1000);
+      if (msgData.text && msgData.text.length > 1000) msgData.text = msgData.text.substring(0, 1000);
+
+      // Optional: sanitize text
+      if (msgData.text) msgData.text = sanitizeHtml(msgData.text, { allowedTags: [], allowedAttributes: {} });
 
       const newMsg = new Message({
         ...msgData,
         timestamp: msgData.timestamp ? new Date(msgData.timestamp) : new Date(),
-        reactions: msgData.reactions || []
+        reactions: msgData.reactions || [],
+        pinned: msgData.pinned || false,
+        starredBy: msgData.starredBy || []
       });
-      await newMsg.save();
 
+      await newMsg.save();
       io.to(msgData.room).emit('chat message', newMsg);
       io.to(msgData.room).emit('message status', { id: newMsg._id, status: 'delivered' });
     } catch (err) { console.error("Error saving message:", err); }
@@ -209,18 +184,10 @@ io.on('connection', socket => {
   // ---------------- Edit Message ----------------
   socket.on('edit message', async ({ room, id, text }) => {
     try {
-      const sanitized = text.length > 1000 ? text.substring(0, 1000) : text;
+      const sanitized = sanitizeHtml(text, { allowedTags: [], allowedAttributes: {} });
       const msg = await Message.findByIdAndUpdate(id, { text: sanitized }, { new: true });
       if (msg) io.to(room).emit('edit message', { id, text: msg.text });
     } catch (err) { console.error("Error editing message:", err); }
-  });
-
-  // ---------------- Read Message ----------------
-  socket.on('read message', async ({ room, id }) => {
-    try {
-      await Message.findByIdAndUpdate(id, { status: 'read' });
-      io.to(room).emit('message status', { id, status: 'read' });
-    } catch (err) { console.error("Error marking as read:", err); }
   });
 
   // ---------------- Delete Message ----------------
@@ -231,7 +198,50 @@ io.on('connection', socket => {
     } catch (err) { console.error("Error deleting message:", err); }
   });
 
-  // ---------------- Add / Update Reaction ----------------
+  // ---------------- Pin / Unpin Messages ----------------
+  socket.on('pin message', async ({ room, id }) => {
+    try {
+      const msg = await Message.findByIdAndUpdate(id, { pinned: true }, { new: true });
+      if (msg) io.to(room).emit('message pinned', msg);
+    } catch (err) { console.error("Error pinning message:", err); }
+  });
+
+  socket.on('unpin message', async ({ room, id }) => {
+    try {
+      const msg = await Message.findByIdAndUpdate(id, { pinned: false }, { new: true });
+      if (msg) io.to(room).emit('message unpinned', msg);
+    } catch (err) { console.error("Error unpinning message:", err); }
+  });
+
+  socket.on('get pinned', async ({ room }) => {
+    try {
+      const pinned = await Message.find({ room, pinned: true }).sort({ timestamp: -1 }).limit(20);
+      socket.emit('pinned messages', pinned);
+    } catch (err) { console.error("Error fetching pinned:", err); }
+  });
+
+  // ---------------- Star / Unstar Messages ----------------
+  socket.on('star message', async ({ room, id, user }) => {
+    try {
+      const msg = await Message.findById(id);
+      if (!msg) return;
+      if (!msg.starredBy.includes(user)) msg.starredBy.push(user);
+      await msg.save();
+      io.to(room).emit('message starred', { id, starredBy: msg.starredBy });
+    } catch (err) { console.error("Error starring message:", err); }
+  });
+
+  socket.on('unstar message', async ({ room, id, user }) => {
+    try {
+      const msg = await Message.findById(id);
+      if (!msg) return;
+      msg.starredBy = msg.starredBy.filter(u => u !== user);
+      await msg.save();
+      io.to(room).emit('message unstarred', { id, starredBy: msg.starredBy });
+    } catch (err) { console.error("Error unstarring message:", err); }
+  });
+
+  // ---------------- React to Message ----------------
   socket.on('react message', async ({ room, id, reaction, username }) => {
     try {
       const msg = await Message.findById(id);
@@ -248,9 +258,9 @@ io.on('connection', socket => {
     } catch (err) { console.error("Error updating reaction:", err); }
   });
 
-  // ---------------- Typing ----------------
+  // ---------------- Typing Indicator ----------------
   socket.on('typing', username => {
-    if (!canSendTyping(socket.id)) return; // rate limit
+    if (!canSendTyping(socket.id)) return;
     typingUsers[socket.id] = username;
     io.emit('typing', Object.values(typingUsers));
   });
@@ -259,39 +269,6 @@ io.on('connection', socket => {
     delete typingUsers[socket.id];
     io.emit('typing', Object.values(typingUsers));
   });
-  // ---------------- File Uploads ----------------
-const multer = require('multer');
-const fs = require('fs');
-
-// Ensure uploads folder exists
-const uploadDir = path.join(__dirname, 'public', 'uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// Multer storage
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => {
-    const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const ext = path.extname(file.originalname);
-    cb(null, file.fieldname + '-' + unique + ext);
-  }
-});
-const upload = multer({ storage });
-
-// Upload endpoint
-app.post('/upload', upload.single('file'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-
-  const fileUrl = `/uploads/${req.file.filename}`;
-  res.json({
-    url: fileUrl,
-    name: req.file.originalname,
-    type: req.file.mimetype,
-    size: req.file.size
-  });
-});
 
   // ---------------- Disconnect ----------------
   socket.on('disconnect', () => {
@@ -299,9 +276,20 @@ app.post('/upload', upload.single('file'), (req, res) => {
     delete typingUsers[socket.id];
   });
 });
-
 // ---------------- Start Server ----------------
-server.listen(PORT, () => console.log(`🟢 Server running on port ${PORT}`));
+server.listen(PORT, () => {
+  console.log(`🟢 Server running on port ${PORT}`);
+});
 
 // ---------------- Serve index.html for all other routes ----------------
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// ---------------- Optional: Helper for sanitizing HTML ----------------
+const sanitizeHtml = (html, options = {}) => {
+  // Minimal sanitization; you can replace with DOMPurify in Node or sanitize-html package
+  return String(html)
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+};
