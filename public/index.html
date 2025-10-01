@@ -8,6 +8,7 @@
   <link rel="icon" href="/logo.png" type="image/png">
 
   <link rel="stylesheet" href="/chat.css">
+  <input id="search-input" placeholder="Search messages..." />
 </head>
 <body>
   <!-- Landing Page -->
@@ -34,6 +35,11 @@
         <button id="toggle-theme" title="Toggle Dark/Light" aria-label="Toggle theme">🌙</button>
       </div>
     </header>
+	<!-- Pinned Messages Banner -->
+	<div id="pinned-messages" class="pinned-banner" style="display:none;">
+		<h4>Pinned</h4>
+		<ul id="pinned-list"></ul>
+	</div>
 
     <main id="messages" aria-live="polite"></main>
 

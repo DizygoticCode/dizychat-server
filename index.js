@@ -63,6 +63,58 @@ app.get('/link-preview', async (req, res) => {
     res.json({ title: '', image: '' });
   }
 });
+// Pin a message
+socket.on('pin message', async ({ room, id }) => {
+  const msg = await Message.findByIdAndUpdate(id, { pinned: true }, { new: true });
+  if (msg) io.to(room).emit('message pinned', msg);
+});
+
+// Unpin
+socket.on('unpin message', async ({ room, id }) => {
+  const msg = await Message.findByIdAndUpdate(id, { pinned: false }, { new: true });
+  if (msg) io.to(room).emit('message unpinned', msg);
+});
+
+// Star / unstar
+socket.on('star message', async ({ room, id, user }) => {
+  const msg = await Message.findById(id);
+  if (!msg) return;
+  if (!msg.starredBy.includes(user)) msg.starredBy.push(user);
+  await msg.save();
+  io.to(room).emit('message starred', { id, starredBy: msg.starredBy });
+});
+
+socket.on('unstar message', async ({ room, id, user }) => {
+  const msg = await Message.findById(id);
+  if (!msg) return;
+  msg.starredBy = msg.starredBy.filter(u => u !== user);
+  await msg.save();
+  io.to(room).emit('message unstarred', { id, starredBy: msg.starredBy });
+});
+// ---------------- Pin Message ----------------
+socket.on('pin message', async ({ room, id }) => {
+  try {
+    const msg = await Message.findByIdAndUpdate(id, { pinned: true }, { new: true });
+    if (msg) io.to(room).emit('message pinned', msg);
+  } catch (err) { console.error("Error pinning message:", err); }
+});
+
+// ---------------- Unpin Message ----------------
+socket.on('unpin message', async ({ room, id }) => {
+  try {
+    const msg = await Message.findByIdAndUpdate(id, { pinned: false }, { new: true });
+    if (msg) io.to(room).emit('message unpinned', msg);
+  } catch (err) { console.error("Error unpinning message:", err); }
+});
+
+// ---------------- Get Pinned Messages ----------------
+socket.on('get pinned', async ({ room }) => {
+  try {
+    const pinned = await Message.find({ room, pinned: true }).sort({ timestamp: -1 }).limit(20);
+    socket.emit('pinned messages', pinned);
+  } catch (err) { console.error("Error fetching pinned:", err); }
+});
+
 
 // ---------------- Socket.IO ----------------
 let typingUsers = {};
@@ -207,6 +259,39 @@ io.on('connection', socket => {
     delete typingUsers[socket.id];
     io.emit('typing', Object.values(typingUsers));
   });
+  // ---------------- File Uploads ----------------
+const multer = require('multer');
+const fs = require('fs');
+
+// Ensure uploads folder exists
+const uploadDir = path.join(__dirname, 'public', 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+// Multer storage
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) => {
+    const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, file.fieldname + '-' + unique + ext);
+  }
+});
+const upload = multer({ storage });
+
+// Upload endpoint
+app.post('/upload', upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+  const fileUrl = `/uploads/${req.file.filename}`;
+  res.json({
+    url: fileUrl,
+    name: req.file.originalname,
+    type: req.file.mimetype,
+    size: req.file.size
+  });
+});
 
   // ---------------- Disconnect ----------------
   socket.on('disconnect', () => {

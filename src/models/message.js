@@ -14,6 +14,29 @@ const messageSchema = new mongoose.Schema({
   status: { type: String, enum: ["sent", "delivered", "read"], default: "sent" },
   reactions: { type: [reactionSchema], default: [] }
 });
+const messageSchema = new mongoose.Schema({
+  room: String,
+  user: String,
+  text: String,
+  timestamp: { type: Date, default: Date.now },
+  reactions: [{ user: String, emoji: String }],
+  pinned: { type: Boolean, default: false },
+  starredBy: [String]  // list of usernames who starred this
+});
+const messageSchema = new mongoose.Schema({
+  user: String,
+  text: String,
+  room: String,
+  timestamp: { type: Date, default: Date.now },
+  reactions: [{ user: String, emoji: String }],
+  status: { type: String, default: "delivered" },
+  pinned: { type: Boolean, default: false }   // ✅ New field
+});
+
+messageSchema.index({ text: 'text' }); // keep full-text search
+
+module.exports = mongoose.model('Message', messageSchema);
+
 
 // ✅ Full-text search index (allows searching in messages)
 messageSchema.index({ text: "text" });
