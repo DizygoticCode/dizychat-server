@@ -398,3 +398,159 @@ body.dark .message .link-preview a { color: #4ea1ff; }
 #room-list .room-btn:hover { background:#c3e6cb; }
 body.dark #room-list .room-btn { background:#28a745; border:1px solid #28a745; color:#fff; }
 body.dark #room-list .room-btn:hover { background:#3cb043; }
+
+/* ================== Modal Overlay ================== */
+#app-modal {
+  display: none; /* controlled via JS */
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(0,0,0,0.5);
+  backdrop-filter: blur(2px);
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+#app-modal-box {
+  background: var(--card-bg, #fff);
+  color: var(--text, #000);
+  border-radius: 12px;
+  padding: 20px;
+  min-width: 320px;
+  max-width: 90%;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  animation: modalFadeIn 0.2s ease;
+}
+
+#app-modal-box h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+#app-modal-box textarea {
+  font: inherit;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #ccc);
+}
+
+#app-modal-box button {
+  font: inherit;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  background: var(--button-bg, #007bff);
+  color: var(--button-text, #fff);
+  transition: background 0.2s;
+}
+#app-modal-box button:hover {
+  background: var(--button-hover, #0056b3);
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ================== Message Menu ================== */
+.msg-menu-wrapper {
+  position: relative;
+  display: inline-block;
+  margin-left: 6px;
+}
+.msg-menu-wrapper .menu-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.1em;
+}
+.msg-menu {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: 120%;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border, #ccc);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 50;
+}
+.msg-menu.show { display: block; }
+.msg-menu button {
+  display: block;
+  padding: 6px 12px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.msg-menu button:hover {
+  background: var(--hover, #f0f0f0);
+}
+
+/* ================== Pinned Banner ================== */
+#pinned-messages {
+  background: var(--pinned-bg, #fff8d0);
+  border-bottom: 1px solid var(--border, #ccc);
+  padding: 6px 10px;
+  font-size: 0.9em;
+}
+#pinned-messages ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+#pinned-messages li {
+  padding: 4px 0;
+  border-bottom: 1px dotted var(--border, #bbb);
+}
+#pinned-messages h4 {
+  margin: 0 0 4px 0;
+  font-size: 0.95em;
+  font-weight: bold;
+}
+
+/* ================== Scroll Lock Button ================== */
+#scrollLockBtn {
+  position: fixed;
+  bottom: 80px;
+  right: 16px;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border, #ccc);
+  border-radius: 20px;
+  padding: 8px 14px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  transition: background 0.2s;
+}
+#scrollLockBtn:hover {
+  background: var(--hover, #f5f5f5);
+}
+
+/* ================== Search Bar ================== */
+#search-container {
+  display: flex;
+  gap: 6px;
+  margin: 8px;
+}
+#search-container input {
+  flex: 1;
+  padding: 6px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 6px;
+}
+#search-container button {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  background: var(--button-bg, #007bff);
+  color: #fff;
+}
+#search-container button:hover {
+  background: var(--button-hover, #0056b3);
+}
+
