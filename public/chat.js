@@ -1,6 +1,6 @@
-// ================= Part 1: Setup & DOM Elements =================
+// ================= Part 1: Setup & Utilities =================
 
-// ---------------- DOM Elements ----------------
+// DOM references
 const usernamePrompt = document.getElementById('username-prompt');
 const joinBtn = document.getElementById('join-btn');
 const usernameInput = document.getElementById('username-input');
@@ -19,177 +19,222 @@ const roomNameSpan = document.getElementById('room-name');
 const homeLogo = document.getElementById('home-logo');
 const quickEmojis = document.querySelectorAll('#quick-emojis button');
 const roomListDiv = document.getElementById('room-list');
-const searchInput = document.getElementById('search-input');
+const searchInput = document.getElementById('searchInput'); // header search
+const scrollLockBtn = document.getElementById('scrollLockBtn'); 
 
-// ---------------- App State ----------------
+// App state
 let currentUser = '';
 let currentRoom = '';
 let roomPassword = '';
-let socket;
-let typingTimeout;
+let socket = null;
+let typingTimeout = null;
 let darkMode = false;
 let emojiData = {};
 const linkPreviewCache = new Map();
 let currentPage = 1;
 const PAGE_LIMIT = 50;
 let isLoadingHistory = false;
+let pendingHistoryRequest = false;
+let scrollLocked = false;
 
-// ---------------- Favicon Badge ----------------
+// ---------------- Modal overlay (re-usable) ----------------
+function showModal({ title = 'Input', placeholder = '', defaultValue = '', onConfirm = null }) {
+  if (document.getElementById('app-modal')) return;
+
+  const modal = document.createElement('div');
+  modal.id = 'app-modal';
+  modal.style.position = 'fixed';
+  modal.style.inset = '0';
+  modal.style.display = 'flex';
+  modal.style.alignItems = 'center';
+  modal.style.justifyContent = 'center';
+  modal.style.background = 'rgba(0,0,0,0.45)';
+  modal.style.zIndex = '9999';
+
+  const box = document.createElement('div');
+  box.style.minWidth = '320px';
+  box.style.maxWidth = '92vw';
+  box.style.background = '#fff';
+  box.style.borderRadius = '10px';
+  box.style.padding = '16px';
+  box.style.boxShadow = '0 8px 30px rgba(0,0,0,0.3)';
+  box.innerHTML = `<h3 style="margin:0 0 8px 0">${title}</h3>`;
+
+  const ta = document.createElement('textarea');
+  ta.id = 'modal-input';
+  ta.placeholder = placeholder;
+  ta.value = defaultValue;
+  ta.style.width = '100%';
+  ta.style.minHeight = '80px';
+  ta.style.resize = 'vertical';
+  ta.style.fontSize = '14px';
+  ta.style.padding = '8px';
+  box.appendChild(ta);
+
+  const actions = document.createElement('div');
+  actions.style.display = 'flex';
+  actions.style.justifyContent = 'flex-end';
+  actions.style.gap = '8px';
+  actions.style.marginTop = '12px';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.addEventListener('click', () => modal.remove());
+
+  const okBtn = document.createElement('button');
+  okBtn.textContent = 'OK';
+  okBtn.style.fontWeight = '600';
+  okBtn.addEventListener('click', () => {
+    const v = ta.value.trim();
+    if (onConfirm) onConfirm(v);
+    modal.remove();
+  });
+
+  actions.appendChild(cancelBtn);
+  actions.appendChild(okBtn);
+  box.appendChild(actions);
+  modal.appendChild(box);
+  document.body.appendChild(modal);
+  ta.focus();
+}
+
+// ================= Part 2: Favicon, debounce, join/init handlers =================
+
+// Favicon badge (simple)
 let unreadCount = 0;
 let originalFavicon = document.querySelector("link[rel~='icon']");
-if(!originalFavicon){
+if (!originalFavicon) {
   originalFavicon = document.createElement('link');
   originalFavicon.rel = 'icon';
   originalFavicon.href = '/logo.png';
   document.head.appendChild(originalFavicon);
 }
-let faviconCanvas = document.createElement('canvas');
-faviconCanvas.width = 32;
+const faviconCanvas = document.createElement('canvas');
+faviconCanvas.width = 32; 
 faviconCanvas.height = 32;
-let faviconCtx = faviconCanvas.getContext('2d');
+const faviconCtx = faviconCanvas.getContext('2d');
 
-function updateFaviconBadge(count){
+function updateFaviconBadge(count) {
   const img = new Image();
   img.src = '/logo.png';
   img.onload = () => {
-    faviconCtx.clearRect(0,0,32,32);
-    faviconCtx.drawImage(img,0,0,32,32);
-    if(count > 0){
-      faviconCtx.fillStyle = 'red';
+    faviconCtx.clearRect(0, 0, 32, 32);
+    faviconCtx.drawImage(img, 0, 0, 32, 32);
+    if (count > 0) {
+      faviconCtx.fillStyle = '#d32f2f';
       faviconCtx.beginPath();
-      faviconCtx.arc(24,8,8,0,2*Math.PI);
+      faviconCtx.arc(24, 8, 8, 0, Math.PI * 2);
       faviconCtx.fill();
-      faviconCtx.fillStyle = 'white';
+      faviconCtx.fillStyle = '#fff';
       faviconCtx.font = 'bold 10px sans-serif';
       faviconCtx.textAlign = 'center';
       faviconCtx.textBaseline = 'middle';
-      faviconCtx.fillText(count > 99 ? '99+' : count, 24, 8);
+      const text = count > 99 ? '99+' : String(count);
+      faviconCtx.fillText(text, 24, 8);
     }
     originalFavicon.href = faviconCanvas.toDataURL('image/png');
   };
 }
-function incrementFavicon(){ unreadCount++; updateFaviconBadge(unreadCount); }
-function resetFavicon(){ unreadCount = 0; updateFaviconBadge(unreadCount); }
-window.addEventListener('focus', () => resetFavicon());
+function incrementFavicon() { unreadCount++; updateFaviconBadge(unreadCount); }
+function resetFavicon() { unreadCount = 0; updateFaviconBadge(unreadCount); }
+window.addEventListener('focus', resetFavicon);
 
-// ---------------- Landing Page Prefill ----------------
+// Utility: debounce
+function debounce(fn, wait = 250) {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), wait);
+  };
+}
+
+// ---------------- Join + init handlers ----------------
 const urlParams = new URLSearchParams(window.location.search);
-const prefillRoom = urlParams.get("room");
+const prefillRoom = urlParams.get('room') || '';
 if (prefillRoom) roomInput.value = prefillRoom;
 
-// ---------------- Dark Mode Auto-Detect ----------------
+// Dark mode auto-detect
 if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
   darkMode = true;
   document.body.classList.add('dark');
-  toggleThemeBtn.textContent = "☀️";
-  homeLogo.src = "/logo.png";
+  toggleThemeBtn.textContent = '☀️';
+  if (homeLogo) homeLogo.src = '/logo.png';
 }
 
-// ---------------- Modal Overlay System ----------------
-function showModal(message, withInput=false, callback=null) {
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-
-  const box = document.createElement('div');
-  box.className = 'modal-box';
-
-  const msg = document.createElement('p');
-  msg.textContent = message;
-  box.appendChild(msg);
-
-  let inputField = null;
-  if(withInput){
-    inputField = document.createElement('input');
-    inputField.type = 'text';
-    inputField.className = 'modal-input';
-    box.appendChild(inputField);
-  }
-
-  const btnRow = document.createElement('div');
-  btnRow.className = 'modal-buttons';
-
-  const ok = document.createElement('button');
-  ok.textContent = "OK";
-  ok.className = 'modal-ok';
-  ok.addEventListener('click', () => {
-    document.body.removeChild(overlay);
-    if(callback){
-      if(withInput) callback(inputField.value.trim());
-      else callback();
-    }
-  });
-  btnRow.appendChild(ok);
-
-  if(withInput){
-    const cancel = document.createElement('button');
-    cancel.textContent = "Cancel";
-    cancel.className = 'modal-cancel';
-    cancel.addEventListener('click', () => {
-      document.body.removeChild(overlay);
-    });
-    btnRow.appendChild(cancel);
-  }
-
-  box.appendChild(btnRow);
-  overlay.appendChild(box);
-  document.body.appendChild(overlay);
-
-  if(withInput) inputField.focus();
-}
-
-// ---------------- Session Check ----------------
+// Session handling
 if (!localStorage.getItem('sessionToken')) {
   usernamePrompt.style.display = 'flex';
 } else {
   currentUser = localStorage.getItem('username') || 'Guest';
   currentRoom = prefillRoom || 'General';
+  usernamePrompt.style.display = 'none';
+  chatContainer.style.display = 'flex';
+  roomNameSpan.textContent = currentRoom;
   initChat();
 }
 
-// ---------------- Join Chat ----------------
-joinBtn.addEventListener("click", () => {
+// join button
+joinBtn.addEventListener('click', () => {
   const username = usernameInput.value.trim();
   const room = roomInput.value.trim();
-  const password = roomPasswordInput.value.trim();
-  if (!username || !room) return showModal("Please enter both username and room name.");
+  const pwd = roomPasswordInput.value.trim();
+  if (!username || !room) return alert('Please enter both username and room name.');
 
   currentUser = username;
   currentRoom = room;
-  roomPassword = password;
-
+  roomPassword = pwd;
   localStorage.setItem('sessionToken', Date.now());
   localStorage.setItem('username', username);
 
-  usernamePrompt.style.display = "none";
-  chatContainer.style.display = "flex";
+  usernamePrompt.style.display = 'none';
+  chatContainer.style.display = 'flex';
   roomNameSpan.textContent = room;
-
-  window.history.replaceState({}, "", `${window.location.origin}?room=${encodeURIComponent(room)}`);
+  window.history.replaceState({}, '', `${window.location.origin}?room=${encodeURIComponent(room)}`);
 
   saveRecentRoom(room);
   loadRecentRooms();
 
   initChat();
 });
-// ================= Part 2: Socket.IO & Messaging =================
+
+// Scroll-lock toggle (button can show state)
+if (scrollLockBtn) {
+  scrollLockBtn.style.display = 'inline-block';
+  const updateScrollLockUI = () => {
+    scrollLockBtn.textContent = scrollLocked ? '🔒 Auto-scroll OFF' : '🔓 Auto-scroll ON';
+  };
+  updateScrollLockUI();
+  scrollLockBtn.addEventListener('click', () => {
+    scrollLocked = !scrollLocked;
+    updateScrollLockUI();
+  });
+}
+
+// Search input visibility: hide on landing, show in chat header
+if (searchInput) searchInput.style.display = 'inline-block';
+
+
+// ================= Part 3: Socket.IO init & message handling =================
 
 function initChat() {
+  if (socket) socket.close?.();
   socket = io(window.location.origin);
-  socket.emit("join room", { room: currentRoom, password: roomPassword });
 
-  // Request first page of history
+  socket.emit('join room', { room: currentRoom, password: roomPassword });
+
+  // Get first page of history
   currentPage = 1;
-  socket.emit("get history", { room: currentRoom, page: currentPage, limit: PAGE_LIMIT });
+  fetchHistoryPage(currentPage, true);
 
-  // ---------------- Input Events ----------------
-  input.addEventListener("input", () => {
-    if (!socket) return;
-    socket.emit("typing", currentUser);
+  // INPUT typing
+  input.addEventListener('input', () => {
+    socket.emit('typing', currentUser);
     clearTimeout(typingTimeout);
-    typingTimeout = setTimeout(() => socket.emit("stop typing", currentUser), 1000);
+    typingTimeout = setTimeout(() => socket.emit('stop typing', currentUser), 1000);
   });
 
-  form.addEventListener("submit", e => {
+  // Submit message
+  form.addEventListener('submit', e => {
     e.preventDefault();
     if (!input.value.trim()) return;
     const sanitizedText = DOMPurify.sanitize(input.value.trim());
@@ -199,138 +244,111 @@ function initChat() {
     input.focus();
   });
 
-  // ---------------- Socket Event Listeners ----------------
+  // socket events
   socket.on('chat message', msg => {
     displayMessage(msg);
     if (document.hidden && msg.user !== currentUser) incrementFavicon();
   });
 
-  // FIXED room_history: preserve scrollTop properly when prepending older messages
   socket.on('room history', msgs => {
-    if (!Array.isArray(msgs) || !msgs.length) { isLoadingHistory = false; return; }
-
-    // Save current scroll state
-    const prevScrollTop = messages.scrollTop;
+    if (!Array.isArray(msgs) || !msgs.length) {
+      isLoadingHistory = false;
+      pendingHistoryRequest = false;
+      return;
+    }
     const prevScrollHeight = messages.scrollHeight;
-
-    // Insert older messages at top (msgs already oldest->newest? server sends page in correct order)
-    // We reverse to ensure older-first insertion if needed
-    msgs.reverse().forEach(msg => displayMessage(msg, true));
-
-    // Restore scroll so the viewport stays at the same message
-    // NewScrollTop = newScrollHeight - prevScrollHeight + prevScrollTop
-    const delta = messages.scrollHeight - prevScrollHeight;
-    messages.scrollTop = prevScrollTop + delta;
-
+    msgs.reverse().forEach(m => displayMessage(m, true));
+    const newScrollHeight = messages.scrollHeight;
+    messages.scrollTop = newScrollHeight - prevScrollHeight;
     isLoadingHistory = false;
+    pendingHistoryRequest = false;
   });
 
   socket.on('search results', msgs => {
     messages.innerHTML = '';
-    msgs.forEach(msg => displayMessage(msg));
+    msgs.forEach(m => displayMessage(m));
   });
 
   socket.on('typing', users => updateTypingIndicator(users));
-
   socket.on('message status', ({ id, status }) => {
-    const statusSpan = document.querySelector(`.message[data-id='${id}'] .status`);
-    if (statusSpan) statusSpan.textContent = statusIcon(status);
+    const s = document.querySelector(`.message[data-id='${id}'] .status`);
+    if (s) s.textContent = statusIcon(status);
   });
-
   socket.on('update reactions', ({ id, reactions }) => updateReactionsUI(id, reactions));
-
-  socket.on('join error', msg => showModal(String(msg)));
-
-  socket.on('delete message', id => {
-    const div = document.querySelector(`.message[data-id='${id}']`);
-    if (div) div.remove();
-  });
-
-  // Use modal for editing messages (get new text via modal)
   socket.on('edit message', ({ id, text }) => {
-    const textSpan = document.querySelector(`.message[data-id='${id}'] .msg-text`);
-    if (textSpan) textSpan.textContent = ` ${DOMPurify.sanitize(text)}`;
+    const ts = document.querySelector(`.message[data-id='${id}'] .msg-text`);
+    if (ts) ts.textContent = ` ${DOMPurify.sanitize(text)}`;
   });
-
-  // ---------------- Infinite Scroll for Older Messages (client guard) ----------------
-  // guard flag handles in-flight requests (isLoadingHistory)
-  messages.addEventListener('scroll', () => {
-    // don't request history if already loading or scrolled down
-    if (messages.scrollTop < 50 && !isLoadingHistory) {
-      isLoadingHistory = true;
-      currentPage++;
-      socket.emit("get history", { room: currentRoom, page: currentPage, limit: PAGE_LIMIT });
+  socket.on('delete message', id => {
+    const el = document.querySelector(`.message[data-id='${id}']`);
+    if (el) el.remove();
+  });
+  socket.on('message pinned', msg => {
+    const el = document.querySelector(`.message[data-id='${msg._id}']`);
+    if (el) el.classList.add('pinned');
+    addPinnedMessage(msg);
+  });
+  socket.on('message unpinned', msg => {
+    const el = document.querySelector(`.message[data-id='${msg._id}']`);
+    if (el) el.classList.remove('pinned');
+    removePinnedMessage(msg);
+  });
+  socket.on('pinned messages', msgs => msgs.forEach(addPinnedMessage));
+  socket.on('message starred', ({ id, starredBy }) => {
+    const el = document.querySelector(`.message[data-id='${id}']`);
+    if (el) {
+      const menuBtn = el.querySelector('.menu-btn');
+      if (menuBtn) menuBtn.textContent = `⭐(${starredBy.length})`;
+    }
+  });
+  socket.on('message unstarred', ({ id, starredBy }) => {
+    const el = document.querySelector(`.message[data-id='${id}']`);
+    if (el) {
+      const menuBtn = el.querySelector('.menu-btn');
+      if (menuBtn) menuBtn.textContent = starredBy.length ? `⭐(${starredBy.length})` : '⋮';
     }
   });
 
-  // ---------------- File & Image Upload ----------------
-  // file input/button are created once in initChat to ensure socket exists
-  const fileInput = document.createElement('input');
-  fileInput.type = 'file';
-  fileInput.multiple = false;
-  fileInput.style.display = 'none';
-  form.appendChild(fileInput);
-
-  const uploadBtn = document.createElement('button');
-  uploadBtn.type = 'button';
-  uploadBtn.textContent = '📎';
-  uploadBtn.title = 'Attach file';
-  uploadBtn.classList.add('attach-btn');
-  form.insertBefore(uploadBtn, input);
-
-  uploadBtn.addEventListener('click', () => fileInput.click());
-
-  fileInput.addEventListener('change', async () => {
-    if (!fileInput.files.length) return;
-    const file = fileInput.files[0];
-    await sendFile(file);
-    fileInput.value = '';
-  });
-
-  // Drag-and-drop support
-  chatContainer.addEventListener('dragover', e => e.preventDefault());
-  chatContainer.addEventListener('drop', e => {
-    e.preventDefault();
-    if (!e.dataTransfer.files.length) return;
-    sendFile(e.dataTransfer.files[0]);
-  });
-
-  // After joining, request pinned messages
+  // request pinned messages
   socket.emit('get pinned', { room: currentRoom });
-}
 
-// ---------------- Send File Function ----------------
-async function sendFile(file) {
-  const allowedTypes = ['image/jpeg','image/png','image/gif','application/pdf','text/plain'];
-  if (!allowedTypes.includes(file.type)) {
-    return showModal('File type not supported.');
-  }
+  // infinite scroll (older messages)
+  messages.removeEventListener('scroll', onMessagesScroll);
+  messages.addEventListener('scroll', onMessagesScroll);
 
-  const formData = new FormData();
-  formData.append('file', file);
-
-  try {
-    const res = await fetch('/upload', { method: 'POST', body: formData });
-    if (!res.ok) throw new Error('Upload failed');
-    const data = await res.json();
-
-    if (!data.url) throw new Error('Upload response malformed');
-
-    const msgData = {
-      room: currentRoom,
-      user: currentUser,
-      text: file.type.startsWith('image/') ? '' : DOMPurify.sanitize(file.name),
-      file: data,
-      timestamp: new Date()
-    };
-    socket.emit('chat message', msgData);
-  } catch (err) {
-    console.error('File upload error:', err);
-    showModal('Failed to upload file.');
+  // search debounce
+  if (searchInput) {
+    searchInput.addEventListener('input', debounce(e => {
+      const q = e.target.value.trim();
+      if (!q || q.length < 2) {
+        messages.innerHTML = '';
+        currentPage = 1;
+        fetchHistoryPage(currentPage, true);
+        return;
+      }
+      socket.emit('search messages', { room: currentRoom, query: q });
+    }, 300));
   }
 }
 
-// ---------------- Helper: Status Icon ----------------
+// Helper: fetch history page via socket
+function fetchHistoryPage(page = 1, replace = false) {
+  if (!socket || pendingHistoryRequest) return;
+  pendingHistoryRequest = true;
+  socket.emit('get history', { room: currentRoom, page, limit: PAGE_LIMIT });
+}
+
+// scroll handler
+function onMessagesScroll() {
+  if (messages.scrollTop < 80 && !isLoadingHistory && !pendingHistoryRequest) {
+    isLoadingHistory = true;
+    currentPage++;
+    fetchHistoryPage(currentPage, false);
+  }
+}
+// ================= Part 4: Rendering messages & UI =================
+
+// Status icon helper
 function statusIcon(status) {
   switch (status) {
     case 'sent': return '✓';
@@ -340,252 +358,527 @@ function statusIcon(status) {
   }
 }
 
-// ---------------- Typing Indicator ----------------
+// Display a message
+function displayMessage(msg, prepend = false) {
+  if (!msg) return;
+  if (document.querySelector(`.message[data-id='${msg._id || msg.id}']`)) return;
+
+  const div = document.createElement('div');
+  div.className = `message ${msg.user === currentUser ? 'self' : 'other'}`;
+  div.dataset.id = msg._id || msg.id;
+
+  // Meta
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  try { meta.textContent = `[${new Date(msg.timestamp).toLocaleTimeString()}] ${msg.user}`; }
+  catch(e) { meta.textContent = msg.user; }
+  div.appendChild(meta);
+
+  // Text
+  if (msg.text) {
+    const textSpan = document.createElement('span');
+    textSpan.className = 'msg-text';
+    textSpan.textContent = ` ${DOMPurify.sanitize(msg.text)}`;
+    div.appendChild(textSpan);
+  }
+
+  // File attachments
+  if (msg.file) {
+    const fileDiv = document.createElement('div');
+    fileDiv.className = 'file-preview';
+    if (msg.file.type?.startsWith('image/')) {
+      const img = document.createElement('img');
+      img.className = 'inline-image';
+      img.src = msg.file.url || msg.file.path || msg.file;
+      img.alt = msg.file.name || 'image';
+      fileDiv.appendChild(img);
+    } else {
+      const a = document.createElement('a');
+      a.href = msg.file.url || msg.file.path;
+      a.target = '_blank';
+      a.textContent = msg.file.name || 'download';
+      fileDiv.appendChild(a);
+    }
+    div.appendChild(fileDiv);
+  }
+
+  // Status placeholder
+  const statusSpan = document.createElement('span');
+  statusSpan.className = 'status';
+  div.appendChild(statusSpan);
+
+  // Reactions
+  addReactionUI(div, msg);
+
+  // Controls if self message
+  if (msg.user === currentUser) addMessageControls(div, msg);
+
+  // Link preview
+  if (msg.text) handleLinkPreview(div, msg.text);
+
+  // Pinned visual
+  if (msg.pinned) div.classList.add('pinned');
+
+  // Insert
+  if (prepend) messages.prepend(div);
+  else {
+    messages.appendChild(div);
+    if (!scrollLocked) {
+      const nearBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 80;
+      if (nearBottom) div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }
+
+  // Mark as read
+  if (msg.user !== currentUser) socket.emit('read message', { room: currentRoom, id: msg._id || msg.id });
+}
+
+// ================= Reactions UI =================
+function addReactionUI(msgDiv, msg) {
+  const container = document.createElement('div');
+  container.className = 'reaction-container';
+
+  if (Array.isArray(msg.reactions)) {
+    msg.reactions.forEach(r => {
+      const span = document.createElement('span');
+      span.textContent = r.emoji;
+      span.title = r.user;
+      container.appendChild(span);
+    });
+  }
+
+  const reactBtn = document.createElement('button');
+  reactBtn.className = 'reaction-toggle';
+  reactBtn.textContent = '➕';
+  reactBtn.addEventListener('click', ev => {
+    ev.stopPropagation();
+    const picker = document.createElement('div');
+    picker.className = 'reaction-picker overlay';
+    const pool = Object.values(emojiData).flat();
+    pool.slice(0,30).forEach(item => {
+      const ch = item.char || item;
+      const b = document.createElement('button');
+      b.className = 'reaction-btn';
+      b.textContent = ch;
+      b.addEventListener('click', () => {
+        socket.emit('react message', { room: currentRoom, id: msg._id || msg.id, reaction: ch, username: currentUser });
+        picker.remove();
+      });
+      picker.appendChild(b);
+    });
+    document.addEventListener('click', function __closePicker(e) {
+      if (!picker.contains(e.target)) { picker.remove(); document.removeEventListener('click', __closePicker); }
+    });
+    container.appendChild(picker);
+  });
+  container.appendChild(reactBtn);
+  msgDiv.appendChild(container);
+}
+
+function updateReactionsUI(id, reactions) {
+  const container = document.querySelector(`.message[data-id='${id}'] .reaction-container`);
+  if (!container) return;
+  const toggle = container.querySelector('.reaction-toggle');
+  container.innerHTML = '';
+  if (Array.isArray(reactions)) {
+    reactions.forEach(r => {
+      const span = document.createElement('span');
+      span.textContent = r.emoji;
+      span.title = r.user;
+      container.appendChild(span);
+    });
+  }
+  if (toggle) container.appendChild(toggle);
+}
+
+// ================= Message controls (edit/delete/pin/star) =================
+function addMessageControls(msgDiv, msg) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'msg-menu-wrapper';
+
+  const btn = document.createElement('button');
+  btn.className = 'menu-btn';
+  btn.textContent = '⋮';
+
+  const menu = document.createElement('div');
+  menu.className = 'msg-menu';
+
+  // Delete
+  const del = document.createElement('button');
+  del.textContent = 'Delete';
+  del.addEventListener('click', () => {
+    if (confirm('Delete this message?')) {
+      socket.emit('delete message', { room: currentRoom, id: msg._id || msg.id });
+      const el = document.querySelector(`.message[data-id='${msg._id || msg.id}']`);
+      if (el) el.remove();
+    }
+  });
+  menu.appendChild(del);
+
+  // Edit
+  const edit = document.createElement('button');
+  edit.textContent = 'Edit';
+  edit.addEventListener('click', () => {
+    showModal({
+      title: 'Edit message',
+      placeholder: 'Edit your message…',
+      defaultValue: msg.text || '',
+      onConfirm: val => {
+        const sanitized = DOMPurify.sanitize(val);
+        socket.emit('edit message', { room: currentRoom, id: msg._id || msg.id, text: sanitized });
+        const el = document.querySelector(`.message[data-id='${msg._id || msg.id}'] .msg-text`);
+        if (el) el.textContent = ` ${sanitized}`;
+      }
+    });
+  });
+  menu.appendChild(edit);
+
+  // Pin/unpin
+  const pin = document.createElement('button');
+  pin.textContent = msg.pinned ? 'Unpin' : 'Pin';
+  pin.addEventListener('click', () => {
+    socket.emit(msg.pinned ? 'unpin message' : 'pin message', { room: currentRoom, id: msg._id || msg.id });
+  });
+  menu.appendChild(pin);
+
+  // Star/unstar
+  const star = document.createElement('button');
+  star.textContent = '⭐';
+  star.addEventListener('click', () => {
+    const starred = msg.starredBy?.includes(currentUser);
+    socket.emit(starred ? 'unstar message' : 'star message', { room: currentRoom, id: msg._id || msg.id, user: currentUser });
+  });
+  menu.appendChild(star);
+
+  wrapper.appendChild(btn);
+  wrapper.appendChild(menu);
+  btn.addEventListener('click', e => { e.stopPropagation(); menu.classList.toggle('show'); });
+
+  document.addEventListener('click', e => { if (!wrapper.contains(e.target)) menu.classList.remove('show'); });
+
+  const starredCount = document.createElement('span');
+  starredCount.className = 'star-count';
+  starredCount.textContent = msg.starredBy?.length ? ` (${msg.starredBy.length})` : '';
+  wrapper.appendChild(starredCount);
+
+  msgDiv.appendChild(wrapper);
+}
+
+// ================= Link preview =================
+async function handleLinkPreview(msgDiv, text) {
+  if (!text) return;
+  const urlRegex = /(\b(https?:\/\/)?(www\.)?[-a-zA-Z0-9@:%._+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_+.~#?&//=]*))/gi;
+  const matches = text.match(urlRegex);
+  if (!matches) return;
+  const seen = new Set();
+  for (const raw of matches) {
+    let url = raw;
+    if (!/^https?:\/\//i.test(url)) url = url.startsWith('www.') ? 'https://' + url : 'https://' + url;
+    if (seen.has(url)) continue;
+    seen.add(url);
+
+    if (linkPreviewCache.has(url)) { renderPreview(msgDiv, url, linkPreviewCache.get(url), raw); continue; }
+
+    try {
+      const res = await fetch(`/link-preview?url=${encodeURIComponent(url)}`);
+      const data = await res.json();
+      linkPreviewCache.set(url, data);
+      renderPreview(msgDiv, url, data, raw);
+    } catch(err) { console.warn('preview fetch failed', err); }
+  }
+}
+
+function renderPreview(msgDiv, url, data, rawUrl) {
+  if (!data || (!data.title && !data.image)) return;
+  const textSpan = msgDiv.querySelector('.msg-text');
+  if (textSpan) textSpan.textContent = textSpan.textContent.replace(rawUrl, '').trim();
+  const preview = document.createElement('div');
+  preview.className = 'link-preview';
+  if (data.image) {
+    const img = document.createElement('img');
+    img.src = data.image;
+    img.alt = data.title || url;
+    preview.appendChild(img);
+  }
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_blank';
+  a.textContent = data.title || url;
+  preview.appendChild(a);
+  msgDiv.appendChild(preview);
+}
+
+// ================= Typing indicator =================
 function updateTypingIndicator(users) {
-  const others = users.filter(u => u !== currentUser);
+  const others = (users || []).filter(u => u !== currentUser);
   if (others.length) {
     typingBubble.style.display = 'flex';
     typingBubble.innerHTML = `${others.join(', ')} <span class="dots">...</span>`;
   } else typingBubble.style.display = 'none';
 }
 
+// Animate dots
 setInterval(() => {
-  const dotsSpan = document.querySelector('#typing-bubble .dots');
-  if (dotsSpan) {
-    dotsSpan.textContent = dotsSpan.textContent.length < 3 ? dotsSpan.textContent + '.' : '.';
-  }
+  const dots = document.querySelector('#typing-bubble .dots');
+  if (dots) dots.textContent = dots.textContent.length < 3 ? dots.textContent + '.' : '.';
 }, 500);
 
-// ================= Part 3: Modal helpers, message controls (modal-based), reactions & pins =================
+// ================= Part 5: File uploads =================
+const fileInput = document.createElement('input');
+fileInput.type = 'file';
+fileInput.style.display = 'none';
+form.appendChild(fileInput);
 
-// ---------------- Modal / Overlay Helpers ----------------
-// Creates a single modal overlay in the DOM and returns helpers to show/hide it.
-// showModal(message) - shows a simple OK modal (returns Promise resolved when closed).
-// showPromptModal(title, initialText) - shows a prompt with input, returns Promise resolved with string or null.
+const attachBtn = document.createElement('button');
+attachBtn.type = 'button';
+attachBtn.textContent = '📎';
+attachBtn.title = 'Attach file';
+form.insertBefore(attachBtn, input);
 
-function ensureModal() {
-  if (document.getElementById('app-modal')) return;
+attachBtn.addEventListener('click', () => fileInput.click());
 
-  const overlay = document.createElement('div');
-  overlay.id = 'app-modal';
-  overlay.style.position = 'fixed';
-  overlay.style.top = 0;
-  overlay.style.left = 0;
-  overlay.style.width = '100%';
-  overlay.style.height = '100%';
-  overlay.style.display = 'none';
-  overlay.style.alignItems = 'center';
-  overlay.style.justifyContent = 'center';
-  overlay.style.zIndex = 9999;
-  overlay.style.background = 'rgba(0,0,0,0.5)';
+fileInput.addEventListener('change', async () => {
+  if (!fileInput.files.length) return;
+  await sendFile(fileInput.files[0]);
+  fileInput.value = '';
+});
 
-  const box = document.createElement('div');
-  box.id = 'app-modal-box';
-  box.style.minWidth = '300px';
-  box.style.maxWidth = '90%';
-  box.style.background = 'var(--card-bg, #fff)';
-  box.style.color = 'var(--text, #000)';
-  box.style.borderRadius = '8px';
-  box.style.padding = '16px';
-  box.style.boxShadow = '0 8px 24px rgba(0,0,0,0.3)';
-  box.style.display = 'flex';
-  box.style.flexDirection = 'column';
-  box.style.gap = '12px';
+chatContainer.addEventListener('dragover', e => e.preventDefault());
+chatContainer.addEventListener('drop', e => {
+  e.preventDefault();
+  if (!e.dataTransfer.files.length) return;
+  sendFile(e.dataTransfer.files[0]);
+});
 
-  overlay.appendChild(box);
-  document.body.appendChild(overlay);
+async function sendFile(file) {
+  const allowed = ['image/jpeg','image/png','image/gif','application/pdf','text/plain'];
+  if (!allowed.includes(file.type)) { alert('Unsupported file type.'); return; }
+
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch('/upload', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.url) throw new Error('upload failed');
+
+    const msg = {
+      room: currentRoom,
+      user: currentUser,
+      text: file.type.startsWith('image/') ? '' : DOMPurify.sanitize(file.name),
+      file: { url: data.url, name: data.name, type: data.type, size: data.size },
+      timestamp: new Date()
+    };
+    socket.emit('chat message', msg);
+  } catch (err) {
+    console.error('upload error', err);
+    alert('Upload failed');
+  }
 }
 
-function showModal(message) {
-  ensureModal();
-  return new Promise((resolve) => {
-    const overlay = document.getElementById('app-modal');
-    const box = overlay.querySelector('#app-modal-box');
-    box.innerHTML = '';
+// ================= Emoji picker =================
+const fallbackEmojis = {
+  "Faces": ["😀","😁","😂","🤣","😃","😅","😊","😇"],
+  "Gestures": ["👍","👎","👏","🙌","🤝"],
+  "Hearts": ["❤️","💛","💚","💙","💜"]
+};
 
-    const p = document.createElement('div');
-    p.textContent = message;
-    p.style.whiteSpace = 'pre-wrap';
-    box.appendChild(p);
-
-    const btnRow = document.createElement('div');
-    btnRow.style.display = 'flex';
-    btnRow.style.justifyContent = 'flex-end';
-
-    const ok = document.createElement('button');
-    ok.textContent = 'OK';
-    ok.addEventListener('click', () => {
-      overlay.style.display = 'none';
-      resolve();
-    });
-    btnRow.appendChild(ok);
-
-    box.appendChild(btnRow);
-
-    overlay.style.display = 'flex';
-    // focus first button
-    setTimeout(() => ok.focus(), 50);
-  });
+async function loadEmojis() {
+  try {
+    const res = await fetch('/emoji.json');
+    emojiData = await res.json();
+  } catch (err) { emojiData = fallbackEmojis; }
+  renderEmojiPicker();
 }
 
-function showPromptModal(title = 'Edit', initial = '') {
-  ensureModal();
-  return new Promise((resolve) => {
-    const overlay = document.getElementById('app-modal');
-    const box = overlay.querySelector('#app-modal-box');
-    box.innerHTML = '';
-
-    const h = document.createElement('h3');
-    h.textContent = title;
-    box.appendChild(h);
-
-    const ta = document.createElement('textarea');
-    ta.value = initial || '';
-    ta.rows = 4;
-    ta.style.width = '100%';
-    ta.style.resize = 'vertical';
-    box.appendChild(ta);
-
-    const row = document.createElement('div');
-    row.style.display = 'flex';
-    row.style.justifyContent = 'flex-end';
-    row.style.gap = '8px';
-
-    const cancel = document.createElement('button');
-    cancel.textContent = 'Cancel';
-    cancel.addEventListener('click', () => {
-      overlay.style.display = 'none';
-      resolve(null);
+function renderEmojiPicker() {
+  emojiPicker.innerHTML = '';
+  Object.entries(emojiData).forEach(([cat, arr]) => {
+    const catWrap = document.createElement('div');
+    catWrap.className = 'emoji-category';
+    arr.forEach(item => {
+      const ch = item.char || item;
+      const span = document.createElement('span');
+      span.textContent = ch;
+      span.title = item.name || '';
+      span.addEventListener('click', () => { input.value += ch; input.focus(); });
+      catWrap.appendChild(span);
     });
-
-    const save = document.createElement('button');
-    save.textContent = 'Save';
-    save.addEventListener('click', () => {
-      const val = ta.value.trim();
-      overlay.style.display = 'none';
-      resolve(val);
-    });
-
-    row.appendChild(cancel);
-    row.appendChild(save);
-    box.appendChild(row);
-
-    overlay.style.display = 'flex';
-    setTimeout(() => ta.focus(), 50);
+    emojiPicker.appendChild(catWrap);
   });
 }
 
-// ---------------- Updated addMessageControls (uses modal prompt) ----------------
-function addMessageControls(msgDiv, msg){
-  // If controls already added, skip
-  if (msgDiv.querySelector('.msg-menu-wrapper')) return;
+emojiBtn.addEventListener('click', () => emojiPicker.classList.toggle('show'));
+loadEmojis();
 
-  const wrapper = document.createElement('div');
-  wrapper.classList.add('msg-menu-wrapper');
-  const btn = document.createElement('button');
-  btn.classList.add('menu-btn');
-  btn.textContent = '⋮';
-  wrapper.appendChild(btn);
-
-  const menu = document.createElement('div');
-  menu.classList.add('msg-menu');
-
-  // Delete
-  const delBtn = document.createElement('button');
-  delBtn.textContent = 'Delete';
-  delBtn.addEventListener('click', ()=> {
-    // optimistic remove
-    msgDiv.remove();
-    socket.emit('delete message', { room: currentRoom, id: msg._id||msg.id });
+// ================= Quick emojis =================
+quickEmojis.forEach(b => {
+  b.addEventListener('click', () => {
+    input.value += b.textContent;
+    input.focus();
+    b.classList.add('pop');
+    setTimeout(() => b.classList.remove('pop'), 180);
   });
-  menu.appendChild(delBtn);
+});
 
-  // Edit (use modal prompt)
-  const editBtn = document.createElement('button');
-  editBtn.textContent = 'Edit';
-  editBtn.addEventListener('click', async () => {
-    const currentText = msg.text || '';
-    const newText = await showPromptModal('Edit your message', currentText);
-    if (newText === null) return; // cancelled
-    if (newText.trim() === currentText.trim()) return;
-    const sanitized = DOMPurify.sanitize(newText.trim());
-    const textSpan = msgDiv.querySelector('.msg-text');
-    if (textSpan) textSpan.textContent = ` ${sanitized}`;
-    socket.emit('edit message', { room: currentRoom, id: msg._id||msg.id, text: sanitized });
+// ================= Recent Rooms =================
+function saveRecentRoom(room) {
+  try {
+    const arr = JSON.parse(localStorage.getItem('recentRooms') || '[]');
+    if (!arr.includes(room)) arr.unshift(room);
+    while (arr.length > 6) arr.pop();
+    localStorage.setItem('recentRooms', JSON.stringify(arr));
+  } catch (e) { }
+}
+
+function loadRecentRooms() {
+  try {
+    roomListDiv.innerHTML = '';
+    const arr = JSON.parse(localStorage.getItem('recentRooms') || '[]');
+    arr.forEach(r => {
+      const btn = document.createElement('button');
+      btn.className = 'room-btn';
+      btn.textContent = r;
+      btn.addEventListener('click', () => { roomInput.value = r; joinBtn.click(); });
+      roomListDiv.appendChild(btn);
+    });
+  } catch (e) {}
+}
+
+loadRecentRooms();
+
+// ================= Pinned banner =================
+function addPinnedMessage(msg) {
+  const banner = document.getElementById('pinned-messages');
+  const list = document.getElementById('pinned-list');
+  if (!banner || !list) return;
+  banner.style.display = 'block';
+  if (document.querySelector(`#pinned-list li[data-id="${msg._id}"]`)) return;
+  const li = document.createElement('li');
+  li.dataset.id = msg._id;
+  li.textContent = `${msg.user}: ${String(msg.text || '').slice(0,60)}${(msg.text||'').length>60?'…':''}`;
+  li.addEventListener('click', () => {
+    const origin = document.querySelector(`.message[data-id="${msg._id}"]`);
+    if (origin) { origin.scrollIntoView({behavior:'smooth',block:'center'}); origin.classList.add('highlight'); setTimeout(()=>origin.classList.remove('highlight'),1500); }
   });
-  menu.appendChild(editBtn);
+  list.appendChild(li);
+}
 
-  // Pin
-  const pinBtn = document.createElement('button');
-  pinBtn.textContent = msg.pinned ? 'Unpin' : 'Pin';
-  pinBtn.addEventListener('click', () => {
-    socket.emit(msg.pinned ? 'unpin message' : 'pin message', { room: currentRoom, id: msg._id || msg.id });
+function removePinnedMessage(msg) {
+  const el = document.querySelector(`#pinned-list li[data-id="${msg._id}"]`);
+  if (el) el.remove();
+  const list = document.getElementById('pinned-list');
+  if (list && !list.children.length) {
+    const b = document.getElementById('pinned-messages');
+    if (b) b.style.display = 'none';
+  }
+}
+
+// ================= Home logo click =================
+if (homeLogo) {
+  homeLogo.addEventListener('click', () => {
+    chatContainer.style.display = 'none';
+    usernamePrompt.style.display = 'flex';
+    roomNameSpan.textContent = 'Room';
+    messages.innerHTML = '';
+    window.history.replaceState({}, '', window.location.origin);
   });
-  menu.appendChild(pinBtn);
+}
 
-  // Star
-  const starBtn = document.createElement('button');
-  starBtn.textContent = msg.starredBy && msg.starredBy.includes(currentUser) ? 'Unstar' : 'Star';
-  starBtn.addEventListener('click', () => {
-    if (msg.starredBy?.includes(currentUser)) {
-      socket.emit('unstar message', { room: currentRoom, id: msg._id||msg.id, user: currentUser });
-    } else {
-      socket.emit('star message', { room: currentRoom, id: msg._id||msg.id, user: currentUser });
+// ================= Cleanup on unload =================
+window.addEventListener('beforeunload', () => {
+  try { socket?.disconnect?.(); } catch(e) {}
+});
+
+// ================= Part 6: Search, scroll lock, infinite scroll, favicon =================
+
+// Favicon badge handling
+let unreadCount = 0;
+let originalFavicon = document.querySelector("link[rel~='icon']");
+if (!originalFavicon) {
+  originalFavicon = document.createElement('link');
+  originalFavicon.rel = 'icon';
+  originalFavicon.href = '/logo.png';
+  document.head.appendChild(originalFavicon);
+}
+const faviconCanvas = document.createElement('canvas');
+faviconCanvas.width = 32; faviconCanvas.height = 32;
+const faviconCtx = faviconCanvas.getContext('2d');
+
+function updateFaviconBadge(count) {
+  const img = new Image();
+  img.src = '/logo.png';
+  img.onload = () => {
+    faviconCtx.clearRect(0,0,32,32);
+    faviconCtx.drawImage(img, 0, 0, 32, 32);
+    if (count > 0) {
+      faviconCtx.fillStyle = '#d32f2f';
+      faviconCtx.beginPath();
+      faviconCtx.arc(24, 8, 8, 0, Math.PI*2);
+      faviconCtx.fill();
+      faviconCtx.fillStyle = '#fff';
+      faviconCtx.font = 'bold 10px sans-serif';
+      faviconCtx.textAlign = 'center';
+      faviconCtx.textBaseline = 'middle';
+      const text = count > 99 ? '99+' : String(count);
+      faviconCtx.fillText(text, 24, 8);
     }
-  });
-  menu.appendChild(starBtn);
-
-  wrapper.appendChild(menu);
-  btn.addEventListener('click', ()=> menu.classList.toggle('show'));
-  msgDiv.appendChild(wrapper);
+    originalFavicon.href = faviconCanvas.toDataURL('image/png');
+  };
 }
 
-// ---------------- Reaction updates UI (safe) ----------------
-function updateReactionsUI(id, reactions){
-  const container = document.querySelector(`.message[data-id='${id}'] .reaction-container`);
-  if(!container) return;
-  // remove non-reaction children safely (keep react button)
-  const reactBtn = container.querySelector('.reaction-toggle');
-  container.innerHTML = '';
-  if (reactBtn) container.appendChild(reactBtn);
+function incrementFavicon() { unreadCount++; updateFaviconBadge(unreadCount); }
+function resetFavicon() { unreadCount = 0; updateFaviconBadge(unreadCount); }
+window.addEventListener('focus', resetFavicon);
 
-  // insert reactions before reactBtn
-  reactions.forEach(r => {
-    const span = document.createElement('span');
-    span.textContent = r.emoji;
-    span.title = r.user;
-    container.insertBefore(span, reactBtn);
+// ---------------- Scroll lock ----------------
+if (scrollLockBtn) {
+  scrollLockBtn.style.display = 'inline-block';
+  const updateScrollLockUI = () => {
+    scrollLockBtn.textContent = scrollLocked ? '🔒 Auto-scroll OFF' : '🔓 Auto-scroll ON';
+  };
+  updateScrollLockUI();
+  scrollLockBtn.addEventListener('click', () => {
+    scrollLocked = !scrollLocked;
+    updateScrollLockUI();
   });
 }
 
-// ---------------- Pinned / Starred socket handlers (ensure UI present) ----------------
-socket?.on && socket.on('message pinned', msg => {
-  const div = document.querySelector(`.message[data-id='${msg._id}']`);
-  if (div) div.classList.add('pinned');
-  addPinnedMessage(msg);
-});
+// ---------------- Infinite scroll ----------------
+function onMessagesScroll() {
+  if (messages.scrollTop < 80 && !isLoadingHistory && !pendingHistoryRequest) {
+    isLoadingHistory = true;
+    currentPage++;
+    fetchHistoryPage(currentPage, false);
+  }
+}
+messages.addEventListener('scroll', onMessagesScroll);
 
-socket?.on && socket.on('message unpinned', msg => {
-  const div = document.querySelector(`.message[data-id='${msg._id}']`);
-  if (div) div.classList.remove('pinned');
-  removePinnedMessage(msg);
-});
+// ---------------- Search messages ----------------
+if (searchInput) {
+  searchInput.addEventListener('input', debounce(e => {
+    const q = e.target.value.trim();
+    if (!q || q.length < 2) {
+      messages.innerHTML = '';
+      currentPage = 1;
+      fetchHistoryPage(currentPage, true);
+      return;
+    }
+    socket.emit('search messages', { room: currentRoom, query: q });
+  }, 300));
+}
 
-socket?.on && socket.on('pinned messages', msgs => {
-  msgs.forEach(addPinnedMessage);
-});
+// ---------------- Debounce utility ----------------
+function debounce(fn, wait = 250) {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), wait);
+  };
+}
 
-socket?.on && socket.on('message starred', ({ id, starredBy }) => {
-  const div = document.querySelector(`.message[data-id='${id}']`);
-  if (!div) return;
-  const btn = div.querySelector('.menu-btn');
-  if (btn) btn.textContent = `⭐(${starredBy.length})`;
-});
-
-socket?.on && socket.on('message unstarred', ({ id, starredBy }) => {
-  const div = document.querySelector(`.message[data-id='${id}']`);
-  if (!div) return;
-  const btn = div.querySelector('.menu-btn');
-  if (btn) btn.textContent = starredBy.length ? `⭐(${starredBy.length})` : '⋮';
-});
-
+// ---------------- Fetch history ----------------
+function fetchHistoryPage(page = 1, replace = false) {
+  if (!socket || pendingHistoryRequest) return;
+  pendingHistoryRequest = true;
+  socket.emit('get history', { room: currentRoom, page, limit: PAGE_LIMIT });
+}

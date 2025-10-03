@@ -8,7 +8,6 @@
   <link rel="icon" href="/logo.png" type="image/png">
 
   <link rel="stylesheet" href="/chat.css">
-  <input id="search-input" placeholder="Search messages..." />
 </head>
 <body>
   <!-- Landing Page -->
@@ -21,35 +20,40 @@
     <button id="join-btn">Join Chat</button>
     <div id="room-list"></div>
   </div>
-<!-- Search Bar -->
-<div id="search-container" style="display:none; margin:5px;">
-  <input type="text" id="searchInput" placeholder="Search messages...">
-  <button id="searchBtn">Search</button>
-</div>
 
-<!-- Scroll Lock Toggle -->
-<button id="scrollLockBtn" style="display:none; margin:5px; padding:5px 10px;">
-  🔓 Auto-scroll ON
-</button>
+  <!-- Scroll Lock Toggle -->
+  <button id="scrollLockBtn" style="display:none; margin:5px; padding:5px 10px;">
+    🔓 Auto-scroll ON
+  </button>
 
   <!-- Chat Page -->
   <div id="chat-container" class="chat-page" style="display:none;">
     <header>
       <img src="/logo-light.png" alt="Home" id="home-logo" class="logo">
       <span class="logo-text">DizyChat</span>
+
       <div class="room-info">
         <span id="room-name">Room</span>
       </div>
-      <div>
+
+      <div class="header-controls">
+        <!-- Search Bar -->
+        <div id="search-container">
+          <input type="text" id="searchInput" placeholder="Search messages...">
+          <button id="searchBtn">Search</button>
+        </div>
+
+        <!-- Share & Theme Buttons -->
         <button id="share-btn" title="Share Room Link" aria-label="Share Room Link">🔗</button>
         <button id="toggle-theme" title="Toggle Dark/Light" aria-label="Toggle theme">🌙</button>
       </div>
     </header>
-	<!-- Pinned Messages Banner -->
-	<div id="pinned-messages" class="pinned-banner" style="display:none;">
-		<h4>Pinned</h4>
-		<ul id="pinned-list"></ul>
-	</div>
+
+    <!-- Pinned Messages Banner -->
+    <div id="pinned-messages" class="pinned-banner" style="display:none;">
+      <h4>Pinned</h4>
+      <ul id="pinned-list"></ul>
+    </div>
 
     <main id="messages" aria-live="polite"></main>
 
@@ -72,6 +76,15 @@
 
     <!-- Emoji Picker (outside form for layout stability) -->
     <div id="emoji-picker" class="emoji-picker" role="dialog" aria-modal="true"></div>
+  </div>
+
+  <!-- Modal Overlay -->
+  <div id="app-modal">
+    <div id="app-modal-box">
+      <h3>Modal Title</h3>
+      <textarea placeholder="Type something..."></textarea>
+      <button id="modal-close-btn">Close</button>
+    </div>
   </div>
 
   <!-- Scripts -->
