@@ -19,7 +19,7 @@ const roomNameSpan = document.getElementById('room-name');
 const homeLogo = document.getElementById('home-logo');
 const quickEmojis = document.querySelectorAll('#quick-emojis button');
 const roomListDiv = document.getElementById('room-list');
-const searchInput = document.getElementById('searchInput'); // header search
+const searchInput = document.getElementById('searchInput'); 
 const scrollLockBtn = document.getElementById('scrollLockBtn'); 
 
 // App state
@@ -213,7 +213,6 @@ if (scrollLockBtn) {
 // Search input visibility: hide on landing, show in chat header
 if (searchInput) searchInput.style.display = 'inline-block';
 
-
 // ================= Part 3: Socket.IO init & message handling =================
 
 function initChat() {
@@ -346,6 +345,7 @@ function onMessagesScroll() {
     fetchHistoryPage(currentPage, false);
   }
 }
+
 // ================= Part 4: Rendering messages & UI =================
 
 // Status icon helper
@@ -370,8 +370,11 @@ function displayMessage(msg, prepend = false) {
   // Meta
   const meta = document.createElement('div');
   meta.className = 'meta';
-  try { meta.textContent = `[${new Date(msg.timestamp).toLocaleTimeString()}] ${msg.user}`; }
-  catch(e) { meta.textContent = msg.user; }
+  try { 
+    meta.textContent = `[${new Date(msg.timestamp).toLocaleTimeString()}] ${msg.user}`; 
+  } catch(e) { 
+    meta.textContent = msg.user; 
+  }
   div.appendChild(meta);
 
   // Text
@@ -564,7 +567,10 @@ function addMessageControls(msgDiv, msg) {
   msgDiv.appendChild(wrapper);
 }
 
+// ================= Part 5 – Link Previews & Typing Indicator Link preview =================
+
 // ================= Link preview =================
+
 async function handleLinkPreview(msgDiv, text) {
   if (!text) return;
   const urlRegex = /(\b(https?:\/\/)?(www\.)?[-a-zA-Z0-9@:%._+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_+.~#?&//=]*))/gi;
@@ -577,14 +583,19 @@ async function handleLinkPreview(msgDiv, text) {
     if (seen.has(url)) continue;
     seen.add(url);
 
-    if (linkPreviewCache.has(url)) { renderPreview(msgDiv, url, linkPreviewCache.get(url), raw); continue; }
+    if (linkPreviewCache.has(url)) { 
+      renderPreview(msgDiv, url, linkPreviewCache.get(url), raw); 
+      continue; 
+    }
 
     try {
       const res = await fetch(`/link-preview?url=${encodeURIComponent(url)}`);
       const data = await res.json();
       linkPreviewCache.set(url, data);
       renderPreview(msgDiv, url, data, raw);
-    } catch(err) { console.warn('preview fetch failed', err); }
+    } catch(err) { 
+      console.warn('preview fetch failed', err); 
+    }
   }
 }
 
@@ -617,13 +628,13 @@ function updateTypingIndicator(users) {
   } else typingBubble.style.display = 'none';
 }
 
-// Animate dots
+// Animate dots in typing indicator
 setInterval(() => {
   const dots = document.querySelector('#typing-bubble .dots');
   if (dots) dots.textContent = dots.textContent.length < 3 ? dots.textContent + '.' : '.';
 }, 500);
 
-// ================= Part 5: File uploads =================
+// ================= Part 6: File uploads =================
 const fileInput = document.createElement('input');
 fileInput.type = 'file';
 fileInput.style.display = 'none';
@@ -686,7 +697,9 @@ async function loadEmojis() {
   try {
     const res = await fetch('/emoji.json');
     emojiData = await res.json();
-  } catch (err) { emojiData = fallbackEmojis; }
+  } catch (err) { 
+    emojiData = fallbackEmojis; 
+  }
   renderEmojiPicker();
 }
 
@@ -746,19 +759,24 @@ function loadRecentRooms() {
 
 loadRecentRooms();
 
-// ================= Pinned banner =================
+// ================= Part 7: Pinned banner =================
 function addPinnedMessage(msg) {
   const banner = document.getElementById('pinned-messages');
   const list = document.getElementById('pinned-list');
   if (!banner || !list) return;
   banner.style.display = 'block';
   if (document.querySelector(`#pinned-list li[data-id="${msg._id}"]`)) return;
+
   const li = document.createElement('li');
   li.dataset.id = msg._id;
   li.textContent = `${msg.user}: ${String(msg.text || '').slice(0,60)}${(msg.text||'').length>60?'…':''}`;
   li.addEventListener('click', () => {
     const origin = document.querySelector(`.message[data-id="${msg._id}"]`);
-    if (origin) { origin.scrollIntoView({behavior:'smooth',block:'center'}); origin.classList.add('highlight'); setTimeout(()=>origin.classList.remove('highlight'),1500); }
+    if (origin) { 
+      origin.scrollIntoView({behavior:'smooth',block:'center'}); 
+      origin.classList.add('highlight'); 
+      setTimeout(()=>origin.classList.remove('highlight'),1500); 
+    }
   });
   list.appendChild(li);
 }
@@ -788,97 +806,3 @@ if (homeLogo) {
 window.addEventListener('beforeunload', () => {
   try { socket?.disconnect?.(); } catch(e) {}
 });
-
-// ================= Part 6: Search, scroll lock, infinite scroll, favicon =================
-
-// Favicon badge handling
-let unreadCount = 0;
-let originalFavicon = document.querySelector("link[rel~='icon']");
-if (!originalFavicon) {
-  originalFavicon = document.createElement('link');
-  originalFavicon.rel = 'icon';
-  originalFavicon.href = '/logo.png';
-  document.head.appendChild(originalFavicon);
-}
-const faviconCanvas = document.createElement('canvas');
-faviconCanvas.width = 32; faviconCanvas.height = 32;
-const faviconCtx = faviconCanvas.getContext('2d');
-
-function updateFaviconBadge(count) {
-  const img = new Image();
-  img.src = '/logo.png';
-  img.onload = () => {
-    faviconCtx.clearRect(0,0,32,32);
-    faviconCtx.drawImage(img, 0, 0, 32, 32);
-    if (count > 0) {
-      faviconCtx.fillStyle = '#d32f2f';
-      faviconCtx.beginPath();
-      faviconCtx.arc(24, 8, 8, 0, Math.PI*2);
-      faviconCtx.fill();
-      faviconCtx.fillStyle = '#fff';
-      faviconCtx.font = 'bold 10px sans-serif';
-      faviconCtx.textAlign = 'center';
-      faviconCtx.textBaseline = 'middle';
-      const text = count > 99 ? '99+' : String(count);
-      faviconCtx.fillText(text, 24, 8);
-    }
-    originalFavicon.href = faviconCanvas.toDataURL('image/png');
-  };
-}
-
-function incrementFavicon() { unreadCount++; updateFaviconBadge(unreadCount); }
-function resetFavicon() { unreadCount = 0; updateFaviconBadge(unreadCount); }
-window.addEventListener('focus', resetFavicon);
-
-// ---------------- Scroll lock ----------------
-if (scrollLockBtn) {
-  scrollLockBtn.style.display = 'inline-block';
-  const updateScrollLockUI = () => {
-    scrollLockBtn.textContent = scrollLocked ? '🔒 Auto-scroll OFF' : '🔓 Auto-scroll ON';
-  };
-  updateScrollLockUI();
-  scrollLockBtn.addEventListener('click', () => {
-    scrollLocked = !scrollLocked;
-    updateScrollLockUI();
-  });
-}
-
-// ---------------- Infinite scroll ----------------
-function onMessagesScroll() {
-  if (messages.scrollTop < 80 && !isLoadingHistory && !pendingHistoryRequest) {
-    isLoadingHistory = true;
-    currentPage++;
-    fetchHistoryPage(currentPage, false);
-  }
-}
-messages.addEventListener('scroll', onMessagesScroll);
-
-// ---------------- Search messages ----------------
-if (searchInput) {
-  searchInput.addEventListener('input', debounce(e => {
-    const q = e.target.value.trim();
-    if (!q || q.length < 2) {
-      messages.innerHTML = '';
-      currentPage = 1;
-      fetchHistoryPage(currentPage, true);
-      return;
-    }
-    socket.emit('search messages', { room: currentRoom, query: q });
-  }, 300));
-}
-
-// ---------------- Debounce utility ----------------
-function debounce(fn, wait = 250) {
-  let t;
-  return (...args) => {
-    clearTimeout(t);
-    t = setTimeout(() => fn(...args), wait);
-  };
-}
-
-// ---------------- Fetch history ----------------
-function fetchHistoryPage(page = 1, replace = false) {
-  if (!socket || pendingHistoryRequest) return;
-  pendingHistoryRequest = true;
-  socket.emit('get history', { room: currentRoom, page, limit: PAGE_LIMIT });
-}

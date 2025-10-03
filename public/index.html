@@ -29,14 +29,15 @@
   <!-- Chat Page -->
   <div id="chat-container" class="chat-page" style="display:none;">
     <header>
-      <img src="/logo-light.png" alt="Home" id="home-logo" class="logo">
-      <span class="logo-text">DizyChat</span>
-
-      <div class="room-info">
-        <span id="room-name">Room</span>
+      <div class="header-left">
+        <img src="/logo.png" alt="Home" id="home-logo" class="logo">
+        <span class="logo-text">DizyChat</span>
+        <div class="room-info">
+          <span id="room-name">Room</span>
+        </div>
       </div>
 
-      <div class="header-controls">
+      <div class="header-right">
         <!-- Search Bar -->
         <div id="search-container">
           <input type="text" id="searchInput" placeholder="Search messages...">
@@ -74,12 +75,12 @@
       </div>
     </form>
 
-    <!-- Emoji Picker (outside form for layout stability) -->
+    <!-- Emoji Picker -->
     <div id="emoji-picker" class="emoji-picker" role="dialog" aria-modal="true"></div>
   </div>
 
-  <!-- Modal Overlay -->
-  <div id="app-modal">
+  <!-- Modal Overlay (hidden by default) -->
+  <div id="app-modal" style="display:none;">
     <div id="app-modal-box">
       <h3>Modal Title</h3>
       <textarea placeholder="Type something..."></textarea>
@@ -89,7 +90,6 @@
 
   <!-- Scripts -->
   <script src="/socket.io/socket.io.js"></script>
-  <!-- ✅ DOMPurify for strong XSS protection -->
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
   <script src="/chat.js"></script>
   <canvas id="favicon-canvas" width="32" height="32" style="display:none;"></canvas>
