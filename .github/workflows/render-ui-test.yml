@@ -7,24 +7,24 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy-and-screenshot:
+  deploy-and-ui-test:
     runs-on: ubuntu-latest
     steps:
-      # 1. Checkout code
+      # 1️⃣ Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # 2. Setup Node.js
+      # 2️⃣ Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 22
 
-      # 3. Install dependencies
+      # 3️⃣ Install dependencies
       - name: Install dependencies
         run: npm ci
 
-      # 4. Deploy to Render
+      # 4️⃣ Deploy to Render
       - name: Deploy to Render
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
@@ -33,27 +33,26 @@ jobs:
           curl -X POST "https://api.render.com/deploy/srv-${SERVICE_ID}" \
                -H "Authorization: Bearer ${RENDER_API_KEY}"
 
-      # 4.5 Wait for Render deployment (dynamic) with HTTP status logging
+      # 4.5 Wait for Render deployment
       - name: Wait for Render deployment
-        id: wait
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
         run: |
           echo "⏱️ Waiting for Render deployment to become live..."
           START_TIME=$(date +%s)
-          MAX_WAIT=300  # 5 minutes max
-
+          MAX_WAIT=300
+          
           while true; do
             SERVICE_INFO=$(curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
               "https://api.render.com/v1/services/$SERVICE_ID")
+            
             URL=$(echo "$SERVICE_INFO" | jq -r '.serviceDetails.url')
             HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL" || echo "000")
-
+            
             if [ -n "$URL" ] && [ "$HTTP_STATUS" -eq 200 ]; then
               ELAPSED=$(( $(date +%s) - START_TIME ))
               echo "✅ Render deployment is live at $URL (took ${ELAPSED}s, HTTP $HTTP_STATUS)"
-              echo "::set-output name=URL::$URL"
               break
             fi
 
@@ -68,7 +67,7 @@ jobs:
             sleep 5
           done
 
-      # 5. Start local server for screenshot
+      # 5️⃣ Start local server
       - name: Start local server
         env:
           MONGO_URI: ${{ secrets.MONGO_URI }}
@@ -81,102 +80,64 @@ jobs:
           done
           echo "Server should be ready on port 10000"
 
-      # 6. Run Playwright full UI tests (screenshots, video, annotations)
-      - name: Run Playwright UI tests
-        continue-on-error: true
-        env:
-          RENDER_URL: ${{ steps.wait.outputs.URL || 'https://dizychat-server.onrender.com' }}
+      # 6️⃣ Puppeteer fallback screenshot
+      - name: Take Puppeteer screenshot of TEST room
         run: |
-          npm install -D playwright
+          npm install puppeteer
           node -e "
-          import { chromium } from 'playwright';
-          import fs from 'fs';
-          import path from 'path';
-
-          const ARTIFACTS_DIR = './artifacts';
-          if (!fs.existsSync(ARTIFACTS_DIR)) fs.mkdirSync(ARTIFACTS_DIR, { recursive: true });
+          const puppeteer = require('puppeteer');
           const wait = ms => new Promise(r => setTimeout(r, ms));
-
-          async function waitForServer(url, timeout=60000) {
-            const start = Date.now();
-            while ((Date.now() - start) < timeout) {
-              try {
-                const res = await fetch(url);
-                if (res.ok) return true;
-              } catch {}
-              await wait(1000);
-            }
-            throw new Error('Server did not respond in time: ' + url);
-          }
-
-          async function runTest(site, label) {
-            console.log(`🌐 Testing ${label} at ${site}`);
-            await waitForServer(site);
-
-            const browser = await chromium.launch({ headless: true });
-            const context = await browser.newContext({ 
-              recordVideo: { dir: ARTIFACTS_DIR, size: { width: 1280, height: 720 } } 
-            });
-            const page = await context.newPage();
-
-            try {
-              await page.goto(site, { waitUntil: 'domcontentloaded' });
-              await page.waitForSelector('#join-btn');
-              console.log('✅ Join button loaded');
-
-              await page.fill('#username-input', 'TesterBot');
-              await page.fill('#room-input', 'AutoTestRoom');
-
-              await Promise.all([
-                page.click('#join-btn'),
-                page.waitForSelector('#chat-container', { timeout: 10000 }),
-              ]);
-              console.log('✅ Joined chat');
-
-              await page.click('#toggle-theme');
-              await page.click('#emoji-btn');
-              await page.waitForSelector('#emoji-picker.show');
-
-              await page.fill('#input', 'Test message from automated check 🤖');
-              await page.click('#form button[type=submit]');
-              await page.waitForTimeout(2000);
-
-              const count = await page.locator('#messages .message.self').count();
-              if (count === 0) {
-                console.log(`::error file=render-interaction-test.js,title=${label} UI Test failed,message=Message not visible in chat`);
-                throw new Error('Message not visible in chat');
-              }
-              console.log('✅ Message sent and visible');
-
-              const screenshotPath = path.join(ARTIFACTS_DIR, `${label}_screenshot.png`);
-              await page.screenshot({ path: screenshotPath, fullPage: true });
-              console.log(`📸 Screenshot saved: ${screenshotPath}`);
-
-              await context.close();
-              const videoFiles = fs.readdirSync(ARTIFACTS_DIR).filter(f => f.endsWith('.webm'));
-              videoFiles.forEach(f => console.log(`🎥 Video saved: ${f}`));
-
-            } catch (err) {
-              const errorScreenshot = path.join(ARTIFACTS_DIR, `${label}_error.png`);
-              await page.screenshot({ path: errorScreenshot, fullPage: true });
-              console.log(`::error file=render-interaction-test.js,title=${label} UI Test failed,message=${err.message}`);
-              await context.close();
-              await browser.close();
-              throw err;
-            } finally {
-              await browser.close();
-            }
-          }
-
+          const path = require('path');
+          const ts = new Date().toISOString().replace(/[:.]/g,'-');
           (async () => {
-            await runTest('http://localhost:10000', 'local');
-            await runTest(process.env.RENDER_URL, 'render');
+            const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
+            const page = await browser.newPage();
+            const url = 'http://localhost:10000/?room=TEST';
+            
+            let retries = 60;
+            while (retries > 0) {
+              try {
+                await page.goto(url, { waitUntil: 'networkidle2', timeout: 3000 });
+                break;
+              } catch (err) {
+                retries--;
+                console.log('Waiting for server to start...', 60 - retries, 'seconds elapsed');
+                await wait(1000);
+                if (retries === 0) throw new Error('Server failed to respond in time');
+              }
+            }
+
+            await page.waitForSelector('#messages', { timeout: 10000 });
+            await wait(1000);
+            const screenshotPath = path.join(process.cwd(), `room-screenshot-${ts}.png`);
+            await page.screenshot({ path: screenshotPath });
+            await browser.close();
+            console.log('Screenshot saved:', screenshotPath);
           })();
           "
 
-      # 7. Upload artifacts (screenshots + videos)
-      - name: Upload artifacts
+      # 7️⃣ Upload Puppeteer screenshot
+      - name: Upload Puppeteer screenshot
         uses: actions/upload-artifact@v4
         with:
-          name: render-ui-test-artifacts
-          path: artifacts/
+          name: room-screenshot
+          path: room-screenshot-*.png
+
+      # 8️⃣ Install Playwright
+      - name: Install Playwright
+        run: |
+          npm install -D playwright
+          npx playwright install
+
+      # 9️⃣ Run Playwright UI Test
+      - name: Run Playwright UI Test
+        run: node render-interaction.test.js
+
+      # 🔟 Upload Playwright screenshots and videos
+      - name: Upload Playwright artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            render_test_screenshot-*.png
+            playwright_videos/
