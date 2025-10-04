@@ -33,56 +33,49 @@ jobs:
           curl -X POST "https://api.render.com/deploy/srv-${SERVICE_ID}" \
                -H "Authorization: Bearer ${RENDER_API_KEY}"
 
-      # 4.5 Calculate average deploy duration from last 3 successful deploys
-      - name: Calculate average deploy duration
+      # 4.5 Wait for Render deployment and fetch live URL
+      - name: Wait for Render deployment and fetch URL
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
         run: |
-          echo "⏱️ Calculating average deploy duration from last 3 successful Render deploys..."
-          DURATIONS=$(curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
-            "https://api.render.com/v1/services/$SERVICE_ID/deploys?limit=3" | \
-            jq -r '[.[] | select(.state=="success") | (.endedAt|fromdateiso8601)-(.startedAt|fromdateiso8601)]')
-          if [ -z "$DURATIONS" ] || [ "$DURATIONS" = "[]" ]; then
-            echo "⚠️ No successful deploys found, defaulting wait to 60s"
-            AVG_DURATION=60
-          else
-            AVG_DURATION=$(echo "$DURATIONS" | jq 'add / length')
-          fi
-          echo "Average deploy duration (last 3 successful): $AVG_DURATION seconds"
-          echo "WAIT_DURATION=$AVG_DURATION" >> $GITHUB_ENV
-
-      # 5. Wait for Render deployment to be live
-      - name: Wait for Render deployment
-        env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
-          WAIT_DURATION: ${{ env.WAIT_DURATION }}
-        run: |
-          echo "⏱️ Waiting up to $WAIT_DURATION seconds for Render deployment to become live..."
-          RETRIES=$((WAIT_DURATION / 5))
-          while [ $RETRIES -gt 0 ]; do
-            STATUS=$(curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
-              "https://api.render.com/v1/services/$SERVICE_ID" | jq -r '.service.live')
+          echo "⏱️ Waiting for Render deployment to finish..."
+          MAX_WAIT=180
+          INTERVAL=5
+          ELAPSED=0
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            RESPONSE=$(curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
+              "https://api.render.com/v1/services/$SERVICE_ID")
+            STATUS=$(echo "$RESPONSE" | jq -r '.service.live')
+            echo "Deployment status: $STATUS, elapsed: ${ELAPSED}s"
             if [ "$STATUS" = "true" ]; then
               echo "✅ Render deployment is live!"
               break
             fi
-            RETRIES=$((RETRIES-1))
-            echo "Deployment not live yet, retrying... $(($WAIT_DURATION - RETRIES*5))s elapsed"
-            sleep 5
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
           done
+
           if [ "$STATUS" != "true" ]; then
-            echo "❌ Render deployment did not become live in time"
+            echo "❌ Render deployment did not become live within $MAX_WAIT seconds"
+            echo "Debug: Service info from API:"
+            echo "$RESPONSE" | jq .
             exit 1
           fi
 
-      # 6. Start local server for screenshot
+          # Fetch and log the exact live URL
+          RENDER_URL=$(echo "$RESPONSE" | jq -r '.service.liveUrl')
+          echo "🌐 Render live URL: $RENDER_URL"
+
+          # Export it for later steps
+          echo "RENDER_URL=$RENDER_URL" >> $GITHUB_ENV
+
+      # 5. Start local server for screenshot
       - name: Start local server
         env:
           MONGO_URI: ${{ secrets.MONGO_URI }}
         run: |
-          npm run start &
+          npm run start & 
           echo "Waiting up to 60s for server to be ready on port 10000..."
           for i in {1..60}; do
             nc -z localhost 10000 && break
@@ -90,17 +83,20 @@ jobs:
           done
           echo "Server should be ready on port 10000"
 
-      # 7. Take screenshot of TEST room
+      # 6. Take screenshot of TEST room
       - name: Take screenshot of TEST room
+        env:
+          RENDER_URL: ${{ env.RENDER_URL }}
         run: |
           npm install puppeteer
           node -e "
           const puppeteer = require('puppeteer');
           const wait = ms => new Promise(r => setTimeout(r, ms));
+
           (async () => {
             const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
             const page = await browser.newPage();
-            const url = 'http://localhost:10000/?room=TEST';
+            const url = process.env.RENDER_URL + '/?room=TEST';
             
             let retries = 60;
             while (retries > 0) {
@@ -123,7 +119,7 @@ jobs:
           })();
           "
 
-      # 8. Upload screenshot artifact
+      # 7. Upload screenshot artifact
       - name: Upload screenshot
         uses: actions/upload-artifact@v4
         with:
