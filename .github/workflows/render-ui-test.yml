@@ -24,10 +24,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-
-
-      # 5. Deploy to Render
+      # 4. Deploy to Render
       - name: Deploy to Render
+        id: deploy
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
@@ -35,11 +34,30 @@ jobs:
           curl -X POST "https://api.render.com/deploy/srv-${SERVICE_ID}" \
                -H "Authorization: Bearer ${RENDER_API_KEY}"
 
+      # 5. Get Render service info and port
+      - name: Get Render service port
+        id: get-port
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+        run: |
+          echo "Fetching Render service info..."
+          SERVICE_JSON=$(curl -s -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            "https://api.render.com/v1/services/${SERVICE_ID}")
+          PORT=$(echo "$SERVICE_JSON" | jq -r '.service.envVars[] | select(.key=="PORT") | .value')
+          echo "Render port is $PORT"
+          echo "PORT=$PORT" >> $GITHUB_ENV
+
       # 6. Start local server for screenshot
       - name: Start local server
         run: |
           npm run start &
-          sleep 5
+          echo "Waiting up to 50s for server to be ready..."
+          for i in {1..50}; do
+            nc -z localhost $PORT && break
+            sleep 1
+          done
+          echo "Server should be ready on port $PORT"
 
       # 7. Take screenshot of TEST room
       - name: Take screenshot of TEST room
@@ -47,10 +65,27 @@ jobs:
           npm install puppeteer
           node -e "
           const puppeteer = require('puppeteer');
+          const port = process.env.PORT || 3000;
+          const wait = ms => new Promise(r => setTimeout(r, ms));
+
           (async () => {
             const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
             const page = await browser.newPage();
-            await page.goto('http://localhost:3000/?room=TEST', { waitUntil: 'networkidle2' });
+            const url = `http://localhost:${port}/?room=TEST`;
+            
+            let retries = 60;
+            while (retries > 0) {
+              try {
+                await page.goto(url, { waitUntil: 'networkidle2', timeout: 3000 });
+                break;
+              } catch (err) {
+                retries--;
+                console.log('Waiting for server to start...', 60 - retries, 'seconds elapsed');
+                await wait(1000);
+                if (retries === 0) throw err;
+              }
+            }
+
             await page.waitForSelector('#messages', { timeout: 10000 });
             await page.waitForTimeout(1000);
             await page.screenshot({ path: 'room-screenshot.png' });
