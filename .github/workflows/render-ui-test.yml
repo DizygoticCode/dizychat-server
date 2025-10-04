@@ -90,17 +90,17 @@ jobs:
           echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
           echo "🕒 Run timestamp: $TIMESTAMP"
 
-      # 7️⃣ Puppeteer screenshot
-      - name: Puppeteer screenshot
-        run: |
-          npm install puppeteer
-          node tests/render-interaction.test.js --puppeteer
-
-      # 8️⃣ Install Playwright
+      # 7️⃣ Install Playwright BEFORE running tests
       - name: Install Playwright
         run: |
           npm install -D playwright
           npx playwright install
+
+      # 8️⃣ Puppeteer screenshot
+      - name: Puppeteer screenshot
+        run: |
+          npm install puppeteer
+          node tests/render-interaction.test.js --puppeteer
 
       # 9️⃣ Run Playwright UI Test
       - name: Run Playwright UI Test
