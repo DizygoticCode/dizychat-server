@@ -12,7 +12,7 @@ if (!fs.existsSync(VIDEO_DIR)) fs.mkdirSync(VIDEO_DIR, { recursive: true });
 // Use the same timestamp as the workflow if available
 const TIMESTAMP = process.env.TIMESTAMP || Date.now();
 
-// ✅ Main Playwright UI test with robust chat detection
+// ✅ Main Playwright UI test with robust element handling
 async function runPlaywrightTest() {
   console.log(`🌐 Launching Playwright browser to test ${SITE}`);
 
@@ -54,9 +54,45 @@ async function runPlaywrightTest() {
     }
     if (!chatVisible) throw new Error("❌ #chat-container never became visible");
 
+    // 🔁 Robust handling for #toggle-theme
+    let toggleVisible = false;
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        const toggle = await page.waitForSelector('#toggle-theme', { timeout: 2000 });
+        if (toggle) {
+          await page.evaluate(el => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), toggle);
+          toggleVisible = true;
+          console.log(`✅ #toggle-theme visible on attempt ${i + 1}`);
+          break;
+        }
+      } catch {
+        console.warn(`⚠️ #toggle-theme not visible yet, retry ${i + 1}/${maxRetries}`);
+        await page.waitForTimeout(500);
+      }
+    }
+    if (!toggleVisible) throw new Error("❌ #toggle-theme never became visible");
     await page.click('#toggle-theme');
+
+    // 🔁 Robust handling for #emoji-btn
+    let emojiVisible = false;
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        const emojiBtn = await page.waitForSelector('#emoji-btn', { timeout: 2000 });
+        if (emojiBtn) {
+          await page.evaluate(el => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), emojiBtn);
+          emojiVisible = true;
+          console.log(`✅ #emoji-btn visible on attempt ${i + 1}`);
+          break;
+        }
+      } catch {
+        console.warn(`⚠️ #emoji-btn not visible yet, retry ${i + 1}/${maxRetries}`);
+        await page.waitForTimeout(500);
+      }
+    }
+    if (!emojiVisible) throw new Error("❌ #emoji-btn never became visible");
     await page.click('#emoji-btn');
     await page.waitForSelector('#emoji-picker.show', { timeout: 10000 });
+
     await page.fill('#input', 'Test message from automated check 🤖');
     await page.click('#form button[type=submit]');
     await page.waitForTimeout(2000);
