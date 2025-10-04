@@ -1,0 +1,69 @@
+name: Deploy & Screenshot DizyChat Render UI Health Check
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy-and-screenshot:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Checkout code
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # 2. Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+
+      # 3. Install dependencies
+      - name: Install dependencies
+        run: npm ci
+
+      # 4. Build project (if applicable)
+      - name: Build project
+        run: npm run build
+
+      # 5. Deploy to Render
+      - name: Deploy to Render
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+        run: |
+          curl -X POST "https://api.render.com/deploy/srv-${SERVICE_ID}" \
+               -H "Authorization: Bearer ${RENDER_API_KEY}"
+
+      # 6. Start local server for screenshot
+      - name: Start local server
+        run: |
+          npm run start &
+          sleep 5
+
+      # 7. Take screenshot of TEST room
+      - name: Take screenshot of TEST room
+        run: |
+          npm install puppeteer
+          node -e "
+          const puppeteer = require('puppeteer');
+          (async () => {
+            const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
+            const page = await browser.newPage();
+            await page.goto('http://localhost:3000/?room=TEST', { waitUntil: 'networkidle2' });
+            await page.waitForSelector('#messages', { timeout: 10000 });
+            await page.waitForTimeout(1000);
+            await page.screenshot({ path: 'room-screenshot.png' });
+            await browser.close();
+            console.log('Screenshot saved: room-screenshot.png');
+          })();
+          "
+
+      # 8. Upload screenshot artifact
+      - name: Upload screenshot
+        uses: actions/upload-artifact@v3
+        with:
+          name: room-screenshot
+          path: room-screenshot.png

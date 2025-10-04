@@ -19,8 +19,8 @@ const roomNameSpan = document.getElementById('room-name');
 const homeLogo = document.getElementById('home-logo');
 const quickEmojis = document.querySelectorAll('#quick-emojis button');
 const roomListDiv = document.getElementById('room-list');
-const searchInput = document.getElementById('searchInput'); 
-const scrollLockBtn = document.getElementById('scrollLockBtn'); 
+const searchInput = document.getElementById('searchInput');
+const scrollLockBtn = document.getElementById('scrollLockBtn');
 
 // App state
 let currentUser = '';
@@ -213,152 +213,63 @@ if (scrollLockBtn) {
 // Search input visibility: hide on landing, show in chat header
 if (searchInput) searchInput.style.display = 'inline-block';
 
-// ================= Part 3: Socket.IO init & message handling =================
+// ================= Part 2: Socket.IO + Message Handling =================
 
 function initChat() {
-  if (socket) socket.close?.();
-  socket = io(window.location.origin);
-
-  socket.emit('join room', { room: currentRoom, password: roomPassword });
-
-  // Get first page of history
-  currentPage = 1;
-  fetchHistoryPage(currentPage, true);
-
-  // INPUT typing
-  input.addEventListener('input', () => {
-    socket.emit('typing', currentUser);
-    clearTimeout(typingTimeout);
-    typingTimeout = setTimeout(() => socket.emit('stop typing', currentUser), 1000);
+  socket = io({
+    query: { room: currentRoom, username: currentUser, password: roomPassword }
   });
 
-  // Submit message
-  form.addEventListener('submit', e => {
-    e.preventDefault();
-    if (!input.value.trim()) return;
-    const sanitizedText = DOMPurify.sanitize(input.value.trim());
-    const msgData = { room: currentRoom, user: currentUser, text: sanitizedText, timestamp: new Date() };
-    socket.emit('chat message', msgData);
-    input.value = '';
-    input.focus();
+  // --- socket events ---
+  socket.on('connect', () => {
+    console.log('Connected to server');
+    loadRecentRooms();
   });
 
-  // socket events
-  socket.on('chat message', msg => {
+  socket.on('disconnect', () => {
+    console.log('Disconnected from server');
+  });
+
+  socket.on('chat message', (msg) => {
     displayMessage(msg);
-    if (document.hidden && msg.user !== currentUser) incrementFavicon();
+    if (document.hidden) incrementFavicon();
   });
 
-  socket.on('room history', msgs => {
-    if (!Array.isArray(msgs) || !msgs.length) {
-      isLoadingHistory = false;
-      pendingHistoryRequest = false;
-      return;
-    }
-    const prevScrollHeight = messages.scrollHeight;
-    msgs.reverse().forEach(m => displayMessage(m, true));
-    const newScrollHeight = messages.scrollHeight;
-    messages.scrollTop = newScrollHeight - prevScrollHeight;
-    isLoadingHistory = false;
-    pendingHistoryRequest = false;
-  });
-
-  socket.on('search results', msgs => {
-    messages.innerHTML = '';
-    msgs.forEach(m => displayMessage(m));
-  });
-
-  socket.on('typing', users => updateTypingIndicator(users));
-  socket.on('message status', ({ id, status }) => {
-    const s = document.querySelector(`.message[data-id='${id}'] .status`);
-    if (s) s.textContent = statusIcon(status);
-  });
-  socket.on('update reactions', ({ id, reactions }) => updateReactionsUI(id, reactions));
-  socket.on('edit message', ({ id, text }) => {
-    const ts = document.querySelector(`.message[data-id='${id}'] .msg-text`);
-    if (ts) ts.textContent = ` ${DOMPurify.sanitize(text)}`;
-  });
-  socket.on('delete message', id => {
-    const el = document.querySelector(`.message[data-id='${id}']`);
-    if (el) el.remove();
-  });
-  socket.on('message pinned', msg => {
-    const el = document.querySelector(`.message[data-id='${msg._id}']`);
-    if (el) el.classList.add('pinned');
-    addPinnedMessage(msg);
-  });
-  socket.on('message unpinned', msg => {
-    const el = document.querySelector(`.message[data-id='${msg._id}']`);
-    if (el) el.classList.remove('pinned');
-    removePinnedMessage(msg);
-  });
-  socket.on('pinned messages', msgs => msgs.forEach(addPinnedMessage));
-  socket.on('message starred', ({ id, starredBy }) => {
-    const el = document.querySelector(`.message[data-id='${id}']`);
-    if (el) {
-      const menuBtn = el.querySelector('.menu-btn');
-      if (menuBtn) menuBtn.textContent = `⭐(${starredBy.length})`;
-    }
-  });
-  socket.on('message unstarred', ({ id, starredBy }) => {
-    const el = document.querySelector(`.message[data-id='${id}']`);
-    if (el) {
-      const menuBtn = el.querySelector('.menu-btn');
-      if (menuBtn) menuBtn.textContent = starredBy.length ? `⭐(${starredBy.length})` : '⋮';
+  socket.on('typing', (data) => {
+    if (data.room === currentRoom && data.user !== currentUser) {
+      showTyping();
     }
   });
 
-  // request pinned messages
-  socket.emit('get pinned', { room: currentRoom });
+  socket.on('stop typing', (data) => {
+    if (data.room === currentRoom && data.user !== currentUser) {
+      hideTyping();
+    }
+  });
 
-  // infinite scroll (older messages)
-  messages.removeEventListener('scroll', onMessagesScroll);
-  messages.addEventListener('scroll', onMessagesScroll);
+  socket.on('room users', (users) => {
+    console.log('Users in room:', users);
+  });
 
-  // search debounce
-  if (searchInput) {
-    searchInput.addEventListener('input', debounce(e => {
-      const q = e.target.value.trim();
-      if (!q || q.length < 2) {
-        messages.innerHTML = '';
-        currentPage = 1;
-        fetchHistoryPage(currentPage, true);
-        return;
-      }
-      socket.emit('search messages', { room: currentRoom, query: q });
-    }, 300));
-  }
+  socket.on('pinned messages', (msgs) => {
+    renderPinned(msgs);
+  });
+
+  // request initial pinned messages
+  socket.emit('get pinned', currentRoom);
 }
 
-// Helper: fetch history page via socket
-function fetchHistoryPage(page = 1, replace = false) {
-  if (!socket || pendingHistoryRequest) return;
-  pendingHistoryRequest = true;
-  socket.emit('get history', { room: currentRoom, page, limit: PAGE_LIMIT });
+// Typing indicator
+function showTyping() {
+  typingBubble.style.display = 'block';
+  clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(hideTyping, 2000);
+}
+function hideTyping() {
+  typingBubble.style.display = 'none';
 }
 
-// scroll handler
-function onMessagesScroll() {
-  if (messages.scrollTop < 80 && !isLoadingHistory && !pendingHistoryRequest) {
-    isLoadingHistory = true;
-    currentPage++;
-    fetchHistoryPage(currentPage, false);
-  }
-}
-
-// ================= Part 4: Rendering messages & UI =================
-
-// Status icon helper
-function statusIcon(status) {
-  switch (status) {
-    case 'sent': return '✓';
-    case 'delivered': return '✓✓';
-    case 'read': return '✓✓✔';
-    default: return '';
-  }
-}
-
-// Display a message
+// Message display
 function displayMessage(msg, prepend = false) {
   if (!msg) return;
   if (document.querySelector(`.message[data-id='${msg._id || msg.id}']`)) return;
@@ -367,442 +278,246 @@ function displayMessage(msg, prepend = false) {
   div.className = `message ${msg.user === currentUser ? 'self' : 'other'}`;
   div.dataset.id = msg._id || msg.id;
 
-  // Meta
   const meta = document.createElement('div');
   meta.className = 'meta';
-  try { 
-    meta.textContent = `[${new Date(msg.timestamp).toLocaleTimeString()}] ${msg.user}`; 
-  } catch(e) { 
-    meta.textContent = msg.user; 
-  }
+  meta.textContent = `${msg.user} • ${new Date(msg.time).toLocaleTimeString()}`;
   div.appendChild(meta);
 
-  // Text
-  if (msg.text) {
-    const textSpan = document.createElement('span');
-    textSpan.className = 'msg-text';
-    textSpan.textContent = ` ${DOMPurify.sanitize(msg.text)}`;
-    div.appendChild(textSpan);
+  const text = document.createElement('div');
+  text.className = 'text';
+  text.innerHTML = DOMPurify.sanitize(msg.text || '');
+  div.appendChild(text);
+
+  if (prepend) {
+    messages.prepend(div);
+  } else {
+    appendMessage(div);
   }
 
-  // File attachments
-  if (msg.file) {
-    const fileDiv = document.createElement('div');
-    fileDiv.className = 'file-preview';
-    if (msg.file.type?.startsWith('image/')) {
-      const img = document.createElement('img');
-      img.className = 'inline-image';
-      img.src = msg.file.url || msg.file.path || msg.file;
-      img.alt = msg.file.name || 'image';
-      fileDiv.appendChild(img);
-    } else {
-      const a = document.createElement('a');
-      a.href = msg.file.url || msg.file.path;
-      a.target = '_blank';
-      a.textContent = msg.file.name || 'download';
-      fileDiv.appendChild(a);
-    }
-    div.appendChild(fileDiv);
+  if (msg.user !== currentUser) {
+    socket.emit('read message', { room: currentRoom, id: msg._id || msg.id });
   }
-
-  // Status placeholder
-  const statusSpan = document.createElement('span');
-  statusSpan.className = 'status';
-  div.appendChild(statusSpan);
-
-  // Reactions
-  addReactionUI(div, msg);
-
-  // Controls if self message
-  if (msg.user === currentUser) addMessageControls(div, msg);
-
-  // Link preview
-  if (msg.text) handleLinkPreview(div, msg.text);
-
-  // Pinned visual
-  if (msg.pinned) div.classList.add('pinned');
-
-  // Insert
-  if (prepend) messages.prepend(div);
-  else {
-    messages.appendChild(div);
-    if (!scrollLocked) {
-      const nearBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 80;
-      if (nearBottom) div.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    }
-  }
-
-  // Mark as read
-  if (msg.user !== currentUser) socket.emit('read message', { room: currentRoom, id: msg._id || msg.id });
 }
 
-// ================= Reactions UI =================
-function addReactionUI(msgDiv, msg) {
-  const container = document.createElement('div');
-  container.className = 'reaction-container';
+// Append message respecting scroll lock
+function appendMessage(msgDiv) {
+  messages.appendChild(msgDiv);
 
-  if (Array.isArray(msg.reactions)) {
-    msg.reactions.forEach(r => {
-      const span = document.createElement('span');
-      span.textContent = r.emoji;
-      span.title = r.user;
-      container.appendChild(span);
-    });
+  const atBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 10;
+  if (scrollLocked || atBottom) {
+    msgDiv.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }
+}
 
-  const reactBtn = document.createElement('button');
-  reactBtn.className = 'reaction-toggle';
-  reactBtn.textContent = '➕';
-  reactBtn.addEventListener('click', ev => {
-    ev.stopPropagation();
-    const picker = document.createElement('div');
-    picker.className = 'reaction-picker overlay';
-    const pool = Object.values(emojiData).flat();
-    pool.slice(0,30).forEach(item => {
-      const ch = item.char || item;
-      const b = document.createElement('button');
-      b.className = 'reaction-btn';
-      b.textContent = ch;
-      b.addEventListener('click', () => {
-        socket.emit('react message', { room: currentRoom, id: msg._id || msg.id, reaction: ch, username: currentUser });
-        picker.remove();
-      });
-      picker.appendChild(b);
-    });
-    document.addEventListener('click', function __closePicker(e) {
-      if (!picker.contains(e.target)) { picker.remove(); document.removeEventListener('click', __closePicker); }
-    });
-    container.appendChild(picker);
+// Listen to scroll for auto-lock toggle
+messages.addEventListener('scroll', () => {
+  const atBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 10;
+  scrollLocked = !atBottom;
+});
+
+// Render pinned messages
+function renderPinned(msgs) {
+  const pinnedBanner = document.getElementById('pinned-messages');
+  const pinnedList = document.getElementById('pinned-list');
+  if (!msgs || msgs.length === 0) {
+    pinnedBanner.style.display = 'none';
+    return;
+  }
+  pinnedBanner.style.display = 'block';
+  pinnedList.innerHTML = '';
+  msgs.forEach(m => {
+    const li = document.createElement('li');
+    li.textContent = `${m.user}: ${m.text}`;
+    pinnedList.appendChild(li);
   });
-  container.appendChild(reactBtn);
-  msgDiv.appendChild(container);
 }
 
-function updateReactionsUI(id, reactions) {
-  const container = document.querySelector(`.message[data-id='${id}'] .reaction-container`);
-  if (!container) return;
-  const toggle = container.querySelector('.reaction-toggle');
-  container.innerHTML = '';
-  if (Array.isArray(reactions)) {
-    reactions.forEach(r => {
-      const span = document.createElement('span');
-      span.textContent = r.emoji;
-      span.title = r.user;
-      container.appendChild(span);
-    });
+// ================= Part 3: Form, Emoji Picker, Theme, Search =================
+
+// Send message form
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  if (!input.value.trim()) return;
+
+  const msg = {
+    user: currentUser,
+    room: currentRoom,
+    text: input.value,
+    time: Date.now()
+  };
+
+  socket.emit('chat message', msg);
+  displayMessage(msg);
+
+  input.value = '';
+  stopTyping();
+});
+
+// Typing events
+input.addEventListener('input', () => {
+  if (input.value.trim()) {
+    socket.emit('typing', { room: currentRoom, user: currentUser });
+    clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(stopTyping, 1500);
+  } else {
+    stopTyping();
   }
-  if (toggle) container.appendChild(toggle);
+});
+function stopTyping() {
+  socket.emit('stop typing', { room: currentRoom, user: currentUser });
 }
 
-// ================= Message controls (edit/delete/pin/star) =================
-function addMessageControls(msgDiv, msg) {
-  const wrapper = document.createElement('div');
-  wrapper.className = 'msg-menu-wrapper';
+// Emoji picker toggle
+emojiBtn.addEventListener('click', () => {
+  emojiPicker.classList.toggle('show');
+  if (emojiPicker.classList.contains('show')) {
+    populateEmojiPicker();
+  }
+});
 
-  const btn = document.createElement('button');
-  btn.className = 'menu-btn';
-  btn.textContent = '⋮';
-
-  const menu = document.createElement('div');
-  menu.className = 'msg-menu';
-
-  // Delete
-  const del = document.createElement('button');
-  del.textContent = 'Delete';
-  del.addEventListener('click', () => {
-    if (confirm('Delete this message?')) {
-      socket.emit('delete message', { room: currentRoom, id: msg._id || msg.id });
-      const el = document.querySelector(`.message[data-id='${msg._id || msg.id}']`);
-      if (el) el.remove();
-    }
-  });
-  menu.appendChild(del);
-
-  // Edit
-  const edit = document.createElement('button');
-  edit.textContent = 'Edit';
-  edit.addEventListener('click', () => {
-    showModal({
-      title: 'Edit message',
-      placeholder: 'Edit your message…',
-      defaultValue: msg.text || '',
-      onConfirm: val => {
-        const sanitized = DOMPurify.sanitize(val);
-        socket.emit('edit message', { room: currentRoom, id: msg._id || msg.id, text: sanitized });
-        const el = document.querySelector(`.message[data-id='${msg._id || msg.id}'] .msg-text`);
-        if (el) el.textContent = ` ${sanitized}`;
+// Populate emoji picker dynamically
+function populateEmojiPicker() {
+  if (emojiPicker.innerHTML.trim() !== '') return;
+  fetch('/emoji.json')
+    .then(res => res.json())
+    .then(data => {
+      emojiPicker.innerHTML = '';
+      for (const category in data) {
+        const catDiv = document.createElement('div');
+        catDiv.className = 'emoji-category';
+        data[category].forEach(emoji => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.textContent = emoji;
+          btn.addEventListener('click', () => {
+            input.value += emoji;
+            input.focus();
+          });
+          catDiv.appendChild(btn);
+        });
+        emojiPicker.appendChild(catDiv);
       }
     });
-  });
-  menu.appendChild(edit);
-
-  // Pin/unpin
-  const pin = document.createElement('button');
-  pin.textContent = msg.pinned ? 'Unpin' : 'Pin';
-  pin.addEventListener('click', () => {
-    socket.emit(msg.pinned ? 'unpin message' : 'pin message', { room: currentRoom, id: msg._id || msg.id });
-  });
-  menu.appendChild(pin);
-
-  // Star/unstar
-  const star = document.createElement('button');
-  star.textContent = '⭐';
-  star.addEventListener('click', () => {
-    const starred = msg.starredBy?.includes(currentUser);
-    socket.emit(starred ? 'unstar message' : 'star message', { room: currentRoom, id: msg._id || msg.id, user: currentUser });
-  });
-  menu.appendChild(star);
-
-  wrapper.appendChild(btn);
-  wrapper.appendChild(menu);
-  btn.addEventListener('click', e => { e.stopPropagation(); menu.classList.toggle('show'); });
-
-  document.addEventListener('click', e => { if (!wrapper.contains(e.target)) menu.classList.remove('show'); });
-
-  const starredCount = document.createElement('span');
-  starredCount.className = 'star-count';
-  starredCount.textContent = msg.starredBy?.length ? ` (${msg.starredBy.length})` : '';
-  wrapper.appendChild(starredCount);
-
-  msgDiv.appendChild(wrapper);
 }
 
-// ================= Part 5 – Link Previews & Typing Indicator Link preview =================
-
-// ================= Link preview =================
-
-async function handleLinkPreview(msgDiv, text) {
-  if (!text) return;
-  const urlRegex = /(\b(https?:\/\/)?(www\.)?[-a-zA-Z0-9@:%._+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_+.~#?&//=]*))/gi;
-  const matches = text.match(urlRegex);
-  if (!matches) return;
-  const seen = new Set();
-  for (const raw of matches) {
-    let url = raw;
-    if (!/^https?:\/\//i.test(url)) url = url.startsWith('www.') ? 'https://' + url : 'https://' + url;
-    if (seen.has(url)) continue;
-    seen.add(url);
-
-    if (linkPreviewCache.has(url)) { 
-      renderPreview(msgDiv, url, linkPreviewCache.get(url), raw); 
-      continue; 
-    }
-
-    try {
-      const res = await fetch(`/link-preview?url=${encodeURIComponent(url)}`);
-      const data = await res.json();
-      linkPreviewCache.set(url, data);
-      renderPreview(msgDiv, url, data, raw);
-    } catch(err) { 
-      console.warn('preview fetch failed', err); 
-    }
-  }
-}
-
-function renderPreview(msgDiv, url, data, rawUrl) {
-  if (!data || (!data.title && !data.image)) return;
-  const textSpan = msgDiv.querySelector('.msg-text');
-  if (textSpan) textSpan.textContent = textSpan.textContent.replace(rawUrl, '').trim();
-  const preview = document.createElement('div');
-  preview.className = 'link-preview';
-  if (data.image) {
-    const img = document.createElement('img');
-    img.src = data.image;
-    img.alt = data.title || url;
-    preview.appendChild(img);
-  }
-  const a = document.createElement('a');
-  a.href = url;
-  a.target = '_blank';
-  a.textContent = data.title || url;
-  preview.appendChild(a);
-  msgDiv.appendChild(preview);
-}
-
-// ================= Typing indicator =================
-function updateTypingIndicator(users) {
-  const others = (users || []).filter(u => u !== currentUser);
-  if (others.length) {
-    typingBubble.style.display = 'flex';
-    typingBubble.innerHTML = `${others.join(', ')} <span class="dots">...</span>`;
-  } else typingBubble.style.display = 'none';
-}
-
-// Animate dots in typing indicator
-setInterval(() => {
-  const dots = document.querySelector('#typing-bubble .dots');
-  if (dots) dots.textContent = dots.textContent.length < 3 ? dots.textContent + '.' : '.';
-}, 500);
-
-// ================= Part 6: File uploads =================
-const fileInput = document.createElement('input');
-fileInput.type = 'file';
-fileInput.style.display = 'none';
-form.appendChild(fileInput);
-
-const attachBtn = document.createElement('button');
-attachBtn.type = 'button';
-attachBtn.textContent = '📎';
-attachBtn.title = 'Attach file';
-form.insertBefore(attachBtn, input);
-
-attachBtn.addEventListener('click', () => fileInput.click());
-
-fileInput.addEventListener('change', async () => {
-  if (!fileInput.files.length) return;
-  await sendFile(fileInput.files[0]);
-  fileInput.value = '';
-});
-
-chatContainer.addEventListener('dragover', e => e.preventDefault());
-chatContainer.addEventListener('drop', e => {
-  e.preventDefault();
-  if (!e.dataTransfer.files.length) return;
-  sendFile(e.dataTransfer.files[0]);
-});
-
-async function sendFile(file) {
-  const allowed = ['image/jpeg','image/png','image/gif','application/pdf','text/plain'];
-  if (!allowed.includes(file.type)) { alert('Unsupported file type.'); return; }
-
-  const fd = new FormData();
-  fd.append('file', file);
-  try {
-    const res = await fetch('/upload', { method: 'POST', body: fd });
-    const data = await res.json();
-    if (!data.url) throw new Error('upload failed');
-
-    const msg = {
-      room: currentRoom,
-      user: currentUser,
-      text: file.type.startsWith('image/') ? '' : DOMPurify.sanitize(file.name),
-      file: { url: data.url, name: data.name, type: data.type, size: data.size },
-      timestamp: new Date()
-    };
-    socket.emit('chat message', msg);
-  } catch (err) {
-    console.error('upload error', err);
-    alert('Upload failed');
-  }
-}
-
-// ================= Emoji picker =================
-const fallbackEmojis = {
-  "Faces": ["😀","😁","😂","🤣","😃","😅","😊","😇"],
-  "Gestures": ["👍","👎","👏","🙌","🤝"],
-  "Hearts": ["❤️","💛","💚","💙","💜"]
-};
-
-async function loadEmojis() {
-  try {
-    const res = await fetch('/emoji.json');
-    emojiData = await res.json();
-  } catch (err) { 
-    emojiData = fallbackEmojis; 
-  }
-  renderEmojiPicker();
-}
-
-function renderEmojiPicker() {
-  emojiPicker.innerHTML = '';
-  Object.entries(emojiData).forEach(([cat, arr]) => {
-    const catWrap = document.createElement('div');
-    catWrap.className = 'emoji-category';
-    arr.forEach(item => {
-      const ch = item.char || item;
-      const span = document.createElement('span');
-      span.textContent = ch;
-      span.title = item.name || '';
-      span.addEventListener('click', () => { input.value += ch; input.focus(); });
-      catWrap.appendChild(span);
-    });
-    emojiPicker.appendChild(catWrap);
-  });
-}
-
-emojiBtn.addEventListener('click', () => emojiPicker.classList.toggle('show'));
-loadEmojis();
-
-// ================= Quick emojis =================
-quickEmojis.forEach(b => {
-  b.addEventListener('click', () => {
-    input.value += b.textContent;
+// Quick emoji buttons
+document.querySelectorAll('#quick-emojis button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    input.value += btn.textContent;
     input.focus();
-    b.classList.add('pop');
-    setTimeout(() => b.classList.remove('pop'), 180);
+    btn.classList.add('pop');
+    setTimeout(() => btn.classList.remove('pop'), 180);
   });
 });
 
-// ================= Recent Rooms =================
-function saveRecentRoom(room) {
-  try {
-    const arr = JSON.parse(localStorage.getItem('recentRooms') || '[]');
-    if (!arr.includes(room)) arr.unshift(room);
-    while (arr.length > 6) arr.pop();
-    localStorage.setItem('recentRooms', JSON.stringify(arr));
-  } catch (e) { }
-}
+// Theme toggle
+toggleThemeBtn.addEventListener('click', () => {
+  document.body.classList.toggle('dark');
+});
 
-function loadRecentRooms() {
-  try {
-    roomListDiv.innerHTML = '';
-    const arr = JSON.parse(localStorage.getItem('recentRooms') || '[]');
-    arr.forEach(r => {
-      const btn = document.createElement('button');
-      btn.className = 'room-btn';
-      btn.textContent = r;
-      btn.addEventListener('click', () => { roomInput.value = r; joinBtn.click(); });
-      roomListDiv.appendChild(btn);
-    });
-  } catch (e) {}
-}
-
-loadRecentRooms();
-
-// ================= Part 7: Pinned banner =================
-function addPinnedMessage(msg) {
-  const banner = document.getElementById('pinned-messages');
-  const list = document.getElementById('pinned-list');
-  if (!banner || !list) return;
-  banner.style.display = 'block';
-  if (document.querySelector(`#pinned-list li[data-id="${msg._id}"]`)) return;
-
-  const li = document.createElement('li');
-  li.dataset.id = msg._id;
-  li.textContent = `${msg.user}: ${String(msg.text || '').slice(0,60)}${(msg.text||'').length>60?'…':''}`;
-  li.addEventListener('click', () => {
-    const origin = document.querySelector(`.message[data-id="${msg._id}"]`);
-    if (origin) { 
-      origin.scrollIntoView({behavior:'smooth',block:'center'}); 
-      origin.classList.add('highlight'); 
-      setTimeout(()=>origin.classList.remove('highlight'),1500); 
+// Search messages
+searchBtn.addEventListener('click', () => {
+  const term = searchInput.value.toLowerCase();
+  document.querySelectorAll('.message .text').forEach(el => {
+    const parent = el.closest('.message');
+    if (!term || el.textContent.toLowerCase().includes(term)) {
+      parent.style.display = '';
+    } else {
+      parent.style.display = 'none';
     }
   });
-  list.appendChild(li);
+});
+
+// Scroll lock button UI
+function updateScrollLockUI() {
+  if (!scrollLockBtn) return;
+  scrollLockBtn.style.display = 'inline-block';
+  scrollLockBtn.textContent = scrollLocked ? '🔒 Auto-scroll ON' : '🔓 Auto-scroll OFF';
+}
+scrollLockBtn.addEventListener('click', () => {
+  scrollLocked = !scrollLocked;
+  updateScrollLockUI();
+});
+
+// ================= Part 4: Helpers, Modal, Storage =================
+
+// ----- Favicon badge -----
+const faviconCanvas = document.getElementById('favicon-canvas');
+const faviconCtx = faviconCanvas.getContext('2d');
+const favicon = document.querySelector("link[rel~='icon']");
+let unreadCount = 0;
+
+function resetFavicon() {
+  unreadCount = 0;
+  drawFavicon();
+}
+function incrementFavicon() {
+  unreadCount++;
+  drawFavicon();
+}
+function drawFavicon() {
+  const img = new Image();
+  img.src = '/logo.png';
+  img.onload = () => {
+    faviconCtx.clearRect(0, 0, 32, 32);
+    faviconCtx.drawImage(img, 0, 0, 32, 32);
+    if (unreadCount > 0) {
+      faviconCtx.fillStyle = 'red';
+      faviconCtx.beginPath();
+      faviconCtx.arc(24, 8, 7, 0, 2 * Math.PI);
+      faviconCtx.fill();
+      faviconCtx.fillStyle = 'white';
+      faviconCtx.font = '10px Arial';
+      faviconCtx.textAlign = 'center';
+      faviconCtx.textBaseline = 'middle';
+      faviconCtx.fillText(unreadCount, 24, 8);
+    }
+    favicon.href = faviconCanvas.toDataURL('image/png');
+  };
+}
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) resetFavicon();
+});
+
+// ----- Modal controls -----
+const modal = document.getElementById('app-modal');
+const modalCloseBtn = document.getElementById('modal-close-btn');
+if (modalCloseBtn) {
+  modalCloseBtn.addEventListener('click', () => {
+    modal.style.display = 'none';
+  });
+}
+function openModal(title, contentHtml) {
+  const box = document.getElementById('app-modal-box');
+  box.querySelector('h3').textContent = title;
+  box.querySelector('textarea').value = '';
+  if (contentHtml) {
+    box.querySelector('textarea').value = contentHtml;
+  }
+  modal.style.display = 'flex';
 }
 
-function removePinnedMessage(msg) {
-  const el = document.querySelector(`#pinned-list li[data-id="${msg._id}"]`);
-  if (el) el.remove();
-  const list = document.getElementById('pinned-list');
-  if (list && !list.children.length) {
-    const b = document.getElementById('pinned-messages');
-    if (b) b.style.display = 'none';
+// ----- Local storage (recent rooms) -----
+function saveRecentRoom(room) {
+  let recent = JSON.parse(localStorage.getItem('recentRooms') || '[]');
+  if (!recent.includes(room)) {
+    recent.push(room);
+    if (recent.length > 5) recent.shift();
+    localStorage.setItem('recentRooms', JSON.stringify(recent));
   }
 }
-
-// ================= Home logo click =================
-if (homeLogo) {
-  homeLogo.addEventListener('click', () => {
-    chatContainer.style.display = 'none';
-    usernamePrompt.style.display = 'flex';
-    roomNameSpan.textContent = 'Room';
-    messages.innerHTML = '';
-    window.history.replaceState({}, '', window.location.origin);
+function loadRecentRooms() {
+  let recent = JSON.parse(localStorage.getItem('recentRooms') || '[]');
+  const list = document.getElementById('room-list');
+  if (!list) return;
+  list.innerHTML = '';
+  recent.forEach(r => {
+    const btn = document.createElement('button');
+    btn.textContent = r;
+    btn.addEventListener('click', () => {
+      roomInput.value = r;
+    });
+    list.appendChild(btn);
   });
 }
 
-// ================= Cleanup on unload =================
-window.addEventListener('beforeunload', () => {
-  try { socket?.disconnect?.(); } catch(e) {}
-});

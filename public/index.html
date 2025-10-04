@@ -1,22 +1,21 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta charset="UTF-8" />
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>DizyChat</title>
-  <!-- Favicon -->
-  <link rel="icon" href="/logo.png" type="image/png">
-
-  <link rel="stylesheet" href="/chat.css">
+  <link rel="icon" href="/logo.png" type="image/png" />
+  <link rel="stylesheet" href="/chat.css" />
 </head>
 <body>
   <!-- Landing Page -->
   <div id="username-prompt" class="landing">
-    <img src="/logo.png" alt="DizyChat Logo" class="logo">
+    <img src="/logo.png" alt="DizyChat Logo" class="logo" />
     <h2>Welcome to DizyChat</h2>
-    <input id="username-input" placeholder="Enter username">
-    <input id="room-input" placeholder="Enter room name">
-    <input id="room-password" type="password" placeholder="Room password (optional)">
+    <input id="username-input" placeholder="Enter username" />
+    <input id="room-input" placeholder="Enter room name" />
+    <input id="room-password" type="password" placeholder="Room password (optional)" />
     <button id="join-btn">Join Chat</button>
     <div id="room-list"></div>
   </div>
@@ -30,7 +29,7 @@
   <div id="chat-container" class="chat-page" style="display:none;">
     <header>
       <div class="header-left">
-        <img src="/logo.png" alt="Home" id="home-logo" class="logo">
+        <img src="/logo.png" alt="Home" id="home-logo" class="logo" />
         <span class="logo-text">DizyChat</span>
         <div class="room-info">
           <span id="room-name">Room</span>
@@ -38,24 +37,22 @@
       </div>
 
       <div class="header-right">
-        <!-- Search Bar -->
         <div id="search-container">
-          <input type="text" id="searchInput" placeholder="Search messages...">
+          <input type="text" id="searchInput" placeholder="Search messages..." />
           <button id="searchBtn">Search</button>
         </div>
-
-        <!-- Share & Theme Buttons -->
         <button id="share-btn" title="Share Room Link" aria-label="Share Room Link">🔗</button>
         <button id="toggle-theme" title="Toggle Dark/Light" aria-label="Toggle theme">🌙</button>
       </div>
     </header>
 
-    <!-- Pinned Messages Banner -->
+    <!-- Pinned Messages -->
     <div id="pinned-messages" class="pinned-banner" style="display:none;">
       <h4>Pinned</h4>
       <ul id="pinned-list"></ul>
     </div>
 
+    <!-- Messages -->
     <main id="messages" aria-live="polite"></main>
 
     <!-- Typing Indicator -->
@@ -64,9 +61,9 @@
     </div>
 
     <!-- Message Form -->
-    <form id="form">
+    <form id="form" autocomplete="off">
       <button type="button" id="emoji-btn" aria-label="Open emoji picker">😀</button>
-      <input id="input" autocomplete="off" placeholder="Type a message..." />
+      <input id="input" placeholder="Type a message..." />
       <button type="submit" aria-label="Send message">➤</button>
       <div id="quick-emojis" class="quick-emojis">
         <button type="button">😀</button>
@@ -79,12 +76,14 @@
     <div id="emoji-picker" class="emoji-picker" role="dialog" aria-modal="true"></div>
   </div>
 
-  <!-- Modal Overlay (hidden by default) -->
+  <!-- Modal Overlay -->
   <div id="app-modal" style="display:none;">
     <div id="app-modal-box">
       <h3>Modal Title</h3>
       <textarea placeholder="Type something..."></textarea>
-      <button id="modal-close-btn">Close</button>
+      <div class="modal-actions">
+        <button id="modal-close-btn">Close</button>
+      </div>
     </div>
   </div>
 
