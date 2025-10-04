@@ -33,49 +33,46 @@ jobs:
           curl -X POST "https://api.render.com/deploy/srv-${SERVICE_ID}" \
                -H "Authorization: Bearer ${RENDER_API_KEY}"
 
-      # 4.5 Wait for Render deployment and fetch live URL
-      - name: Wait for Render deployment and fetch URL
+      # 4.5 Wait for Render deployment (dynamic) with HTTP status logging
+      - name: Wait for Render deployment
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
         run: |
-          echo "⏱️ Waiting for Render deployment to finish..."
-          MAX_WAIT=180
-          INTERVAL=5
-          ELAPSED=0
-          while [ $ELAPSED -lt $MAX_WAIT ]; do
-            RESPONSE=$(curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
+          echo "⏱️ Waiting for Render deployment to become live..."
+          START_TIME=$(date +%s)
+          MAX_WAIT=300  # Maximum wait time 5 minutes
+          
+          while true; do
+            SERVICE_INFO=$(curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
               "https://api.render.com/v1/services/$SERVICE_ID")
-            STATUS=$(echo "$RESPONSE" | jq -r '.service.live')
-            echo "Deployment status: $STATUS, elapsed: ${ELAPSED}s"
-            if [ "$STATUS" = "true" ]; then
-              echo "✅ Render deployment is live!"
+            
+            URL=$(echo "$SERVICE_INFO" | jq -r '.serviceDetails.url')
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL" || echo "000")
+            
+            if [ -n "$URL" ] && [ "$HTTP_STATUS" -eq 200 ]; then
+              ELAPSED=$(( $(date +%s) - START_TIME ))
+              echo "✅ Render deployment is live at $URL (took ${ELAPSED}s, HTTP $HTTP_STATUS)"
               break
             fi
-            sleep $INTERVAL
-            ELAPSED=$((ELAPSED + INTERVAL))
+
+            ELAPSED=$(( $(date +%s) - START_TIME ))
+            if [ $ELAPSED -ge $MAX_WAIT ]; then
+              echo "❌ Render deployment did not become live within ${MAX_WAIT}s"
+              echo "Last HTTP status: $HTTP_STATUS"
+              exit 1
+            fi
+
+            echo "Deployment not live yet, elapsed: ${ELAPSED}s, last HTTP status: $HTTP_STATUS"
+            sleep 5
           done
-
-          if [ "$STATUS" != "true" ]; then
-            echo "❌ Render deployment did not become live within $MAX_WAIT seconds"
-            echo "Debug: Service info from API:"
-            echo "$RESPONSE" | jq .
-            exit 1
-          fi
-
-          # Fetch and log the exact live URL
-          RENDER_URL=$(echo "$RESPONSE" | jq -r '.service.liveUrl')
-          echo "🌐 Render live URL: $RENDER_URL"
-
-          # Export it for later steps
-          echo "RENDER_URL=$RENDER_URL" >> $GITHUB_ENV
 
       # 5. Start local server for screenshot
       - name: Start local server
         env:
           MONGO_URI: ${{ secrets.MONGO_URI }}
         run: |
-          npm run start & 
+          npm run start &
           echo "Waiting up to 60s for server to be ready on port 10000..."
           for i in {1..60}; do
             nc -z localhost 10000 && break
@@ -85,8 +82,6 @@ jobs:
 
       # 6. Take screenshot of TEST room
       - name: Take screenshot of TEST room
-        env:
-          RENDER_URL: ${{ env.RENDER_URL }}
         run: |
           npm install puppeteer
           node -e "
@@ -96,7 +91,7 @@ jobs:
           (async () => {
             const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
             const page = await browser.newPage();
-            const url = process.env.RENDER_URL + '/?room=TEST';
+            const url = 'http://localhost:10000/?room=TEST';
             
             let retries = 60;
             while (retries > 0) {
