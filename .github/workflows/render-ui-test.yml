@@ -36,6 +36,8 @@ jobs:
 
       # 5. Start local server for screenshot
       - name: Start local server
+        env:
+          MONGO_URI: ${{ secrets.MONGO_URI }}
         run: |
           npm run start &
           echo "Waiting up to 60s for server to be ready..."
@@ -72,7 +74,7 @@ jobs:
             }
 
             await page.waitForSelector('#messages', { timeout: 10000 });
-            await wait(1000);   // <-- fixed line
+            await page.waitForTimeout(1000);
             await page.screenshot({ path: 'room-screenshot.png' });
             await browser.close();
             console.log('Screenshot saved: room-screenshot.png');
