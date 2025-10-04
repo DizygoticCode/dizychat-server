@@ -63,7 +63,7 @@ jobs:
 
       # 8. Upload screenshot artifact
       - name: Upload screenshot
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@latest
         with:
           name: room-screenshot
           path: room-screenshot.png
