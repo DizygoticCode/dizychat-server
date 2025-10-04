@@ -31,17 +31,10 @@ jobs:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
         run: |
-          echo "Checking secrets..."
-          if [ -z "${RENDER_API_KEY}" ]; then
-            echo "Warning: RENDER_API_KEY is empty"
-          fi
-          if [ -z "${SERVICE_ID}" ]; then
-            echo "Warning: SERVICE_ID is empty"
-          fi
           curl -X POST "https://api.render.com/deploy/srv-${SERVICE_ID}" \
-               -H "Authorization: Bearer ${RENDER_API_KEY}" || echo "Render deploy API call failed, continuing with fallback port"
+               -H "Authorization: Bearer ${RENDER_API_KEY}"
 
-      # 5. Get Render service info and port (with fallback)
+      # 5. Get Render service info and port
       - name: Get Render service port
         id: get-port
         env:
@@ -51,18 +44,22 @@ jobs:
           echo "Fetching Render service info..."
           SERVICE_JSON=$(curl -s -H "Authorization: Bearer ${RENDER_API_KEY}" \
             "https://api.render.com/v1/services/${SERVICE_ID}")
-          if [ -z "$SERVICE_JSON" ] || ! echo "$SERVICE_JSON" | jq -e '.service' >/dev/null 2>&1; then
-            echo "Render API failed or service info missing, using fallback port 10000"
-            echo "PORT=10000" >> $GITHUB_ENV
-          else
-            PORT=$(echo "$SERVICE_JSON" | jq -r '.service.envVars[] | select(.key=="PORT") | .value')
-            echo "Render port is $PORT"
-            echo "PORT=$PORT" >> $GITHUB_ENV
-          fi
+          PORT=$(echo "$SERVICE_JSON" | jq -r '.service.envVars[] | select(.key=="PORT") | .value')
+          echo "Render port is $PORT"
+          echo "PORT=$PORT" >> $GITHUB_ENV
 
       # 6. Start local server for screenshot
       - name: Start local server
         run: |
+          # Debug check for MONGO_URI
+          if [ -z "${{ secrets.MONGO_URI }}" ]; then
+            echo "❌ MONGO_URI is missing! Server will likely fail."
+          else
+            echo "✅ MONGO_URI is present in GitHub secrets."
+            echo "Exporting MONGO_URI..."
+            echo "MONGO_URI=${{ secrets.MONGO_URI }}" >> $GITHUB_ENV
+          fi
+
           npm run start & 
           echo "Waiting up to 50s for server to be ready..."
           for i in {1..50}; do
