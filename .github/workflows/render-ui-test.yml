@@ -34,7 +34,7 @@ jobs:
           curl -X POST "https://api.render.com/deploy/srv-${SERVICE_ID}" \
                -H "Authorization: Bearer ${RENDER_API_KEY}"
 
-      # 5. Get Render service info and port
+      # 5. Get Render service info and port dynamically
       - name: Get Render service port
         id: get-port
         env:
@@ -50,9 +50,12 @@ jobs:
 
       # 6. Start local server for screenshot
       - name: Start local server
+        env:
+          MONGO_URI: ${{ secrets.MONGO_URI }}
         run: |
-          npm run start &
-          echo "Waiting up to 50s for server to be ready..."
+          npm run start & 
+          SERVER_PID=$!
+          echo "Waiting up to 50s for server to be ready on port $PORT..."
           for i in {1..50}; do
             nc -z localhost $PORT && break
             sleep 1
@@ -72,7 +75,7 @@ jobs:
             const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
             const page = await browser.newPage();
             const url = `http://localhost:${port}/?room=TEST`;
-            
+
             let retries = 60;
             while (retries > 0) {
               try {
