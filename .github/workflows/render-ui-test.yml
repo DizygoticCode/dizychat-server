@@ -33,11 +33,38 @@ jobs:
           curl -X POST "https://api.render.com/deploy/srv-${SERVICE_ID}" \
                -H "Authorization: Bearer ${RENDER_API_KEY}"
 
+      # 4.5 Wait for Render deployment
+      - name: Wait for Render deployment
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+        run: |
+          echo "Waiting for Render deployment to finish..."
+          retries=60
+          while [ $retries -gt 0 ]; do
+            STATUS=$(curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
+              "https://api.render.com/v1/services/$SERVICE_ID" | jq -r '.service.live' )
+            if [ "$STATUS" = "true" ]; then
+              echo "✅ Render deployment is live!"
+              break
+            fi
+            retries=$((retries-1))
+            echo "Deployment not live yet, retrying... $(($60 - $retries))s elapsed"
+            sleep 5
+          done
+
+          if [ "$STATUS" != "true" ]; then
+            echo "❌ Render deployment did not become live in time"
+            exit 1
+          fi
+
       # 5. Start local server for screenshot
       - name: Start local server
+        env:
+          MONGO_URI: ${{ secrets.MONGO_URI }}
         run: |
-          npm run start & 
-          echo "Waiting up to 60s for server to be ready..."
+          npm run start &
+          echo "Waiting up to 60s for server to be ready on port 10000..."
           for i in {1..60}; do
             nc -z localhost 10000 && break
             sleep 1
@@ -56,28 +83,22 @@ jobs:
             const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
             const page = await browser.newPage();
             const url = 'http://localhost:10000/?room=TEST';
-
-            let retries = 90;  // up to 1.5 minutes
+            
+            let retries = 60;
             while (retries > 0) {
               try {
                 await page.goto(url, { waitUntil: 'networkidle2', timeout: 3000 });
                 break;
               } catch (err) {
                 retries--;
-                console.log('Waiting for server to start...', 90 - retries, 'seconds elapsed');
+                console.log('Waiting for server to start...', 60 - retries, 'seconds elapsed');
                 await wait(1000);
                 if (retries === 0) throw new Error('Server failed to respond in time');
               }
             }
 
-            try {
-              await page.waitForSelector('#messages', { timeout: 10000 });
-            } catch (err) {
-              console.log('Messages element not found. Check MongoDB connection!');
-              throw err;
-            }
-
-            await page.waitForTimeout(1000);
+            await page.waitForSelector('#messages', { timeout: 10000 });
+            await wait(1000);
             await page.screenshot({ path: 'room-screenshot.png' });
             await browser.close();
             console.log('Screenshot saved: room-screenshot.png');
