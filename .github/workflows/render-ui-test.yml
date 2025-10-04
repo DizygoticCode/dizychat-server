@@ -56,22 +56,28 @@ jobs:
             const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
             const page = await browser.newPage();
             const url = 'http://localhost:10000/?room=TEST';
-            
-            let retries = 60;
+
+            let retries = 90;  // up to 1.5 minutes
             while (retries > 0) {
               try {
                 await page.goto(url, { waitUntil: 'networkidle2', timeout: 3000 });
                 break;
               } catch (err) {
                 retries--;
-                console.log('Waiting for server to start...', 60 - retries, 'seconds elapsed');
+                console.log('Waiting for server to start...', 90 - retries, 'seconds elapsed');
                 await wait(1000);
-                if (retries === 0) throw err;
+                if (retries === 0) throw new Error('Server failed to respond in time');
               }
             }
 
-            await page.waitForSelector('#messages', { timeout: 10000 });
-            await wait(1000);
+            try {
+              await page.waitForSelector('#messages', { timeout: 10000 });
+            } catch (err) {
+              console.log('Messages element not found. Check MongoDB connection!');
+              throw err;
+            }
+
+            await page.waitForTimeout(1000);
             await page.screenshot({ path: 'room-screenshot.png' });
             await browser.close();
             console.log('Screenshot saved: room-screenshot.png');
