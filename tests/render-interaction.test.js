@@ -12,7 +12,7 @@ if (!fs.existsSync(VIDEO_DIR)) fs.mkdirSync(VIDEO_DIR, { recursive: true });
 // Use the same timestamp as the workflow if available
 const TIMESTAMP = process.env.TIMESTAMP || Date.now();
 
-// ✅ Main Playwright UI test
+// ✅ Main Playwright UI test with retry for #chat-container
 async function runPlaywrightTest() {
   console.log(`🌐 Launching Playwright headless browser to test ${SITE}`);
 
@@ -27,17 +27,31 @@ async function runPlaywrightTest() {
   const page = await context.newPage();
 
   try {
-    await page.goto(SITE, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#join-btn');
+    await page.goto(SITE, { waitUntil: 'networkidle' });
+    await page.waitForSelector('#join-btn', { timeout: 30000 });
     await page.fill('#username-input', 'TesterBot');
     await page.fill('#room-input', 'AutoTestRoom');
-    await Promise.all([
-      page.click('#join-btn'),
-      page.waitForSelector('#chat-container', { timeout: 10000 }),
-    ]);
+    await page.click('#join-btn');
+
+    // 🔁 Retry loop for chat container visibility
+    const maxRetries = 5;
+    const retryDelay = 3000; // 3s
+    let chatVisible = false;
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        await page.waitForSelector('#chat-container', { visible: true, timeout: 5000 });
+        chatVisible = true;
+        break;
+      } catch {
+        console.warn(`⚠️ #chat-container not visible yet, retry ${i + 1}/${maxRetries}`);
+        await page.waitForTimeout(retryDelay);
+      }
+    }
+    if (!chatVisible) throw new Error("❌ #chat-container never became visible");
+
     await page.click('#toggle-theme');
     await page.click('#emoji-btn');
-    await page.waitForSelector('#emoji-picker.show');
+    await page.waitForSelector('#emoji-picker.show', { timeout: 10000 });
     await page.fill('#input', 'Test message from automated check 🤖');
     await page.click('#form button[type=submit]');
     await page.waitForTimeout(2000);
@@ -141,16 +155,24 @@ function generateArtifactIndex() {
   console.log('🗂️ index.html created with links to screenshots and video');
 }
 
-// ✅ Run tests and generate index
+// ✅ Run tests with retries and generate index
 (async () => {
-  try {
-    // Optional: run Puppeteer screenshot first
-    if (process.argv.includes('--puppeteer')) {
-      await runPuppeteerScreenshot();
+  const maxWorkflowRetries = 2;
+  let attempt = 0;
+  while (attempt < maxWorkflowRetries) {
+    try {
+      if (process.argv.includes('--puppeteer')) {
+        await runPuppeteerScreenshot();
+      }
+      await runPlaywrightTest();
+      break; // success
+    } catch (err) {
+      attempt++;
+      console.warn(`⚠️ Attempt ${attempt}/${maxWorkflowRetries} failed: ${err.message}`);
+      if (attempt >= maxWorkflowRetries) throw err;
+      console.log('⏱️ Retrying Playwright test...');
     }
-
-    await runPlaywrightTest();
-  } finally {
-    generateArtifactIndex();
   }
+
+  generateArtifactIndex();
 })();
