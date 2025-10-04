@@ -4,16 +4,18 @@ import path from 'path';
 
 const SITE = "https://dizychat-server.onrender.com";
 
-// Generate a unique timestamp for this run
-const TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '-');
-
-// Ensure the video folder exists
-const VIDEO_DIR = path.join(process.cwd(), 'playwright_videos');
+// Ensure artifact folders exist
+const ARTIFACT_DIR = path.join(process.cwd(), 'ui-test-artifacts');
+const VIDEO_DIR = path.join(ARTIFACT_DIR, 'playwright_videos');
 if (!fs.existsSync(VIDEO_DIR)) fs.mkdirSync(VIDEO_DIR, { recursive: true });
 
-async function runUITest() {
-  console.log(`🌐 Launching headless browser to test ${SITE}`);
-  
+// Use the same timestamp as the workflow if available
+const TIMESTAMP = process.env.TIMESTAMP || Date.now();
+
+// ✅ Main Playwright UI test
+async function runPlaywrightTest() {
+  console.log(`🌐 Launching Playwright headless browser to test ${SITE}`);
+
   const browser = await chromium.launch();
   const context = await browser.newContext({
     recordVideo: {
@@ -25,63 +27,130 @@ async function runUITest() {
   const page = await context.newPage();
 
   try {
-    // 1️⃣ Go to landing page
     await page.goto(SITE, { waitUntil: 'domcontentloaded' });
-    console.log("✅ Page loaded");
-
-    // 2️⃣ Check for join button
     await page.waitForSelector('#join-btn');
-    console.log("✅ Join button found");
-
-    // 3️⃣ Fill username + room
     await page.fill('#username-input', 'TesterBot');
     await page.fill('#room-input', 'AutoTestRoom');
-    console.log("✅ Username and room filled");
-
-    // 4️⃣ Click Join
     await Promise.all([
       page.click('#join-btn'),
       page.waitForSelector('#chat-container', { timeout: 10000 }),
     ]);
-    console.log("✅ Joined chat successfully");
-
-    // 5️⃣ Toggle dark/light mode
     await page.click('#toggle-theme');
-    const darkMode = await page.evaluate(() => document.body.classList.contains('dark'));
-    console.log(`✅ Dark mode toggle ${darkMode ? 'enabled' : 'disabled'}`);
-
-    // 6️⃣ Open emoji picker
     await page.click('#emoji-btn');
     await page.waitForSelector('#emoji-picker.show');
-    console.log("✅ Emoji picker opens");
-
-    // 7️⃣ Send a message
     await page.fill('#input', 'Test message from automated check 🤖');
     await page.click('#form button[type=submit]');
     await page.waitForTimeout(2000);
-    console.log("✅ Message sent");
 
-    // 8️⃣ Check if message appears
     const messageVisible = await page.locator('#messages .message.self').count();
-    if (messageVisible > 0) console.log("✅ Message appeared in chat");
-    else throw new Error("❌ Message not visible in chat");
+    if (messageVisible === 0) throw new Error("❌ Message not visible in chat");
 
-    // 9️⃣ Screenshot
-    const screenshotPath = path.join(process.cwd(), `render_test_screenshot-${TIMESTAMP}.png`);
+    const screenshotPath = path.join(ARTIFACT_DIR, `playwright-room-${TIMESTAMP}.png`);
     await page.screenshot({ path: screenshotPath, fullPage: true });
-    console.log(`📸 Screenshot saved at ${screenshotPath}`);
+    console.log(`📸 Playwright screenshot saved at ${screenshotPath}`);
 
   } catch (err) {
-    console.error("❌ UI Test failed:", err.message);
-    const errorScreenshot = path.join(process.cwd(), `render_test_error-${TIMESTAMP}.png`);
+    console.error("❌ Playwright UI Test failed:", err.message);
+    const errorScreenshot = path.join(ARTIFACT_DIR, `playwright-error-${TIMESTAMP}.png`);
     await page.screenshot({ path: errorScreenshot, fullPage: true });
     console.log(`📸 Error screenshot saved at ${errorScreenshot}`);
     throw err;
   } finally {
     await context.close();
     await browser.close();
-    console.log(`🎥 Video saved in ${VIDEO_DIR} (each run unique via timestamp)`);
+
+    // Rename the generated video file to include the timestamp
+    try {
+      const videos = fs.readdirSync(VIDEO_DIR).filter(f => f.endsWith('.webm'));
+      if (videos.length > 0) {
+        const oldPath = path.join(VIDEO_DIR, videos[0]);
+        const newPath = path.join(VIDEO_DIR, `playwright-video-${TIMESTAMP}.webm`);
+        fs.renameSync(oldPath, newPath);
+        console.log(`🎥 Video renamed: ${newPath}`);
+      } else {
+        console.warn("⚠️ No Playwright video found to rename");
+      }
+    } catch (err) {
+      console.error("⚠️ Could not rename video file:", err.message);
+    }
+
+    console.log(`🎥 Playwright video saved in ${VIDEO_DIR}`);
   }
 }
 
-runUITest();
+// ✅ Optional Puppeteer screenshot function
+export async function runPuppeteerScreenshot() {
+  const puppeteer = await import('puppeteer');
+  const ts = TIMESTAMP;
+  const screenshotPath = path.join(ARTIFACT_DIR, `puppeteer-room-${ts}.png`);
+
+  const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
+  const page = await browser.newPage();
+  await page.goto(`${SITE}/?room=TEST`, { waitUntil: 'networkidle2', timeout: 10000 });
+  await page.waitForSelector('#messages', { timeout: 10000 });
+  await page.screenshot({ path: screenshotPath });
+  console.log(`📸 Puppeteer screenshot saved at ${screenshotPath}`);
+  await browser.close();
+}
+
+// ✅ Generate index.html to view all artifacts
+function generateArtifactIndex() {
+  const puppeteerScreenshot = `puppeteer-room-${TIMESTAMP}.png`;
+  const playwrightScreenshot = `playwright-room-${TIMESTAMP}.png`;
+  const playwrightVideo = `playwright_videos/playwright-video-${TIMESTAMP}.webm`;
+
+  const htmlContent = `
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>DizyChat UI Test Artifacts - ${TIMESTAMP}</title>
+    <style>
+      body { font-family: sans-serif; padding: 20px; }
+      h1 { font-size: 1.5rem; }
+      img, video { max-width: 100%; border: 1px solid #ccc; margin-bottom: 20px; }
+      section { margin-bottom: 40px; }
+    </style>
+  </head>
+  <body>
+    <h1>DizyChat UI Test Artifacts</h1>
+    <p>Run timestamp: ${TIMESTAMP}</p>
+
+    <section>
+      <h2>📸 Puppeteer Screenshot</h2>
+      <img src="${puppeteerScreenshot}" alt="Puppeteer Screenshot">
+    </section>
+
+    <section>
+      <h2>📸 Playwright Screenshot</h2>
+      <img src="${playwrightScreenshot}" alt="Playwright Screenshot">
+    </section>
+
+    <section>
+      <h2>🎥 Playwright Video</h2>
+      <video controls>
+        <source src="${playwrightVideo}" type="video/webm">
+        Your browser does not support the video tag.
+      </video>
+    </section>
+  </body>
+  </html>
+  `;
+
+  fs.writeFileSync(path.join(ARTIFACT_DIR, 'index.html'), htmlContent);
+  console.log('🗂️ index.html created with links to screenshots and video');
+}
+
+// ✅ Run tests and generate index
+(async () => {
+  try {
+    // Optional: run Puppeteer screenshot first
+    if (process.argv.includes('--puppeteer')) {
+      await runPuppeteerScreenshot();
+    }
+
+    await runPlaywrightTest();
+  } finally {
+    generateArtifactIndex();
+  }
+})();

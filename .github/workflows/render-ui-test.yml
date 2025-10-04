@@ -1,4 +1,4 @@
-name: Deploy & Screenshot DizyChat Render UI Health Check
+name: Deploy & UI Test DizyChat Render Health Check
 
 on:
   push:
@@ -33,7 +33,7 @@ jobs:
           curl -X POST "https://api.render.com/deploy/srv-${SERVICE_ID}" \
                -H "Authorization: Bearer ${RENDER_API_KEY}"
 
-      # 4.5 Wait for Render deployment
+      # 4.5️⃣ Wait for Render deployment
       - name: Wait for Render deployment
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
@@ -53,6 +53,7 @@ jobs:
             if [ -n "$URL" ] && [ "$HTTP_STATUS" -eq 200 ]; then
               ELAPSED=$(( $(date +%s) - START_TIME ))
               echo "✅ Render deployment is live at $URL (took ${ELAPSED}s, HTTP $HTTP_STATUS)"
+              echo "DEPLOY_URL=$URL" >> $GITHUB_ENV
               break
             fi
 
@@ -80,48 +81,20 @@ jobs:
           done
           echo "Server should be ready on port 10000"
 
-      # 6️⃣ Puppeteer fallback screenshot
-      - name: Take Puppeteer screenshot of TEST room
+      # 6️⃣ Prepare combined artifacts folder
+      - name: Prepare UI artifacts folder
+        run: |
+          TIMESTAMP=$(date +%s)
+          mkdir -p ui-test-artifacts/playwright_videos
+          echo $TIMESTAMP > ui-test-artifacts/run_timestamp.txt
+          echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
+          echo "🕒 Run timestamp: $TIMESTAMP"
+
+      # 7️⃣ Puppeteer screenshot
+      - name: Puppeteer screenshot
         run: |
           npm install puppeteer
-          node -e "
-          const puppeteer = require('puppeteer');
-          const wait = ms => new Promise(r => setTimeout(r, ms));
-          const path = require('path');
-          const ts = new Date().toISOString().replace(/[:.]/g,'-');
-          (async () => {
-            const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
-            const page = await browser.newPage();
-            const url = 'http://localhost:10000/?room=TEST';
-            
-            let retries = 60;
-            while (retries > 0) {
-              try {
-                await page.goto(url, { waitUntil: 'networkidle2', timeout: 3000 });
-                break;
-              } catch (err) {
-                retries--;
-                console.log('Waiting for server to start...', 60 - retries, 'seconds elapsed');
-                await wait(1000);
-                if (retries === 0) throw new Error('Server failed to respond in time');
-              }
-            }
-
-            await page.waitForSelector('#messages', { timeout: 10000 });
-            await wait(1000);
-            const screenshotPath = path.join(process.cwd(), `room-screenshot-${ts}.png`);
-            await page.screenshot({ path: screenshotPath });
-            await browser.close();
-            console.log('Screenshot saved:', screenshotPath);
-          })();
-          "
-
-      # 7️⃣ Upload Puppeteer screenshot
-      - name: Upload Puppeteer screenshot
-        uses: actions/upload-artifact@v4
-        with:
-          name: room-screenshot
-          path: room-screenshot-*.png
+          node render-interaction.test.js --puppeteer
 
       # 8️⃣ Install Playwright
       - name: Install Playwright
@@ -131,13 +104,43 @@ jobs:
 
       # 9️⃣ Run Playwright UI Test
       - name: Run Playwright UI Test
-        run: node render-interaction.test.js
+        run: |
+          TIMESTAMP=${{ env.TIMESTAMP }}
+          node render-interaction.test.js
 
-      # 🔟 Upload Playwright screenshots and videos
-      - name: Upload Playwright artifacts
+      # 🔟 Upload all UI artifacts (screenshots + videos + index.html)
+      - name: Upload UI artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-artifacts
-          path: |
-            render_test_screenshot-*.png
-            playwright_videos/
+          name: ui-test-artifacts-${{ env.TIMESTAMP }}
+          path: ui-test-artifacts/
+
+      # 1️⃣1️⃣ Job Summary (Markdown Summary with clickable index.html)
+      - name: Post summary
+        if: always()
+        run: |
+          TIMESTAMP=${{ env.TIMESTAMP }}
+          INDEX_HTML="ui-test-artifacts/index.html"
+          PUPPETEER_FILE="ui-test-artifacts/puppeteer-room-$TIMESTAMP.png"
+          if [ -f "$PUPPETEER_FILE" ]; then
+            PUPPETEER_STATUS="✅ Puppeteer screenshot generated"
+          else
+            PUPPETEER_STATUS="⚠️ Puppeteer screenshot not generated"
+          fi
+
+          {
+            echo "## 🧪 DizyChat UI Test Summary"
+            echo ""
+            echo "🕒 **Run timestamp:** $TIMESTAMP"
+            echo "🌐 **Deployed URL:** [${DEPLOY_URL}](${DEPLOY_URL})"
+            echo ""
+            echo "### 📸 Screenshots & Videos"
+            echo "- Puppeteer screenshot: \`puppeteer-room-$TIMESTAMP.png\` ($PUPPETEER_STATUS)"
+            echo "- Playwright screenshot: \`playwright-room-$TIMESTAMP.png\`"
+            echo "- Playwright video: \`playwright-video-$TIMESTAMP.webm\`"
+            echo ""
+            echo "✅ **Artifacts are available below.**"
+            echo ""
+            echo "🔗 [Open artifact index with all screenshots & video](./$INDEX_HTML){:target=\"_blank\"}"
+          } >> $GITHUB_STEP_SUMMARY
+
