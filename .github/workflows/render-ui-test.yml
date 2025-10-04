@@ -26,6 +26,7 @@ jobs:
 
       # 4. Deploy to Render
       - name: Deploy to Render
+        id: deploy
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
@@ -33,20 +34,10 @@ jobs:
           curl -X POST "https://api.render.com/deploy/srv-${SERVICE_ID}" \
                -H "Authorization: Bearer ${RENDER_API_KEY}"
 
-      # 5. Validate MONGO_URI
-      - name: Check MONGO_URI secret
-        run: |
-          if [ -z "${{ secrets.MONGO_URI }}" ]; then
-            echo "❌ MONGO_URI is not set in GitHub secrets!"
-            exit 1
-          fi
-          echo "MONGO_URI is set."
-          echo "MONGO_URI=${{ secrets.MONGO_URI }}" >> $GITHUB_ENV
-
-      # 6. Start local server for screenshot
+      # 5. Start local server for screenshot
       - name: Start local server
         run: |
-          npm run start & 
+          npm run start &
           echo "Waiting up to 60s for server to be ready..."
           for i in {1..60}; do
             nc -z localhost 10000 && break
@@ -54,7 +45,7 @@ jobs:
           done
           echo "Server should be ready on port 10000"
 
-      # 7. Take screenshot of TEST room
+      # 6. Take screenshot of TEST room
       - name: Take screenshot of TEST room
         run: |
           npm install puppeteer
@@ -81,14 +72,14 @@ jobs:
             }
 
             await page.waitForSelector('#messages', { timeout: 10000 });
-            await page.waitForTimeout(1000);
+            await wait(1000);   // <-- fixed line
             await page.screenshot({ path: 'room-screenshot.png' });
             await browser.close();
             console.log('Screenshot saved: room-screenshot.png');
           })();
           "
 
-      # 8. Upload screenshot artifact
+      # 7. Upload screenshot artifact
       - name: Upload screenshot
         uses: actions/upload-artifact@v4
         with:
