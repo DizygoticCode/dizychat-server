@@ -14,9 +14,9 @@ const TIMESTAMP = process.env.TIMESTAMP || Date.now();
 
 // ✅ Main Playwright UI test with retry for #chat-container
 async function runPlaywrightTest() {
-  console.log(`🌐 Launching Playwright headless browser to test ${SITE}`);
+  console.log(`🌐 Launching Playwright browser to test ${SITE}`);
 
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ headless: true, slowMo: 50 });
   const context = await browser.newContext({
     recordVideo: {
       dir: VIDEO_DIR,
@@ -28,19 +28,23 @@ async function runPlaywrightTest() {
 
   try {
     await page.goto(SITE, { waitUntil: 'networkidle' });
+    console.log('✅ Page loaded');
+
     await page.waitForSelector('#join-btn', { timeout: 30000 });
     await page.fill('#username-input', 'TesterBot');
     await page.fill('#room-input', 'AutoTestRoom');
     await page.click('#join-btn');
+    console.log('➡️ Join button clicked');
 
     // 🔁 Retry loop for chat container visibility
-    const maxRetries = 5;
+    const maxRetries = 10;
     const retryDelay = 3000; // 3s
     let chatVisible = false;
     for (let i = 0; i < maxRetries; i++) {
       try {
         await page.waitForSelector('#chat-container', { visible: true, timeout: 5000 });
         chatVisible = true;
+        console.log(`✅ #chat-container is visible on attempt ${i + 1}`);
         break;
       } catch {
         console.warn(`⚠️ #chat-container not visible yet, retry ${i + 1}/${maxRetries}`);
@@ -98,7 +102,7 @@ export async function runPuppeteerScreenshot() {
   const ts = TIMESTAMP;
   const screenshotPath = path.join(ARTIFACT_DIR, `puppeteer-room-${ts}.png`);
 
-  const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
+  const browser = await puppeteer.launch({ args: ['--no-sandbox'], headless: true });
   const page = await browser.newPage();
   await page.goto(`${SITE}/?room=TEST`, { waitUntil: 'networkidle2', timeout: 10000 });
   await page.waitForSelector('#messages', { timeout: 10000 });
