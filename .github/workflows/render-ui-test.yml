@@ -33,51 +33,51 @@ jobs:
           curl -X POST "https://api.render.com/deploy/srv-${SERVICE_ID}" \
                -H "Authorization: Bearer ${RENDER_API_KEY}"
 
-      # 4.1 Log average duration of last 3 successful deploys
-      - name: Average duration of last 3 deploys
+      # 4.5 Calculate average deploy duration from last 3 successful deploys
+      - name: Calculate average deploy duration
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
         run: |
           echo "⏱️ Calculating average deploy duration from last 3 successful Render deploys..."
-          DEPLOYS=$(curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
-            "https://api.render.com/v1/services/$SERVICE_ID/deploys?limit=10" | jq -r '.deploys[] | select(.state=="live") | .durationSeconds')
-          
-          COUNT=$(echo "$DEPLOYS" | wc -l)
-          if [ "$COUNT" -eq 0 ]; then
-            echo "No successful deploys found yet."
+          DURATIONS=$(curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
+            "https://api.render.com/v1/services/$SERVICE_ID/deploys?limit=3" | \
+            jq -r '[.[] | select(.state=="success") | (.endedAt|fromdateiso8601)-(.startedAt|fromdateiso8601)]')
+          if [ -z "$DURATIONS" ] || [ "$DURATIONS" = "[]" ]; then
+            echo "⚠️ No successful deploys found, defaulting wait to 60s"
+            AVG_DURATION=60
           else
-            LAST3=$(echo "$DEPLOYS" | head -n 3)
-            AVG=$(echo "$LAST3" | awk '{sum+=$1} END {printf "%.2f", sum/NR}')
-            echo "Average duration of last $([ "$COUNT" -ge 3 ] && echo 3 || echo $COUNT) successful deploys: ${AVG}s"
+            AVG_DURATION=$(echo "$DURATIONS" | jq 'add / length')
           fi
+          echo "Average deploy duration (last 3 successful): $AVG_DURATION seconds"
+          echo "WAIT_DURATION=$AVG_DURATION" >> $GITHUB_ENV
 
-      # 4.5 Wait for Render deployment
+      # 5. Wait for Render deployment to be live
       - name: Wait for Render deployment
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          WAIT_DURATION: ${{ env.WAIT_DURATION }}
         run: |
-          echo "⏱️ Waiting for Render deployment to finish..."
-          retries=60
-          while [ $retries -gt 0 ]; do
+          echo "⏱️ Waiting up to $WAIT_DURATION seconds for Render deployment to become live..."
+          RETRIES=$((WAIT_DURATION / 5))
+          while [ $RETRIES -gt 0 ]; do
             STATUS=$(curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
-              "https://api.render.com/v1/services/$SERVICE_ID" | jq -r '.service.live' )
+              "https://api.render.com/v1/services/$SERVICE_ID" | jq -r '.service.live')
             if [ "$STATUS" = "true" ]; then
               echo "✅ Render deployment is live!"
               break
             fi
-            retries=$((retries-1))
-            echo "Deployment not live yet, retrying... $(($60 - $retries))s elapsed"
+            RETRIES=$((RETRIES-1))
+            echo "Deployment not live yet, retrying... $(($WAIT_DURATION - RETRIES*5))s elapsed"
             sleep 5
           done
-
           if [ "$STATUS" != "true" ]; then
             echo "❌ Render deployment did not become live in time"
             exit 1
           fi
 
-      # 5. Start local server for screenshot
+      # 6. Start local server for screenshot
       - name: Start local server
         env:
           MONGO_URI: ${{ secrets.MONGO_URI }}
@@ -90,33 +90,32 @@ jobs:
           done
           echo "Server should be ready on port 10000"
 
-      # 6. Take screenshot of TEST room
+      # 7. Take screenshot of TEST room
       - name: Take screenshot of TEST room
         run: |
           npm install puppeteer
           node -e "
           const puppeteer = require('puppeteer');
           const wait = ms => new Promise(r => setTimeout(r, ms));
-
           (async () => {
             const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
             const page = await browser.newPage();
             const url = 'http://localhost:10000/?room=TEST';
             
-            let retries = 120;  // Increased wait for server
+            let retries = 60;
             while (retries > 0) {
               try {
-                await page.goto(url, { waitUntil: 'networkidle2', timeout: 5000 });
+                await page.goto(url, { waitUntil: 'networkidle2', timeout: 3000 });
                 break;
               } catch (err) {
                 retries--;
-                console.log('Waiting for server to start...', 120 - retries, 'seconds elapsed');
+                console.log('Waiting for server to start...', 60 - retries, 'seconds elapsed');
                 await wait(1000);
                 if (retries === 0) throw new Error('Server failed to respond in time');
               }
             }
 
-            await page.waitForSelector('#messages', { timeout: 15000 });
+            await page.waitForSelector('#messages', { timeout: 10000 });
             await wait(1000);
             await page.screenshot({ path: 'room-screenshot.png' });
             await browser.close();
@@ -124,7 +123,7 @@ jobs:
           })();
           "
 
-      # 7. Upload screenshot artifact
+      # 8. Upload screenshot artifact
       - name: Upload screenshot
         uses: actions/upload-artifact@v4
         with:
