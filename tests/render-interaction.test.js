@@ -1,11 +1,25 @@
 import { chromium } from 'playwright';
+import fs from 'fs';
+import path from 'path';
 
 const SITE = "https://dizychat-server.onrender.com";
+const ARTIFACTS_DIR = './artifacts';
+
+// Ensure artifacts directory exists
+if (!fs.existsSync(ARTIFACTS_DIR)) fs.mkdirSync(ARTIFACTS_DIR, { recursive: true });
 
 async function runUITest() {
   console.log(`🌐 Launching headless browser to test ${SITE}`);
-  const browser = await chromium.launch();
-  const page = await browser.newPage();
+
+  const browser = await chromium.launch({
+    headless: true, // Set false if you want to see the browser
+  });
+
+  const context = await browser.newContext({
+    recordVideo: { dir: ARTIFACTS_DIR, size: { width: 1280, height: 720 } }
+  });
+
+  const page = await context.newPage();
 
   try {
     // 1️⃣ Go to landing page
@@ -50,16 +64,27 @@ async function runUITest() {
     else throw new Error("❌ Message not visible in chat");
 
     // 9️⃣ Screenshot for record
-    await page.screenshot({ path: './render_test_screenshot.png', fullPage: true });
-    console.log("📸 Screenshot saved (for GitHub Actions artifact)");
+    const screenshotPath = path.join(ARTIFACTS_DIR, 'render_test_screenshot.png');
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+    console.log(`📸 Screenshot saved at: ${screenshotPath}`);
 
   } catch (err) {
     console.error("❌ UI Test failed:", err.message);
-    await page.screenshot({ path: './render_test_error.png', fullPage: true });
+
+    // Save error screenshot
+    const errorScreenshotPath = path.join(ARTIFACTS_DIR, 'render_test_error.png');
+    await page.screenshot({ path: errorScreenshotPath, fullPage: true });
+    console.log(`📸 Error screenshot saved at: ${errorScreenshotPath}`);
+
     throw err;
   } finally {
+    // Save video and close browser
+    await context.close();
     await browser.close();
   }
 }
 
-runUITest();
+// Run the test
+runUITest()
+  .then(() => console.log("✅ UI test completed successfully"))
+  .catch(() => process.exit(1));
