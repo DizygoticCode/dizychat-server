@@ -1,85 +1,122 @@
-- name: Wait for Render Deployment & Take Screenshot
-  env:
-    RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-    SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
-    MONGO_URI: ${{ secrets.MONGO_URI }}
-  run: |
-    echo "⏳ Waiting for Render deployment to become live..."
+name: Deploy & Screenshot DizyChat Render UI Health Check
 
-    start_time=$(date +%s)
-    timeout=600  # maximum wait time in seconds (10 minutes)
-    interval=5   # check every 5 seconds
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
-    while true; do
-      RESPONSE=$(curl -s -H "Authorization: Bearer ${RENDER_API_KEY}" \
-        "https://api.render.com/v1/services/${SERVICE_ID}")
-      STATUS=$(echo "$RESPONSE" | jq -r '.service.live')
-      UPDATED_AT=$(echo "$RESPONSE" | jq -r '.service.updatedAt')
-      elapsed=$(( $(date +%s) - start_time ))
+jobs:
+  deploy-and-screenshot:
+    runs-on: ubuntu-latest
 
-      echo "Elapsed: ${elapsed}s - Render live: $STATUS, last updated: $UPDATED_AT"
+    steps:
+      # 1. Checkout code
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-      if [ "$STATUS" = "true" ]; then
-        echo "✅ Render deployment is live!"
-        echo "⏱ Adding a 10s buffer to ensure server is fully ready..."
-        sleep 10
-        break
-      fi
+      # 2. Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 22
 
-      if [ $elapsed -ge $timeout ]; then
-        echo "❌ Render deployment did not become live in $timeout seconds"
-        exit 1
-      fi
+      # 3. Install dependencies
+      - name: Install dependencies
+        run: npm ci
 
-      sleep $interval
-    done
+      # 4. Trigger Render deploy
+      - name: Trigger Render deploy
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+        run: |
+          echo "🔄 Triggering Render deploy..."
+          curl -s -X POST "https://api.render.com/deploy/srv-${SERVICE_ID}" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Content-Type: application/json" \
+            || echo "⚠️ Deploy trigger failed (check service ID or API key)."
 
-    # Start local server
-    npm run start &
-    SERVER_PID=$!
-    echo "⏳ Waiting for local server to respond on port 10000..."
+      # 5. Determine average of last 3 deploy times (in seconds)
+      - name: Calculate average deploy time
+        id: deploy_time
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+        run: |
+          echo "⏱️ Calculating average deploy duration from last 3 successful Render deploys..."
+          avg=$(curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
+            "https://api.render.com/v1/services/$SERVICE_ID/deploys?limit=3" \
+            | jq '[.[] | select(.status=="live") | (.updatedAt | fromdate - (.createdAt | fromdate))] | add / length | floor')
+          if [ -z "$avg" ] || [ "$avg" = "null" ]; then
+            avg=180  # fallback to 3 minutes if data unavailable
+          fi
+          echo "Average deploy duration: $avg seconds"
+          echo "average_time=$avg" >> $GITHUB_OUTPUT
 
-    # Wait for server port
-    start_server=$(date +%s)
-    while ! nc -z localhost 10000; do
-      elapsed_server=$(( $(date +%s) - start_server ))
-      if [ $elapsed_server -ge 120 ]; then
-        echo "❌ Server failed to start in 120s"
-        kill $SERVER_PID
-        exit 1
-      fi
-      sleep 1
-    done
-    echo "✅ Local server ready on port 10000!"
+      # 6. Wait for Render to go live, using dynamic timeout
+      - name: Wait for Render deployment to finish
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+        run: |
+          avg_time=${{ steps.deploy_time.outputs.average_time }}
+          max_wait=$((avg_time + 180)) # add buffer of 3 mins
+          echo "⏳ Waiting up to $max_wait seconds for Render deployment to become live..."
+          retries=$((max_wait / 10))
+          while [ $retries -gt 0 ]; do
+            STATUS=$(curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
+              "https://api.render.com/v1/services/$SERVICE_ID" | jq -r '.service.live')
+            if [ "$STATUS" = "true" ]; then
+              echo "✅ Render deployment is live!"
+              break
+            fi
+            retries=$((retries-1))
+            echo "Deployment not live yet, retrying... ($((max_wait - (retries*10)))s elapsed)"
+            sleep 10
+          done
+          if [ "$STATUS" != "true" ]; then
+            echo "❌ Render deployment did not become live in time after $max_wait seconds"
+            exit 1
+          fi
 
-    # Puppeteer screenshot
-    npm install puppeteer
-    node -e "
-    const puppeteer = require('puppeteer');
-    const wait = ms => new Promise(r => setTimeout(r, ms));
-    (async () => {
-      const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
-      const page = await browser.newPage();
-      const url = 'http://localhost:10000/?room=TEST';
+      # 7. Take screenshot from live Render app
+      - name: Take screenshot of live Render app
+        run: |
+          npm install puppeteer
+          node -e "
+          const puppeteer = require('puppeteer');
+          const wait = ms => new Promise(r => setTimeout(r, ms));
+          (async () => {
+            const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
+            const page = await browser.newPage();
+            const url = 'https://dizychat-server.onrender.com/?room=TEST';
+            console.log('🌐 Visiting:', url);
+            for (let i = 0; i < 60; i++) {
+              try {
+                await page.goto(url, { waitUntil: 'networkidle2', timeout: 5000 });
+                break;
+              } catch {
+                console.log('Waiting for Render to respond...', i + 1, 'seconds elapsed');
+                await wait(1000);
+              }
+            }
+            await page.waitForSelector('#messages', { timeout: 20000 });
+            await page.screenshot({ path: 'room-screenshot.png' });
+            await browser.close();
+            console.log('✅ Screenshot saved: room-screenshot.png');
+          })();
+          "
 
-      let retries = 120;
-      while (retries > 0) {
-        try {
-          await page.goto(url, { waitUntil: 'networkidle2', timeout: 3000 });
-          break;
-        } catch (err) {
-          retries--;
-          console.log('Waiting for server to respond...', 120 - retries, 'seconds elapsed');
-          await wait(1000);
-          if (retries === 0) throw new Error('Server failed to respond in time');
-        }
-      }
+      # 8. Upload screenshot artifact
+      - name: Upload screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: room-screenshot
+          path: room-screenshot.png
 
-      await page.waitForSelector('#messages', { timeout: 10000 });
-      await page.waitForTimeout(1000);
-      await page.screenshot({ path: 'room-screenshot.png' });
-      await browser.close();
-      console.log('✅ Screenshot saved: room-screenshot.png');
-    })();
-
-    kill $SERVER_PID
+      # 9. Final summary
+      - name: Show deployment summary
+        run: |
+          echo "🚀 Render deployment URL: https://dizychat-server.onrender.com"
+          echo "📊 Average deploy time (from Render API): ${{ steps.deploy_time.outputs.average_time }} seconds"
