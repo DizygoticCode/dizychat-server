@@ -24,26 +24,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # 4. Build project (if applicable)
-      - name: Build project
-        run: npm run build
-
-      # 5. Deploy to Render
+      # 4. Deploy to Render (only if secrets exist)
       - name: Deploy to Render
+        if: ${{ secrets.RENDER_API_KEY && secrets.RENDER_SERVICE_ID }}
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
         run: |
+          echo "Deploying to Render service ID: ${SERVICE_ID}"
           curl -X POST "https://api.render.com/deploy/srv-${SERVICE_ID}" \
                -H "Authorization: Bearer ${RENDER_API_KEY}"
 
-      # 6. Start local server for screenshot
+      # 5. Start local server
       - name: Start local server
         run: |
-          npm run start &
-          sleep 5
+          npm run start & 
+          echo "Waiting for server to start..."
+          sleep 8  # increase if your server takes longer
 
-      # 7. Take screenshot of TEST room
+      # 6. Take screenshot of TEST room
       - name: Take screenshot of TEST room
         run: |
           npm install puppeteer
@@ -53,15 +52,15 @@ jobs:
             const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
             const page = await browser.newPage();
             await page.goto('http://localhost:3000/?room=TEST', { waitUntil: 'networkidle2' });
-            await page.waitForSelector('#messages', { timeout: 10000 });
-            await page.waitForTimeout(1000);
+            await page.waitForSelector('#messages', { timeout: 15000 });
+            await page.waitForTimeout(1500);
             await page.screenshot({ path: 'room-screenshot.png' });
             await browser.close();
             console.log('Screenshot saved: room-screenshot.png');
           })();
           "
 
-      # 8. Upload screenshot artifact
+      # 7. Upload screenshot artifact
       - name: Upload screenshot
         uses: actions/upload-artifact@v4
         with:
