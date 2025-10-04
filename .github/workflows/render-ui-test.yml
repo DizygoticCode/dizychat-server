@@ -94,7 +94,7 @@ jobs:
       - name: Puppeteer screenshot
         run: |
           npm install puppeteer
-          node render-interaction.test.js --puppeteer
+          node tests/render-interaction.test.js --puppeteer
 
       # 8️⃣ Install Playwright
       - name: Install Playwright
@@ -106,7 +106,7 @@ jobs:
       - name: Run Playwright UI Test
         run: |
           TIMESTAMP=${{ env.TIMESTAMP }}
-          node render-interaction.test.js
+          node tests/render-interaction.test.js
 
       # 🔟 Upload all UI artifacts (screenshots + videos + index.html)
       - name: Upload UI artifacts
@@ -143,4 +143,3 @@ jobs:
             echo ""
             echo "🔗 [Open artifact index with all screenshots & video](./$INDEX_HTML){:target=\"_blank\"}"
           } >> $GITHUB_STEP_SUMMARY
-
