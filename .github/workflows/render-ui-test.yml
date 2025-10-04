@@ -18,7 +18,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 20
+          node-version: 22
 
       # 3. Install dependencies
       - name: Install dependencies
@@ -26,7 +26,6 @@ jobs:
 
       # 4. Deploy to Render
       - name: Deploy to Render
-        id: deploy
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
@@ -34,39 +33,26 @@ jobs:
           curl -X POST "https://api.render.com/deploy/srv-${SERVICE_ID}" \
                -H "Authorization: Bearer ${RENDER_API_KEY}"
 
-      # 5. Get Render service info and port
-      - name: Get Render service port
-        id: get-port
-        env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+      # 5. Validate MONGO_URI
+      - name: Check MONGO_URI secret
         run: |
-          echo "Fetching Render service info..."
-          SERVICE_JSON=$(curl -s -H "Authorization: Bearer ${RENDER_API_KEY}" \
-            "https://api.render.com/v1/services/${SERVICE_ID}")
-          PORT=$(echo "$SERVICE_JSON" | jq -r '.service.envVars[] | select(.key=="PORT") | .value')
-          echo "Render port is $PORT"
-          echo "PORT=$PORT" >> $GITHUB_ENV
+          if [ -z "${{ secrets.MONGO_URI }}" ]; then
+            echo "❌ MONGO_URI is not set in GitHub secrets!"
+            exit 1
+          fi
+          echo "MONGO_URI is set."
+          echo "MONGO_URI=${{ secrets.MONGO_URI }}" >> $GITHUB_ENV
 
       # 6. Start local server for screenshot
       - name: Start local server
         run: |
-          # Debug check for MONGO_URI
-          if [ -z "${{ secrets.MONGO_URI }}" ]; then
-            echo "❌ MONGO_URI is missing! Server will likely fail."
-          else
-            echo "✅ MONGO_URI is present in GitHub secrets."
-            echo "Exporting MONGO_URI..."
-            echo "MONGO_URI=${{ secrets.MONGO_URI }}" >> $GITHUB_ENV
-          fi
-
           npm run start & 
-          echo "Waiting up to 50s for server to be ready..."
-          for i in {1..50}; do
-            nc -z localhost $PORT && break
+          echo "Waiting up to 60s for server to be ready..."
+          for i in {1..60}; do
+            nc -z localhost 10000 && break
             sleep 1
           done
-          echo "Server should be ready on port $PORT"
+          echo "Server should be ready on port 10000"
 
       # 7. Take screenshot of TEST room
       - name: Take screenshot of TEST room
@@ -74,13 +60,12 @@ jobs:
           npm install puppeteer
           node -e "
           const puppeteer = require('puppeteer');
-          const port = process.env.PORT || 10000;
           const wait = ms => new Promise(r => setTimeout(r, ms));
 
           (async () => {
             const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
             const page = await browser.newPage();
-            const url = `http://localhost:${port}/?room=TEST`;
+            const url = 'http://localhost:10000/?room=TEST';
             
             let retries = 60;
             while (retries > 0) {
