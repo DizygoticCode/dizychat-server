@@ -12,7 +12,7 @@ if (!fs.existsSync(VIDEO_DIR)) fs.mkdirSync(VIDEO_DIR, { recursive: true });
 // Use the same timestamp as the workflow if available
 const TIMESTAMP = process.env.TIMESTAMP || Date.now();
 
-// ✅ Main Playwright UI test with retry for #chat-container
+// ✅ Main Playwright UI test with robust chat detection
 async function runPlaywrightTest() {
   console.log(`🌐 Launching Playwright browser to test ${SITE}`);
 
@@ -36,18 +36,19 @@ async function runPlaywrightTest() {
     await page.click('#join-btn');
     console.log('➡️ Join button clicked');
 
-    // 🔁 Retry loop for chat container visibility
+    // 🔁 Robust polling for #chat-container
     const maxRetries = 10;
     const retryDelay = 3000; // 3s
     let chatVisible = false;
+
     for (let i = 0; i < maxRetries; i++) {
-      try {
-        await page.waitForSelector('#chat-container', { visible: true, timeout: 5000 });
-        chatVisible = true;
-        console.log(`✅ #chat-container is visible on attempt ${i + 1}`);
+      chatVisible = await page.evaluate(() => !!document.querySelector('#chat-container'));
+      if (chatVisible) {
+        console.log(`✅ #chat-container found on attempt ${i + 1}`);
         break;
-      } catch {
+      } else {
         console.warn(`⚠️ #chat-container not visible yet, retry ${i + 1}/${maxRetries}`);
+        console.log('ℹ️ Current body HTML snapshot (first 200 chars):', (await page.content()).slice(0, 200));
         await page.waitForTimeout(retryDelay);
       }
     }
