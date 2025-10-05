@@ -29,11 +29,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libwoff1 \
-            libgles2-mesa-dev \
-            libx264-dev \
             libgtk-4-1 \
             libgraphene-1.0-0 \
+            libwoff2-1 \
             libvpx9 \
             libevent-2.1-7 \
             libopus0 \
@@ -47,14 +45,9 @@ jobs:
             libsecret-1-0 \
             libhyphen0 \
             libmanette-0.2-0 \
-            libatk1.0-0 \
-            libatk-bridge2.0-0 \
-            libdrm2 \
-            libgbm1 \
-            libxcomposite1 \
-            libxdamage1 \
-            libxrandr2 \
-            libasound2
+            libgles2-mesa \
+            libx264-159 \
+            libasound2t64
 
       # 4️⃣ Deploy to Render
       - name: Deploy to Render
