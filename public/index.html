@@ -9,7 +9,7 @@
 </head>
 <body class="dark">
   <!-- Landing Page -->
-  <div id="username-prompt" class="landing">
+  <div id="username-prompt">
     <img src="/logo.png" alt="DizyChat Logo" class="logo" />
     <h1>Welcome to DizyChat</h1>
     <div class="landing-inputs">
@@ -30,7 +30,7 @@
   </button>
 
   <!-- Chat Page -->
-  <div id="chat-container" class="chat-page" style="display:none;">
+  <div id="chat-container" style="display:none;">
     <header>
       <div class="header-left">
         <img src="/logo.png" alt="Home" id="home-logo" class="logo" />
@@ -47,7 +47,7 @@
     </header>
 
     <!-- Pinned Messages -->
-    <div id="pinned-messages" class="pinned-banner" style="display:none;">
+    <div id="pinned-messages" style="display:none;">
       <h4>Pinned Messages</h4>
       <ul id="pinned-list"></ul>
     </div>
@@ -56,7 +56,7 @@
     <main id="messages" aria-live="polite"></main>
 
     <!-- Typing Indicator -->
-    <div id="typing-bubble" class="typing-dots" style="display:none;">
+    <div id="typing-bubble" style="display:none;">
       <span class="dots">...</span>
     </div>
 
@@ -65,7 +65,7 @@
       <button type="button" id="emoji-btn" aria-label="Open emoji picker">😀</button>
       <input id="input" placeholder="Type a message..." />
       <button type="submit" aria-label="Send message">➤</button>
-      <div id="quick-emojis" class="quick-emojis">
+      <div id="quick-emojis">
         <button type="button">😀</button>
         <button type="button">❤️</button>
         <button type="button">😂</button>
@@ -73,12 +73,11 @@
     </form>
 
     <!-- Emoji Picker -->
-    <div id="emoji-picker" class="emoji-picker" role="dialog" aria-modal="true"></div>
+    <div id="emoji-picker" role="dialog" aria-modal="true"></div>
   </div>
-  
-	<!-- Jump to Bottom Button -->
-	<button id="jump-bottom-btn" style="display:none;" title="Scroll to latest message">⬇️</button>
 
+  <!-- Jump to Bottom Button -->
+  <button id="jump-bottom-btn" style="display:none;" title="Scroll to latest message">⬇️</button>
 
   <!-- Modal Overlay -->
   <div id="app-modal" style="display:none;"></div>
