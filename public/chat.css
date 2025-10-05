@@ -278,7 +278,7 @@ body.dark #form {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   display: none;
-  z-index: 500;
+  z-index: 1500;
   padding: 6px;
 }
 
@@ -369,15 +369,16 @@ body.dark .link-preview {
 }
 
 /* Reaction system */
-.reaction-container {
-  margin-top: 4px;
+.reaction-container,
+.message .reactions {
   display: flex;
-  align-items: center;
   flex-wrap: wrap;
   gap: 4px;
+  margin-top: 4px;
 }
 
-.reaction-container span {
+.reaction-container span,
+.message .reactions span {
   background: rgba(0,0,0,0.05);
   border-radius: 8px;
   padding: 2px 6px;
@@ -385,7 +386,8 @@ body.dark .link-preview {
   cursor: default;
 }
 
-body.dark .reaction-container span {
+body.dark .reaction-container span,
+body.dark .message .reactions span {
   background: rgba(255,255,255,0.1);
 }
 
@@ -498,4 +500,82 @@ body.dark .msg-menu button:hover {
     width: 40px;
     height: 40px;
   }
+}
+
+/* ScrollLock button states */
+#scrollLockBtn.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+/* Typing animation (optional visual dots animation) */
+@keyframes typingDots {
+  0%, 20% { opacity: 0.2; }
+  50% { opacity: 1; }
+  100% { opacity: 0.2; }
+}
+.typing-dots .dots::after {
+  content: "…";
+  animation: typingDots 1.5s infinite;
+}
+
+/* Smooth show/hide for pinned banner */
+#pinned-messages {
+  transition: all 0.3s ease;
+}
+
+/* Scrollbar styling (optional aesthetic tweak) */
+#messages::-webkit-scrollbar {
+  width: 6px;
+}
+#messages::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 6px;
+}
+body.dark #messages::-webkit-scrollbar-thumb {
+  background: #444;
+}
+
+/* ==============================
+   chat.css — Part 4: Tooltips for star & pin
+   ============================== */
+
+.message .star-btn,
+.message .pin-btn {
+  position: absolute;
+  top: 4px;
+  font-size: 1.1em;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: transform 0.15s ease, opacity 0.2s ease;
+}
+
+/* Tooltip container */
+.message .star-btn[data-tooltip]:hover::after,
+.message .pin-btn[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: -24px;
+  right: 0;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  padding: 2px 6px;
+  font-size: 0.75em;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 1000;
+  opacity: 1;
+}
+
+/* Adjust pin to be to the left of star */
+.message .pin-btn {
+  right: 28px;
+}
+
+.message .star-btn:hover,
+.message .pin-btn:hover {
+  transform: scale(1.2);
+  opacity: 1;
 }

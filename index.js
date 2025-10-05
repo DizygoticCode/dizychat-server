@@ -88,6 +88,7 @@ app.post('/upload', upload.single('file'), (req, res) => {
     size: req.file.size
   });
 });
+
 // ---------------- Socket.IO ----------------
 let typingUsers = {};
 let rooms = {}; // rooms[roomName] = password
@@ -259,8 +260,9 @@ io.on('connection', socket => {
   });
 
   // ---------------- Typing Indicator ----------------
-  socket.on('typing', username => {
+  socket.on('typing', data => {
     if (!canSendTyping(socket.id)) return;
+    const username = typeof data === 'string' ? data : data.user;
     typingUsers[socket.id] = username;
     io.emit('typing', Object.values(typingUsers));
   });
@@ -276,6 +278,7 @@ io.on('connection', socket => {
     delete typingUsers[socket.id];
   });
 });
+
 // ---------------- Start Server ----------------
 server.listen(PORT, () => {
   console.log(`🟢 Server running on port ${PORT}`);
@@ -285,4 +288,3 @@ server.listen(PORT, () => {
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
-
