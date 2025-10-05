@@ -39,7 +39,23 @@
     { "char": "🤟", "name": "love_you" },
     { "char": "🤘", "name": "rock_on" },
     { "char": "👌", "name": "ok" },
-    { "char": "🤙", "name": "call_me" }
+    { "char": "🤙", "name": "call_me" },
+    { "char": "🖕", "name": "middle_finger" }
+  ],
+  "Fruits": [
+    { "char": "🍎", "name": "apple" },
+    { "char": "🍌", "name": "banana" },
+    { "char": "🍒", "name": "cherries" },
+    { "char": "🍇", "name": "grapes" },
+    { "char": "🍉", "name": "watermelon" },
+    { "char": "🍊", "name": "orange" },
+    { "char": "🍍", "name": "pineapple" },
+    { "char": "🥭", "name": "mango" },
+    { "char": "🍑", "name": "peach" },
+    { "char": "🍓", "name": "strawberry" },
+    { "char": "🥝", "name": "kiwi" },
+    { "char": "🍋", "name": "lemon" },
+    { "char": "🍈", "name": "melon" }
   ],
   "Hearts & Symbols": [
     { "char": "❤️", "name": "red_heart" },
@@ -63,24 +79,6 @@
     { "char": "❗", "name": "exclamation" },
     { "char": "🌈", "name": "rainbow" }
   ],
-  "Food": [
-    { "char": "🍕", "name": "pizza" },
-    { "char": "🍔", "name": "burger" },
-    { "char": "🍟", "name": "fries" },
-    { "char": "🌭", "name": "hotdog" },
-    { "char": "🌮", "name": "taco" },
-    { "char": "🌯", "name": "burrito" },
-    { "char": "🥗", "name": "salad" },
-    { "char": "🍎", "name": "apple" },
-    { "char": "🍌", "name": "banana" },
-    { "char": "🍉", "name": "watermelon" },
-    { "char": "🍓", "name": "strawberry" },
-    { "char": "🍺", "name": "beer" },
-    { "char": "☕", "name": "coffee" },
-    { "char": "🍷", "name": "wine" },
-    { "char": "🍣", "name": "sushi" },
-    { "char": "🍩", "name": "donut" }
-  ],
   "Animals": [
     { "char": "🐶", "name": "dog" },
     { "char": "🐱", "name": "cat" },
@@ -93,6 +91,20 @@
     { "char": "🐨", "name": "koala" },
     { "char": "🐯", "name": "tiger" },
     { "char": "🦁", "name": "lion" }
+  ],
+  "Food": [
+    { "char": "🍕", "name": "pizza" },
+    { "char": "🍔", "name": "burger" },
+    { "char": "🍟", "name": "fries" },
+    { "char": "🌭", "name": "hotdog" },
+    { "char": "🌮", "name": "taco" },
+    { "char": "🌯", "name": "burrito" },
+    { "char": "🥗", "name": "salad" },
+    { "char": "🍣", "name": "sushi" },
+    { "char": "🍩", "name": "donut" },
+    { "char": "🍺", "name": "beer" },
+    { "char": "☕", "name": "coffee" },
+    { "char": "🍷", "name": "wine" }
   ],
   "Travel & Objects": [
     { "char": "🚗", "name": "car" },
@@ -114,6 +126,15 @@
     { "char": "🎵", "name": "music" },
     { "char": "⚽", "name": "soccer" },
     { "char": "🏀", "name": "basketball" },
-    { "char": "🛸", "name": "ufo" }
+    { "char": "🛸", "name": "ufo" },
+    { "char": "🛶", "name": "canoe" },
+    { "char": "⛵", "name": "sailboat" },
+    { "char": "🗿", "name": "moai" },
+    { "char": "📚", "name": "books" },
+    { "char": "💡", "name": "idea" },
+    { "char": "🔑", "name": "key" },
+    { "char": "📌", "name": "pin" },
+    { "char": "🖊️", "name": "pen" }
   ]
 }
+

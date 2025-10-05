@@ -24,5 +24,13 @@ messageSchema.index({ text: "text" });             // Full-text search
 messageSchema.index({ room: 1, timestamp: -1 });   // Fast room queries by time
 messageSchema.index({ user: 1 });                  // Query messages by user
 
+// ---------------- Virtual field for chat.js compatibility ----------------
+messageSchema.virtual('time').get(function() {
+  return this.timestamp;
+});
+
+messageSchema.set('toJSON', { virtuals: true });
+messageSchema.set('toObject', { virtuals: true });
+
 // ---------------- Export Model ----------------
 module.exports = mongoose.model('Message', messageSchema);

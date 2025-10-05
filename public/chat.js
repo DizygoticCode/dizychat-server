@@ -45,18 +45,14 @@ joinBtn?.addEventListener('click', () => {
   localStorage.setItem('sessionToken', Date.now());
   localStorage.setItem('username', currentUser);
 
-  // Show chat, hide landing
   usernamePrompt.style.display = 'none';
   chatContainer.style.display = 'flex';
   roomNameSpan.textContent = currentRoom;
 
-  // Add a welcome system message
   displayMessage({ user: 'System', text: `Welcome to ${currentRoom}, ${currentUser}!`, time: Date.now() });
 
-  // Update URL
   window.history.replaceState({}, '', `${window.location.origin}?room=${encodeURIComponent(currentRoom)}`);
 
-  // Initialize chat after container is visible
   setTimeout(initChat, 50);
 });
 
@@ -73,7 +69,7 @@ function initChat() {
 
   socket.on('chat message', displayMessage);
 
-  socket.on('typing', (typingUsers) => {
+  socket.on('typing', typingUsers => {
     if (!Array.isArray(typingUsers)) return;
     const others = typingUsers.filter(u => u && u !== currentUser);
     others.length ? showTyping(others) : hideTyping();
@@ -87,6 +83,9 @@ function initChat() {
   socket.on('message unstarred', ({ id, starredBy }) => updateStar(id, starredBy));
 
   socket.on('update reactions', ({ id, reactions }) => updateReactions(id, reactions));
+
+  socket.on('room history', msgs => msgs.forEach(m => displayMessage(m)));
+  socket.on('search results', msgs => msgs.forEach(m => displayMessage(m)));
 }
 
 // ---------------- Message Display ----------------
@@ -113,24 +112,22 @@ function displayMessage(msg, prepend = false) {
   // Reactions
   const reactionsDiv = document.createElement('div');
   reactionsDiv.className = 'reactions';
-  if (msg.reactions && msg.reactions.length) {
-    msg.reactions.forEach(r => {
-      const span = document.createElement('span');
-      span.textContent = r.emoji;
-      reactionsDiv.appendChild(span);
-    });
-  }
+  if (msg.reactions?.length) msg.reactions.forEach(r => {
+    const span = document.createElement('span');
+    span.textContent = r.emoji;
+    reactionsDiv.appendChild(span);
+  });
   div.appendChild(reactionsDiv);
 
   // Star button
   if (msg.user !== currentUser) {
     const starBtn = document.createElement('button');
     starBtn.className = 'star-btn';
-    starBtn.textContent = (msg.starredBy && msg.starredBy.includes(currentUser)) ? '⭐' : '☆';
+    starBtn.textContent = (msg.starredBy?.includes(currentUser)) ? '⭐' : '☆';
     starBtn.dataset.tooltip = 'Star this message';
     starBtn.addEventListener('click', () => {
-      if (starBtn.textContent === '⭐') socket.emit('unstar message', { room: currentRoom, id, user: currentUser });
-      else socket.emit('star message', { room: currentRoom, id, user: currentUser });
+      const action = starBtn.textContent === '⭐' ? 'unstar message' : 'star message';
+      socket.emit(action, { room: currentRoom, id, user: currentUser });
     });
     div.appendChild(starBtn);
   }
@@ -141,8 +138,8 @@ function displayMessage(msg, prepend = false) {
   pinBtn.textContent = msg.pinned ? '📌' : '📍';
   pinBtn.dataset.tooltip = msg.pinned ? 'Unpin message' : 'Pin message';
   pinBtn.addEventListener('click', () => {
-    if (msg.pinned) socket.emit('unpin message', { room: currentRoom, id });
-    else socket.emit('pin message', { room: currentRoom, id });
+    const action = msg.pinned ? 'unpin message' : 'pin message';
+    socket.emit(action, { room: currentRoom, id });
   });
   div.appendChild(pinBtn);
 
@@ -168,16 +165,11 @@ function showTyping(users) {
   typingTimeout = setTimeout(hideTyping, 2000);
 }
 
-function hideTyping() {
-  typingBubble.style.display = 'none';
-}
+function hideTyping() { typingBubble.style.display = 'none'; }
 
 function renderPinned(msgs) {
   if (!pinnedBanner || !pinnedList) return;
-  if (!msgs || !msgs.length) {
-    pinnedBanner.style.display = 'none';
-    return;
-  }
+  if (!msgs?.length) { pinnedBanner.style.display = 'none'; return; }
   pinnedBanner.style.display = 'block';
   pinnedList.innerHTML = '';
   msgs.forEach(m => {
@@ -187,9 +179,7 @@ function renderPinned(msgs) {
   });
 }
 
-function renderPinnedMessage() {
-  socket.emit('get pinned', { room: currentRoom });
-}
+function renderPinnedMessage() { socket.emit('get pinned', { room: currentRoom }); }
 
 function updateStar(id, starredBy) {
   const msgEl = document.querySelector(`.message[data-id='${id}']`);
@@ -223,27 +213,27 @@ function drawFavicon() {
   const img = new Image();
   img.src = '/logo.png';
   img.onload = () => {
-    faviconCtx.clearRect(0,0,32,32);
-    faviconCtx.drawImage(img,0,0,32,32);
+    faviconCtx.clearRect(0, 0, 32, 32);
+    faviconCtx.drawImage(img, 0, 0, 32, 32);
     if (unreadCount > 0) {
-      faviconCtx.fillStyle='red';
+      faviconCtx.fillStyle = 'red';
       faviconCtx.beginPath();
-      faviconCtx.arc(24,8,7,0,2*Math.PI);
+      faviconCtx.arc(24, 8, 7, 0, 2 * Math.PI);
       faviconCtx.fill();
-      faviconCtx.fillStyle='white';
-      faviconCtx.font='10px Arial';
-      faviconCtx.textAlign='center';
-      faviconCtx.textBaseline='middle';
-      faviconCtx.fillText(unreadCount>99?'99+':String(unreadCount),24,8);
+      faviconCtx.fillStyle = 'white';
+      faviconCtx.font = '10px Arial';
+      faviconCtx.textAlign = 'center';
+      faviconCtx.textBaseline = 'middle';
+      faviconCtx.fillText(unreadCount > 99 ? '99+' : String(unreadCount), 24, 8);
     }
-    originalFavicon.href=faviconCanvas.toDataURL('image/png');
+    originalFavicon.href = faviconCanvas.toDataURL('image/png');
   };
 }
-function incrementFavicon(){ unreadCount++; drawFavicon(); }
-function resetFavicon(){ unreadCount=0; drawFavicon(); }
+function incrementFavicon() { unreadCount++; drawFavicon(); }
+function resetFavicon() { unreadCount = 0; drawFavicon(); }
 window.addEventListener('focus', resetFavicon);
 
-// ---------------- Typing Event ----------------
+// ---------------- Typing / Send / Emoji ----------------
 input?.addEventListener('input', () => {
   if (!socket) return;
   if (input.value.trim()) {
@@ -253,12 +243,10 @@ input?.addEventListener('input', () => {
   } else socket.emit('stop typing', { user: currentUser, room: currentRoom });
 });
 
-// ---------------- Send Message ----------------
 form?.addEventListener('submit', e => {
   e.preventDefault();
   if (!input.value.trim()) return;
-
-  const tempId = `temp-${Date.now()}-${Math.floor(Math.random()*1e6)}`;
+  const tempId = `temp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
   const msg = { user: currentUser, room: currentRoom, text: input.value.trim(), time: Date.now(), tempId };
   socket?.emit('chat message', msg);
   displayMessage(msg);
@@ -268,28 +256,61 @@ form?.addEventListener('submit', e => {
 // ---------------- Emoji Picker ----------------
 emojiBtn?.addEventListener('click', () => {
   if (!emojiPicker) return;
+
   emojiPicker.classList.toggle('show');
-  if (emojiPicker.classList.contains('show') && !emojisLoaded) {
+
+  // Load emojis only once
+  if (!emojisLoaded && emojiPicker.classList.contains('show')) {
     fetch('/emoji.json')
       .then(res => res.json())
       .then(data => {
         emojiData = data;
         emojiPicker.innerHTML = '';
+
+        // Iterate categories
         Object.keys(data).forEach(cat => {
           const catDiv = document.createElement('div');
-          catDiv
           catDiv.className = 'emoji-category';
+
+          // Optional category title
+          const catTitle = document.createElement('div');
+          catTitle.className = 'emoji-category-title';
+          catTitle.textContent = cat;
+          catDiv.appendChild(catTitle);
+
+          // Add emojis
           data[cat].forEach(e => {
             const btn = document.createElement('button');
             btn.type = 'button';
-            btn.textContent = e;
-            btn.addEventListener('click', () => { input.value += e; input.focus(); });
+
+            // Handle char (unicode) or future image emoji
+            if (e.char) btn.textContent = e.char;
+            else if (e.url) { // For image-based custom emojis
+              const img = document.createElement('img');
+              img.src = e.url;
+              img.alt = e.name || '';
+              img.className = 'emoji-img';
+              btn.appendChild(img);
+            }
+
+            // Tooltip for name
+            btn.title = e.name || '';
+            
+            // Click inserts emoji
+            btn.addEventListener('click', () => {
+              input.value += e.char || '';
+              input.focus();
+            });
+
             catDiv.appendChild(btn);
           });
+
           emojiPicker.appendChild(catDiv);
         });
+
         emojisLoaded = true;
-      });
+      })
+      .catch(err => console.error('Error loading emojis:', err));
   }
 });
 
@@ -298,9 +319,3 @@ quickEmojis.forEach(btn => btn.addEventListener('click', () => {
   input.value += btn.textContent;
   input.focus();
 }));
-
-// Scroll lock toggle
-scrollLockBtn?.addEventListener('click', () => {
-  autoScrollEnabled = !autoScrollEnabled;
-  scrollLockBtn.textContent = autoScrollEnabled ? '🔓 Auto-scroll ON' : '🔒 Auto-scroll OFF';
-});
