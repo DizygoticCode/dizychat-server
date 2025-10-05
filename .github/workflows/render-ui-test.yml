@@ -29,31 +29,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libnss3 \
-            libxss1 \
-            libxtst6 \
-            libxrandr2 \
-            libatk1.0-0 \
-            libatk-bridge2.0-0 \
-            libcups2 \
-            libdrm2 \
-            libgbm1 \
-            libgtk-3-0 \
-            libnotify-dev \
-            libxshmfence1 \
-            libxdamage1 \
-            libxcomposite1 \
-            libxkbcommon0 \
-            libxfixes3 \
-            libegl1 \
-            fonts-liberation \
-            libpango-1.0-0 \
-            libcairo2 \
-            libxext6 \
-            libxi6 \
-            xdg-utils \
-            wget \
-            ffmpeg || true
+            libnss3 libxss1 libxtst6 libxrandr2 libatk1.0-0 libatk-bridge2.0-0 \
+            libcups2 libdrm2 libgbm1 libgtk-3-0 libnotify-dev libxshmfence1 \
+            libxdamage1 libxcomposite1 libxkbcommon0 libxfixes3 libegl1 \
+            fonts-liberation libpango-1.0-0 libcairo2 libxext6 libxi6 xdg-utils \
+            wget ffmpeg || true
 
       # 4️⃣ Deploy to Render
       - name: Deploy to Render
@@ -73,33 +53,28 @@ jobs:
           echo "⏱️ Waiting for Render deployment to become live..."
           START_TIME=$(date +%s)
           MAX_WAIT=300
-          
           while true; do
             SERVICE_INFO=$(curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
               "https://api.render.com/v1/services/$SERVICE_ID")
-            
             URL=$(echo "$SERVICE_INFO" | jq -r '.serviceDetails.url')
             HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL" || echo "000")
-            
             if [ -n "$URL" ] && [ "$HTTP_STATUS" -eq 200 ]; then
               ELAPSED=$(( $(date +%s) - START_TIME ))
               echo "✅ Render deployment is live at $URL (took ${ELAPSED}s, HTTP $HTTP_STATUS)"
               echo "DEPLOY_URL=$URL" >> $GITHUB_ENV
               break
             fi
-
             ELAPSED=$(( $(date +%s) - START_TIME ))
             if [ $ELAPSED -ge $MAX_WAIT ]; then
               echo "❌ Render deployment did not become live within ${MAX_WAIT}s"
               echo "Last HTTP status: $HTTP_STATUS"
               exit 1
             fi
-
             echo "Deployment not live yet, elapsed: ${ELAPSED}s, last HTTP status: $HTTP_STATUS"
             sleep 5
           done
 
-      # 4.6️⃣ Buffer time to let Render app warm up
+      # 4.6️⃣ Buffer time for app warm-up
       - name: Wait for Render app to warm up
         run: |
           echo "🕐 Waiting 15 seconds for Render app to fully initialize..."
@@ -127,57 +102,15 @@ jobs:
           echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
           echo "🕒 Run timestamp: $TIMESTAMP"
 
-      # 7️⃣ Install Playwright
-      - name: Install Playwright
+      # 7️⃣ Run UI Tests (Puppeteer + Playwright) via CommonJS script
+      - name: Run UI Tests (Puppeteer + Playwright)
+        env:
+          TIMESTAMP: ${{ env.TIMESTAMP }}
+          DEPLOY_URL: ${{ env.DEPLOY_URL }}
         run: |
-          npm install -D playwright
-          npx playwright install
-
-      # 8️⃣ Puppeteer screenshot (quick check)
-      - name: Puppeteer screenshot
-        run: |
-          npm install puppeteer
-          node tests/render-interaction.test.js --puppeteer
-
-           # 9️⃣ Run Playwright UI Test with retry
-      - name: Run Playwright UI Test (with retry)
-        run: |
-          TIMESTAMP=${{ env.TIMESTAMP }}
-          MAX_RETRIES=2
-          COUNT=0
-          until [ $COUNT -ge $MAX_RETRIES ]; do
-            echo "🚀 Running Playwright attempt $((COUNT+1))/$MAX_RETRIES..."
-            node -e "
-              import { chromium } from 'playwright';
-              (async () => {
-                const browser = await chromium.launch();
-                const context = await browser.newContext();
-                const page = await context.newPage();
-                await page.goto('${{ env.DEPLOY_URL }}');
-                await page.click('text=Join');  // Example action
-                try {
-                  await page.waitForSelector('#toggle-theme', { timeout: 30000 });
-                  console.log('✅ #toggle-theme found');
-                } catch (err) {
-                  console.warn('⚠️ #toggle-theme not found, saving page HTML...');
-                  const fs = require('fs');
-                  const path = 'ui-test-artifacts/playwright-error-' + ${TIMESTAMP} + '.html';
-                  fs.writeFileSync(path, await page.content());
-                  throw err;
-                }
-                await browser.close();
-              })();
-            " && break
-            COUNT=$((COUNT+1))
-            if [ $COUNT -lt $MAX_RETRIES ]; then
-              echo "⚠️ Retry in 10s..."
-              sleep 10
-            else
-              echo "❌ All retries failed."
-              exit 1
-            fi
-          done
-
+          echo "🚀 Running UI tests via CommonJS script..."
+          npm install puppeteer playwright
+          node tests/ui-test.cjs
 
       # 🔟 Upload all UI artifacts
       - name: Upload UI artifacts
