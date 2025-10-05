@@ -24,12 +24,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # 3.5️⃣ Install Playwright Linux dependencies
+      # 3.5️⃣ Install Playwright Linux dependencies (Ubuntu 24.04 safe)
       - name: Install Playwright Linux dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libasound2t64 \
             libnss3 \
             libxss1 \
             libxtst6 \
@@ -47,8 +46,6 @@ jobs:
             libxkbcommon0 \
             libxfixes3 \
             libegl1 \
-            libgles2-mesa-dev \
-            libwoff2-1 \
             fonts-liberation \
             libpango-1.0-0 \
             libcairo2 \
@@ -56,7 +53,7 @@ jobs:
             libxi6 \
             xdg-utils \
             wget \
-            ffmpeg
+            ffmpeg || true
 
       # 4️⃣ Deploy to Render
       - name: Deploy to Render
@@ -142,7 +139,7 @@ jobs:
           npm install puppeteer
           node tests/render-interaction.test.js --puppeteer
 
-      # 9️⃣ Run Playwright UI Test with retry and save HTML on failure
+           # 9️⃣ Run Playwright UI Test with retry
       - name: Run Playwright UI Test (with retry)
         run: |
           TIMESTAMP=${{ env.TIMESTAMP }}
@@ -152,18 +149,18 @@ jobs:
             echo "🚀 Running Playwright attempt $((COUNT+1))/$MAX_RETRIES..."
             node -e "
               import { chromium } from 'playwright';
-              import fs from 'fs';
               (async () => {
                 const browser = await chromium.launch();
                 const context = await browser.newContext();
                 const page = await context.newPage();
                 await page.goto('${{ env.DEPLOY_URL }}');
-                await page.click('text=Join');
+                await page.click('text=Join');  // Example action
                 try {
                   await page.waitForSelector('#toggle-theme', { timeout: 30000 });
                   console.log('✅ #toggle-theme found');
                 } catch (err) {
                   console.warn('⚠️ #toggle-theme not found, saving page HTML...');
+                  const fs = require('fs');
                   const path = 'ui-test-artifacts/playwright-error-' + ${TIMESTAMP} + '.html';
                   fs.writeFileSync(path, await page.content());
                   throw err;
@@ -180,6 +177,7 @@ jobs:
               exit 1
             fi
           done
+
 
       # 🔟 Upload all UI artifacts
       - name: Upload UI artifacts
@@ -211,7 +209,6 @@ jobs:
             echo "- Puppeteer screenshot: \`puppeteer-room-$TIMESTAMP.png\` ($PUPPETEER_STATUS)"
             echo "- Playwright screenshot: \`playwright-room-$TIMESTAMP.png\`"
             echo "- Playwright video: \`playwright-video-$TIMESTAMP.webm\`"
-            echo "- Playwright HTML on error: \`playwright-error-$TIMESTAMP.html\` (if any)"
             echo ""
             echo "✅ **Artifacts are available below.**"
             echo ""
