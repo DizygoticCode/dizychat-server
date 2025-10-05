@@ -55,6 +55,7 @@ app.post('/upload', upload.single('file'), (req, res) => {
     size: req.file.size
   });
 });
+<<<<<<< HEAD
 
 // ---------------- Link Preview ----------------
 app.get('/link-preview', async (req, res) => {
@@ -71,6 +72,8 @@ app.get('/link-preview', async (req, res) => {
   } catch (err) { res.json({ title: '', image: '' }); }
 });
 
+=======
+>>>>>>> parent of 9d274fa (chat fix and update)
 // ---------------- Socket.IO ----------------
 let typingUsers = {};
 let rooms = {}; // room passwords
@@ -222,10 +225,14 @@ io.on('connection', socket => {
     } catch(err){ console.error("Error reacting to message:", err); }
   });
 
+<<<<<<< HEAD
   // ----- Typing -----
   socket.on('typing', data => {
+=======
+  // ---------------- Typing Indicator ----------------
+  socket.on('typing', username => {
+>>>>>>> parent of 9d274fa (chat fix and update)
     if (!canSendTyping(socket.id)) return;
-    const username = typeof data === 'string' ? data : data.user;
     typingUsers[socket.id] = username;
     io.emit('typing', Object.values(typingUsers));
   });
@@ -241,9 +248,16 @@ io.on('connection', socket => {
     delete typingUsers[socket.id];
   });
 });
-
 // ---------------- Start Server ----------------
 server.listen(PORT, () => console.log(`🟢 Server running on port ${PORT}`));
 
+<<<<<<< HEAD
 // ---------------- Catch-all ----------------
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+=======
+// ---------------- Serve index.html for all other routes ----------------
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+>>>>>>> parent of 9d274fa (chat fix and update)
