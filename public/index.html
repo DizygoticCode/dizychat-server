@@ -7,20 +7,25 @@
   <link rel="icon" href="/logo.png" type="image/png" />
   <link rel="stylesheet" href="/chat.css" />
 </head>
-<body>
+<body class="dark">
   <!-- Landing Page -->
   <div id="username-prompt" class="landing">
     <img src="/logo.png" alt="DizyChat Logo" class="logo" />
-    <h2>Welcome to DizyChat</h2>
-    <input id="username-input" placeholder="Enter username" />
-    <input id="room-input" placeholder="Enter room name" />
-    <input id="room-password" type="password" placeholder="Room password (optional)" />
-    <button id="join-btn">Join Chat</button>
-    <div id="room-list"></div>
+    <h1>Welcome to DizyChat</h1>
+    <div class="landing-inputs">
+      <input id="username-input" placeholder="Choose your username" />
+      <input id="room-input" placeholder="Enter room name" />
+      <input id="room-password" type="password" placeholder="Room password (optional)" />
+      <button id="join-btn">Join Chat</button>
+    </div>
+    <div id="room-list" class="public-rooms">
+      <h3>Available Public Rooms</h3>
+      <ul id="public-room-list"></ul>
+    </div>
   </div>
 
   <!-- Scroll Lock Toggle -->
-  <button id="scrollLockBtn" style="display:none; margin:5px; padding:5px 10px;">
+  <button id="scrollLockBtn" class="scroll-lock-btn" style="display:none;">
     🔓 Auto-scroll ON
   </button>
 
@@ -34,12 +39,8 @@
           <span id="room-name">Room</span>
         </div>
       </div>
-
       <div class="header-right">
-        <div id="search-container">
-          <input type="text" id="searchInput" placeholder="Search messages..." />
-          <button id="searchBtn">Search</button>
-        </div>
+        <input type="text" id="searchInput" placeholder="Search messages..." />
         <button id="share-btn" title="Share Room Link" aria-label="Share Room Link">🔗</button>
         <button id="toggle-theme" title="Toggle Dark/Light" aria-label="Toggle theme">🌙</button>
       </div>
@@ -47,7 +48,7 @@
 
     <!-- Pinned Messages -->
     <div id="pinned-messages" class="pinned-banner" style="display:none;">
-      <h4>Pinned</h4>
+      <h4>Pinned Messages</h4>
       <ul id="pinned-list"></ul>
     </div>
 
@@ -74,17 +75,13 @@
     <!-- Emoji Picker -->
     <div id="emoji-picker" class="emoji-picker" role="dialog" aria-modal="true"></div>
   </div>
+  
+	<!-- Jump to Bottom Button -->
+	<button id="jump-bottom-btn" style="display:none;" title="Scroll to latest message">⬇️</button>
+
 
   <!-- Modal Overlay -->
-  <div id="app-modal" style="display:none;">
-    <div id="app-modal-box">
-      <h3>Modal Title</h3>
-      <textarea placeholder="Type something..."></textarea>
-      <div class="modal-actions">
-        <button id="modal-close-btn">Close</button>
-      </div>
-    </div>
-  </div>
+  <div id="app-modal" style="display:none;"></div>
 
   <!-- Scripts -->
   <canvas id="favicon-canvas" width="32" height="32" style="display:none;"></canvas>

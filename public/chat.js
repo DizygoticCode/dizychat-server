@@ -1,4 +1,4 @@
-// public/chat.js — synced & enhanced version
+// public/chat.js — fully updated version
 
 // ================= Part 1: Setup & Utilities =================
 
@@ -32,11 +32,8 @@ let socket = null;
 let typingTimeout = null;
 let darkMode = false;
 let emojiData = {};
+let emojisLoaded = false;
 const linkPreviewCache = new Map();
-let currentPage = 1;
-const PAGE_LIMIT = 50;
-let isLoadingHistory = false;
-let pendingHistoryRequest = false;
 let autoScrollEnabled = true;
 
 // Utility to safely escape HTML
@@ -50,39 +47,29 @@ function escapeHtml(unsafe) {
     .replace(/'/g, '&#039;');
 }
 
-// ---------------- Modal overlay (reusable) ----------------
+// ---------------- Modal overlay ----------------
 function showModal({ title = 'Input', placeholder = '', defaultValue = '', onConfirm = null }) {
   if (document.getElementById('app-modal')) return;
   const modal = document.createElement('div');
   modal.id = 'app-modal';
   Object.assign(modal.style, {
-    position: 'fixed',
-    inset: 0,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'rgba(0,0,0,0.45)',
-    zIndex: 9999
+    position: 'fixed', inset: 0, display: 'flex',
+    alignItems: 'center', justifyContent: 'center',
+    background: 'rgba(0,0,0,0.45)', zIndex: 9999
   });
 
   const box = document.createElement('div');
   Object.assign(box.style, {
-    minWidth: '320px',
-    maxWidth: '92vw',
-    background: '#fff',
-    borderRadius: '10px',
-    padding: '16px',
+    minWidth: '320px', maxWidth: '92vw',
+    background: '#fff', borderRadius: '10px', padding: '16px',
     boxShadow: '0 8px 30px rgba(0,0,0,0.3)'
   });
   box.innerHTML = `<h3 style="margin:0 0 8px 0">${title}</h3>`;
 
   const ta = document.createElement('textarea');
   Object.assign(ta.style, {
-    width: '100%',
-    minHeight: '80px',
-    resize: 'vertical',
-    fontSize: '14px',
-    padding: '8px'
+    width: '100%', minHeight: '80px', resize: 'vertical',
+    fontSize: '14px', padding: '8px'
   });
   ta.id = 'modal-input';
   ta.placeholder = placeholder;
@@ -90,12 +77,7 @@ function showModal({ title = 'Input', placeholder = '', defaultValue = '', onCon
   box.appendChild(ta);
 
   const actions = document.createElement('div');
-  Object.assign(actions.style, {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    gap: '8px',
-    marginTop: '12px'
-  });
+  Object.assign(actions.style, { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '12px' });
 
   const cancelBtn = document.createElement('button');
   cancelBtn.textContent = 'Cancel';
@@ -119,11 +101,9 @@ function showModal({ title = 'Input', placeholder = '', defaultValue = '', onCon
 
 // ================= Part 2: Favicon, debounce, join/init handlers =================
 
-// Favicon badge
 let unreadCount = 0;
 const faviconCanvas = document.createElement('canvas');
-faviconCanvas.width = 32;
-faviconCanvas.height = 32;
+faviconCanvas.width = 32; faviconCanvas.height = 32;
 const faviconCtx = faviconCanvas.getContext('2d');
 let originalFavicon = document.querySelector("link[rel~='icon']");
 if (!originalFavicon) {
@@ -159,13 +139,10 @@ window.addEventListener('focus', resetFavicon);
 
 function debounce(fn, wait = 250) {
   let t;
-  return (...args) => {
-    clearTimeout(t);
-    t = setTimeout(() => fn(...args), wait);
-  };
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); };
 }
 
-// Pre-fill room
+// Pre-fill room from URL
 const urlParams = new URLSearchParams(window.location.search);
 const prefillRoom = urlParams.get('room') || '';
 if (prefillRoom && roomInput) roomInput.value = prefillRoom;
@@ -247,7 +224,6 @@ function initChat() {
 
   socket.on('pinned messages', renderPinned);
 
-  // Star / unstar
   socket.on('message starred', ({ id, starredBy }) => {
     const msgEl = document.querySelector(`.message[data-id='${id}']`);
     if (!msgEl) return;
@@ -262,11 +238,9 @@ function initChat() {
     if (starBtn) starBtn.textContent = starredBy.includes(currentUser) ? '⭐' : '☆';
   });
 
-  // Pin / unpin
-  socket.on('message pinned', (msg) => renderPinnedMessage(msg));
-  socket.on('message unpinned', (msg) => renderPinnedMessage(msg));
+  socket.on('message pinned', renderPinnedMessage);
+  socket.on('message unpinned', renderPinnedMessage);
 
-  // Reactions
   socket.on('update reactions', ({ id, reactions }) => {
     const msgEl = document.querySelector(`.message[data-id='${id}']`);
     if (!msgEl) return;
@@ -312,10 +286,9 @@ function displayMessage(msg, prepend = false) {
   text.textContent = msg.text || '';
   div.appendChild(text);
 
-  // Reactions container
   const reactionsDiv = document.createElement('div');
   reactionsDiv.className = 'reactions';
-  if (msg.reactions && msg.reactions.length > 0) {
+  if (msg.reactions && msg.reactions.length) {
     msg.reactions.forEach(r => {
       const span = document.createElement('span');
       span.textContent = r.emoji;
@@ -324,30 +297,29 @@ function displayMessage(msg, prepend = false) {
   }
   div.appendChild(reactionsDiv);
 
-  // Star button
-  const starBtn = document.createElement('button');
-  starBtn.className = 'star-btn';
-  starBtn.textContent = (msg.starredBy && msg.starredBy.includes(currentUser)) ? '⭐' : '☆';
-  starBtn.addEventListener('click', () => {
-    if (starBtn.textContent === '⭐') {
-      socket.emit('unstar message', { room: currentRoom, id, user: currentUser });
-    } else {
-      socket.emit('star message', { room: currentRoom, id, user: currentUser });
-    }
-  });
-  div.appendChild(starBtn);
-
-  // Pin button (for self)
-  if (msg.user === currentUser) {
-    const pinBtn = document.createElement('button');
-    pinBtn.className = 'pin-btn';
-    pinBtn.textContent = msg.pinned ? '📌' : '📍';
-    pinBtn.addEventListener('click', () => {
-      if (msg.pinned) socket.emit('unpin message', { room: currentRoom, id });
-      else socket.emit('pin message', { room: currentRoom, id });
+  // Star button only for other messages
+  if (msg.user !== currentUser) {
+    const starBtn = document.createElement('button');
+    starBtn.className = 'star-btn';
+    starBtn.textContent = (msg.starredBy && msg.starredBy.includes(currentUser)) ? '⭐' : '☆';
+    starBtn.dataset.tooltip = 'Star this message';
+    starBtn.addEventListener('click', () => {
+      if (starBtn.textContent === '⭐') socket.emit('unstar message', { room: currentRoom, id, user: currentUser });
+      else socket.emit('star message', { room: currentRoom, id, user: currentUser });
     });
-    div.appendChild(pinBtn);
+    div.appendChild(starBtn);
   }
+
+  // Pin button for all messages
+  const pinBtn = document.createElement('button');
+  pinBtn.className = 'pin-btn';
+  pinBtn.textContent = msg.pinned ? '📌' : '📍';
+  pinBtn.dataset.tooltip = msg.pinned ? 'Unpin message' : 'Pin message';
+  pinBtn.addEventListener('click', () => {
+    if (msg.pinned) socket.emit('unpin message', { room: currentRoom, id });
+    else socket.emit('pin message', { room: currentRoom, id });
+  });
+  div.appendChild(pinBtn);
 
   prepend ? messages.prepend(div) : appendMessage(div);
 
@@ -374,7 +346,7 @@ function renderPinned(msgs) {
   const banner = document.getElementById('pinned-messages');
   const list = document.getElementById('pinned-list');
   if (!banner || !list) return;
-  if (!msgs || msgs.length === 0) {
+  if (!msgs || !msgs.length) {
     banner.style.display = 'none';
     return;
   }
@@ -387,8 +359,7 @@ function renderPinned(msgs) {
   });
 }
 
-function renderPinnedMessage(msg) {
-  // refresh pinned messages list
+function renderPinnedMessage() {
   socket.emit('get pinned', { room: currentRoom });
 }
 
@@ -406,7 +377,6 @@ form?.addEventListener('submit', (e) => {
   stopTyping();
 });
 
-// Typing events
 input?.addEventListener('input', () => {
   if (!socket) return;
   if (input.value.trim()) {
@@ -417,19 +387,19 @@ input?.addEventListener('input', () => {
 });
 function stopTyping() { socket?.emit('stop typing', { user: currentUser, room: currentRoom }); }
 
-// Emoji picker toggle
+// Emoji picker
 emojiBtn?.addEventListener('click', () => {
   if (!emojiPicker) return;
   emojiPicker.classList.toggle('show');
   if (emojiPicker.classList.contains('show')) populateEmojiPicker();
 });
 
-// Populate emoji picker
 function populateEmojiPicker() {
-  if (!emojiPicker || emojiPicker.innerHTML.trim() !== '') return;
+  if (emojisLoaded) return;
   fetch('/emoji.json')
     .then(res => res.json())
     .then(data => {
+      emojiData = data;
       emojiPicker.innerHTML = '';
       for (const category in data) {
         const catDiv = document.createElement('div');
@@ -438,17 +408,33 @@ function populateEmojiPicker() {
           const btn = document.createElement('button');
           btn.type = 'button';
           btn.textContent = emoji;
-          btn.addEventListener('click', () => {
-            input.value += emoji;
-            input.focus();
-          });
+          btn.addEventListener('click', () => { input.value += emoji; input.focus(); });
           catDiv.appendChild(btn);
         });
         emojiPicker.appendChild(catDiv);
       }
+      emojisLoaded = true;
     })
     .catch(err => console.error('Failed to load emoji.json', err));
 }
+
+// Jump to Bottom Button
+const jumpBtn = document.getElementById('jump-bottom-btn');
+
+messages?.addEventListener('scroll', () => {
+  const atBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 10;
+  autoScrollEnabled = atBottom;
+
+  if (!autoScrollEnabled) jumpBtn.style.display = 'block';
+  else jumpBtn.style.display = 'none';
+});
+
+jumpBtn?.addEventListener('click', () => {
+  messages.scrollTo({ top: messages.scrollHeight, behavior: 'smooth' });
+  autoScrollEnabled = true;
+  jumpBtn.style.display = 'none';
+});
+
 
 // Quick emojis
 quickEmojis.forEach(btn => {
@@ -493,7 +479,10 @@ function loadRecentRooms() {
   recent.forEach(r => {
     const btn = document.createElement('button');
     btn.textContent = r;
-    btn.addEventListener('click', () => { roomInput.value = r; });
+    btn.addEventListener('click', () => {
+      roomInput.value = r;
+      if (usernameInput.value.trim()) joinBtn.click();
+    });
     list.appendChild(btn);
   });
 }
