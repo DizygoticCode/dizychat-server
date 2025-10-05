@@ -233,7 +233,7 @@ function incrementFavicon() { unreadCount++; drawFavicon(); }
 function resetFavicon() { unreadCount = 0; drawFavicon(); }
 window.addEventListener('focus', resetFavicon);
 
-// ---------------- Typing / Send / Emoji ----------------
+// ---------------- Typing / Send ----------------
 input?.addEventListener('input', () => {
   if (!socket) return;
   if (input.value.trim()) {
@@ -259,63 +259,65 @@ emojiBtn?.addEventListener('click', () => {
 
   emojiPicker.classList.toggle('show');
 
-  // Load emojis only once
-  if (!emojisLoaded && emojiPicker.classList.contains('show')) {
-    fetch('/emoji.json')
-      .then(res => res.json())
-      .then(data => {
-        emojiData = data;
-        emojiPicker.innerHTML = '';
+  if (emojisLoaded || !emojiPicker.classList.contains('show')) return;
 
-        // Iterate categories
-        Object.keys(data).forEach(cat => {
-          const catDiv = document.createElement('div');
-          catDiv.className = 'emoji-category';
+  fetch('/emoji.json')
+    .then(res => res.ok ? res.json() : Promise.reject('Failed to load emoji.json'))
+    .then(data => {
+      if (!data || typeof data !== 'object') return;
+      emojiData = data;
+      emojiPicker.innerHTML = '';
 
-          // Optional category title
-          const catTitle = document.createElement('div');
-          catTitle.className = 'emoji-category-title';
-          catTitle.textContent = cat;
-          catDiv.appendChild(catTitle);
+      Object.keys(data).forEach(cat => {
+        const catDiv = document.createElement('div');
+        catDiv.className = 'emoji-category';
+        catDiv.dataset.category = cat;
 
-          // Add emojis
-          data[cat].forEach(e => {
-            const btn = document.createElement('button');
-            btn.type = 'button';
+        const catTitle = document.createElement('div');
+        catTitle.className = 'emoji-category-title';
+        catTitle.textContent = cat;
+        catDiv.appendChild(catTitle);
 
-            // Handle char (unicode) or future image emoji
-            if (e.char) btn.textContent = e.char;
-            else if (e.url) { // For image-based custom emojis
-              const img = document.createElement('img');
-              img.src = e.url;
-              img.alt = e.name || '';
-              img.className = 'emoji-img';
-              btn.appendChild(img);
-            }
+        if (!Array.isArray(data[cat])) return;
 
-            // Tooltip for name
-            btn.title = e.name || '';
-            
-            // Click inserts emoji
-            btn.addEventListener('click', () => {
-              input.value += e.char || '';
-              input.focus();
-            });
+        data[cat].forEach(e => {
+          const char = e.char || '';
+          if (!char) return;
 
-            catDiv.appendChild(btn);
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.textContent = char;
+          btn.title = e.name || '';
+
+          btn.addEventListener('click', () => {
+            if (!input) return;
+            input.value += char;
+            input.focus();
           });
 
-          emojiPicker.appendChild(catDiv);
+          catDiv.appendChild(btn);
         });
 
-        emojisLoaded = true;
-      })
-      .catch(err => console.error('Error loading emojis:', err));
-  }
+        if (catDiv.childNodes.length > 0) emojiPicker.appendChild(catDiv);
+      });
+
+      emojisLoaded = true;
+    })
+    .catch(err => {
+      console.warn('Emoji JSON load failed:', err);
+      emojiPicker.innerHTML = '<div style="padding:10px;">Failed to load emojis.</div>';
+    });
 });
 
 // Quick emojis
-quickEmojis.forEach(btn => btn.addEventListener('click', () => {
-  input.value += btn.textContent;
+quickEmojis?.forEach(btn => btn.addEventListener('click', () => {
+  if (!input) return;
+  input.value += btn.textContent || '';
   input.focus();
 }));
+
+// Scroll lock toggle
+scrollLockBtn?.addEventListener('click', () => {
+  autoScrollEnabled = !autoScrollEnabled;
+  scrollLockBtn.textContent = autoScrollEnabled ? '🔓 Auto-scroll ON' : '🔒 Auto-scroll OFF';
+});
