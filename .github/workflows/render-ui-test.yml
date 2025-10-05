@@ -24,14 +24,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # 3.5️⃣ Install Playwright Linux dependencies (Ubuntu 24.04 compatible)
+      # 3.5️⃣ Install Playwright Linux dependencies (Ubuntu 24.04 fix)
       - name: Install Playwright Linux dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libgtk-4-1 \
             libgraphene-1.0-0 \
-            libwoff2-1 \
+            libwoff2-1.0.2 \
             libvpx9 \
             libevent-2.1-7 \
             libopus0 \
@@ -45,8 +45,8 @@ jobs:
             libsecret-1-0 \
             libhyphen0 \
             libmanette-0.2-0 \
-            libgles2-mesa \
-            libx264-159 \
+            libgles2 \
+            libx264-164 \
             libasound2t64
 
       # 4️⃣ Deploy to Render
