@@ -102,14 +102,19 @@ jobs:
           echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
           echo "🕒 Run timestamp: $TIMESTAMP"
 
-      # 7️⃣ Run UI Tests (Puppeteer + Playwright) via CommonJS script
+      # 7️⃣ Install Playwright & Puppeteer
+      - name: Install Playwright & Puppeteer
+        run: |
+          npm install puppeteer playwright
+          npx playwright install chromium
+
+      # 8️⃣ Run UI Tests (Puppeteer + Playwright) via CommonJS script
       - name: Run UI Tests (Puppeteer + Playwright)
         env:
           TIMESTAMP: ${{ env.TIMESTAMP }}
           DEPLOY_URL: ${{ env.DEPLOY_URL }}
         run: |
           echo "🚀 Running UI tests via CommonJS script..."
-          npm install puppeteer playwright
           node tests/ui-test.cjs
 
       # 🔟 Upload all UI artifacts
