@@ -1,5 +1,5 @@
 // ==============================
-// DizyChat — Full Chat JS
+// DizyChat — Full Chat JS (Merged & Favicon + Leave Room)
 // ==============================
 
 // ---------------- DOM References ----------------
@@ -24,6 +24,7 @@ const toggleThemeBtn = document.getElementById('toggle-theme');
 const searchInput = document.getElementById('search-input');
 const searchBtn = document.getElementById('search-btn');
 const homeLogo = document.getElementById('home-logo');
+const leaveBtn = document.getElementById('leave-btn');
 
 let socket = null;
 let currentUser = '';
@@ -36,42 +37,100 @@ let emojiData = {};
 let emojisLoaded = false;
 let unreadCount = 0;
 
-// ---------------- Favicon ----------------
-let originalFavicon = document.querySelector("link[rel~='icon']");
-if (!originalFavicon) {
-    originalFavicon = document.createElement('link');
-    originalFavicon.rel = 'icon';
-    originalFavicon.href = '/logo.png';
-    document.head.appendChild(originalFavicon);
-}
+// ---------------- Favicon Logic ----------------
+const faviconLink = document.querySelector("link[rel~='icon']") || (() => {
+    const link = document.createElement('link');
+    link.rel = 'icon';
+    link.href = '/logo.png';
+    document.head.appendChild(link);
+    return link;
+})();
 const faviconCanvas = document.createElement('canvas');
 faviconCanvas.width = 32;
 faviconCanvas.height = 32;
-const faviconCtx = faviconCanvas.getContext('2d');
+const ctx = faviconCanvas.getContext('2d');
+
+let badgeScale = 1;
+let popBoost = 0;
+let targetScale = 1;
+let pulse = 0;
+let unreadAlpha = 0;
+
+const POP_DECAY = 0.08;
+const MAX_BADGE_SCALE = 1.6;
+const POP_INCREMENT = 0.25;
+
+function incrementFavicon() {
+    unreadCount++;
+    popBoost += POP_INCREMENT;
+    if (popBoost > MAX_BADGE_SCALE - 1) popBoost = MAX_BADGE_SCALE - 1;
+    targetScale = 1 + popBoost;
+}
+
+function resetFavicon() {
+    unreadCount = 0;
+    popBoost = 0;
+    badgeScale = 1;
+    targetScale = 1;
+}
+
+window.addEventListener('focus', resetFavicon);
 
 function drawFavicon() {
     const img = new Image();
     img.src = '/logo.png';
     img.onload = () => {
-        faviconCtx.clearRect(0, 0, 32, 32);
-        faviconCtx.drawImage(img, 0, 0, 32, 32);
+        ctx.clearRect(0, 0, 32, 32);
+        ctx.drawImage(img, 0, 0, 32, 32);
+
         if (unreadCount > 0) {
-            faviconCtx.fillStyle = 'red';
-            faviconCtx.beginPath();
-            faviconCtx.arc(24, 8, 7, 0, Math.PI * 2);
-            faviconCtx.fill();
-            faviconCtx.fillStyle = 'white';
-            faviconCtx.font = '10px Arial';
-            faviconCtx.textAlign = 'center';
-            faviconCtx.textBaseline = 'middle';
-            faviconCtx.fillText(unreadCount > 99 ? '99+' : String(unreadCount), 24, 8);
+            unreadAlpha += (1 - unreadAlpha) * 0.15;
+            pulse += 0.15;
+            const scaleOffset = Math.sin(pulse) * 0.15;
+
+            badgeScale += (targetScale - badgeScale) * 0.2;
+            badgeScale = Math.min(badgeScale, MAX_BADGE_SCALE);
+            badgeScale = 1 + scaleOffset + (badgeScale - 1);
+            popBoost *= (1 - POP_DECAY);
+
+            const x = 26, y = 8, radius = 6;
+            const glowRadius = radius * 1.8 + scaleOffset * 6;
+            const glow = ctx.createRadialGradient(x, y, radius / 2, x, y, glowRadius);
+            const opacity = unreadAlpha * 0.5;
+            glow.addColorStop(0, `rgba(255,68,68,${opacity})`);
+            glow.addColorStop(1, "rgba(255,68,68,0)");
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.arc(x, y, glowRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.scale(badgeScale, badgeScale);
+            ctx.translate(-x, -y);
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255,68,68,${unreadAlpha})`;
+            ctx.fill();
+
+            ctx.fillStyle = `rgba(255,255,255,${unreadAlpha})`;
+            ctx.font = "bold 10px sans-serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(unreadCount > 9 ? "9+" : unreadCount.toString(), x, y);
+            ctx.restore();
+        } else {
+            unreadAlpha *= 0.85;
         }
-        originalFavicon.href = faviconCanvas.toDataURL('image/png');
+
+        faviconLink.href = faviconCanvas.toDataURL("image/png");
     };
 }
-function incrementFavicon() { unreadCount++; drawFavicon(); }
-function resetFavicon() { unreadCount = 0; drawFavicon(); }
-window.addEventListener('focus', resetFavicon);
+
+(function loop() {
+    drawFavicon();
+    requestAnimationFrame(loop);
+})();
 
 // ---------------- Landing Page Join ----------------
 joinBtn?.addEventListener('click', () => {
@@ -108,7 +167,6 @@ function initChat() {
     });
 
     socket.on('disconnect', () => console.log('Disconnected'));
-
     socket.on('chat message', displayMessage);
 
     socket.on('typing', typingUsers => {
@@ -117,7 +175,7 @@ function initChat() {
         others.length ? showTyping(others) : hideTyping();
     });
 
-    socket.on('stop typing', () => hideTyping());
+    socket.on('stop typing', hideTyping);
 
     socket.on('pinned messages', renderPinned);
     socket.on('message pinned', renderPinnedMessage);
@@ -139,12 +197,14 @@ function displayMessage(msg, prepend = false) {
     div.className = `message ${msg.user === currentUser ? 'self' : 'other'}`;
     if (id) div.dataset.id = id;
 
+    // Meta info (user + time)
     const meta = document.createElement('div');
     meta.className = 'meta';
     const t = msg.time ? new Date(msg.time) : new Date();
     meta.textContent = `${msg.user || 'Anon'} • ${t.toLocaleTimeString()}`;
     div.appendChild(meta);
 
+    // Message text
     const text = document.createElement('div');
     text.className = 'text';
     text.textContent = msg.text || '';
@@ -153,14 +213,16 @@ function displayMessage(msg, prepend = false) {
     // Reactions
     const reactionsDiv = document.createElement('div');
     reactionsDiv.className = 'reactions';
-    if (msg.reactions?.length) msg.reactions.forEach(r => {
-        const span = document.createElement('span');
-        span.textContent = r.emoji;
-        reactionsDiv.appendChild(span);
-    });
+    if (msg.reactions?.length) {
+        msg.reactions.forEach(r => {
+            const span = document.createElement('span');
+            span.textContent = r.emoji;
+            reactionsDiv.appendChild(span);
+        });
+    }
     div.appendChild(reactionsDiv);
 
-    // Star button
+    // Star button (only for messages not self)
     if (msg.user !== currentUser) {
         const starBtn = document.createElement('button');
         starBtn.className = 'star-btn';
@@ -195,16 +257,17 @@ function appendMessage(div) {
     if (!scrollLocked || atBottom) div.scrollIntoView({ behavior: 'smooth', block: 'end' });
 }
 
-// ---------------- Typing ----------------
+// ---------------- Typing Indicators ----------------
 function showTyping(users) {
     typingBubble.style.display = 'block';
     typingBubble.textContent = `${users.join(', ')} typing...`;
     clearTimeout(typingTimeout);
     typingTimeout = setTimeout(hideTyping, 2000);
 }
+
 function hideTyping() { typingBubble.style.display = 'none'; }
 
-// ---------------- Pinned ----------------
+// ---------------- Pinned Messages ----------------
 function renderPinned(msgs) {
     if (!pinnedBanner || !pinnedList) return;
     if (!msgs?.length) { pinnedBanner.style.display = 'none'; return; }
@@ -216,7 +279,10 @@ function renderPinned(msgs) {
         pinnedList.appendChild(li);
     });
 }
-function renderPinnedMessage() { socket.emit('get pinned', { room: currentRoom }); }
+
+function renderPinnedMessage() {
+    socket.emit('get pinned', { room: currentRoom });
+}
 
 // ---------------- Stars / Reactions ----------------
 function updateStar(id, starredBy) {
@@ -312,11 +378,7 @@ form?.addEventListener('submit', e => {
     socket?.emit('stop typing', { room: currentRoom, user: currentUser });
 });
 
-// Typing indicator
-input?.addEventListener('input', () => {
-    if (!socket) return;
-    if (input.value.trim()) {
-        socket.emit
+// ---------------- Typing Indicator ----------------
 input?.addEventListener('input', () => {
     if (!socket) return;
     if (input.value.trim()) {
@@ -368,4 +430,47 @@ homeLogo?.addEventListener('click', () => {
     localStorage.removeItem('username');
     localStorage.removeItem('sessionToken');
     window.location.href = '/';
+});
+
+// ---------------- Leave / Exit Room ----------------
+const leaveBtn = document.getElementById('leave-btn');
+leaveBtn?.addEventListener('click', () => {
+    if (socket) {
+        socket.emit('leave room', { room: currentRoom, user: currentUser });
+        socket.disconnect();
+        socket = null;
+    }
+    currentRoom = '';
+    currentUser = '';
+    usernamePrompt.style.display = 'flex';
+    chatContainer.style.display = 'none';
+    roomNameSpan.textContent = '';
+    messages.innerHTML = '';
+    pinnedBanner.style.display = 'none';
+    localStorage.removeItem('sessionToken');
+});
+// ---------------- Leave Button ----------------
+document.getElementById('leave-btn')?.addEventListener('click', () => {
+    // Disconnect from socket
+    if (socket) socket.disconnect();
+    socket = null;
+
+    // Clear session (optional)
+    localStorage.removeItem('username');
+    localStorage.removeItem('sessionToken');
+
+    // Hide chat, show landing page
+    chatContainer.style.display = 'none';
+    usernamePrompt.style.display = 'flex';
+
+    // Reset inputs
+    usernameInput.value = '';
+    roomInput.value = '';
+    roomPasswordInput.value = '';
+
+    // Reset favicon
+    resetFavicon();
+
+    // Remove query string
+    window.history.replaceState({}, '', '/');
 });

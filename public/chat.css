@@ -1,5 +1,5 @@
 /* ==============================
-   chat.css — Part 1: Base layout
+   chat.css — Base Layout
    ============================== */
 
 :root {
@@ -277,12 +277,14 @@ header .logo {
 /* Animations */
 @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
-<<<<<<< HEAD
 /* Scrollbar */
 #messages::-webkit-scrollbar { width: 6px; }
 #messages::-webkit-scrollbar-thumb { background: #444; border-radius: 6px; }
-=======
-/* Quick emoji buttons */
+
+/* ==============================
+   Quick Emojis, Files, Links, Reactions
+   ============================== */
+
 #quick-emojis {
   display: flex;
   justify-content: center;
@@ -298,14 +300,10 @@ header .logo {
   transition: transform 0.15s ease;
 }
 
-#quick-emojis button.pop {
-  transform: scale(1.4);
-}
+#quick-emojis button.pop { transform: scale(1.4); }
 
 /* File preview */
-.file-preview {
-  margin-top: 4px;
-}
+.file-preview { margin-top: 4px; }
 
 .inline-image {
   max-width: 240px;
@@ -316,9 +314,7 @@ header .logo {
   transition: transform 0.2s ease;
 }
 
-.inline-image:hover {
-  transform: scale(1.03);
-}
+.inline-image:hover { transform: scale(1.03); }
 
 /* Link previews */
 .link-preview {
@@ -338,9 +334,7 @@ header .logo {
   border-radius: 6px;
 }
 
-body.dark .link-preview {
-  background: rgba(255,255,255,0.08);
-}
+body.dark .link-preview { background: rgba(255,255,255,0.08); }
 
 /* Reaction system */
 .reaction-container {
@@ -359,9 +353,7 @@ body.dark .link-preview {
   cursor: default;
 }
 
-body.dark .reaction-container span {
-  background: rgba(255,255,255,0.1);
-}
+body.dark .reaction-container span { background: rgba(255,255,255,0.1); }
 
 .reaction-toggle {
   background: none;
@@ -399,16 +391,13 @@ body.dark .reaction-picker.overlay {
   cursor: pointer;
 }
 
-.reaction-btn:hover {
-  transform: scale(1.3);
-}
+.reaction-btn:hover { transform: scale(1.3); }
 
-/* Message menu */
-.msg-menu-wrapper {
-  position: absolute;
-  top: 4px;
-  right: 6px;
-}
+/* ==============================
+   Message Menu & Header Buttons
+   ============================== */
+
+.msg-menu-wrapper { position: absolute; top: 4px; right: 6px; }
 
 .menu-btn {
   background: none;
@@ -430,14 +419,9 @@ body.dark .reaction-picker.overlay {
   z-index: 200;
 }
 
-body.dark .msg-menu {
-  background: #1e1e1e;
-  border-color: #444;
-}
+body.dark .msg-menu { background: #1e1e1e; border-color: #444; }
 
-.msg-menu.show {
-  display: flex;
-}
+.msg-menu.show { display: flex; }
 
 .msg-menu button {
   background: none;
@@ -449,28 +433,32 @@ body.dark .msg-menu {
   color: inherit;
 }
 
-.msg-menu button:hover {
-  background: rgba(0,0,0,0.05);
+.msg-menu button:hover { background: rgba(0,0,0,0.05); }
+body.dark .msg-menu button:hover { background: rgba(255,255,255,0.1); }
+
+/* Header Buttons: Leave Chat */
+.header-right button#leave-btn {
+  padding: 6px 12px;
+  margin-left: 8px;
+  border: none;
+  border-radius: var(--radius);
+  background: #ff4d4d;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.15s ease;
 }
 
-body.dark .msg-menu button:hover {
-  background: rgba(255,255,255,0.1);
+.header-right button#leave-btn:hover {
+  background: #ff6666;
+  transform: scale(1.05);
 }
 
-/* Responsive adjustments */
+.header-right button { font-size: 0.9em; }
+
+/* Responsive */
 @media (max-width: 640px) {
-  #emoji-picker {
-    right: 10px;
-    width: 90%;
-  }
-
-  .message {
-    max-width: 90%;
-  }
-
-  .link-preview img {
-    width: 40px;
-    height: 40px;
-  }
+  #emoji-picker { right: 10px; width: 90%; }
+  .message { max-width: 90%; }
+  .link-preview img { width: 40px; height: 40px; }
 }
->>>>>>> parent of 9d274fa (chat fix and update)

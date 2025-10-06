@@ -2,18 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-<<<<<<< HEAD
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-=======
   <meta name="viewport"
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
->>>>>>> parent of 9d274fa (chat fix and update)
   <title>DizyChat</title>
   <link rel="icon" href="/logo.png" type="image/png" />
   <link rel="stylesheet" href="/chat.css" />
 </head>
+
 <body class="dark">
-  <!-- Landing Page -->
+  <!-- ===========================
+       Landing Page
+       =========================== -->
   <div id="username-prompt">
     <img src="/logo.png" alt="DizyChat Logo" class="logo" />
     <h1>Welcome to DizyChat</h1>
@@ -23,21 +22,60 @@
       <input id="room-password" type="password" placeholder="Room password (optional)" />
       <button id="join-btn">Join Chat</button>
     </div>
+
     <div id="room-list">
       <h3>Available Public Rooms</h3>
       <ul id="public-room-list"></ul>
     </div>
   </div>
 
-<<<<<<< HEAD
-  <!-- Chat container (hidden until join) -->
+  <!-- ===========================
+       Chat Container (hidden until joined)
+       =========================== -->
   <div id="chat-container" style="display:none;">
-    <!-- Chat layout here, as before -->
+    <!-- Header -->
+    <header>
+      <div class="header-left">
+        <img src="/logo.png" alt="Logo" class="logo" />
+        <span id="room-name"></span>
+      </div>
+      <div class="header-right">
+        <button id="toggle-theme" title="Toggle Theme">🌓</button>
+        <button id="leave-btn" title="Exit Chat">Leave</button>
+      </div>
+    </header>
+
+    <!-- Pinned messages -->
+    <div id="pinned-messages" style="display:none;"></div>
+
+    <!-- Message area -->
+    <div id="messages"></div>
+
+    <!-- Typing indicator -->
+    <div id="typing-bubble" style="display:none;">Someone is typing...</div>
+
+    <!-- Message input form -->
+    <form id="form">
+      <button type="button" id="emoji-btn" title="Emoji">😊</button>
+      <input id="input" autocomplete="off" placeholder="Type a message..." />
+      <button type="submit" title="Send">➤</button>
+    </form>
+
+    <!-- Emoji picker -->
+    <div id="emoji-picker">
+      <div id="quick-emojis">
+        <button>😀</button>
+        <button>😂</button>
+        <button>😍</button>
+        <button>😎</button>
+        <button>👍</button>
+      </div>
+    </div>
   </div>
 
-=======
-  <!-- Scripts -->
->>>>>>> parent of 9d274fa (chat fix and update)
+  <!-- ===========================
+       Scripts
+       =========================== -->
   <script src="/socket.io/socket.io.js"></script>
   <script src="/chat.js"></script>
   <canvas id="favicon-canvas" width="32" height="32" style="display:none;"></canvas>
