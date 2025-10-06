@@ -23,8 +23,7 @@ const messageSchema = new mongoose.Schema({
 messageSchema.index({ text: "text" });                  // full-text search
 messageSchema.index({ room: 1, timestamp: -1 });        // fast room queries sorted by time
 
-<<<<<<< HEAD
-// ---------------- Virtual field for chat.js compatibility ----------------
+// ✅ Virtual field for chat.js compatibility
 messageSchema.virtual('time').get(function() {
   return this.timestamp;
 });
@@ -32,7 +31,5 @@ messageSchema.virtual('time').get(function() {
 messageSchema.set('toJSON', { virtuals: true });
 messageSchema.set('toObject', { virtuals: true });
 
-// ---------------- Export Model ----------------
-=======
->>>>>>> parent of 9d274fa (chat fix and update)
+// ✅ Export Model
 module.exports = mongoose.model('Message', messageSchema);
