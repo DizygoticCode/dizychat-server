@@ -1,28 +1,31 @@
 /* ==============================
-   chat.css — Base Layout
+   chat.css — Discord/WhatsApp Style
    ============================== */
 
+/* Root variables */
 :root {
   --bg-light: #f9f9f9;
   --bg-dark: #121212;
-  --bubble-self: #056162;
+  --bubble-self: #25d366;
   --bubble-other: #262d31;
   --text-dark: #111;
   --text-light: #eee;
   --accent: #25d366;
   --border-color: #444;
-  --shadow: 0 2px 6px rgba(0,0,0,0.25);
-  --radius: 14px;
+  --shadow: 0 2px 8px rgba(0,0,0,0.3);
+  --radius: 16px;
 }
 
+/* Body and container */
 body {
-  font-family: system-ui, sans-serif;
+  font-family: 'Segoe UI', sans-serif;
   margin: 0;
-  background: var(--bg-dark);
-  color: var(--text-light);
-  height: 100vh;
   display: flex;
   flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg-dark);
+  color: var(--text-light);
 }
 
 body.dark {
@@ -30,131 +33,76 @@ body.dark {
   color: var(--text-light);
 }
 
-/* ==============================
-   Landing Page
-   ============================== */
-
-#username-prompt {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  text-align: center;
-  gap: 12px;
-}
-
-#username-prompt .logo {
-  width: 120px;
-  height: auto;
-  margin-bottom: 12px;
-}
-
-#username-prompt h1 {
-  font-size: 2em;
-  margin: 0 0 12px 0;
-  color: #fff;
-}
-
-.landing-inputs {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 260px;
-}
-
-.landing-inputs input {
-  padding: 10px 14px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border-color);
-  background: #222;
-  color: var(--text-light);
-}
-
-.landing-inputs input::placeholder {
-  color: #aaa;
-}
-
-#join-btn {
-  margin-top: 8px;
-  padding: 10px;
-  border: none;
-  border-radius: var(--radius);
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-#join-btn:hover {
-  opacity: 0.9;
-}
-
-/* Public Rooms */
-#room-list {
-  margin-top: 20px;
-  text-align: center;
-}
-
-#public-room-list {
-  list-style: none;
-  padding: 0;
-  margin: 8px 0 0 0;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-}
-
-#public-room-list li {
-  background: #333;
-  color: #fff;
-  padding: 6px 12px;
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: transform 0.15s ease, background 0.2s ease;
-}
-
-#public-room-list li:hover {
-  transform: scale(1.05);
-  background: var(--accent);
-}
-
-/* ==============================
-   Chat Page Messages
-   ============================== */
-
 #chat-container {
   display: flex;
   flex-direction: column;
   flex: 1;
   height: 100vh;
+  background: var(--bg-dark);
 }
 
+/* ==============================
+   Header
+   ============================== */
 header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 16px;
-  background: rgba(20,20,20,0.95);
+  padding: 12px 16px;
+  background: rgba(24,24,24,0.95);
   border-bottom: 1px solid var(--border-color);
+  z-index: 20;
 }
 
 header .header-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
-header .logo {
-  width: 40px;
-  height: auto;
-}
+header .logo { width: 40px; height: auto; }
 
 #room-name {
   font-weight: 600;
+  font-size: 1.1em;
+  color: var(--text-light);
 }
 
+/* Header buttons */
+.header-right button {
+  font-size: 0.95em;
+  margin-left: 8px;
+  cursor: pointer;
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  border: none;
+  transition: transform 0.15s ease, background 0.2s ease;
+}
+
+.header-right button#leave-btn {
+  background: #ff4d4d;
+  color: #fff;
+  font-weight: 600;
+}
+
+.header-right button#leave-btn:hover {
+  background: #ff6666;
+  transform: scale(1.05);
+}
+
+.header-right button#toggle-theme {
+  background: rgba(255,255,255,0.05);
+  color: #fff;
+}
+
+.header-right button#toggle-theme:hover {
+  background: rgba(255,255,255,0.15);
+  transform: scale(1.05);
+}
+
+/* ==============================
+   Messages Area
+   ============================== */
 #messages {
   flex: 1;
   overflow-y: auto;
@@ -162,69 +110,107 @@ header .logo {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  background: #1b1b1b;
   scroll-behavior: smooth;
+  background: #1b1b1b;
 }
 
+/* Message bubbles */
 .message {
-  max-width: 70%;
+  position: relative;
+  max-width: 75%;
   padding: 12px 16px;
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   word-wrap: break-word;
-  position: relative;
   font-size: 1em;
   animation: fadeIn 0.25s ease-in;
+  display: inline-block;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
+.message:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+}
+
+/* Self vs Other */
 .message.self {
   align-self: flex-end;
   background: var(--bubble-self);
   color: #fff;
+  border-bottom-right-radius: 4px;
 }
 
 .message.other {
   align-self: flex-start;
   background: var(--bubble-other);
   color: #fff;
+  border-bottom-left-radius: 4px;
 }
 
-/* Pin & Star buttons */
-.message .star-btn,
-.message .pin-btn {
+/* Meta (username + time) */
+.message .meta {
+  font-size: 0.75em;
+  color: rgba(255,255,255,0.6);
+  margin-bottom: 4px;
+}
+
+/* Text content */
+.message .text {
+  white-space: pre-wrap;
+}
+
+/* Reactions container */
+.message .reactions {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.message .reactions span {
+  background: rgba(255,255,255,0.15);
+  border-radius: 8px;
+  padding: 2px 6px;
+  font-size: 0.85em;
+  transition: transform 0.15s ease;
+}
+
+.message .reactions span:hover { transform: scale(1.2); }
+
+/* ==============================
+   Pin & Star Buttons
+   ============================== */
+.message .pin-btn,
+.message .star-btn {
   position: absolute;
-  top: 6px;
-  font-size: 1.2em;
+  top: 8px;
+  font-size: 1.3em;
   cursor: pointer;
-  opacity: 0.75;
+  opacity: 0.8;
+  border: none;
+  background: none;
   transition: transform 0.15s ease, opacity 0.2s ease;
 }
 
 .message .pin-btn { right: 32px; }
 .message .star-btn { right: 6px; }
 
-.message .star-btn:hover,
-.message .pin-btn:hover { transform: scale(1.3); opacity: 1; }
-
-.message .reactions { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
-
-.message .reactions span {
-  background: rgba(255,255,255,0.1);
-  border-radius: 8px;
-  padding: 2px 6px;
-  font-size: 0.9em;
+.message .pin-btn:hover,
+.message .star-btn:hover { 
+  transform: scale(1.4); 
+  opacity: 1; 
 }
 
 /* ==============================
-   Input Bar and Emoji Picker
+   Input Bar
    ============================== */
-
 #form {
   display: flex;
   align-items: center;
-  padding: 10px;
-  border-top: 1px solid #444;
-  background: rgba(20,20,20,0.9);
+  padding: 10px 12px;
+  border-top: 1px solid var(--border-color);
+  background: rgba(24,24,24,0.95);
   backdrop-filter: blur(8px);
 }
 
@@ -232,10 +218,11 @@ header .logo {
   flex: 1;
   border: 1px solid #444;
   border-radius: var(--radius);
-  padding: 10px;
+  padding: 10px 14px;
   font-size: 1em;
   background: #222;
   color: var(--text-light);
+  outline: none;
 }
 
 #form button {
@@ -245,9 +232,14 @@ header .logo {
   font-size: 1.3em;
   cursor: pointer;
   color: inherit;
+  transition: transform 0.15s ease;
 }
 
-/* Emoji picker */
+#form button:hover { transform: scale(1.2); }
+
+/* ==============================
+   Emoji Picker
+   ============================== */
 #emoji-picker {
   position: absolute;
   bottom: 60px;
@@ -261,108 +253,82 @@ header .logo {
   box-shadow: var(--shadow);
   display: none;
   z-index: 500;
-  padding: 6px;
+  padding: 8px;
 }
 
 #emoji-picker.show { display: block; }
 
-#quick-emojis button { font-size: 1.4em; cursor: pointer; border: none; background: none; }
-
-/* Pinned Messages */
-#pinned-messages { transition: all 0.3s ease; background: #3a3a1a; color: #eee; padding: 6px 12px; border-radius: var(--radius); }
-
-/* Typing bubble */
-#typing-bubble { padding: 4px 8px; font-size: 0.9em; color: #fff; }
-
-/* Animations */
-@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-
-/* Scrollbar */
-#messages::-webkit-scrollbar { width: 6px; }
-#messages::-webkit-scrollbar-thumb { background: #444; border-radius: 6px; }
-
-/* ==============================
-   Quick Emojis, Files, Links, Reactions
-   ============================== */
-
 #quick-emojis {
   display: flex;
   justify-content: center;
-  gap: 8px;
-  padding: 6px;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 #quick-emojis button {
+  font-size: 1.5em;
+  cursor: pointer;
   border: none;
   background: none;
-  font-size: 1.4em;
-  cursor: pointer;
   transition: transform 0.15s ease;
 }
 
-#quick-emojis button.pop { transform: scale(1.4); }
+#quick-emojis button.pop { transform: scale(1.5); }
 
-/* File preview */
-.file-preview { margin-top: 4px; }
-
-.inline-image {
-  max-width: 240px;
+/* ==============================
+   Typing Bubble
+   ============================== */
+#typing-bubble {
+  position: sticky;
+  bottom: 60px;
+  z-index: 10;
+  background: rgba(0,0,0,0.25);
+  padding: 6px 12px;
   border-radius: var(--radius);
-  display: block;
-  margin-top: 6px;
-  cursor: pointer;
-  transition: transform 0.2s ease;
+  font-size: 0.95em;
+  color: #fff;
+  text-align: center;
+  align-self: center;
+  max-width: 60%;
+  word-wrap: break-word;
+  transition: opacity 0.2s ease;
 }
 
-.inline-image:hover { transform: scale(1.03); }
-
-/* Link previews */
-.link-preview {
+/* ==============================
+   Pinned Messages
+   ============================== */
+#pinned-messages {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(0,0,0,0.03);
-  border-radius: var(--radius);
-  padding: 6px;
-  margin-top: 4px;
-}
-
-.link-preview img {
-  width: 48px;
-  height: 48px;
-  object-fit: cover;
-  border-radius: 6px;
-}
-
-body.dark .link-preview { background: rgba(255,255,255,0.08); }
-
-/* Reaction system */
-.reaction-container {
-  margin-top: 4px;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 4px;
+  background: #2b2b2b;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  margin: 8px;
+  max-height: 140px;
+  overflow-y: auto;
+  border: 1px solid var(--accent);
 }
 
-.reaction-container span {
-  background: rgba(0,0,0,0.05);
-  border-radius: 8px;
-  padding: 2px 6px;
+#pinned-messages li {
+  list-style: none;
+  padding: 6px 8px;
+  background: rgba(255,255,255,0.05);
+  border-radius: var(--radius);
   font-size: 0.9em;
   cursor: default;
+  transition: background 0.15s ease;
 }
 
-body.dark .reaction-container span { background: rgba(255,255,255,0.1); }
+#pinned-messages li:hover { background: rgba(255,255,255,0.1); }
 
-.reaction-toggle {
-  background: none;
-  border: none;
-  font-size: 1.1em;
-  cursor: pointer;
-  margin-left: 4px;
-}
+/* Adjust messages margin for pinned */
+#messages { margin-top: 8px; }
 
+/* ==============================
+   Reactions Overlay
+   ============================== */
 .reaction-picker.overlay {
   position: absolute;
   background: #fff;
@@ -394,80 +360,133 @@ body.dark .reaction-picker.overlay {
 .reaction-btn:hover { transform: scale(1.3); }
 
 /* ==============================
-   Message Menu & Header Buttons
+   Responsive Adjustments
    ============================== */
-
-.msg-menu-wrapper { position: absolute; top: 4px; right: 6px; }
-
-.menu-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 1.2em;
+@media (max-width: 640px) {
+  #emoji-picker { bottom: 60px; width: 90%; right: 5%; }
+  #pinned-messages { max-height: 100px; margin: 4px; font-size: 0.85em; }
+  #typing-bubble { bottom: 70px; font-size: 0.85em; max-width: 80%; }
+  .message { max-width: 90%; }
 }
 
-.msg-menu {
-  position: absolute;
-  right: 0;
-  top: 24px;
-  background: #fff;
-  border: 1px solid #ccc;
+/* ==============================
+   File Previews
+   ============================== */
+.file-preview {
+  margin-top: 6px;
+  max-width: 240px;
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  display: none;
-  flex-direction: column;
-  z-index: 200;
+  overflow: hidden;
+  display: block;
 }
 
-body.dark .msg-menu { background: #1e1e1e; border-color: #444; }
-
-.msg-menu.show { display: flex; }
-
-.msg-menu button {
-  background: none;
-  border: none;
-  text-align: left;
-  padding: 6px 12px;
-  cursor: pointer;
-  font-size: 0.9em;
-  color: inherit;
-}
-
-.msg-menu button:hover { background: rgba(0,0,0,0.05); }
-body.dark .msg-menu button:hover { background: rgba(255,255,255,0.1); }
-
-/* Header Buttons: Leave Chat */
-.header-right button#leave-btn {
-  padding: 6px 12px;
-  margin-left: 8px;
-  border: none;
+.inline-image {
+  width: 100%;
   border-radius: var(--radius);
-  background: #ff4d4d;
-  color: #fff;
-  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.inline-image:hover {
+  transform: scale(1.03);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+}
+
+/* ==============================
+   Link Previews
+   ============================== */
+.link-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255,255,255,0.05);
+  border-radius: var(--radius);
+  padding: 6px;
+  margin-top: 6px;
   cursor: pointer;
   transition: background 0.2s ease, transform 0.15s ease;
 }
 
-.header-right button#leave-btn:hover {
-  background: #ff6666;
-  transform: scale(1.05);
+.link-preview:hover {
+  background: rgba(255,255,255,0.1);
+  transform: translateY(-1px);
 }
 
-.header-right button { font-size: 0.9em; }
+.link-preview img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+}
 
-/* Responsive */
-@media (max-width: 640px) {
-  #emoji-picker { right: 10px; width: 90%; }
-  .message { max-width: 90%; }
-  .link-preview img { width: 40px; height: 40px; }
+/* Dark mode adjustments */
+body.dark .link-preview {
+  background: rgba(255,255,255,0.08);
+}
+
+body.dark .link-preview:hover {
+  background: rgba(255,255,255,0.15);
 }
 
 /* ==============================
-   Pinned Messages & Chat Layout Fixes
+   Dark/Light Mode Tweaks for Messages & Input
    ============================== */
+body.dark {
+  --bg-dark: #121212;
+  --bubble-self: #056162;
+  --bubble-other: #262d31;
+  --text-light: #eee;
+  --accent: #25d366;
+}
 
-/* Pinned messages container */
+body:not(.dark) {
+  background: var(--bg-light);
+  color: var(--text-dark);
+}
+
+body:not(.dark) .message.self {
+  background: var(--bubble-self);
+  color: #fff;
+}
+
+body:not(.dark) .message.other {
+  background: var(--bubble-other);
+  color: #111;
+}
+
+body:not(.dark) #form {
+  background: #f5f5f5;
+}
+
+body:not(.dark) #input {
+  background: #fff;
+  color: #111;
+  border: 1px solid #ccc;
+}
+
+/* ==============================
+   Final Message Hover & Reactions
+   ============================== */
+.message {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.message:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.message .reactions span {
+  transition: transform 0.15s ease;
+}
+
+.message .reactions span:hover {
+  transform: scale(1.2);
+}
+
+/* ==============================
+   Pinned Messages Container
+   ============================== */
 #pinned-messages {
   display: flex;
   flex-direction: column;
@@ -477,49 +496,122 @@ body.dark .msg-menu button:hover { background: rgba(255,255,255,0.1); }
   padding: 8px 12px;
   border-radius: var(--radius);
   margin: 8px;
-  max-height: 120px;
+  max-height: 140px;
   overflow-y: auto;
   border: 1px solid var(--accent);
+  transition: max-height 0.3s ease, opacity 0.3s ease;
 }
 
-/* Individual pinned message */
 #pinned-messages li {
   list-style: none;
-  padding: 4px 6px;
+  padding: 6px 8px;
   background: rgba(255,255,255,0.05);
   border-radius: var(--radius);
   font-size: 0.9em;
   cursor: default;
+  transition: background 0.2s ease, transform 0.15s ease;
 }
 
-/* Messages area spacing for pinned messages */
+#pinned-messages li:hover {
+  background: rgba(255,255,255,0.1);
+  transform: translateY(-1px);
+}
+
+/* Adjust spacing for pinned messages */
 #messages {
   margin-top: 8px;
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  background: #1b1b1b;
 }
 
-/* Typing bubble stays above input */
+/* ==============================
+   Typing Bubble
+   ============================== */
 #typing-bubble {
   position: sticky;
   bottom: 60px;
   z-index: 10;
-  background: rgba(0,0,0,0.2);
-  padding: 4px 8px;
+  background: rgba(0,0,0,0.25);
+  padding: 6px 12px;
   border-radius: var(--radius);
-  font-size: 0.9em;
+  font-size: 0.95em;
   color: #fff;
   text-align: center;
+  align-self: center;
+  max-width: 60%;
+  word-wrap: break-word;
+  transition: opacity 0.3s ease, transform 0.2s ease;
 }
 
-/* Emoji picker tweaks for mobile */
+#typing-bubble.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+#typing-bubble.hide {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+/* ==============================
+   Responsive Adjustments (Mobile)
+   ============================== */
 @media (max-width: 640px) {
-  #pinned-messages { max-height: 100px; margin: 4px; font-size: 0.85em; }
-  #typing-bubble { bottom: 70px; font-size: 0.85em; }
-  #emoji-picker { bottom: 60px; width: 90%; right: 5%; }
+  #emoji-picker {
+    bottom: 60px;
+    width: 90%;
+    right: 5%;
+  }
+
+  #pinned-messages {
+    max-height: 100px;
+    margin: 4px;
+    font-size: 0.85em;
+  }
+
+  #typing-bubble {
+    bottom: 70px;
+    font-size: 0.85em;
+    max-width: 80%;
+  }
+
+  .message {
+    max-width: 90%;
+    font-size: 0.95em;
+    padding: 10px 12px;
+  }
+
+  .link-preview img {
+    width: 40px;
+    height: 40px;
+  }
+
+  #input {
+    font-size: 0.95em;
+  }
+
+  .header-right button {
+    font-size: 0.85em;
+    padding: 5px 10px;
+  }
+}
+
+/* ==============================
+   Scrollbar Styling
+   ============================== */
+#messages::-webkit-scrollbar,
+#pinned-messages::-webkit-scrollbar,
+#emoji-picker::-webkit-scrollbar {
+  width: 6px;
+}
+
+#messages::-webkit-scrollbar-thumb,
+#pinned-messages::-webkit-scrollbar-thumb,
+#emoji-picker::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 6px;
+}
+
+#messages::-webkit-scrollbar-track,
+#pinned-messages::-webkit-scrollbar-track,
+#emoji-picker::-webkit-scrollbar-track {
+  background: rgba(0,0,0,0.05);
 }

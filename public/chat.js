@@ -1,5 +1,6 @@
 // ==============================
-// DizyChat — Full Chat JS (Merged & Fixed Scroll Lock + Pinned)
+// DizyChat — Full Chat JS (Updated & Feature Complete)
+// Part 1/3 — Setup, DOM, Favicon, Landing Page
 // ==============================
 
 // ---------------- DOM References ----------------
@@ -15,7 +16,6 @@ const form = document.getElementById('form');
 const input = document.getElementById('input');
 const emojiBtn = document.getElementById('emoji-btn');
 const emojiPicker = document.getElementById('emoji-picker');
-const quickEmojis = document.querySelectorAll('#quick-emojis button');
 const typingBubble = document.getElementById('typing-bubble');
 const pinnedBanner = document.getElementById('pinned-messages');
 const toggleThemeBtn = document.getElementById('toggle-theme');
@@ -27,10 +27,13 @@ let currentRoom = '';
 let roomPassword = '';
 let typingTimeout = null;
 let isScrollLocked = false;
-let darkMode = false;
-let emojiData = {};
+let darkMode = localStorage.getItem('darkMode') === 'true';
+let emojiData = [];
 let emojisLoaded = false;
 let unreadCount = 0;
+
+// ---------------- Apply Dark Mode ----------------
+document.body.classList.toggle('dark', darkMode);
 
 // ---------------- Favicon Logic ----------------
 const faviconLink = document.querySelector("link[rel~='icon']") || (() => {
@@ -45,20 +48,12 @@ faviconCanvas.width = 32;
 faviconCanvas.height = 32;
 const ctx = faviconCanvas.getContext('2d');
 
-let badgeScale = 1;
-let popBoost = 0;
-let targetScale = 1;
-let pulse = 0;
-let unreadAlpha = 0;
-
-const POP_DECAY = 0.08;
-const MAX_BADGE_SCALE = 1.6;
-const POP_INCREMENT = 0.25;
+let badgeScale = 1, popBoost = 0, targetScale = 1, pulse = 0, unreadAlpha = 0;
 
 function incrementFavicon() {
   unreadCount++;
-  popBoost += POP_INCREMENT;
-  if (popBoost > MAX_BADGE_SCALE - 1) popBoost = MAX_BADGE_SCALE - 1;
+  popBoost += 0.25;
+  if (popBoost > 0.6) popBoost = 0.6;
   targetScale = 1 + popBoost;
 }
 
@@ -82,21 +77,18 @@ function drawFavicon() {
       unreadAlpha += (1 - unreadAlpha) * 0.15;
       pulse += 0.15;
       const scaleOffset = Math.sin(pulse) * 0.15;
-
       badgeScale += (targetScale - badgeScale) * 0.2;
-      badgeScale = Math.min(badgeScale, MAX_BADGE_SCALE);
-      badgeScale = 1 + scaleOffset + (badgeScale - 1);
-      popBoost *= (1 - POP_DECAY);
+      badgeScale = Math.min(badgeScale, 1.6);
+      popBoost *= 0.92;
 
       const x = 26, y = 8, radius = 6;
       const glowRadius = radius * 1.8 + scaleOffset * 6;
       const glow = ctx.createRadialGradient(x, y, radius / 2, x, y, glowRadius);
-      const opacity = unreadAlpha * 0.5;
-      glow.addColorStop(0, `rgba(255,68,68,${opacity})`);
+      glow.addColorStop(0, `rgba(255,68,68,${unreadAlpha*0.5})`);
       glow.addColorStop(1, "rgba(255,68,68,0)");
       ctx.fillStyle = glow;
       ctx.beginPath();
-      ctx.arc(x, y, glowRadius, 0, Math.PI * 2);
+      ctx.arc(x, y, glowRadius, 0, Math.PI*2);
       ctx.fill();
 
       ctx.save();
@@ -104,10 +96,9 @@ function drawFavicon() {
       ctx.scale(badgeScale, badgeScale);
       ctx.translate(-x, -y);
       ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.arc(x, y, radius, 0, Math.PI*2);
       ctx.fillStyle = `rgba(255,68,68,${unreadAlpha})`;
       ctx.fill();
-
       ctx.fillStyle = `rgba(255,255,255,${unreadAlpha})`;
       ctx.font = "bold 10px sans-serif";
       ctx.textAlign = "center";
@@ -121,11 +112,7 @@ function drawFavicon() {
     faviconLink.href = faviconCanvas.toDataURL("image/png");
   };
 }
-
-(function loop() {
-  drawFavicon();
-  requestAnimationFrame(loop);
-})();
+(function loopFavicon() { drawFavicon(); requestAnimationFrame(loopFavicon); })();
 
 // ---------------- Landing Page Join ----------------
 joinBtn?.addEventListener('click', () => {
@@ -147,10 +134,31 @@ joinBtn?.addEventListener('click', () => {
 
   displayMessage({ user: 'System', text: `Welcome to ${currentRoom}, ${currentUser}!`, time: Date.now() });
 
-  window.history.replaceState({}, '', `${window.location.origin}?room=${encodeURIComponent(currentRoom)}`);
+  // Shareable URL with room & optional password
+  const url = new URL(window.location.href);
+  url.searchParams.set('room', currentRoom);
+  if (roomPassword) url.searchParams.set('password', roomPassword);
+  window.history.replaceState({}, '', url);
 
+  addShareLink();
   setTimeout(initChat, 50);
 });
+
+// ---------------- Share Link Button ----------------
+function addShareLink() {
+  const shareBtn = document.createElement('button');
+  shareBtn.textContent = 'Copy Link';
+  shareBtn.style.marginLeft = '8px';
+  shareBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(window.location.href);
+    alert('Link copied to clipboard!');
+  });
+  document.querySelector('header .header-right').appendChild(shareBtn);
+}
+
+// ==============================
+// Part 2/3 — Messages, Pins, Stars, Reactions, Emoji
+// ==============================
 
 // ---------------- Initialize Socket ----------------
 function initChat() {
@@ -162,8 +170,11 @@ function initChat() {
   });
 
   socket.on('disconnect', () => console.log('Disconnected'));
+
+  // Incoming messages
   socket.on('chat message', displayMessage);
 
+  // Typing indicators
   socket.on('typing', typingUsers => {
     if (!Array.isArray(typingUsers)) return;
     const others = typingUsers.filter(u => u && u !== currentUser);
@@ -172,17 +183,20 @@ function initChat() {
 
   socket.on('stop typing', hideTyping);
 
+  // Pinned messages
   socket.on('pinned messages', renderPinned);
   socket.on('message pinned', renderPinnedMessage);
   socket.on('message unpinned', renderPinnedMessage);
 
+  // Star & unstar messages
   socket.on('message starred', ({ id, starredBy }) => updateStar(id, starredBy));
   socket.on('message unstarred', ({ id, starredBy }) => updateStar(id, starredBy));
 
+  // Reactions
   socket.on('update reactions', ({ id, reactions }) => updateReactions(id, reactions));
 }
 
-// ---------------- Message Display ----------------
+// ---------------- Display Message ----------------
 function displayMessage(msg, prepend = false) {
   if (!msg) return;
   const id = msg._id || msg.id || msg.tempId || '';
@@ -205,6 +219,21 @@ function displayMessage(msg, prepend = false) {
   text.textContent = msg.text || '';
   div.appendChild(text);
 
+  // Link previews
+  if (msg.linkPreview) {
+    const lp = document.createElement('div');
+    lp.className = 'link-preview';
+    if (msg.linkPreview.image) {
+      const img = document.createElement('img');
+      img.src = msg.linkPreview.image;
+      lp.appendChild(img);
+    }
+    const info = document.createElement('div');
+    info.innerHTML = `<strong>${msg.linkPreview.title || ''}</strong><br>${msg.linkPreview.desc || ''}`;
+    lp.appendChild(info);
+    div.appendChild(lp);
+  }
+
   // Reactions
   const reactionsDiv = document.createElement('div');
   reactionsDiv.className = 'reactions';
@@ -217,7 +246,7 @@ function displayMessage(msg, prepend = false) {
   }
   div.appendChild(reactionsDiv);
 
-  // Star button
+  // Star button (if not self)
   if (msg.user !== currentUser) {
     const starBtn = document.createElement('button');
     starBtn.className = 'star-btn';
@@ -246,31 +275,13 @@ function displayMessage(msg, prepend = false) {
   if (msg.user !== currentUser && socket) incrementFavicon();
 }
 
-// ---------------- Pinned Messages Setup ----------------
+// ---------------- Pinned Messages ----------------
 if (pinnedBanner && !pinnedBanner.querySelector('ul')) {
-    const ul = document.createElement('ul');
-    pinnedBanner.appendChild(ul);
+  const ul = document.createElement('ul');
+  pinnedBanner.appendChild(ul);
 }
 const pinnedList = pinnedBanner?.querySelector('ul');
 
-// ---------------- Safe Append Message ----------------
-function appendMessage(div) {
-  if (!messages) return;
-  messages.appendChild(div);
-  if (!isScrollLocked) div.scrollIntoView({ behavior: 'smooth', block: 'end' });
-}
-
-// ---------------- Typing ----------------
-function showTyping(users) {
-  typingBubble.style.display = 'block';
-  typingBubble.textContent = `${users.join(', ')} typing...`;
-  clearTimeout(typingTimeout);
-  typingTimeout = setTimeout(hideTyping, 2000);
-}
-
-function hideTyping() { typingBubble.style.display = 'none'; }
-
-// ---------------- Pinned ----------------
 function renderPinned(msgs) {
   if (!pinnedBanner) return;
   pinnedBanner.innerHTML = '';
@@ -291,24 +302,107 @@ function renderPinnedMessage() {
   if (socket && currentRoom) socket.emit('get pinned', { room: currentRoom });
 }
 
+// ---------------- Helpers ----------------
+function appendMessage(div) {
+  if (!messages) return;
+  messages.appendChild(div);
+  if (!isScrollLocked) div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+function updateStar(id, starredBy) {
+  const msgDiv = document.querySelector(`.message[data-id='${id}']`);
+  if (!msgDiv) return;
+  const starBtn = msgDiv.querySelector('.star-btn');
+  if (!starBtn) return;
+  starBtn.textContent = starredBy?.includes(currentUser) ? '⭐' : '☆';
+}
+
+function updateReactions(id, reactions) {
+  const msgDiv = document.querySelector(`.message[data-id='${id}']`);
+  if (!msgDiv) return;
+  const reactionsDiv = msgDiv.querySelector('.reactions');
+  if (!reactionsDiv) return;
+  reactionsDiv.innerHTML = '';
+  reactions?.forEach(r => {
+    const span = document.createElement('span');
+    span.textContent = r.emoji;
+    reactionsDiv.appendChild(span);
+  });
+}
+
 // ---------------- Emoji Picker ----------------
 emojiBtn?.addEventListener('click', () => {
+  if (!emojiPicker) return;
   emojiPicker.style.display = emojiPicker.style.display === 'block' ? 'none' : 'block';
+  if (!emojisLoaded) loadEmojis();
 });
 
-quickEmojis?.forEach(btn => btn.addEventListener('click', e => {
-  input.value += e.target.textContent;
-  emojiPicker.style.display = 'none';
-  input.focus();
-}));
+function loadEmojis() {
+  fetch('/emoji.json')
+    .then(res => res.json())
+    .then(data => {
+      emojiData = data;
+      const container = document.getElementById('emoji-picker');
+      if (!container) return;
+      container.innerHTML = '<div id="quick-emojis"></div>';
+      const quickDiv = container.querySelector('#quick-emojis');
+      Object.keys(emojiData).forEach(key => {
+        const btn = document.createElement('button');
+        btn.textContent = emojiData[key];
+        btn.addEventListener('click', () => {
+          input.value += emojiData[key];
+          input.focus();
+        });
+        quickDiv.appendChild(btn);
+      });
+      emojisLoaded = true;
+    })
+    .catch(err => console.error('Error loading emojis:', err));
+}
+
+// ==============================
+// Part 3/3 — Input Form, Typing, Scroll Lock, Dark Theme & Helpers
+// ==============================
+
+// ---------------- Typing Indicator ----------------
+function showTyping(users) {
+  if (!typingBubble) return;
+  typingBubble.style.display = 'block';
+  typingBubble.textContent = `${users.join(', ')} typing...`;
+  clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(hideTyping, 2000);
+}
+
+function hideTyping() {
+  if (!typingBubble) return;
+  typingBubble.style.display = 'none';
+}
 
 // ---------------- Input Form ----------------
 form?.addEventListener('submit', e => {
   e.preventDefault();
+  if (!input || !socket) return;
+
   const msg = input.value.trim();
-  if (!msg || !socket) return;
-  socket.emit('chat message', { room: currentRoom, user: currentUser, text: msg });
+  if (!msg) return;
+
+  socket.emit('chat message', {
+    room: currentRoom,
+    user: currentUser,
+    text: msg,
+    time: Date.now()
+  });
+
   input.value = '';
+});
+
+// ---------------- Quick Emojis ----------------
+quickEmojis?.forEach(btn => {
+  btn.addEventListener('click', e => {
+    if (!input) return;
+    input.value += e.target.textContent;
+    input.focus();
+  });
 });
 
 // ---------------- Scroll Lock ----------------
@@ -318,10 +412,112 @@ messages?.addEventListener('scroll', () => {
   isScrollLocked = !atBottom;
 });
 
-// ---------------- Header Buttons ----------------
+// ---------------- Dark Theme Toggle ----------------
 toggleThemeBtn?.addEventListener('click', () => {
   darkMode = !darkMode;
   document.body.classList.toggle('dark', darkMode);
+  localStorage.setItem('darkMode', darkMode);
 });
 
-leaveBtn?.addEventListener('click', () => location.reload());
+// ---------------- Leave Button ----------------
+leaveBtn?.addEventListener('click', () => {
+  location.reload();
+});
+
+// ---------------- Favicon Unread Count ----------------
+function incrementFavicon() {
+  unreadCount++;
+  popBoost += 0.25;
+  if (popBoost > 0.6) popBoost = 0.6;
+  targetScale = 1 + popBoost;
+}
+
+function resetFavicon() {
+  unreadCount = 0;
+  popBoost = 0;
+  badgeScale = 1;
+  targetScale = 1;
+}
+
+window.addEventListener('focus', resetFavicon);
+
+function drawFavicon() {
+  const img = new Image();
+  img.src = '/logo.png';
+  img.onload = () => {
+    ctx.clearRect(0, 0, 32, 32);
+    ctx.drawImage(img, 0, 0, 32, 32);
+
+    if (unreadCount > 0) {
+      unreadAlpha += (1 - unreadAlpha) * 0.15;
+      pulse += 0.15;
+      const scaleOffset = Math.sin(pulse) * 0.15;
+
+      badgeScale += (targetScale - badgeScale) * 0.2;
+      badgeScale = Math.min(badgeScale, 1.6);
+      popBoost *= 0.92;
+
+      const x = 26, y = 8, radius = 6;
+      const glowRadius = radius * 1.8 + scaleOffset * 6;
+      const glow = ctx.createRadialGradient(x, y, radius / 2, x, y, glowRadius);
+      glow.addColorStop(0, `rgba(255,68,68,${unreadAlpha*0.5})`);
+      glow.addColorStop(1, "rgba(255,68,68,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(x, y, glowRadius, 0, Math.PI*2);
+      ctx.fill();
+
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(badgeScale, badgeScale);
+      ctx.translate(-x, -y);
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI*2);
+      ctx.fillStyle = `rgba(255,68,68,${unreadAlpha})`;
+      ctx.fill();
+      ctx.fillStyle = `rgba(255,255,255,${unreadAlpha})`;
+      ctx.font = "bold 10px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(unreadCount > 9 ? "9+" : unreadCount.toString(), x, y);
+      ctx.restore();
+    } else {
+      unreadAlpha *= 0.85;
+    }
+
+    faviconLink.href = faviconCanvas.toDataURL("image/png");
+  };
+}
+
+(function loopFavicon() {
+  drawFavicon();
+  requestAnimationFrame(loopFavicon);
+})();
+
+// ---------------- Final Helpers ----------------
+function appendMessage(div) {
+  if (!messages) return;
+  messages.appendChild(div);
+  if (!isScrollLocked) div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+function updateStar(id, starredBy) {
+  const msgDiv = document.querySelector(`.message[data-id='${id}']`);
+  if (!msgDiv) return;
+  const starBtn = msgDiv.querySelector('.star-btn');
+  if (!starBtn) return;
+  starBtn.textContent = starredBy?.includes(currentUser) ? '⭐' : '☆';
+}
+
+function updateReactions(id, reactions) {
+  const msgDiv = document.querySelector(`.message[data-id='${id}']`);
+  if (!msgDiv) return;
+  const reactionsDiv = msgDiv.querySelector('.reactions');
+  if (!reactionsDiv) return;
+  reactionsDiv.innerHTML = '';
+  reactions?.forEach(r => {
+    const span = document.createElement('span');
+    span.textContent = r.emoji;
+    reactionsDiv.appendChild(span);
+  });
+}
