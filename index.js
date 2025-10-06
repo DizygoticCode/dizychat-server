@@ -25,7 +25,10 @@ const PORT = process.env.PORT || 10000;
 
 // ---------------- MongoDB ----------------
 const mongoUri = process.env.MONGO_URI;
-if (!mongoUri) { console.error("MONGO_URI missing"); process.exit(1); }
+if (!mongoUri) {
+  console.error("MONGO_URI missing");
+  process.exit(1);
+}
 
 mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log("🟢 Connected to MongoDB"))
@@ -55,7 +58,6 @@ app.post('/upload', upload.single('file'), (req, res) => {
     size: req.file.size
   });
 });
-<<<<<<< HEAD
 
 // ---------------- Link Preview ----------------
 app.get('/link-preview', async (req, res) => {
@@ -69,11 +71,11 @@ app.get('/link-preview', async (req, res) => {
     const title = $('meta[property="og:title"]').attr('content') || $('title').text() || '';
     const image = $('meta[property="og:image"]').attr('content') || $('img').first().attr('src') || '';
     res.json({ title, image });
-  } catch (err) { res.json({ title: '', image: '' }); }
+  } catch (err) { 
+    res.json({ title: '', image: '' }); 
+  }
 });
 
-=======
->>>>>>> parent of 9d274fa (chat fix and update)
 // ---------------- Socket.IO ----------------
 let typingUsers = {};
 let rooms = {}; // room passwords
@@ -152,7 +154,7 @@ io.on('connection', socket => {
     } catch(err){ console.error("Error saving message:", err); }
   });
 
-  // ----- Edit message -----
+  // ----- Edit / Delete / Pin / Star / React -----
   socket.on('edit message', async ({ room, id, text }) => {
     try {
       const sanitized = sanitizeHtml(text, { allowedTags: [], allowedAttributes: {} });
@@ -161,7 +163,6 @@ io.on('connection', socket => {
     } catch(err){ console.error("Error editing message:", err); }
   });
 
-  // ----- Delete message -----
   socket.on('delete message', async ({ room, id }) => {
     try {
       await Message.findByIdAndDelete(id);
@@ -169,7 +170,6 @@ io.on('connection', socket => {
     } catch(err){ console.error("Error deleting message:", err); }
   });
 
-  // ----- Pin / Unpin -----
   socket.on('pin message', async ({ room, id }) => {
     try {
       const msg = await Message.findByIdAndUpdate(id, { pinned: true }, { new: true });
@@ -191,7 +191,6 @@ io.on('connection', socket => {
     } catch(err){ console.error("Error fetching pinned:", err); }
   });
 
-  // ----- Star / Unstar -----
   socket.on('star message', async ({ room, id, user }) => {
     try {
       const msg = await Message.findById(id);
@@ -212,7 +211,6 @@ io.on('connection', socket => {
     } catch(err){ console.error("Error unstarring message:", err); }
   });
 
-  // ----- Reactions -----
   socket.on('react message', async ({ room, id, reaction, username }) => {
     try {
       const msg = await Message.findById(id);
@@ -225,13 +223,8 @@ io.on('connection', socket => {
     } catch(err){ console.error("Error reacting to message:", err); }
   });
 
-<<<<<<< HEAD
-  // ----- Typing -----
-  socket.on('typing', data => {
-=======
-  // ---------------- Typing Indicator ----------------
+  // ----- Typing Indicator -----
   socket.on('typing', username => {
->>>>>>> parent of 9d274fa (chat fix and update)
     if (!canSendTyping(socket.id)) return;
     typingUsers[socket.id] = username;
     io.emit('typing', Object.values(typingUsers));
@@ -248,16 +241,11 @@ io.on('connection', socket => {
     delete typingUsers[socket.id];
   });
 });
+
 // ---------------- Start Server ----------------
 server.listen(PORT, () => console.log(`🟢 Server running on port ${PORT}`));
 
-<<<<<<< HEAD
-// ---------------- Catch-all ----------------
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-=======
 // ---------------- Serve index.html for all other routes ----------------
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
-
->>>>>>> parent of 9d274fa (chat fix and update)
