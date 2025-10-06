@@ -1,6 +1,5 @@
 // ==============================
-// DizyChat — Full Chat JS (Updated & Feature Complete)
-// Part 1/3 — Setup, DOM, Favicon, Landing Page
+// DizyChat — Production-Ready Chat JS
 // ==============================
 
 // ---------------- DOM References ----------------
@@ -31,6 +30,7 @@ let darkMode = localStorage.getItem('darkMode') === 'true';
 let emojiData = [];
 let emojisLoaded = false;
 let unreadCount = 0;
+let faviconImage = new Image();
 
 // ---------------- Apply Dark Mode ----------------
 document.body.classList.toggle('dark', darkMode);
@@ -47,13 +47,13 @@ const faviconCanvas = document.createElement('canvas');
 faviconCanvas.width = 32;
 faviconCanvas.height = 32;
 const ctx = faviconCanvas.getContext('2d');
-
 let badgeScale = 1, popBoost = 0, targetScale = 1, pulse = 0, unreadAlpha = 0;
+
+faviconImage.src = '/logo.png';
 
 function incrementFavicon() {
   unreadCount++;
-  popBoost += 0.25;
-  if (popBoost > 0.6) popBoost = 0.6;
+  popBoost = Math.min(popBoost + 0.25, 0.6);
   targetScale = 1 + popBoost;
 }
 
@@ -67,59 +67,60 @@ function resetFavicon() {
 window.addEventListener('focus', resetFavicon);
 
 function drawFavicon() {
-  const img = new Image();
-  img.src = '/logo.png';
-  img.onload = () => {
-    ctx.clearRect(0, 0, 32, 32);
-    ctx.drawImage(img, 0, 0, 32, 32);
+  if (!faviconImage.complete) return requestAnimationFrame(drawFavicon);
+  ctx.clearRect(0, 0, 32, 32);
+  ctx.drawImage(faviconImage, 0, 0, 32, 32);
 
-    if (unreadCount > 0) {
-      unreadAlpha += (1 - unreadAlpha) * 0.15;
-      pulse += 0.15;
-      const scaleOffset = Math.sin(pulse) * 0.15;
-      badgeScale += (targetScale - badgeScale) * 0.2;
-      badgeScale = Math.min(badgeScale, 1.6);
-      popBoost *= 0.92;
+  if (unreadCount > 0) {
+    unreadAlpha += (1 - unreadAlpha) * 0.15;
+    pulse += 0.15;
+    const scaleOffset = Math.sin(pulse) * 0.15;
+    badgeScale += (targetScale - badgeScale) * 0.2;
+    badgeScale = Math.min(badgeScale, 1.6);
+    popBoost *= 0.92;
 
-      const x = 26, y = 8, radius = 6;
-      const glowRadius = radius * 1.8 + scaleOffset * 6;
-      const glow = ctx.createRadialGradient(x, y, radius / 2, x, y, glowRadius);
-      glow.addColorStop(0, `rgba(255,68,68,${unreadAlpha*0.5})`);
-      glow.addColorStop(1, "rgba(255,68,68,0)");
-      ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(x, y, glowRadius, 0, Math.PI*2);
-      ctx.fill();
+    const x = 26, y = 8, radius = 6;
+    const glowRadius = radius * 1.8 + scaleOffset * 6;
+    const glow = ctx.createRadialGradient(x, y, radius / 2, x, y, glowRadius);
+    glow.addColorStop(0, `rgba(255,68,68,${unreadAlpha*0.5})`);
+    glow.addColorStop(1, "rgba(255,68,68,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(x, y, glowRadius, 0, Math.PI*2);
+    ctx.fill();
 
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.scale(badgeScale, badgeScale);
-      ctx.translate(-x, -y);
-      ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI*2);
-      ctx.fillStyle = `rgba(255,68,68,${unreadAlpha})`;
-      ctx.fill();
-      ctx.fillStyle = `rgba(255,255,255,${unreadAlpha})`;
-      ctx.font = "bold 10px sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(unreadCount > 9 ? "9+" : unreadCount.toString(), x, y);
-      ctx.restore();
-    } else {
-      unreadAlpha *= 0.85;
-    }
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(badgeScale, badgeScale);
+    ctx.translate(-x, -y);
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI*2);
+    ctx.fillStyle = `rgba(255,68,68,${unreadAlpha})`;
+    ctx.fill();
+    ctx.fillStyle = `rgba(255,255,255,${unreadAlpha})`;
+    ctx.font = "bold 10px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(unreadCount > 9 ? "9+" : unreadCount.toString(), x, y);
+    ctx.restore();
+  } else {
+    unreadAlpha *= 0.85;
+  }
 
-    faviconLink.href = faviconCanvas.toDataURL("image/png");
-  };
+  faviconLink.href = faviconCanvas.toDataURL("image/png");
+  requestAnimationFrame(drawFavicon);
 }
-(function loopFavicon() { drawFavicon(); requestAnimationFrame(loopFavicon); })();
+requestAnimationFrame(drawFavicon);
 
 // ---------------- Landing Page Join ----------------
 joinBtn?.addEventListener('click', () => {
   const username = usernameInput.value.trim();
   const room = roomInput.value.trim();
   const pwd = roomPasswordInput.value.trim();
-  if (!username || !room) return alert('Enter both username and room name.');
+  if (!username || !room) {
+    usernameInput.focus();
+    return showInlineWarning('Enter both username and room name.');
+  }
 
   currentUser = username;
   currentRoom = room;
@@ -134,7 +135,6 @@ joinBtn?.addEventListener('click', () => {
 
   displayMessage({ user: 'System', text: `Welcome to ${currentRoom}, ${currentUser}!`, time: Date.now() });
 
-  // Shareable URL with room & optional password
   const url = new URL(window.location.href);
   url.searchParams.set('room', currentRoom);
   if (roomPassword) url.searchParams.set('password', roomPassword);
@@ -142,23 +142,34 @@ joinBtn?.addEventListener('click', () => {
 
   addShareLink();
   setTimeout(initChat, 50);
+  input?.focus();
 });
 
-// ---------------- Share Link Button ----------------
+function showInlineWarning(msg) {
+  let warning = document.getElementById('inline-warning');
+  if (!warning) {
+    warning = document.createElement('div');
+    warning.id = 'inline-warning';
+    warning.style.color = 'orange';
+    warning.style.marginTop = '4px';
+    usernamePrompt.appendChild(warning);
+  }
+  warning.textContent = msg;
+}
+
+// ---------------- Share Link ----------------
 function addShareLink() {
+  if (document.querySelector('#share-btn')) return;
   const shareBtn = document.createElement('button');
+  shareBtn.id = 'share-btn';
   shareBtn.textContent = 'Copy Link';
   shareBtn.style.marginLeft = '8px';
   shareBtn.addEventListener('click', () => {
     navigator.clipboard.writeText(window.location.href);
-    alert('Link copied to clipboard!');
+    showInlineWarning('Link copied to clipboard!');
   });
-  document.querySelector('header .header-right').appendChild(shareBtn);
+  document.querySelector('header .header-right')?.appendChild(shareBtn);
 }
-
-// ==============================
-// Part 2/3 — Messages, Pins, Stars, Reactions, Emoji
-// ==============================
 
 // ---------------- Initialize Socket ----------------
 function initChat() {
@@ -171,28 +182,17 @@ function initChat() {
 
   socket.on('disconnect', () => console.log('Disconnected'));
 
-  // Incoming messages
   socket.on('chat message', displayMessage);
-
-  // Typing indicators
-  socket.on('typing', typingUsers => {
-    if (!Array.isArray(typingUsers)) return;
-    const others = typingUsers.filter(u => u && u !== currentUser);
+  socket.on('typing', users => {
+    const others = (users || []).filter(u => u && u !== currentUser);
     others.length ? showTyping(others) : hideTyping();
   });
-
   socket.on('stop typing', hideTyping);
-
-  // Pinned messages
   socket.on('pinned messages', renderPinned);
   socket.on('message pinned', renderPinnedMessage);
   socket.on('message unpinned', renderPinnedMessage);
-
-  // Star & unstar messages
   socket.on('message starred', ({ id, starredBy }) => updateStar(id, starredBy));
   socket.on('message unstarred', ({ id, starredBy }) => updateStar(id, starredBy));
-
-  // Reactions
   socket.on('update reactions', ({ id, reactions }) => updateReactions(id, reactions));
 }
 
@@ -206,20 +206,16 @@ function displayMessage(msg, prepend = false) {
   div.className = `message ${msg.user === currentUser ? 'self' : 'other'}`;
   if (id) div.dataset.id = id;
 
-  // Meta info
   const meta = document.createElement('div');
   meta.className = 'meta';
-  const t = msg.time ? new Date(msg.time) : new Date();
-  meta.textContent = `${msg.user || 'Anon'} • ${t.toLocaleTimeString()}`;
+  meta.textContent = `${msg.user || 'Anon'} • ${new Date(msg.time || Date.now()).toLocaleTimeString()}`;
   div.appendChild(meta);
 
-  // Message text
   const text = document.createElement('div');
   text.className = 'text';
   text.textContent = msg.text || '';
   div.appendChild(text);
 
-  // Link previews
   if (msg.linkPreview) {
     const lp = document.createElement('div');
     lp.className = 'link-preview';
@@ -237,24 +233,20 @@ function displayMessage(msg, prepend = false) {
   // Reactions
   const reactionsDiv = document.createElement('div');
   reactionsDiv.className = 'reactions';
-  if (msg.reactions?.length) {
-    msg.reactions.forEach(r => {
-      const span = document.createElement('span');
-      span.textContent = r.emoji;
-      reactionsDiv.appendChild(span);
-    });
-  }
+  (msg.reactions || []).forEach(r => {
+    const span = document.createElement('span');
+    span.textContent = r.emoji;
+    reactionsDiv.appendChild(span);
+  });
   div.appendChild(reactionsDiv);
 
-  // Star button (if not self)
+  // Star button
   if (msg.user !== currentUser) {
     const starBtn = document.createElement('button');
     starBtn.className = 'star-btn';
     starBtn.textContent = (msg.starredBy?.includes(currentUser)) ? '⭐' : '☆';
-    starBtn.dataset.tooltip = 'Star this message';
     starBtn.addEventListener('click', () => {
-      const action = starBtn.textContent === '⭐' ? 'unstar message' : 'star message';
-      socket.emit(action, { room: currentRoom, id, user: currentUser });
+      socket.emit(starBtn.textContent === '⭐' ? 'unstar message' : 'star message', { room: currentRoom, id, user: currentUser });
     });
     div.appendChild(starBtn);
   }
@@ -263,27 +255,23 @@ function displayMessage(msg, prepend = false) {
   const pinBtn = document.createElement('button');
   pinBtn.className = 'pin-btn';
   pinBtn.textContent = msg.pinned ? '📌' : '📍';
-  pinBtn.dataset.tooltip = msg.pinned ? 'Unpin message' : 'Pin message';
   pinBtn.addEventListener('click', () => {
-    const action = msg.pinned ? 'unpin message' : 'pin message';
-    socket.emit(action, { room: currentRoom, id });
+    socket.emit(msg.pinned ? 'unpin message' : 'pin message', { room: currentRoom, id });
   });
   div.appendChild(pinBtn);
 
   prepend ? messages.prepend(div) : appendMessage(div);
-
-  if (msg.user !== currentUser && socket) incrementFavicon();
+  if (msg.user !== currentUser) incrementFavicon();
 }
 
 // ---------------- Pinned Messages ----------------
 if (pinnedBanner && !pinnedBanner.querySelector('ul')) {
-  const ul = document.createElement('ul');
-  pinnedBanner.appendChild(ul);
+  pinnedBanner.appendChild(document.createElement('ul'));
 }
-const pinnedList = pinnedBanner?.querySelector('ul');
 
 function renderPinned(msgs) {
   if (!pinnedBanner) return;
+  const prevScroll = pinnedBanner.scrollTop;
   pinnedBanner.innerHTML = '';
   if (msgs?.length) {
     pinnedBanner.style.display = 'block';
@@ -293,6 +281,7 @@ function renderPinned(msgs) {
       div.textContent = `${m.user || 'Anon'}: ${m.text || ''}`;
       pinnedBanner.appendChild(div);
     });
+    pinnedBanner.scrollTop = prevScroll;
   } else {
     pinnedBanner.style.display = 'none';
   }
@@ -304,8 +293,7 @@ function renderPinnedMessage() {
 
 // ---------------- Helpers ----------------
 function appendMessage(div) {
-  if (!messages) return;
-  messages.appendChild(div);
+  messages?.appendChild(div);
   if (!isScrollLocked) div.scrollIntoView({ behavior: 'smooth', block: 'end' });
 }
 
@@ -323,54 +311,21 @@ function updateReactions(id, reactions) {
   const reactionsDiv = msgDiv.querySelector('.reactions');
   if (!reactionsDiv) return;
   reactionsDiv.innerHTML = '';
-  reactions?.forEach(r => {
+  (reactions || []).forEach(r => {
     const span = document.createElement('span');
     span.textContent = r.emoji;
     reactionsDiv.appendChild(span);
   });
 }
 
-// ---------------- Emoji Picker ----------------
-emojiBtn?.addEventListener('click', () => {
-  if (!emojiPicker) return;
-  emojiPicker.style.display = emojiPicker.style.display === 'block' ? 'none' : 'block';
-  if (!emojisLoaded) loadEmojis();
-});
-
-function loadEmojis() {
-  fetch('/emoji.json')
-    .then(res => res.json())
-    .then(data => {
-      emojiData = data;
-      const container = document.getElementById('emoji-picker');
-      if (!container) return;
-      container.innerHTML = '<div id="quick-emojis"></div>';
-      const quickDiv = container.querySelector('#quick-emojis');
-      Object.keys(emojiData).forEach(key => {
-        const btn = document.createElement('button');
-        btn.textContent = emojiData[key];
-        btn.addEventListener('click', () => {
-          input.value += emojiData[key];
-          input.focus();
-        });
-        quickDiv.appendChild(btn);
-      });
-      emojisLoaded = true;
-    })
-    .catch(err => console.error('Error loading emojis:', err));
-}
-
-// ==============================
-// Part 3/3 — Input Form, Typing, Scroll Lock, Dark Theme & Helpers
-// ==============================
-
-// ---------------- Typing Indicator ----------------
+// ---------------- Typing Indicator (debounced) ----------------
+let typingDebounce;
 function showTyping(users) {
   if (!typingBubble) return;
   typingBubble.style.display = 'block';
   typingBubble.textContent = `${users.join(', ')} typing...`;
-  clearTimeout(typingTimeout);
-  typingTimeout = setTimeout(hideTyping, 2000);
+  clearTimeout(typingDebounce);
+  typingDebounce = setTimeout(hideTyping, 1500);
 }
 
 function hideTyping() {
@@ -381,29 +336,50 @@ function hideTyping() {
 // ---------------- Input Form ----------------
 form?.addEventListener('submit', e => {
   e.preventDefault();
-  if (!input || !socket) return;
-
-  const msg = input.value.trim();
-  if (!msg) return;
-
-  socket.emit('chat message', {
-    room: currentRoom,
-    user: currentUser,
-    text: msg,
-    time: Date.now()
-  });
-
+  if (!input?.value.trim() || !socket) return;
+  socket.emit('chat message', { room: currentRoom, user: currentUser, text: input.value.trim(), time: Date.now() });
   input.value = '';
 });
 
-// ---------------- Quick Emojis ----------------
-quickEmojis?.forEach(btn => {
-  btn.addEventListener('click', e => {
-    if (!input) return;
-    input.value += e.target.textContent;
-    input.focus();
-  });
+// ---------------- Emoji Picker ----------------
+emojiBtn?.addEventListener('click', () => {
+  if (!emojiPicker) return;
+  emojiPicker.style.display = emojiPicker.style.display === 'block' ? 'none' : 'block';
+  if (!emojisLoaded) loadEmojis();
 });
+
+function setupQuickEmojis() {
+  document.querySelectorAll('#quick-emojis button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!input) return;
+      input.value += btn.textContent;
+      input.focus();
+    });
+  });
+}
+
+function loadEmojis() {
+  fetch('/emoji.json')
+    .then(res => res.json())
+    .then(data => {
+      emojiData = data;
+      const container = document.getElementById('emoji-picker');
+      if (!container) return;
+      const quickDiv = document.createElement('div');
+      quickDiv.id = 'quick-emojis';
+      Object.values(emojiData).forEach(e => {
+        const btn = document.createElement('button');
+        btn.textContent = e;
+        quickDiv.appendChild(btn);
+      });
+      container.appendChild(quickDiv);
+      emojisLoaded = true;
+      setupQuickEmojis();
+    })
+    .catch(err => console.error('Error loading emojis:', err));
+}
+
+setupQuickEmojis();
 
 // ---------------- Scroll Lock ----------------
 messages?.addEventListener('scroll', () => {
@@ -421,103 +397,6 @@ toggleThemeBtn?.addEventListener('click', () => {
 
 // ---------------- Leave Button ----------------
 leaveBtn?.addEventListener('click', () => {
+  if (socket) socket.disconnect();
   location.reload();
 });
-
-// ---------------- Favicon Unread Count ----------------
-function incrementFavicon() {
-  unreadCount++;
-  popBoost += 0.25;
-  if (popBoost > 0.6) popBoost = 0.6;
-  targetScale = 1 + popBoost;
-}
-
-function resetFavicon() {
-  unreadCount = 0;
-  popBoost = 0;
-  badgeScale = 1;
-  targetScale = 1;
-}
-
-window.addEventListener('focus', resetFavicon);
-
-function drawFavicon() {
-  const img = new Image();
-  img.src = '/logo.png';
-  img.onload = () => {
-    ctx.clearRect(0, 0, 32, 32);
-    ctx.drawImage(img, 0, 0, 32, 32);
-
-    if (unreadCount > 0) {
-      unreadAlpha += (1 - unreadAlpha) * 0.15;
-      pulse += 0.15;
-      const scaleOffset = Math.sin(pulse) * 0.15;
-
-      badgeScale += (targetScale - badgeScale) * 0.2;
-      badgeScale = Math.min(badgeScale, 1.6);
-      popBoost *= 0.92;
-
-      const x = 26, y = 8, radius = 6;
-      const glowRadius = radius * 1.8 + scaleOffset * 6;
-      const glow = ctx.createRadialGradient(x, y, radius / 2, x, y, glowRadius);
-      glow.addColorStop(0, `rgba(255,68,68,${unreadAlpha*0.5})`);
-      glow.addColorStop(1, "rgba(255,68,68,0)");
-      ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(x, y, glowRadius, 0, Math.PI*2);
-      ctx.fill();
-
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.scale(badgeScale, badgeScale);
-      ctx.translate(-x, -y);
-      ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI*2);
-      ctx.fillStyle = `rgba(255,68,68,${unreadAlpha})`;
-      ctx.fill();
-      ctx.fillStyle = `rgba(255,255,255,${unreadAlpha})`;
-      ctx.font = "bold 10px sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(unreadCount > 9 ? "9+" : unreadCount.toString(), x, y);
-      ctx.restore();
-    } else {
-      unreadAlpha *= 0.85;
-    }
-
-    faviconLink.href = faviconCanvas.toDataURL("image/png");
-  };
-}
-
-(function loopFavicon() {
-  drawFavicon();
-  requestAnimationFrame(loopFavicon);
-})();
-
-// ---------------- Final Helpers ----------------
-function appendMessage(div) {
-  if (!messages) return;
-  messages.appendChild(div);
-  if (!isScrollLocked) div.scrollIntoView({ behavior: 'smooth', block: 'end' });
-}
-
-function updateStar(id, starredBy) {
-  const msgDiv = document.querySelector(`.message[data-id='${id}']`);
-  if (!msgDiv) return;
-  const starBtn = msgDiv.querySelector('.star-btn');
-  if (!starBtn) return;
-  starBtn.textContent = starredBy?.includes(currentUser) ? '⭐' : '☆';
-}
-
-function updateReactions(id, reactions) {
-  const msgDiv = document.querySelector(`.message[data-id='${id}']`);
-  if (!msgDiv) return;
-  const reactionsDiv = msgDiv.querySelector('.reactions');
-  if (!reactionsDiv) return;
-  reactionsDiv.innerHTML = '';
-  reactions?.forEach(r => {
-    const span = document.createElement('span');
-    span.textContent = r.emoji;
-    reactionsDiv.appendChild(span);
-  });
-}

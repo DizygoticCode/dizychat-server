@@ -1,12 +1,12 @@
 /* ==============================
-   chat.css — Discord/WhatsApp Style
+   chat.css — Full Discord/WhatsApp Style (Merged)
    ============================== */
 
 /* Root variables */
 :root {
   --bg-light: #f9f9f9;
   --bg-dark: #121212;
-  --bubble-self: #25d366;
+  --bubble-self: #056162;
   --bubble-other: #262d31;
   --text-dark: #111;
   --text-light: #eee;
@@ -16,22 +16,21 @@
   --radius: 16px;
 }
 
-/* Body and container */
+/* ==============================
+   Body & Chat Container
+   ============================== */
 body {
   font-family: 'Segoe UI', sans-serif;
   margin: 0;
+  height: 100vh;
   display: flex;
   flex-direction: column;
-  height: 100vh;
   overflow: hidden;
   background: var(--bg-dark);
   color: var(--text-light);
 }
 
-body.dark {
-  background: var(--bg-dark);
-  color: var(--text-light);
-}
+body.dark { background: var(--bg-dark); color: var(--text-light); }
 
 #chat-container {
   display: flex;
@@ -39,6 +38,79 @@ body.dark {
   flex: 1;
   height: 100vh;
   background: var(--bg-dark);
+}
+
+/* ==============================
+   Landing Page
+   ============================== */
+#username-prompt {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+}
+
+#username-prompt .logo { width: 120px; height: auto; margin-bottom: 12px; }
+
+#username-prompt h1 { font-size: 2em; margin: 0 0 12px; color: #fff; }
+
+.landing-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 260px;
+}
+
+.landing-inputs input {
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-color);
+  background: #222;
+  color: var(--text-light);
+}
+
+.landing-inputs input::placeholder { color: #aaa; }
+
+#join-btn {
+  margin-top: 8px;
+  padding: 10px;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#join-btn:hover { opacity: 0.9; }
+
+#room-list { margin-top: 20px; text-align: center; }
+
+#public-room-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+#public-room-list li {
+  background: #333;
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.2s ease;
+}
+
+#public-room-list li:hover {
+  transform: scale(1.05);
+  background: var(--accent);
 }
 
 /* ==============================
@@ -54,19 +126,11 @@ header {
   z-index: 20;
 }
 
-header .header-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
+header .header-left { display: flex; align-items: center; gap: 10px; }
 
 header .logo { width: 40px; height: auto; }
 
-#room-name {
-  font-weight: 600;
-  font-size: 1.1em;
-  color: var(--text-light);
-}
+#room-name { font-weight: 600; font-size: 1.1em; color: var(--text-light); }
 
 /* Header buttons */
 .header-right button {
@@ -114,7 +178,6 @@ header .logo { width: 40px; height: auto; }
   background: #1b1b1b;
 }
 
-/* Message bubbles */
 .message {
   position: relative;
   max-width: 75%;
@@ -128,12 +191,8 @@ header .logo { width: 40px; height: auto; }
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
-.message:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.35);
-}
+.message:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
 
-/* Self vs Other */
 .message.self {
   align-self: flex-end;
   background: var(--bubble-self);
@@ -148,39 +207,10 @@ header .logo { width: 40px; height: auto; }
   border-bottom-left-radius: 4px;
 }
 
-/* Meta (username + time) */
-.message .meta {
-  font-size: 0.75em;
-  color: rgba(255,255,255,0.6);
-  margin-bottom: 4px;
-}
+.message .meta { font-size: 0.75em; color: rgba(255,255,255,0.6); margin-bottom: 4px; }
+.message .text { white-space: pre-wrap; }
 
-/* Text content */
-.message .text {
-  white-space: pre-wrap;
-}
-
-/* Reactions container */
-.message .reactions {
-  margin-top: 6px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.message .reactions span {
-  background: rgba(255,255,255,0.15);
-  border-radius: 8px;
-  padding: 2px 6px;
-  font-size: 0.85em;
-  transition: transform 0.15s ease;
-}
-
-.message .reactions span:hover { transform: scale(1.2); }
-
-/* ==============================
-   Pin & Star Buttons
-   ============================== */
+/* Pin & Star Buttons */
 .message .pin-btn,
 .message .star-btn {
   position: absolute;
@@ -195,12 +225,26 @@ header .logo { width: 40px; height: auto; }
 
 .message .pin-btn { right: 32px; }
 .message .star-btn { right: 6px; }
-
 .message .pin-btn:hover,
-.message .star-btn:hover { 
-  transform: scale(1.4); 
-  opacity: 1; 
+.message .star-btn:hover { transform: scale(1.4); opacity: 1; }
+
+/* Reactions */
+.message .reactions {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
+
+.message .reactions span {
+  background: rgba(255,255,255,0.15);
+  border-radius: 12px;
+  padding: 2px 6px;
+  font-size: 0.85em;
+  transition: transform 0.15s ease;
+}
+
+.message .reactions span:hover { transform: scale(1.2); }
 
 /* ==============================
    Input Bar
@@ -256,13 +300,10 @@ header .logo { width: 40px; height: auto; }
   padding: 8px;
 }
 
-#emoji-picker.show { display: block; }
-
 #quick-emojis {
   display: flex;
   justify-content: center;
-  flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 
 #quick-emojis button {
@@ -276,216 +317,7 @@ header .logo { width: 40px; height: auto; }
 #quick-emojis button.pop { transform: scale(1.5); }
 
 /* ==============================
-   Typing Bubble
-   ============================== */
-#typing-bubble {
-  position: sticky;
-  bottom: 60px;
-  z-index: 10;
-  background: rgba(0,0,0,0.25);
-  padding: 6px 12px;
-  border-radius: var(--radius);
-  font-size: 0.95em;
-  color: #fff;
-  text-align: center;
-  align-self: center;
-  max-width: 60%;
-  word-wrap: break-word;
-  transition: opacity 0.2s ease;
-}
-
-/* ==============================
    Pinned Messages
-   ============================== */
-#pinned-messages {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  background: #2b2b2b;
-  color: #fff;
-  padding: 8px 12px;
-  border-radius: var(--radius);
-  margin: 8px;
-  max-height: 140px;
-  overflow-y: auto;
-  border: 1px solid var(--accent);
-}
-
-#pinned-messages li {
-  list-style: none;
-  padding: 6px 8px;
-  background: rgba(255,255,255,0.05);
-  border-radius: var(--radius);
-  font-size: 0.9em;
-  cursor: default;
-  transition: background 0.15s ease;
-}
-
-#pinned-messages li:hover { background: rgba(255,255,255,0.1); }
-
-/* Adjust messages margin for pinned */
-#messages { margin-top: 8px; }
-
-/* ==============================
-   Reactions Overlay
-   ============================== */
-.reaction-picker.overlay {
-  position: absolute;
-  background: #fff;
-  border: 1px solid #ccc;
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 6px;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, 32px);
-  gap: 4px;
-  max-width: 220px;
-  max-height: 160px;
-  overflow-y: auto;
-  z-index: 999;
-}
-
-body.dark .reaction-picker.overlay {
-  background: #1e1e1e;
-  border-color: #444;
-}
-
-.reaction-btn {
-  background: none;
-  border: none;
-  font-size: 1.4em;
-  cursor: pointer;
-}
-
-.reaction-btn:hover { transform: scale(1.3); }
-
-/* ==============================
-   Responsive Adjustments
-   ============================== */
-@media (max-width: 640px) {
-  #emoji-picker { bottom: 60px; width: 90%; right: 5%; }
-  #pinned-messages { max-height: 100px; margin: 4px; font-size: 0.85em; }
-  #typing-bubble { bottom: 70px; font-size: 0.85em; max-width: 80%; }
-  .message { max-width: 90%; }
-}
-
-/* ==============================
-   File Previews
-   ============================== */
-.file-preview {
-  margin-top: 6px;
-  max-width: 240px;
-  border-radius: var(--radius);
-  overflow: hidden;
-  display: block;
-}
-
-.inline-image {
-  width: 100%;
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.inline-image:hover {
-  transform: scale(1.03);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-}
-
-/* ==============================
-   Link Previews
-   ============================== */
-.link-preview {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(255,255,255,0.05);
-  border-radius: var(--radius);
-  padding: 6px;
-  margin-top: 6px;
-  cursor: pointer;
-  transition: background 0.2s ease, transform 0.15s ease;
-}
-
-.link-preview:hover {
-  background: rgba(255,255,255,0.1);
-  transform: translateY(-1px);
-}
-
-.link-preview img {
-  width: 48px;
-  height: 48px;
-  object-fit: cover;
-  border-radius: 6px;
-}
-
-/* Dark mode adjustments */
-body.dark .link-preview {
-  background: rgba(255,255,255,0.08);
-}
-
-body.dark .link-preview:hover {
-  background: rgba(255,255,255,0.15);
-}
-
-/* ==============================
-   Dark/Light Mode Tweaks for Messages & Input
-   ============================== */
-body.dark {
-  --bg-dark: #121212;
-  --bubble-self: #056162;
-  --bubble-other: #262d31;
-  --text-light: #eee;
-  --accent: #25d366;
-}
-
-body:not(.dark) {
-  background: var(--bg-light);
-  color: var(--text-dark);
-}
-
-body:not(.dark) .message.self {
-  background: var(--bubble-self);
-  color: #fff;
-}
-
-body:not(.dark) .message.other {
-  background: var(--bubble-other);
-  color: #111;
-}
-
-body:not(.dark) #form {
-  background: #f5f5f5;
-}
-
-body:not(.dark) #input {
-  background: #fff;
-  color: #111;
-  border: 1px solid #ccc;
-}
-
-/* ==============================
-   Final Message Hover & Reactions
-   ============================== */
-.message {
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-.message:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-}
-
-.message .reactions span {
-  transition: transform 0.15s ease;
-}
-
-.message .reactions span:hover {
-  transform: scale(1.2);
-}
-
-/* ==============================
-   Pinned Messages Container
    ============================== */
 #pinned-messages {
   display: flex;
@@ -512,15 +344,7 @@ body:not(.dark) #input {
   transition: background 0.2s ease, transform 0.15s ease;
 }
 
-#pinned-messages li:hover {
-  background: rgba(255,255,255,0.1);
-  transform: translateY(-1px);
-}
-
-/* Adjust spacing for pinned messages */
-#messages {
-  margin-top: 8px;
-}
+#pinned-messages li:hover { background: rgba(255,255,255,0.1); transform: translateY(-1px); }
 
 /* ==============================
    Typing Bubble
@@ -538,60 +362,78 @@ body:not(.dark) #input {
   align-self: center;
   max-width: 60%;
   word-wrap: break-word;
+  opacity: 0;
+  transform: translateY(10px);
   transition: opacity 0.3s ease, transform 0.2s ease;
 }
 
-#typing-bubble.show {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-#typing-bubble.hide {
-  opacity: 0;
-  transform: translateY(10px);
-}
+#typing-bubble.show { opacity: 1; transform: translateY(0); }
+#typing-bubble.hide { opacity: 0; transform: translateY(10px); }
 
 /* ==============================
-   Responsive Adjustments (Mobile)
+   File & Link Previews
+   ============================== */
+.file-preview { margin-top: 6px; max-width: 240px; border-radius: var(--radius); overflow: hidden; }
+.inline-image { width: 100%; border-radius: var(--radius); cursor: pointer; transition: transform 0.2s ease; }
+.inline-image:hover { transform: scale(1.03); }
+
+.link-preview {
+  display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.05);
+  border-radius: var(--radius); padding: 6px; margin-top: 6px; cursor: pointer; transition: background 0.2s ease;
+}
+.link-preview:hover { background: rgba(255,255,255,0.1); }
+.link-preview img { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; }
+body.dark .link-preview { background: rgba(255,255,255,0.08); }
+body.dark .link-preview:hover { background: rgba(255,255,255,0.15); }
+
+/* ==============================
+   Dark/Light Mode Overrides
+   ============================== */
+body.dark {
+  --bg-dark: #121212;
+  --bubble-self: #056162;
+  --bubble-other: #262d31;
+  --text-light: #eee;
+  --accent: #25d366;
+}
+
+body:not(.dark) {
+  background: var(--bg-light);
+  color: var(--text-dark);
+}
+body:not(.dark) .message.self { background: var(--bubble-self); color: #fff; }
+body:not(.dark) .message.other { background: var(--bubble-other); color: #111; }
+body:not(.dark) #form { background: #f5f5f5; }
+body:not(.dark) #input { background: #fff; color: #111; border: 1px solid #ccc; }
+
+/* ==============================
+   Animations
+   ============================== */
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ==============================
+   Responsive Adjustments
    ============================== */
 @media (max-width: 640px) {
-  #emoji-picker {
-    bottom: 60px;
-    width: 90%;
-    right: 5%;
-  }
+  #emoji-picker { bottom: 60px; width: 90%; right: 5%; }
+  #pinned-messages { max-height: 100px; margin: 4px; font-size: 0.85em; }
+  #typing-bubble { bottom: 70px; font-size: 0.85em; max-width: 80%; }
+  .message { max-width: 90%; font-size: 0.95em; padding: 10px 12px; }
+  .link-preview img { width: 40px; height: 40px; }
+  #input { font-size: 0.95em; }
+  .header-right button { font-size: 0.85em; padding: 5px 10px; }
+}
 
-  #pinned-messages {
-    max-height: 100px;
-    margin: 4px;
-    font-size: 0.85em;
-  }
-
-  #typing-bubble {
-    bottom: 70px;
-    font-size: 0.85em;
-    max-width: 80%;
-  }
-
-  .message {
-    max-width: 90%;
-    font-size: 0.95em;
-    padding: 10px 12px;
-  }
-
-  .link-preview img {
-    width: 40px;
-    height: 40px;
-  }
-
-  #input {
-    font-size: 0.95em;
-  }
-
-  .header-right button {
-    font-size: 0.85em;
-    padding: 5px 10px;
-  }
+@media (max-width: 480px) {
+  #username-prompt { padding: 20px 16px; gap: 12px; }
+  #username-prompt .logo { width: 100px; }
+  #username-prompt h1 { font-size: 1.4em; }
+  .landing-inputs { width: 100%; max-width: 260px; flex-direction: column; gap: 8px; }
+  .landing-inputs input { width: 100%; padding: 10px 12px; font-size: 0.95em; }
+  #join-btn { width: 100%; padding: 10px; font-size: 1em; }
+  #room-list h3 { font-size: 1em; }
+  #public-room-list { gap: 6px; }
+  #public-room-list li { font-size: 0.85em; padding: 5px 8px; }
 }
 
 /* ==============================
@@ -599,19 +441,10 @@ body:not(.dark) #input {
    ============================== */
 #messages::-webkit-scrollbar,
 #pinned-messages::-webkit-scrollbar,
-#emoji-picker::-webkit-scrollbar {
-  width: 6px;
-}
-
+#emoji-picker::-webkit-scrollbar { width: 6px; }
 #messages::-webkit-scrollbar-thumb,
 #pinned-messages::-webkit-scrollbar-thumb,
-#emoji-picker::-webkit-scrollbar-thumb {
-  background: #444;
-  border-radius: 6px;
-}
-
+#emoji-picker::-webkit-scrollbar-thumb { background: #444; border-radius: 6px; }
 #messages::-webkit-scrollbar-track,
 #pinned-messages::-webkit-scrollbar-track,
-#emoji-picker::-webkit-scrollbar-track {
-  background: rgba(0,0,0,0.05);
-}
+#emoji-picker::-webkit-scrollbar-track { background: rgba(0,0,0,0.05); }
