@@ -462,3 +462,64 @@ body.dark .msg-menu button:hover { background: rgba(255,255,255,0.1); }
   .message { max-width: 90%; }
   .link-preview img { width: 40px; height: 40px; }
 }
+
+/* ==============================
+   Pinned Messages & Chat Layout Fixes
+   ============================== */
+
+/* Pinned messages container */
+#pinned-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #2b2b2b;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  margin: 8px;
+  max-height: 120px;
+  overflow-y: auto;
+  border: 1px solid var(--accent);
+}
+
+/* Individual pinned message */
+#pinned-messages li {
+  list-style: none;
+  padding: 4px 6px;
+  background: rgba(255,255,255,0.05);
+  border-radius: var(--radius);
+  font-size: 0.9em;
+  cursor: default;
+}
+
+/* Messages area spacing for pinned messages */
+#messages {
+  margin-top: 8px;
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #1b1b1b;
+}
+
+/* Typing bubble stays above input */
+#typing-bubble {
+  position: sticky;
+  bottom: 60px;
+  z-index: 10;
+  background: rgba(0,0,0,0.2);
+  padding: 4px 8px;
+  border-radius: var(--radius);
+  font-size: 0.9em;
+  color: #fff;
+  text-align: center;
+}
+
+/* Emoji picker tweaks for mobile */
+@media (max-width: 640px) {
+  #pinned-messages { max-height: 100px; margin: 4px; font-size: 0.85em; }
+  #typing-bubble { bottom: 70px; font-size: 0.85em; }
+  #emoji-picker { bottom: 60px; width: 90%; right: 5%; }
+}
