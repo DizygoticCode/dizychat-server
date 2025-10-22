@@ -51,6 +51,7 @@ body.dark { background: var(--bg-dark); color: var(--text-light); }
   align-items: center;
   text-align: center;
   gap: 12px;
+  background: #000; /* 💜 Fixed black landing page */
 }
 
 #username-prompt .logo { width: 120px; height: auto; margin-bottom: 12px; }
@@ -449,46 +450,41 @@ body:not(.dark) #input { background: #fff; color: #111; border: 1px solid #ccc; 
 #pinned-messages::-webkit-scrollbar-track,
 #emoji-picker::-webkit-scrollbar-track { background: rgba(0,0,0,0.05); }
 
-/* Admin gold + announcement bubble */
-.admin-badge {
-  color: #FFD700;
-  font-weight: 700;
-  text-shadow: 0 0 6px rgba(255, 215, 0, 0.6);
-  margin-left: 8px;
-}
-#users-list .admin-name {
-  color: #FFD700 !important;
-  font-weight: 600;
-}
-.announcement {
-  background: linear-gradient(180deg, rgba(255,215,0,0.08), rgba(255,215,0,0.04));
-  border: 1px solid rgba(255,215,0,0.5);
-  color: #fff;
-  padding: 10px 12px;
-  border-radius: var(--radius, 12px);
-  box-shadow: var(--shadow, 0 2px 8px rgba(0,0,0,0.3));
+/* ==============================
+   DIZY PURPLE PATCH
+   ============================== */
+.upload-progress {
+  width: 100%;
+  max-width: 360px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(123, 47, 247, 0.15);
   margin: 8px auto;
-  max-width: 70%;
+  overflow: hidden;
 }
-.announcement strong { color: #FFD700; }
 
-/* ===== FUSION: Admin, GIFs, Embeds, OG Cards ===== */
-.admin-badge { color:#FFD700; font-weight:700; text-shadow:0 0 6px rgba(255,215,0,0.6); margin-left:8px; }
-.system-bubble { background:rgba(255,215,0,0.1); border:1px solid #FFD700; color:#FFD700; border-radius:12px; padding:10px 14px; text-align:center; font-weight:600; margin:8px auto; max-width:70%; }
+.upload-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: #7B2FF7;
+  box-shadow: 0 0 12px rgba(123, 47, 247, 0.6) inset;
+  transition: width .12s linear;
+}
 
-#emoji-btn, #gif-btn { background:#9D4EDD; color:#fff; border:none; padding:6px 10px; border-radius:10px; }
-#gif-picker { position:fixed; display:none; width:420px; max-height:360px; overflow:auto; background:#1e1e1e; border:1px solid #444; border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,.35); z-index:1000; padding:8px; }
-#gif-picker .gif-error { color:#f88; padding:10px; text-align:center; }
+.inline-video,
+.inline-audio,
+.inline-pdf,
+.inline-text {
+  margin-top: 6px;
+  border-radius: 12px;
+  max-width: 100%;
+  background: rgba(255,255,255,0.05);
+}
 
-.link-card { display:flex; flex-direction:column; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:8px; margin-top:6px; transition:background .2s; }
-.link-card:hover { background: rgba(255,255,255,0.1); }
-.link-card .link-header { display:flex; align-items:center; gap:6px; cursor:pointer; }
-.link-card .toggle { font-size:0.9em; }
-.link-card .domain { color:#bbb; }
-.link-card .link-body img { width:100%; max-height:180px; object-fit:cover; border-radius:8px; margin-top:6px; display:none; }
-.link-card .link-body .title { font-weight:600; color:#fff; margin-top:4px; display:none; }
-.link-card.open .link-body img, .link-card.open .link-body .title { display:block; }
-
-.embed-wrap { margin-top:6px; display:grid; gap:8px; }
-.embed-iframe { width:100%; border:0; border-radius:10px; aspect-ratio:16/9; }
-.embed-image, .embed-media, .embed-audio { max-width:100%; border-radius:10px; }
+#file-attach:hover,
+#gif-btn:hover,
+#emoji-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 0 8px rgba(123,47,247,0.4);
+}

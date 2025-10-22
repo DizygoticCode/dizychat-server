@@ -1,5 +1,7 @@
-// ===== DIZYCHAT SUPERNOVA × PSYBIN FUSION =====
+// ===== DIZYCHAT FUSION — SUPERNOVA LIVE (Render Edition) =====
 require('dotenv').config();
+
+// ---------------- Imports ----------------
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -16,20 +18,14 @@ const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fet
 // ---------------- App Setup ----------------
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*", methods: ["GET","POST"] } });
+const io = new Server(server, {
+  cors: { origin: "*", methods: ["GET","POST"] }
+});
 const PORT = process.env.PORT || 10000;
 
 // ---------------- Admin ----------------
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'Dizygotic';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
-
-function requireAdmin(socket){
-  if (!socket.isAdmin) {
-    socket.emit('toast', { type: 'warn', text: '🚫 Admin only command.' });
-    return false;
-  }
-  return true;
-}
 
 // ---------------- MongoDB ----------------
 const mongoUri = process.env.MONGO_URI;
@@ -44,6 +40,13 @@ mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
 // ---------------- Static Files ----------------
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ---------------- Version endpoint ----------------
+const VERSION = "1.3";
+const BUILD = "fusion-supernova";
+app.get('/version', (req, res) => {
+  res.json({ version: VERSION, build: BUILD, time: new Date().toISOString() });
+});
+
 // ---------------- File Uploads ----------------
 const uploadDir = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -55,6 +58,8 @@ const storage = multer.diskStorage({
     cb(null, file.fieldname + '-' + unique + path.extname(file.originalname));
   }
 });
+
+// NOTE: no explicit size limits (Render/infrastructure may still cap)
 const upload = multer({ storage });
 
 app.post('/upload', upload.single('file'), (req, res) => {
@@ -86,7 +91,7 @@ app.get('/link-preview', async (req, res) => {
 
 // ---------------- Socket.IO ----------------
 let typingUsers = {};
-let rooms = {};
+let rooms = {}; // room passwords (if used)
 const RATE_LIMIT_WINDOW = 2000;
 const MAX_MESSAGES_PER_WINDOW = 3;
 const MAX_TYPING_EVENTS_PER_WINDOW = 5;
@@ -114,6 +119,14 @@ function canSendTyping(socketId) {
   return true;
 }
 
+function requireAdmin(socket){
+  if (!socket.isAdmin) {
+    socket.emit('toast', { type: 'warn', text: '🚫 Admin only command.' });
+    return false;
+  }
+  return true;
+}
+
 io.on('connection', socket => {
   console.log('[Socket] Connected', socket.id);
   socket.isAdmin = false;
@@ -129,13 +142,17 @@ io.on('connection', socket => {
     socket.username = username;
     console.log(`[Join] ${username} → ${room}`);
 
-    // Fetch *all* previous history (not last 50)
+    // Fetch *all* previous messages (no limit)
     try {
       const history = await Message.find({ room }).sort({ timestamp: 1 });
+      console.log(`[History] Loaded ${history.length} messages from ${room}`);
+      // bulk load preferred (client should listen for 'load messages')
       socket.emit('load messages', history);
+      // If your client only handles single events, you can fallback:
+      // history.forEach(msg => socket.emit('chat message', msg.toJSON()));
     } catch (err) { console.error("[History] Error:", err); }
 
-    // Pinned messages
+    // Send pinned
     try {
       const pinned = await Message.find({ room, pinned: true }).sort({ timestamp: -1 }).limit(50);
       socket.emit('pinned messages', pinned);
@@ -261,7 +278,7 @@ io.on('connection', socket => {
     io.emit('typing', Object.values(typingUsers));
   });
 
-  // ----- Admin Announce & Moderation -----
+  // ----- Announcement & Moderation -----
   socket.on('announce', ({ room, text }) => {
     if (!requireAdmin(socket)) return;
     const clean = sanitizeHtml(text || '', { allowedTags: [], allowedAttributes: {} });
@@ -300,7 +317,12 @@ io.on('connection', socket => {
 });
 
 // ---------------- Start Server ----------------
-server.listen(PORT, () => console.log(`[Server] Listening on ${PORT}`));
+server.listen(PORT, () => {
+  console.log("🎛️ DizyChat Fusion — Supernova Live 💜");
+  console.log(`Version ${VERSION} (${BUILD})`);
+  console.log(`Booted on ${new Date().toLocaleString()}`);
+  console.log(`[Server] Listening on ${PORT}`);
+});
 
 // ---------------- Catch-all Route ----------------
 app.get('*', (req, res) => {
