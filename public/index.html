@@ -1,45 +1,101 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>DizyChat Supernova</title>
-  <link rel="stylesheet" href="/chat.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>DizyChat</title>
+  <link rel="icon" href="/logo.png" type="image/png" />
+  <link rel="stylesheet" href="/chat.css" />
 </head>
-<body>
-  <div id="landing">
-    <input id="username-input" placeholder="Enter your name" />
-    <input id="room-input" placeholder="Enter room" />
-    <input id="room-password" type="password" placeholder="Room password (optional)" />
-    <input id="admin-password" type="password" placeholder="Admin Password" style="display:none;" autocomplete="current-password" />
-    <button id="join-btn">Join Chat</button>
-  </div>
 
-  <div id="chat" style="display:none;">
-    <div id="room-header">
-      <span id="room-name"></span>
-      <span id="users-list"></span>
+<body class="dark">
+  <!-- ===========================
+       Landing Page
+       =========================== -->
+  <div id="username-prompt">
+    <img src="/logo.png" alt="DizyChat Logo" class="logo" />
+    <h1>Welcome to DizyChat</h1>
+    <div class="landing-inputs">
+      <input id="username-input" placeholder="Choose your username" />
+      <input id="room-input" placeholder="Enter room name" />
+      <input id="room-password" type="password" placeholder="Room password (optional)" />
+      
+      <input id="admin-password" type="password" placeholder="Admin Password" style="display:none;" autocomplete="current-password" />
+<button id="join-btn">Join Chat</button>
     </div>
-    <div id="messages"></div>
-    <form id="form">
-      <input id="input" autocomplete="off" placeholder="Type a message..." />
-      <button id="emoji-btn" type="button">😊</button>
-      <button type="submit">Send</button>
-    </form>
+
+    <div id="room-list">
+      <h3>Available Public Rooms</h3>
+      <ul id="public-room-list"></ul>
+    </div>
   </div>
 
+  <!-- ===========================
+       Chat Container (hidden until joined)
+       =========================== -->
+  <div id="chat-container" style="display:none;">
+    <!-- Header -->
+    <header>
+      <div class="header-left">
+        <img src="/logo.png" alt="Logo" class="logo" />
+        <span id="room-name"></span>
+      </div>
+      <div class="header-right">
+        <button id="toggle-theme" title="Toggle Theme">🌓</button>
+        <button id="leave-btn" title="Exit Chat">Leave</button>
+      </div>
+    </header>
+
+    <!-- Pinned messages -->
+    <div id="pinned-messages" style="display:none;"></div>
+
+    <!-- Message area -->
+    <div id="messages"></div>
+
+    <!-- Typing indicator -->
+    <div id="typing-bubble" style="display:none;">Someone is typing...</div>
+
+    <!-- Message input form -->
+    <form id="form">
+      <button type="button" id="emoji-btn" title="Emoji">😊</button>
+      <input id="input" autocomplete="off" placeholder="Type a message..." />
+      <button type="submit" title="Send">➤</button>
+    </form>
+
+    <!-- Emoji picker -->
+    <div id="emoji-picker">
+      <div id="quick-emojis">
+        <button>😀</button>
+        <button>😂</button>
+        <button>😍</button>
+        <button>😎</button>
+        <button>👍</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===========================
+       Scripts
+       =========================== -->
   <script src="/socket.io/socket.io.js"></script>
   <script src="/chat.js"></script>
-
+  
   <script>
-    const u = document.getElementById('username-input');
-    const ap = document.getElementById('admin-password');
-    function toggleAdminField(){
-      if (!u || !ap) return;
-      ap.style.display = (u.value.trim() === 'Dizygotic') ? 'block' : 'none';
-    }
-    if (u){ u.addEventListener('input', toggleAdminField); toggleAdminField(); }
+    const u = document.getElementById("username-input");
+    const ap = document.getElementById("admin-password");
+    function toggleAdminField(){ if (!u || !ap) return; ap.style.display = (u.value.trim() === "Dizygotic") ? "block" : "none"; }
+    if (u){ u.addEventListener("input", toggleAdminField); toggleAdminField(); }
   </script>
+<canvas id="favicon-canvas" width="32" height="32" style="display:none;"></canvas>
 
-  <script src="/fusion.js"></script>
+<script>
+  const u = document.getElementById('username-input');
+  const ap = document.getElementById('admin-password');
+  function toggleAdminField(){ if (!u || !ap) return; ap.style.display = (u.value.trim() === 'Dizygotic') ? 'block' : 'none'; }
+  if (u){ u.addEventListener('input', toggleAdminField); toggleAdminField(); }
+</script>
+<script src="/fusion.js"></script>
+
 </body>
 </html>

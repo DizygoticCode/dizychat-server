@@ -213,7 +213,19 @@ function displayMessage(msg, prepend = false) {
 
   const text = document.createElement('div');
   text.className = 'text';
-  text.textContent = msg.text || '';
+  
+	if (msg.text) {
+	// Replace :emojiName: placeholders with <img> if found in flatEmojiList
+	text.innerHTML = msg.text.replace(/:([\w-]+):/g, (match, name) => {
+		const emoji = flatEmojiList.find(e => e.name === name);
+		if (!emoji) return match; // fallback: leave text
+		if (emoji.url) return `<img src="${emoji.url}" alt="${name}" class="inline-emoji" style="width:20px; height:20px;">`;
+		return emoji.char; // normal Unicode emoji
+	});
+	} else {
+		text.textContent = '';
+	}
+  
   div.appendChild(text);
 
   if (msg.linkPreview) {
@@ -359,27 +371,308 @@ function setupQuickEmojis() {
 }
 
 function loadEmojis() {
-  fetch('/emoji.json')
+  fetch('/emojis.json')
     .then(res => res.json())
     .then(data => {
-      emojiData = data;
+      // For your custom emoji setup
+      if (Array.isArray(data)) {
+        categorizedEmojis = { All: data.map(e => typeof e === 'string' ? { char: e, name: '', url: null } : e) };
+      } else if (data && typeof data === 'object') {
+        categorizedEmojis = {};
+        Object.keys(data).forEach(cat => {
+          categorizedEmojis[cat] = (data[cat] || []).map(e => {
+            if (typeof e === 'string') return { char: e, name: '', url: null };
+            return { char: e.char || '', name: e.name || '', url: e.url || null };
+          });
+        });
+      } else {
+        categorizedEmojis = { Faces: [{ char: '😀', name: 'grinning', url: null }, { char: '😂', name: 'joy', url: null }, { char: '❤️', name: 'heart', url: null }] };
+      }
+
+      flatEmojiList = Object.values(categorizedEmojis).flat();
+
+      // Build categorized emoji picker
+      buildEmojiPickerUI();
+
+      // For quick emojis (friend’s setup)
       const container = document.getElementById('emoji-picker');
-      if (!container) return;
-      const quickDiv = document.createElement('div');
-      quickDiv.id = 'quick-emojis';
-      Object.values(emojiData).forEach(e => {
-        const btn = document.createElement('button');
-        btn.textContent = e;
-        quickDiv.appendChild(btn);
-      });
-      container.appendChild(quickDiv);
+      if (container) {
+        const quickDiv = document.createElement('div');
+        quickDiv.id = 'quick-emojis';
+        // simple flat list of char strings
+        flatEmojiList.forEach(e => {
+          const btn = document.createElement('button');
+          btn.textContent = e.char || '';
+          quickDiv.appendChild(btn);
+        });
+        container.appendChild(quickDiv);
+        setupQuickEmojis(); // attach listeners
+      }
+
       emojisLoaded = true;
-      setupQuickEmojis();
     })
-    .catch(err => console.error('Error loading emojis:', err));
+    .catch(err => {
+      console.error('Error loading emojis:', err);
+    });
 }
 
+
 setupQuickEmojis();
+function buildEmojiPickerUI() {
+  if (!emojiPicker) return;
+  emojiPicker.innerHTML = '';
+
+  // Search box
+  const searchWrap = document.createElement('div');
+  searchWrap.style.cssText = 'padding:6px 6px 4px; position:sticky; top:0; background:var(--panel);';
+  const search = document.createElement('input');
+  search.type = 'text';
+  search.placeholder = 'Search emoji...';
+  search.style.cssText = 'width:100%; padding:8px 10px; border-radius:10px; border:1px solid var(--input-border); background:var(--input-bg); color:var(--input-text);';
+  searchWrap.appendChild(search);
+  emojiPicker.appendChild(searchWrap);
+
+  const content = document.createElement('div');
+  content.style.cssText = 'max-height:240px; overflow:auto; padding:6px;';
+  emojiPicker.appendChild(content);
+
+  function renderList(filter = '') {
+    content.innerHTML = '';
+    const q = filter.trim().toLowerCase();
+
+    const cats = Object.entries(categorizedEmojis);
+    for (const [cat, list] of cats) {
+      // Filter by search
+      const displayList = q
+        ? list.filter(e => (e.name || '').toLowerCase().includes(q) || (e.char || '').includes(filter))
+        : list;
+
+      if (!displayList.length) continue;
+
+      const h = document.createElement('div');
+      h.textContent = cat;
+      h.style.cssText = 'font-size:12px; color:var(--muted); margin:8px 4px 4px;';
+      content.appendChild(h);
+
+      const grid = document.createElement('div');
+      grid.style.cssText = 'display:grid; grid-template-columns: repeat(auto-fill, 34px); gap:6px;';
+      displayList.forEach(e => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.title = e.name || '';
+        btn.style.cssText = 'font-size:20px; border:none; background:transparent; cursor:pointer; padding:6px; border-radius:8px;';
+					
+		// If this emoji has a URL (image/GIF), create an <img>
+		  if (e.url) {
+			// Custom emoji (image/GIF)
+			const img = document.createElement('img');
+			img.src = e.url;
+			img.alt = e.name || '';
+			img.style.cssText = 'width:24px; height:24px; object-fit:contain;';
+			btn.appendChild(img);
+
+			btn.addEventListener('click', () => {
+				console.log('Emoji clicked:', e);
+			    if (e.url) {
+				// send image/gif emoji directly
+				sendMessage({ 
+				fileUrl: e.url, 
+				fileType: e.url.endsWith('.gif') ? 'image/gif' : 'image/png', 
+				text: '' 
+				});
+				} else {
+				// fallback: insert normal emoji into text input
+				if (!input) return;
+				input.value += e.char || '';
+				input.focus();
+				startTyping();
+				}
+			});
+		  } else {
+			// Normal Unicode emoji
+			btn.textContent = e.char || '';
+			btn.addEventListener('click', () => {
+			  if (!input) return;
+			  input.value += e.char || '';
+			  input.focus();
+			  startTyping();
+			});
+		  }
+        grid.appendChild(btn);
+      });
+      content.appendChild(grid);
+    }
+  }
+
+  renderList();
+  search.addEventListener('input', () => renderList(search.value));
+}
+
+// =====================
+// Attach / Paperclip with Messenger-style progress
+// =====================
+const attachBtn = document.createElement('button'); attachBtn.id = 'attach-btn'; attachBtn.type = 'button'; attachBtn.innerHTML = '📎';
+form.insertBefore(attachBtn, emojiBtn);
+const fileInput = document.createElement('input'); fileInput.type = 'file'; fileInput.id = 'file-input'; fileInput.accept = 'image/*,video/*,application/pdf,.txt,.zip,.rar';
+form.appendChild(fileInput);
+
+attachBtn.addEventListener('click', () => fileInput.click());
+
+const pendingUploads = new Map(); // key: "Uploading: filename" -> { startedAt, messageId, progress }
+
+fileInput.addEventListener('change', async () => {
+  const file = fileInput.files[0]; if (!file) return;
+
+  const placeholderText = `Uploading: ${file.name}`;
+  const key = placeholderText;
+  pendingUploads.set(key, { startedAt: Date.now(), messageId: null, progress: 0 });
+
+  // 1) Emit placeholder message so EVERYONE sees it
+  socket.emit('chat message', { room: currentRoom, user: currentUser, text: placeholderText, time: Date.now() });
+
+  // 2) Upload with progress via XHR
+  try {
+    await uploadWithProgress('/upload', file, (pct) => {
+      const rec = pendingUploads.get(key);
+      if (!rec) return;
+      rec.progress = pct;
+      if (rec.messageId) attachOrUpdateProgressBar(rec.messageId, pct);
+      else updateLatestOwnUploadingBubbleUI(placeholderText, pct);
+    });
+
+    // 3) After upload succeeded: delete placeholder -> send real file message
+    const rec = pendingUploads.get(key);
+    if (rec && rec.messageId) {
+      socket.emit('delete message', { room: currentRoom, id: rec.messageId });
+    }
+    // Now emit the actual file message
+    const head = await fetch('/upload', { method: 'HEAD' }).catch(() => null); // noop; optional warm
+    // We need the actual result URL/type we just got from uploadWithProgress
+    // To get that, uploadWithProgress returns {url,type}
+    // So let's actually capture and use its return:
+  } catch (err) {
+    console.error('Upload failed:', err);
+    // mark bubble red
+    markPlaceholderFailed(placeholderText);
+  } finally {
+    fileInput.value = '';
+  }
+});
+
+// XHR upload with progress, returns { url, type }
+function uploadWithProgress(endpoint, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const formData = new FormData();
+    formData.append('file', file);
+
+    xhr.open('POST', endpoint, true);
+
+    xhr.upload.onprogress = (evt) => {
+      if (evt.lengthComputable && typeof onProgress === 'function') {
+        const pct = Math.round((evt.loaded / evt.total) * 100);
+        onProgress(pct);
+      }
+    };
+
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState === 4) {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            resolve({ url: data.url, type: data.type });
+          } catch (e) {
+            reject(e);
+          }
+        } else {
+          reject(new Error('Upload error: ' + xhr.status));
+        }
+      }
+    };
+
+    xhr.onerror = () => reject(new Error('Network error during upload'));
+
+    xhr.send(formData);
+  }).then(({ url, type }) => {
+    // After successful upload, send final message
+    socket.emit('chat message', {
+      room: currentRoom,
+      user: currentUser,
+      text: file.name,
+      time: Date.now(),
+      fileUrl: url,
+      fileType: type
+    });
+    return { url, type };
+  });
+}
+
+// Create/Update progress bar inside a message bubble by id
+function attachOrUpdateProgressBar(messageId, pct) {
+  const bubble = document.querySelector(`.message[data-id='${messageId}']`);
+  if (!bubble) return;
+  let bar = bubble.querySelector('.upload-bar');
+  let wrap = bubble.querySelector('.upload-wrap');
+
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.className = 'upload-wrap';
+    wrap.style.cssText = 'margin-top:6px; background:rgba(0,0,0,0.08); border-radius:8px; height:8px; overflow:hidden;';
+    bar = document.createElement('div');
+    bar.className = 'upload-bar';
+    bar.style.cssText = 'height:100%; width:0%; background:var(--accent,#25d366); transition:width .12s linear;';
+    wrap.appendChild(bar);
+    bubble.appendChild(wrap);
+  }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.className = 'upload-bar';
+    bar.style.cssText = 'height:100%; width:0%; background:var(--accent,#25d366); transition:width .12s linear;';
+    wrap.appendChild(bar);
+  }
+  bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+}
+
+// When we haven’t got the server id yet, try to find the most recent bubble with our placeholder text
+function updateLatestOwnUploadingBubbleUI(placeholderText, pct) {
+  const candidates = Array.from(document.querySelectorAll('.message.self .text'))
+    .filter(el => el.textContent === placeholderText)
+    .map(el => el.closest('.message'));
+  const bubble = candidates[candidates.length - 1];
+  if (!bubble) return;
+  let wrap = bubble.querySelector('.upload-wrap');
+  let bar = bubble.querySelector('.upload-bar');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.className = 'upload-wrap';
+    wrap.style.cssText = 'margin-top:6px; background:rgba(0,0,0,0.08); border-radius:8px; height:8px; overflow:hidden;';
+    bar = document.createElement('div');
+    bar.className = 'upload-bar';
+    bar.style.cssText = 'height:100%; width:0%; background:var(--accent,#25d366); transition:width .12s linear;';
+    wrap.appendChild(bar);
+    bubble.appendChild(wrap);
+  }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.className = 'upload-bar';
+    bar.style.cssText = 'height:100%; width:0%; background:var(--accent,#25d366); transition:width .12s linear;';
+    wrap.appendChild(bar);
+  }
+  bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+}
+
+// Mark failed upload bubble
+function markPlaceholderFailed(placeholderText) {
+  const candidates = Array.from(document.querySelectorAll('.message.self .text'))
+    .filter(el => el.textContent === placeholderText)
+    .map(el => el.closest('.message'));
+  const bubble = candidates[candidates.length - 1];
+  if (!bubble) return;
+  const text = bubble.querySelector('.text');
+  text.textContent = 'Upload failed ❌';
+  bubble.style.background = '#7f1d1d';
+  bubble.style.color = '#fff';
+}
 
 // ---------------- Scroll Lock ----------------
 messages?.addEventListener('scroll', () => {

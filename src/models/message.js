@@ -11,8 +11,10 @@ const reactionSchema = new mongoose.Schema({
 const messageSchema = new mongoose.Schema({
   room: { type: String, required: true, index: true },  // index for fast room queries
   user: { type: String, required: true, index: true },  // index to query by user
-  text: { type: String, required: true },
+  text: { type: String, default: '' },
   timestamp: { type: Date, default: Date.now, index: true }, // index for sorting/pagination
+  fileUrl: { type: String },
+  fileType: { type: String },
   status: { type: String, enum: ["sent", "delivered", "read"], default: "sent" },
   reactions: { type: [reactionSchema], default: [] },   // structured reactions
   pinned: { type: Boolean, default: false },            // pin messages
