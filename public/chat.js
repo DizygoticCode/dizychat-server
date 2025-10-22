@@ -353,3 +353,194 @@
 
   console.log('[chat.js] ready');
 })();
+/* ==== DIZY PATCH v2 (append-only) — unified upload + Tenor + rich embeds ==== */
+(function(){
+  const socketRef = (typeof socket !== 'undefined') ? socket : (window.socket || io());
+  const currentUser = window.currentUser || window.username || 'Guest';
+  const currentRoom = window.currentRoom || window.room || 'lobby';
+
+  // Elements
+  const fileBtn = document.getElementById('file-attach');
+  let fileInput = document.getElementById('file-input');
+  const prog = document.getElementById('upload-progress');
+  const gifBtn = document.getElementById('gif-btn');
+
+  // Ensure single hidden file input
+  if (!fileInput) {
+    fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.id = 'file-input';
+    fileInput.style.display = 'none';
+    document.body.appendChild(fileInput);
+  }
+  fileInput.setAttribute('accept', '*/*');
+
+  // Bind paperclip once
+  if (fileBtn && !fileBtn.dataset.bound) {
+    fileBtn.dataset.bound = '1';
+    fileBtn.addEventListener('click', () => fileInput.click());
+  }
+
+  // Upload with purple progress
+  function uploadWithProgress(file) {
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/upload');
+
+    if (prog) { prog.style.display = 'block'; prog.value = 0; }
+    xhr.upload.onprogress = (e) => {
+      if (prog && e.lengthComputable) {
+        prog.value = Math.round((e.loaded / e.total) * 100);
+      }
+    };
+    xhr.onload = () => {
+      if (prog) prog.style.display = 'none';
+      try {
+        const data = JSON.parse(xhr.responseText || '{}');
+        if (data && data.url) {
+          socketRef.emit('chat message', {
+            user: currentUser,
+            room: currentRoom,
+            text: '',
+            fileUrl: data.url,
+            fileType: data.type || '',
+            timestamp: new Date().toISOString()
+          });
+        } else {
+          console.error('[Upload] No URL in response:', data);
+        }
+      } catch (e) {
+        console.error('[Upload] Parse error:', e);
+      }
+    };
+    xhr.onerror = () => { if (prog) prog.style.display = 'none'; console.error('[Upload] Network error'); };
+    xhr.send(fd);
+  }
+
+  fileInput && fileInput.addEventListener('change', () => {
+    const f = fileInput.files && fileInput.files[0];
+    if (!f) return;
+    uploadWithProgress(f);
+    fileInput.value = '';
+  });
+
+  // Tenor GIF quick search → inline embed
+  const TENOR_KEY = (window.TENOR_KEY || 'LIVDSRZULELA');
+  if (gifBtn && !gifBtn.dataset.bound) {
+    gifBtn.dataset.bound = '1';
+    gifBtn.addEventListener('click', async () => {
+      const q = prompt('Search Tenor for GIFs:');
+      if (!q) return;
+      try {
+        const res = await fetch(`https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(q)}&key=${TENOR_KEY}&limit=12`);
+        const json = await res.json();
+        const url = json?.results?.[0]?.media_formats?.tinygif?.url
+                 || json?.results?.[0]?.media?.[0]?.tinygif?.url;
+        if (url) {
+          socketRef.emit('chat message', {
+            user: currentUser,
+            room: currentRoom,
+            text: '',
+            fileUrl: url,
+            fileType: 'image/gif',
+            timestamp: new Date().toISOString()
+          });
+        }
+      } catch (e) { console.error('[Tenor]', e); }
+    });
+  }
+
+  // ----- Rich Embeds for YouTube / Spotify / SoundCloud / links -----
+  function linkify(text) {
+    if (!text) return '';
+    const urlRegex = /((https?:\/\/|www\.)[^\s]+)/g;
+    return text.replace(urlRegex, (url) => {
+      const href = url.startsWith('http') ? url : `http://${url}`;
+      return `<a href="${href}" class="link-preview-lite" target="_blank" rel="noreferrer noopener">${url}</a>`;
+    });
+  }
+
+  function buildEmbeds(container, text) {
+    if (!container || !text) return;
+
+    const yt =
+      /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_\-]{6,})/i;
+    const sp =
+      /https?:\/\/open\.spotify\.com\/(track|album|playlist|episode|show)\/([A-Za-z0-9]+)(?:\?[^ ]*)?/i;
+    const sc =
+      /https?:\/\/(soundcloud\.com\/[^\s]+)/i;
+
+    const mYt = text.match(yt);
+    if (mYt) {
+      const id = mYt[1];
+      const iframe = document.createElement('div');
+      iframe.className = 'embed-card';
+      iframe.innerHTML = `<iframe src="https://www.youtube.com/embed/${id}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+      container.appendChild(iframe);
+    }
+
+    const mSp = text.match(sp);
+    if (mSp) {
+      const type = mSp[1]; const id = mSp[2];
+      const iframe = document.createElement('div');
+      iframe.className = 'embed-card';
+      iframe.innerHTML = `<iframe src="https://open.spotify.com/embed/${type}/${id}" loading="lazy" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"></iframe>`;
+      container.appendChild(iframe);
+    }
+
+    const mSc = text.match(sc);
+    if (mSc) {
+      const url = encodeURIComponent(mSc[0]);
+      const iframe = document.createElement('div');
+      iframe.className = 'embed-card';
+      iframe.innerHTML = `<iframe src="https://w.soundcloud.com/player/?url=${url}&auto_play=false&hide_related=false&show_comments=true&show_user=true&show_reposts=false&visual=true"></iframe>`;
+      container.appendChild(iframe);
+    }
+  }
+
+  // If your client has addMessage, extend it to inject linkified text + embeds
+  if (typeof window.addMessage === 'function') {
+    const origAdd = window.addMessage;
+    window.addMessage = function(msg, self) {
+      origAdd(msg, self);
+      try {
+        const card = document.querySelector('#messages .message:last-child');
+        const textEl = card && card.querySelector('.text');
+        if (textEl && msg.text) textEl.innerHTML = linkify(msg.text);
+        // If your renderer didn’t add preview, this enhances with embeds:
+        if (textEl && msg.text) buildEmbeds(textEl, msg.text);
+      } catch (e) { /* ignore */ }
+    };
+  }
+
+  // Also support 'load messages' in case only 'previous messages' existed
+  if (socketRef && !socketRef._dizyLoadBound) {
+    socketRef._dizyLoadBound = true;
+    socketRef.on('load messages', (msgs) => {
+      console.log('[History] load messages', msgs?.length || 0);
+      const list = document.getElementById('messages');
+      if (Array.isArray(msgs) && list) {
+        list.innerHTML = '';
+        msgs.forEach(m => {
+          if (typeof window.addMessage === 'function') {
+            window.addMessage(m, (m.user === currentUser));
+          } else {
+            // Fallback minimal renderer
+            const div = document.createElement('div');
+            div.className = `message ${m.user === currentUser ? 'self' : 'other'}`;
+            const safeText = (m.text || '');
+            div.innerHTML = `<div class="meta">${m.user} • ${new Date(m.timestamp||Date.now()).toLocaleTimeString()}</div><div class="text">${linkify(safeText)}</div>`;
+            document.getElementById('messages').appendChild(div);
+            buildEmbeds(div.querySelector('.text'), safeText);
+          }
+        });
+        list.scrollTop = list.scrollHeight;
+      }
+    });
+  }
+
+  console.log('%c[DIZY PATCH v2] unified upload + Tenor + rich embeds + load-messages hook', 'color:#bb86fc;font-weight:600;');
+})();

@@ -131,26 +131,26 @@ io.on('connection', socket => {
   console.log('[Socket] Connected', socket.id);
   socket.isAdmin = false;
 
-  // ----- Join Room -----
-  socket.on('join room', async ({ room, password, username }) => {
-    if (rooms[room] && rooms[room] !== password) {
-      socket.emit('join error', 'Incorrect room password');
-      return;
-    }
-    socket.join(room);
-    socket.currentRoom = room;
-    socket.username = username;
-    console.log(`[Join] ${username} → ${room}`);
+// ----- Join Room -----
+socket.on('join room', async ({ room, password }) => {
+  if (rooms[room] && rooms[room] !== password) {
+    socket.emit('join error', 'Incorrect room password');
+    return;
+  }
+  socket.join(room);
+  console.log(`User joined room: ${room}`);
 
-    // Fetch *all* previous messages (no limit)
-    try {
-      const history = await Message.find({ room }).sort({ timestamp: 1 });
-      console.log(`[History] Loaded ${history.length} messages from ${room}`);
-      // bulk load preferred (client should listen for 'load messages')
-      socket.emit('load messages', history);
-      // If your client only handles single events, you can fallback:
-      // history.forEach(msg => socket.emit('chat message', msg.toJSON()));
-    } catch (err) { console.error("[History] Error:", err); }
+  // ✅ FULL HISTORY (no .limit(50)) + emit for old/new clients
+  try {
+    const history = await Message.find({ room }).sort({ timestamp: 1 });
+    console.log(`[History] Loaded ${history.length} messages from ${room}`);
+    const plain = history.map(m => (m.toJSON ? m.toJSON() : m));
+    socket.emit('load messages', plain);     // new clients
+    socket.emit('previous messages', plain); // legacy clients
+  } catch (err) {
+    console.error("Error fetching history:", err);
+  }
+
 
     // Send pinned
     try {
