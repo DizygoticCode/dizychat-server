@@ -77,17 +77,31 @@ app.get('/link-preview', async (req, res) => {
   let { url } = req.query;
   if (!url) return res.status(400).json({ error: 'No URL provided' });
   if (!/^https?:\/\//i.test(url)) url = 'http://' + url;
+
   try {
     const response = await fetch(url, { timeout: 5000 });
     const html = await response.text();
     const $ = cheerio.load(html);
-    const title = $('meta[property="og:title"]').attr('content') || $('title').text() || '';
-    const image = $('meta[property="og:image"]').attr('content') || $('img').first().attr('src') || '';
+
+    const title =
+      $('meta[property="og:title"]').attr('content') ||
+      $('title').text() ||
+      '';
+    const image =
+      $('meta[property="og:image"]').attr('content') ||
+      $('img').first().attr('src') ||
+      '';
+
+    // ✅ Add this one line before sending JSON:
+    res.setHeader('Cache-Control', 'public, max-age=300');
+
     res.json({ title, image });
   } catch (err) {
+    console.error('[Link Preview] Error:', err.message);
     res.json({ title: '', image: '' });
   }
 });
+
 
 // ---------------- Socket.IO ----------------
 let typingUsers = {};
@@ -132,13 +146,19 @@ io.on('connection', socket => {
   socket.isAdmin = false;
 
 // ----- Join Room -----
-socket.on('join room', async ({ room, password }) => {
+socket.on('join room', async ({ room, username, password }) => {
   if (rooms[room] && rooms[room] !== password) {
     socket.emit('join error', 'Incorrect room password');
     return;
   }
+
+  // ✅ Patch: track user identity & current room
+  socket.username = username || `Guest-${socket.id.slice(0, 4)}`;
+  socket.currentRoom = room;
+
   socket.join(room);
-  console.log(`User joined room: ${room}`);
+  console.log(`User joined room: ${room} as ${socket.username}`);
+
 
   // ✅ FULL HISTORY (no .limit(50)) + emit for old/new clients
   try {

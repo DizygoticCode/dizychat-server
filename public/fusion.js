@@ -244,3 +244,51 @@ if (window.socket) {
   new MutationObserver(m => m.forEach(r => r.addedNodes.forEach(n => { if (n.nodeType===1) embedMedia(n); })))
     .observe(messages, { childList: true });
 })();
+// --- DIZY ROOM JOIN HANDLER (Fusion patched v2) ---
+(() => {
+  const joinBtn = document.getElementById('join-btn');
+  const usernameInput = document.getElementById('username-input');
+  const roomInput = document.getElementById('room-input');
+  const passwordInput = document.getElementById('room-password');
+
+  if (!joinBtn || !usernameInput || !roomInput) {
+    console.log('[Fusion] Join elements not found');
+    return;
+  }
+
+  joinBtn.addEventListener('click', () => {
+    const username = usernameInput.value.trim();
+    const room = roomInput.value.trim();
+    const password = passwordInput?.value.trim() || '';
+
+    if (!username || !room) {
+      alert('Please enter both username and room name!');
+      return;
+    }
+
+    // Store globally for chat.js
+    window.currentUser = username;
+    window.currentRoom = room;
+
+    console.log('[Fusion] Joining room', room, 'as', username);
+
+    // Emit join request to server
+    if (socket && socket.connected) {
+      socket.emit('join room', { room, username, password });
+    } else if (socket) {
+      socket.once('connect', () => socket.emit('join room', { room, username, password }));
+    }
+
+    // Hide landing, show chat window
+    const prompt = document.getElementById('username-prompt');
+    const chatContainer = document.getElementById('chat-container');
+    if (prompt && chatContainer) {
+      prompt.classList.add('hidden');
+      chatContainer.classList.remove('hidden');
+    }
+
+    // Scroll chat to bottom once messages load
+    const msgBox = document.getElementById('messages');
+    if (msgBox) setTimeout(() => msgBox.scrollTop = msgBox.scrollHeight, 300);
+  });
+})();
