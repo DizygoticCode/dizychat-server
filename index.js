@@ -182,7 +182,65 @@ app.get('/tenor-proxy', async (req, res) => {
 
 // ---------------- Socket.IO ----------------
 let typingUsers = {};
-let rooms = {}; // room passwords (if used)
+const roomPasswords = new Map();
+const roomMembers = new Map();
+
+const normaliseRoomName = (room) => {
+  if (typeof room !== 'string') return '';
+  return room.trim().slice(0, 80);
+};
+
+const normaliseUsername = (username, fallback) => {
+  if (typeof username !== 'string') return fallback;
+  const trimmed = username.trim();
+  return trimmed ? trimmed.slice(0, 60) : fallback;
+};
+
+const normalisePassword = (password) => {
+  if (typeof password !== 'string') return '';
+  return password.trim().slice(0, 120);
+};
+
+const getPublicRoomsSnapshot = () => {
+  return Array.from(roomMembers.entries())
+    .filter(([, members]) => members && members.size)
+    .map(([room, members]) => ({
+      name: room,
+      occupants: members.size,
+      requiresPassword: Boolean(roomPasswords.get(room))
+    }))
+    .sort((a, b) => {
+      if (b.occupants !== a.occupants) return b.occupants - a.occupants;
+      return a.name.localeCompare(b.name);
+    });
+};
+
+const emitRoomListUpdate = () => {
+  io.emit('room list', getPublicRoomsSnapshot());
+};
+
+const removeSocketFromRoom = (socket, targetRoom) => {
+  const room = normaliseRoomName(targetRoom || socket.currentRoom);
+  if (!room) return;
+
+  const members = roomMembers.get(room);
+  if (members) {
+    members.delete(socket.id);
+    if (!members.size) {
+      roomMembers.delete(room);
+    }
+  }
+
+  socket.leave(room);
+  if (socket.currentRoom === room) {
+    socket.currentRoom = null;
+  }
+};
+
+const sendJoinError = (socket, message) => {
+  socket.emit('join error', message);
+  socket.emit('join room error', message);
+};
 const RATE_LIMIT_WINDOW = 2000;
 const MAX_MESSAGES_PER_WINDOW = 3;
 const MAX_TYPING_EVENTS_PER_WINDOW = 5;
@@ -221,40 +279,77 @@ function requireAdmin(socket){
 io.on('connection', socket => {
   console.log('[Socket] Connected', socket.id);
   socket.isAdmin = false;
+  socket.emit('room list', getPublicRoomsSnapshot());
 
-socket.on('join room', async ({ room, username, password }) => {
-  if (rooms[room] && rooms[room] !== password) {
-    socket.emit('join error', 'Incorrect room password');
-    return;
-  }
+  socket.on('join room', async ({ room, username, password }) => {
+    const roomName = normaliseRoomName(room);
+    if (!roomName) {
+      sendJoinError(socket, 'Room name is required');
+      return;
+    }
 
-  // Track user identity & room
-  socket.username = username || `Guest-${socket.id.slice(0, 4)}`;
-  socket.currentRoom = room;
+    const providedPassword = normalisePassword(password);
+    const storedPassword = roomPasswords.get(roomName);
+    if (storedPassword !== undefined && storedPassword !== providedPassword) {
+      sendJoinError(socket, 'Incorrect room password');
+      return;
+    }
 
-  socket.join(room);
-  console.log(`User joined room: ${room} as ${socket.username}`);
+    if (storedPassword === undefined) {
+      roomPasswords.set(roomName, providedPassword);
+    }
 
-  // Emit successful room join
-  socket.emit('join room success');  // Added this line!
+    const previousRoom = socket.currentRoom;
+    if (previousRoom && previousRoom !== roomName) {
+      removeSocketFromRoom(socket, previousRoom);
+      emitRoomListUpdate();
+    }
 
-  // Load history and pinned messages
-  try {
-    const history = await Message.find({ room }).sort({ timestamp: 1 });
-    console.log(`[History] Loaded ${history.length} messages from ${room}`);
-    const plain = history.map(m => (m.toJSON ? m.toJSON() : m));
-    socket.emit('load messages', plain);     // new clients
-    socket.emit('previous messages', plain); // legacy clients
-  } catch (err) {
-    console.error("Error fetching history:", err);
-  }
+    // Track user identity & room
+    const fallbackUser = `Guest-${socket.id.slice(0, 4)}`;
+    socket.username = normaliseUsername(username, fallbackUser);
+    socket.currentRoom = roomName;
 
-  // Send pinned messages
-  try {
-    const pinned = await Message.find({ room, pinned: true }).sort({ timestamp: -1 }).limit(50);
-    socket.emit('pinned messages', pinned);
-  } catch (err) { console.error("[Pinned] Error:", err); }
-});
+    if (!roomMembers.has(roomName)) {
+      roomMembers.set(roomName, new Set());
+    }
+    roomMembers.get(roomName).add(socket.id);
+
+    socket.join(roomName);
+    console.log(`User joined room: ${roomName} as ${socket.username}`);
+
+    // Emit successful room join
+    socket.emit('join room success');  // Added this line!
+    emitRoomListUpdate();
+
+    // Load history and pinned messages
+    try {
+      const history = await Message.find({ room: roomName }).sort({ timestamp: 1 });
+      console.log(`[History] Loaded ${history.length} messages from ${roomName}`);
+      const plain = history.map(m => (m.toJSON ? m.toJSON() : m));
+      socket.emit('load messages', plain);     // new clients
+      socket.emit('previous messages', plain); // legacy clients
+    } catch (err) {
+      console.error("Error fetching history:", err);
+    }
+
+    // Send pinned messages
+    try {
+      const pinned = await Message.find({ room: roomName, pinned: true }).sort({ timestamp: -1 }).limit(50);
+      socket.emit('pinned messages', pinned);
+    } catch (err) { console.error("[Pinned] Error:", err); }
+  });
+
+  socket.on('leave room', ({ room } = {}) => {
+    const target = normaliseRoomName(room) || socket.currentRoom;
+    if (!target) return;
+    removeSocketFromRoom(socket, target);
+    emitRoomListUpdate();
+  });
+
+  socket.on('request rooms', () => {
+    socket.emit('room list', getPublicRoomsSnapshot());
+  });
 
 
   // ----- Admin Auth (post-join) -----
@@ -413,7 +508,8 @@ socket.on('join room', async ({ room, username, password }) => {
     if (cmd === 'kick' && target) {
       for (const [id, s] of io.of('/').sockets) {
         if (s.currentRoom === room && s.username === target) {
-          s.leave(room);
+          removeSocketFromRoom(s, room);
+          emitRoomListUpdate();
           io.to(room).emit('toast', { type: 'warn', text: `${target} was kicked.` });
           s.emit('join error', 'You were kicked from the room.');
           console.log('[Moderate] kick', target, 'from', room);
@@ -425,6 +521,11 @@ socket.on('join room', async ({ room, username, password }) => {
   // ----- Disconnect -----
   socket.on('disconnect', () => {
     console.log('[Socket] Disconnected', socket.id);
+    const lastRoom = socket.currentRoom;
+    if (lastRoom) {
+      removeSocketFromRoom(socket, lastRoom);
+      emitRoomListUpdate();
+    }
     delete typingUsers[socket.id];
   });
 });

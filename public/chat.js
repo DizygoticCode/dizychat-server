@@ -18,6 +18,7 @@ window.currentPassword = window.currentPassword || "";
 let isViewingChat = false;
 let lastRoomName = "";
 let lastRoomPassword = "";
+let latestPublicRooms = [];
 
 // ------------------- DOM -------------------
 const form = document.getElementById("form");
@@ -39,12 +40,20 @@ const themeToggle = document.getElementById("toggle-theme");
 const emojiPicker = document.getElementById("emoji-picker");
 const leaveBtn = document.getElementById("leave-btn");
 const copyJoinLinkBtn = document.getElementById("copy-join-link");
+const publicRoomList = document.getElementById("public-room-list");
 const themeLogos = Array.from(document.querySelectorAll("img.logo"));
 
 // Autofocus username for smoother entry
 usernameInput?.focus();
 
 if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = true;
+
+if (publicRoomList && !publicRoomList.childElementCount) {
+  const loadingItem = document.createElement("li");
+  loadingItem.className = "empty";
+  loadingItem.textContent = "Loading rooms…";
+  publicRoomList.appendChild(loadingItem);
+}
 
 const urlParams = new URLSearchParams(window.location.search);
 const prefillRoom = urlParams.get("room") || "";
@@ -215,8 +224,18 @@ const MediaLightbox = (() => {
 // Hook some core socket events to toasts
 socket.on("join error", (msg) => showToast(msg || "Join failed.", "error"));
 socket.on("toast", (data) => showToast(data?.text || "", data?.type || "info"));
-socket.on("connect", () => showToast("Connected", "success"));
-socket.on("disconnect", () => showToast("Disconnected", "error"));
+socket.on("connect", () => {
+  showToast("Connected", "success");
+  renderPublicRooms([], { state: "loading" });
+  socket.emit("request rooms");
+});
+socket.on("disconnect", () => {
+  showToast("Disconnected", "error");
+  renderPublicRooms([], { state: "error" });
+});
+socket.on("room list", (rooms) => {
+  renderPublicRooms(Array.isArray(rooms) ? rooms : []);
+});
 
 function updateQueryParams(room, password) {
   try {
@@ -250,6 +269,10 @@ function showLanding({ focusUsername = true } = {}) {
   if (focusUsername) usernameInput?.focus();
 
   updateQueryParams(lastRoomName, lastRoomPassword);
+
+  if (socket?.connected) {
+    socket.emit("request rooms");
+  }
 }
 
 async function copyTextToClipboard(text) {
@@ -281,6 +304,43 @@ async function copyTextToClipboard(text) {
   return copied;
 }
 
+function scrollMessagesToBottom({ behavior = "auto", delay = 0 } = {}) {
+  if (!messages) return;
+
+  const performScroll = () => {
+    try {
+      messages.scrollTo({ top: messages.scrollHeight, behavior });
+    } catch {
+      messages.scrollTop = messages.scrollHeight;
+    }
+  };
+
+  if (delay > 0) {
+    setTimeout(() => requestAnimationFrame(performScroll), delay);
+  } else {
+    requestAnimationFrame(() => requestAnimationFrame(performScroll));
+  }
+}
+
+function observeMediaForScroll(node) {
+  if (!node) return;
+  const media = node.querySelectorAll?.("img, video") || [];
+  media.forEach((el) => {
+    const tag = el.tagName?.toLowerCase();
+    if (tag === "img" && el.complete) return;
+    if (tag === "video" && el.readyState >= 2) return;
+
+    const handleReady = () => {
+      scrollMessagesToBottom();
+      el.removeEventListener("load", handleReady);
+      el.removeEventListener("loadeddata", handleReady);
+    };
+
+    el.addEventListener("load", handleReady);
+    el.addEventListener("loadeddata", handleReady);
+  });
+}
+
 // ===== JOIN ROOM (with corrections for transition) =====
 
 function completeRoomJoin(username, room, password) {
@@ -299,11 +359,7 @@ function completeRoomJoin(username, room, password) {
   if (usernamePrompt) usernamePrompt.style.display = "none";
   if (chatContainer) chatContainer.style.display = "flex";
 
-  setTimeout(() => {
-    if (messages) {
-      messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
-    }
-  }, 250);
+  scrollMessagesToBottom({ behavior: "smooth", delay: 200 });
 }
 
 function emitJoinRequest() {
@@ -316,6 +372,10 @@ function emitJoinRequest() {
     return;
   }
 
+  if (window.currentRoom && window.currentRoom !== room) {
+    socket.emit("leave room", { room: window.currentRoom });
+  }
+
   completeRoomJoin(username, room, password);
   socket.emit("join room", { room, username, password });
 
@@ -323,6 +383,109 @@ function emitJoinRequest() {
   if (adminPassword) {
     socket.emit("admin auth", { room, username, adminPassword });
   }
+}
+
+function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
+  if (!publicRoomList) return;
+
+  publicRoomList.innerHTML = "";
+
+  if (state === "loading") {
+    const loadingItem = document.createElement("li");
+    loadingItem.className = "empty";
+    loadingItem.textContent = "Loading rooms…";
+    publicRoomList.appendChild(loadingItem);
+    return;
+  }
+
+  if (state === "error") {
+    const errorItem = document.createElement("li");
+    errorItem.className = "empty";
+    errorItem.textContent = "Room list unavailable.";
+    publicRoomList.appendChild(errorItem);
+    return;
+  }
+
+  const data = Array.isArray(rooms) ? rooms.filter(Boolean) : [];
+  latestPublicRooms = data;
+
+  if (!data.length) {
+    const emptyItem = document.createElement("li");
+    emptyItem.className = "empty";
+    emptyItem.textContent = "No public rooms are open yet.";
+    publicRoomList.appendChild(emptyItem);
+    return;
+  }
+
+  data.forEach((room) => {
+    const roomNameValue = typeof room?.name === "string" ? room.name : "";
+    if (!roomNameValue) return;
+
+    const occupants = Number(room?.occupants || 0);
+    const requiresPassword = Boolean(room?.requiresPassword);
+
+    const item = document.createElement("li");
+    item.className = "public-room-item";
+    item.dataset.room = roomNameValue;
+
+    const nameEl = document.createElement("span");
+    nameEl.className = "room-name";
+    nameEl.textContent = roomNameValue;
+
+    const metaEl = document.createElement("span");
+    metaEl.className = "room-meta";
+    const peopleLabel = occupants === 1 ? "1 online" : `${occupants} online`;
+    metaEl.textContent = requiresPassword ? `${peopleLabel} • 🔒` : peopleLabel;
+
+    item.appendChild(nameEl);
+    item.appendChild(metaEl);
+    item.tabIndex = 0;
+
+    if (requiresPassword) {
+      item.classList.add("locked");
+      item.title = "Password required";
+      const handleLocked = () => {
+        if (roomInput) roomInput.value = roomNameValue;
+        showToast("Enter your username and the room password to join.", "info");
+        if (!usernameInput?.value.trim()) {
+          usernameInput?.focus();
+        } else {
+          passwordInput?.focus();
+        }
+      };
+      item.addEventListener("click", handleLocked);
+      item.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          handleLocked();
+        }
+      });
+    } else {
+      item.classList.add("clickable");
+      item.title = "Join this room";
+      const attemptJoin = () => {
+        if (!usernameInput?.value.trim()) {
+          showToast("Enter your username first", "error");
+          usernameInput?.focus();
+          return;
+        }
+
+        if (roomInput) roomInput.value = roomNameValue;
+        if (passwordInput) passwordInput.value = "";
+        emitJoinRequest();
+      };
+
+      item.addEventListener("click", attemptJoin);
+      item.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          attemptJoin();
+        }
+      });
+    }
+
+    publicRoomList.appendChild(item);
+  });
 }
 
 if (joinBtn) {
@@ -345,6 +508,7 @@ if (leaveBtn) {
     if (window.currentRoom) {
       lastRoomName = window.currentRoom;
       lastRoomPassword = window.currentPassword || "";
+      socket.emit("leave room", { room: window.currentRoom });
     }
     showLanding({ focusUsername: true });
     showToast("Left the room", "info");
@@ -385,6 +549,7 @@ socket.on("join room success", () => {
   if (chatContainer) chatContainer.style.display = "flex";
   if (usernamePrompt) usernamePrompt.style.display = "none";
   input?.focus();
+  scrollMessagesToBottom({ behavior: "smooth", delay: 80 });
 });
 
 // Join error handling
@@ -767,23 +932,35 @@ function createInlinePreview(link, type, labelText) {
 }
 
 function replaceCustomEmojiLinks(textEl) {
-  if (!textEl) return false;
+  if (!textEl) return null;
+
+  textEl.classList.remove("has-emoji-gif", "emoji-gif-only");
 
   const original = textEl.textContent || "";
-  if (!original.trim()) return false;
+  if (!original.trim()) return null;
 
   const pattern = /(https?:\/\/[\w.-]+(?::\d+)?\/[\w\-./%]+|\/?emojis\/custom\/[\w\-./%]+|emojis\/custom\/[\w\-./%]+)/gi;
   let match;
   let lastIndex = 0;
   const fragment = document.createDocumentFragment();
   let hasEmoji = false;
+  let hasGif = false;
+  let onlyEmoji = true;
+
+  const appendTextSegment = (segment) => {
+    if (!segment) return;
+    fragment.appendChild(document.createTextNode(segment));
+    if (segment.trim()) {
+      onlyEmoji = false;
+    }
+  };
 
   while ((match = pattern.exec(original)) !== null) {
     const [rawLink] = match;
     const start = match.index;
 
     if (start > lastIndex) {
-      fragment.appendChild(document.createTextNode(original.slice(lastIndex, start)));
+      appendTextSegment(original.slice(lastIndex, start));
     }
 
     const normalizedLink = (() => {
@@ -821,25 +998,44 @@ function replaceCustomEmojiLinks(textEl) {
       img.loading = "lazy";
       img.decoding = "async";
       img.className = "custom-emoji";
+
+      try {
+        const url = new URL(normalizedLink, window.location.origin);
+        const path = url.pathname.toLowerCase();
+        if (path.endsWith(".gif") && (path.includes("/uploads/") || path.includes("/emojis/"))) {
+          img.classList.add("custom-emoji-gif");
+          hasGif = true;
+        }
+      } catch {
+        /* noop */
+      }
+
       fragment.appendChild(img);
       hasEmoji = true;
     } else {
-      fragment.appendChild(document.createTextNode(rawLink));
+      appendTextSegment(rawLink);
     }
 
     lastIndex = pattern.lastIndex;
   }
 
-  if (!hasEmoji) return false;
-
   if (lastIndex < original.length) {
-    fragment.appendChild(document.createTextNode(original.slice(lastIndex)));
+    appendTextSegment(original.slice(lastIndex));
   }
+
+  if (!hasEmoji) return null;
 
   textEl.textContent = "";
   textEl.appendChild(fragment);
 
-  return true;
+  if (hasGif) {
+    textEl.classList.add("has-emoji-gif");
+    if (onlyEmoji) {
+      textEl.classList.add("emoji-gif-only");
+    }
+  }
+
+  return { hasEmoji, hasGif, onlyEmoji };
 }
 
 function updateTenorBubbleState(node) {
@@ -933,6 +1129,8 @@ function fetchTenorPreview(link, node) {
       node.appendChild(cachedPreview);
       node.classList.add("has-inline-preview");
       updateTenorBubbleState(node);
+      observeMediaForScroll(node);
+      scrollMessagesToBottom();
     }
     return;
   }
@@ -974,6 +1172,8 @@ function fetchTenorPreview(link, node) {
       }
       node.classList.add("has-inline-preview");
       updateTenorBubbleState(node);
+      observeMediaForScroll(node);
+      scrollMessagesToBottom();
     })
     .catch(() => {
       tenorPreviewCache.set(link, null);
@@ -1035,7 +1235,7 @@ function appendAttachmentFromMessage(node, msg) {
 }
 
 // ------------------- History & Messages -------------------
-function renderMessage(msg) {
+function renderMessage(msg, { skipScroll = false, scrollBehavior = "auto", delay = 0 } = {}) {
   if (!isViewingChat || !messages) return;
   const wrap = document.createElement("div");
   // Use your existing bubble structure if present in CSS
@@ -1048,18 +1248,28 @@ function renderMessage(msg) {
   const textEl = wrap.querySelector(".text");
   if (textEl) {
     textEl.textContent = msg.text || "";
-    replaceCustomEmojiLinks(textEl);
+    const emojiInfo = replaceCustomEmojiLinks(textEl);
+    if (emojiInfo?.hasGif) {
+      wrap.classList.add("has-emoji-gif");
+      if (emojiInfo.onlyEmoji) {
+        wrap.classList.add("emoji-gif-only");
+      }
+    }
   }
   messages.appendChild(wrap);
   appendAttachmentFromMessage(wrap, msg);
   autoEmbed(wrap);
-  messages.scrollTop = messages.scrollHeight;
+  observeMediaForScroll(wrap);
+  if (!skipScroll) {
+    scrollMessagesToBottom({ behavior: scrollBehavior, delay });
+  }
 }
 
 socket.on("load messages", (arr) => {
   if (!isViewingChat || !messages) return;
   messages.innerHTML = "";
-  (arr || []).forEach(renderMessage);
+  (arr || []).forEach((entry) => renderMessage(entry, { skipScroll: true }));
+  scrollMessagesToBottom({ behavior: "auto", delay: 120 });
   showToast(`✅ Joined room: ${window.currentRoom}`, "success");
 });
 
@@ -1067,13 +1277,14 @@ socket.on("previous messages", (arr) => {
   if (!isViewingChat || !messages) return;
   // legacy event, render the same way but don't double-toast
   if (!messages.childElementCount) {
-    (arr || []).forEach(renderMessage);
+    (arr || []).forEach((entry) => renderMessage(entry, { skipScroll: true }));
+    scrollMessagesToBottom({ behavior: "auto", delay: 80 });
   }
 });
 
 socket.on("chat message", (msg) => {
   if (!isViewingChat) return;
-  renderMessage(msg);
+  renderMessage(msg, { scrollBehavior: "smooth" });
 });
 
 socket.on("edit message", ({ id, text }) => {
@@ -1382,6 +1593,8 @@ function autoEmbed(node) {
   if (wrap.childNodes.length) {
     node.appendChild(wrap);
     node.classList.add("has-inline-preview");
+    observeMediaForScroll(node);
+    scrollMessagesToBottom();
   }
 
   if (hasTenorLink && textEl) {
@@ -1505,6 +1718,9 @@ function autoEmbed(node) {
       card.appendChild(thumbEl);
       card.appendChild(info);
       wrap.appendChild(card);
+      node.classList.add("has-inline-preview");
+      observeMediaForScroll(node);
+      scrollMessagesToBottom();
 
       const open = () => window.open(normalized, "_blank", "noopener");
       card.addEventListener("click", open);
