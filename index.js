@@ -184,6 +184,16 @@ app.get('/tenor-proxy', async (req, res) => {
 let typingUsers = {};
 const roomPasswords = new Map();
 const roomMembers = new Map();
+const roomPresence = new Map();
+const roomUserHistory = new Map();
+const roomBans = new Map();
+const roomBlocks = new Map();
+const roomMutes = new Map();
+
+const canonicalUsername = (username) => {
+  if (typeof username !== 'string') return '';
+  return username.trim().toLowerCase();
+};
 
 const normaliseRoomName = (room) => {
   if (typeof room !== 'string') return '';
@@ -199,6 +209,172 @@ const normaliseUsername = (username, fallback) => {
 const normalisePassword = (password) => {
   if (typeof password !== 'string') return '';
   return password.trim().slice(0, 120);
+};
+
+const ensureSet = (map, key) => {
+  if (!map.has(key)) map.set(key, new Set());
+  return map.get(key);
+};
+
+const ensureMap = (map, key) => {
+  if (!map.has(key)) map.set(key, new Map());
+  return map.get(key);
+};
+
+const isUserBlocked = (room, username) => {
+  const canonical = canonicalUsername(username);
+  const blocked = roomBlocks.get(room);
+  return blocked ? blocked.has(canonical) : false;
+};
+
+const getMuteExpiry = (room, username) => {
+  const canonical = canonicalUsername(username);
+  const muteMap = roomMutes.get(room);
+  if (!muteMap) return 0;
+  const until = muteMap.get(canonical);
+  if (!until) return 0;
+  if (until <= Date.now()) {
+    muteMap.delete(canonical);
+    return 0;
+  }
+  return until;
+};
+
+const ensureHistoryMap = (room) => {
+  if (!roomUserHistory.has(room)) roomUserHistory.set(room, new Map());
+  return roomUserHistory.get(room);
+};
+
+const markUserSeen = (room, username, { isAdmin } = {}) => {
+  const canonical = canonicalUsername(username);
+  if (!room || !canonical) return;
+  const history = ensureHistoryMap(room);
+  const existing = history.get(canonical) || {};
+  history.set(canonical, {
+    username: username || existing.username || '',
+    isAdmin: typeof isAdmin === 'boolean' ? Boolean(isAdmin) : Boolean(existing.isAdmin),
+    lastSeen: Date.now(),
+  });
+};
+
+const emitRoomUsers = (room) => {
+  const presence = roomPresence.get(room);
+  const history = roomUserHistory.get(room);
+
+  const usersByCanonical = new Map();
+
+  if (history) {
+    for (const [canonical, record] of history.entries()) {
+      if (!record?.username) continue;
+      usersByCanonical.set(canonical, {
+        username: record.username,
+        isAdmin: Boolean(record.isAdmin),
+        online: false,
+        mutedUntil: getMuteExpiry(room, record.username) || 0,
+        isBlocked: isUserBlocked(room, record.username),
+        lastSeen: record.lastSeen || 0,
+      });
+    }
+  }
+
+  if (presence) {
+    for (const entry of presence.values()) {
+      if (!entry || !entry.username) continue;
+      const canonical = canonicalUsername(entry.username);
+      if (!canonical) continue;
+      const existing = usersByCanonical.get(canonical) || {};
+      usersByCanonical.set(canonical, {
+        username: entry.username,
+        isAdmin: typeof entry.isAdmin === 'boolean' ? Boolean(entry.isAdmin) : Boolean(existing.isAdmin),
+        online: true,
+        mutedUntil: getMuteExpiry(room, entry.username) || 0,
+        isBlocked: isUserBlocked(room, entry.username),
+        lastSeen: Date.now(),
+      });
+    }
+  }
+
+  const users = Array.from(usersByCanonical.values()).filter((entry) => entry.username);
+
+  users.sort((a, b) => {
+    if (a.online && !b.online) return -1;
+    if (!a.online && b.online) return 1;
+    if (a.isAdmin && !b.isAdmin) return -1;
+    if (!a.isAdmin && b.isAdmin) return 1;
+    return a.username.localeCompare(b.username);
+  });
+
+  io.to(room).emit('room users', { room, users });
+};
+
+const registerSocketInRoom = (socket, room) => {
+  const targetRoom = normaliseRoomName(room);
+  if (!targetRoom) return;
+  const presence = ensureMap(roomPresence, targetRoom);
+  presence.set(socket.id, {
+    id: socket.id,
+    username: socket.username,
+    isAdmin: socket.isAdmin,
+  });
+  markUserSeen(targetRoom, socket.username, { isAdmin: socket.isAdmin });
+  emitRoomUsers(targetRoom);
+};
+
+const refreshSocketPresence = (socket) => {
+  const room = normaliseRoomName(socket.currentRoom);
+  if (!room) return;
+  const presence = roomPresence.get(room);
+  if (!presence || !presence.has(socket.id)) return;
+  presence.set(socket.id, {
+    id: socket.id,
+    username: socket.username,
+    isAdmin: socket.isAdmin,
+  });
+  markUserSeen(room, socket.username, { isAdmin: socket.isAdmin });
+  emitRoomUsers(room);
+};
+
+const getSocketsForUser = (room, canonicalTarget) => {
+  const matches = [];
+  for (const [, s] of io.of('/').sockets) {
+    if (s.currentRoom === room && canonicalUsername(s.username) === canonicalTarget) {
+      matches.push(s);
+    }
+  }
+  return matches;
+};
+
+const setUserMute = (room, canonicalTarget, durationMs) => {
+  const muteMap = ensureMap(roomMutes, room);
+  const until = Date.now() + durationMs;
+  muteMap.set(canonicalTarget, until);
+  return until;
+};
+
+const clearUserMute = (room, canonicalTarget) => {
+  const muteMap = roomMutes.get(room);
+  if (!muteMap) return false;
+  return muteMap.delete(canonicalTarget);
+};
+
+const addUserBlock = (room, canonicalTarget) => {
+  const blocked = ensureSet(roomBlocks, room);
+  const existed = blocked.has(canonicalTarget);
+  blocked.add(canonicalTarget);
+  return !existed;
+};
+
+const removeUserBlock = (room, canonicalTarget) => {
+  const blocked = roomBlocks.get(room);
+  if (!blocked) return false;
+  return blocked.delete(canonicalTarget);
+};
+
+const addUserBan = (room, canonicalTarget) => {
+  const bans = ensureSet(roomBans, room);
+  const existed = bans.has(canonicalTarget);
+  bans.add(canonicalTarget);
+  return !existed;
 };
 
 const getPublicRoomsSnapshot = () => {
@@ -231,10 +407,23 @@ const removeSocketFromRoom = (socket, targetRoom) => {
     }
   }
 
+  const presence = roomPresence.get(room);
+  if (presence) {
+    presence.delete(socket.id);
+    if (!presence.size) {
+      roomPresence.delete(room);
+    }
+  }
+
+  markUserSeen(room, socket.username, { isAdmin: socket.isAdmin });
+
+  delete typingUsers[socket.id];
   socket.leave(room);
   if (socket.currentRoom === room) {
     socket.currentRoom = null;
   }
+
+  emitRoomUsers(room);
 };
 
 const sendJoinError = (socket, message) => {
@@ -308,6 +497,14 @@ io.on('connection', socket => {
     // Track user identity & room
     const fallbackUser = `Guest-${socket.id.slice(0, 4)}`;
     socket.username = normaliseUsername(username, fallbackUser);
+    const canonicalUser = canonicalUsername(socket.username);
+    const bannedSet = roomBans.get(roomName);
+    if (bannedSet && bannedSet.has(canonicalUser)) {
+      sendJoinError(socket, 'You are banned from this room.');
+      socket.currentRoom = null;
+      return;
+    }
+
     socket.currentRoom = roomName;
 
     if (!roomMembers.has(roomName)) {
@@ -316,6 +513,7 @@ io.on('connection', socket => {
     roomMembers.get(roomName).add(socket.id);
 
     socket.join(roomName);
+    registerSocketInRoom(socket, roomName);
     console.log(`User joined room: ${roomName} as ${socket.username}`);
 
     // Emit successful room join
@@ -364,12 +562,29 @@ io.on('connection', socket => {
         socket.isAdmin = false;
         socket.emit('admin status', { isAdmin: false });
       }
+      refreshSocketPresence(socket);
     } catch(e){ console.log('[admin auth error]', e); }
   });
 
   // ----- Chat message -----
-  socket.on('chat message', async msgData => {
+  socket.on('chat message', async (msgDataRaw = {}) => {
+    const roomName = normaliseRoomName(msgDataRaw.room) || socket.currentRoom;
+    if (!roomName || socket.currentRoom !== roomName) return;
+
+    if (isUserBlocked(roomName, socket.username)) {
+      socket.emit('moderation notice', { type: 'blocked', room: roomName, reason: 'send' });
+      return;
+    }
+
+    const muteUntil = getMuteExpiry(roomName, socket.username);
+    if (muteUntil) {
+      socket.emit('moderation notice', { type: 'muted', room: roomName, until: muteUntil, reason: 'send' });
+      return;
+    }
+
     if (!canSendMessage(socket.id)) return;
+
+    const msgData = { ...msgDataRaw, room: roomName, user: socket.username };
     try {
       if (msgData.text?.length > 1000) msgData.text = msgData.text.substring(0,1000);
       if (msgData.text) msgData.text = sanitizeHtml(msgData.text, { allowedTags: [], allowedAttributes: {} });
@@ -397,9 +612,9 @@ io.on('connection', socket => {
         starredBy: msgData.starredBy || []
       });
       await newMsg.save();
-      io.to(msgData.room).emit('chat message', newMsg);
-      io.to(msgData.room).emit('message status', { id: newMsg._id, status: 'delivered' });
-      console.log('[Message]', msgData.user, '→', msgData.room, ':', newMsg.text);
+      io.to(roomName).emit('chat message', newMsg);
+      io.to(roomName).emit('message status', { id: newMsg._id, status: 'delivered' });
+      console.log('[Message]', msgData.user, '→', roomName, ':', newMsg.text);
     } catch(err){ console.error("[Message] Error:", err); }
   });
 
@@ -598,9 +813,22 @@ io.on('connection', socket => {
     if (!room) return;
 
     if (cmd === 'ban' && target) {
-      if (!global.roomBans) global.roomBans = new Map();
-      if (!roomBans.has(room)) roomBans.set(room, new Set());
-      roomBans.get(room).add(target);
+      const canonicalTarget = canonicalUsername(target);
+      addUserBan(room, canonicalTarget);
+      const sockets = getSocketsForUser(room, canonicalTarget);
+      sockets.forEach((s) => {
+        s.emit('moderation notice', { type: 'banned', room });
+        s.emit('join error', 'You were banned from the room.');
+        removeSocketFromRoom(s, room);
+      });
+      emitRoomListUpdate();
+      emitRoomUsers(room);
+      io.to(room).emit('user moderation', {
+        room,
+        action: 'ban',
+        target,
+        performedBy: socket.username || 'Admin',
+      });
       io.to(room).emit('toast', { type: 'warn', text: `${target} was banned.` });
       console.log('[Moderate] ban', target, 'in', room);
     }
@@ -615,6 +843,157 @@ io.on('connection', socket => {
         }
       }
     }
+  });
+
+  socket.on('moderate user', ({ room, target, action, duration }) => {
+    const targetRoom = normaliseRoomName(room) || socket.currentRoom;
+    if (!targetRoom || !target) return;
+    if (!socket.currentRoom || socket.currentRoom !== targetRoom) return;
+
+    const cleanedTarget = normaliseUsername(target, '').trim();
+    if (!cleanedTarget) return;
+    const canonicalTarget = canonicalUsername(cleanedTarget);
+
+    const presence = roomPresence.get(targetRoom);
+    const targetInfo = presence
+      ? Array.from(presence.values()).find((entry) => canonicalUsername(entry.username) === canonicalTarget)
+      : null;
+
+    if (!targetInfo) {
+      socket.emit('toast', { type: 'warn', text: 'That user is no longer online.' });
+      return;
+    }
+
+    if (canonicalTarget === canonicalUsername(socket.username)) {
+      socket.emit('toast', { type: 'warn', text: 'You cannot perform that action on yourself.' });
+      return;
+    }
+
+    const isTargetAdmin = Boolean(targetInfo.isAdmin);
+
+    if (!socket.isAdmin) {
+      if (action !== 'mute') {
+        socket.emit('toast', { type: 'warn', text: 'Only admins can perform that action.' });
+        return;
+      }
+      if (isTargetAdmin) {
+        socket.emit('toast', { type: 'warn', text: 'You cannot mute an admin.' });
+        return;
+      }
+    }
+
+    const targets = getSocketsForUser(targetRoom, canonicalTarget);
+    if (!targets.length) {
+      socket.emit('toast', { type: 'warn', text: 'That user is no longer online.' });
+      return;
+    }
+
+    const describeDuration = (seconds) => {
+      if (!seconds) return 'a moment';
+      if (seconds < 60) {
+        const s = Math.max(1, Math.round(seconds));
+        return s === 1 ? '1 second' : `${s} seconds`;
+      }
+      if (seconds < 3600) {
+        const m = Math.round(seconds / 60);
+        return m === 1 ? '1 minute' : `${m} minutes`;
+      }
+      const h = Math.round(seconds / 3600);
+      return h === 1 ? '1 hour' : `${h} hours`;
+    };
+
+    const performer = socket.username || 'Admin';
+    const broadcast = (payload) => {
+      io.to(targetRoom).emit('user moderation', { room: targetRoom, ...payload });
+    };
+    const notifyTargets = (payload) => {
+      targets.forEach((s) => s.emit('moderation notice', { room: targetRoom, ...payload }));
+    };
+
+    if (action === 'mute') {
+      const maxSeconds = socket.isAdmin ? 86400 : 3600;
+      const requested = Number(duration) || 60;
+      const seconds = Math.max(30, Math.min(requested, maxSeconds));
+      const until = setUserMute(targetRoom, canonicalTarget, seconds * 1000);
+      notifyTargets({ type: 'muted', until });
+      broadcast({ action: 'mute', target: cleanedTarget, performedBy: performer, duration: seconds, until });
+      emitRoomUsers(targetRoom);
+      socket.emit('toast', {
+        type: 'success',
+        text: `Muted ${cleanedTarget} for ${describeDuration(seconds)}.`,
+      });
+      return;
+    }
+
+    if (action === 'unmute') {
+      const removed = clearUserMute(targetRoom, canonicalTarget);
+      if (!removed) {
+        socket.emit('toast', { type: 'info', text: `${cleanedTarget} is not muted.` });
+        emitRoomUsers(targetRoom);
+        return;
+      }
+      notifyTargets({ type: 'unmuted' });
+      broadcast({ action: 'unmute', target: cleanedTarget, performedBy: performer });
+      emitRoomUsers(targetRoom);
+      socket.emit('toast', { type: 'success', text: `Unmuted ${cleanedTarget}.` });
+      return;
+    }
+
+    if (action === 'block') {
+      if (!socket.isAdmin) {
+        socket.emit('toast', { type: 'warn', text: 'Only admins can block users.' });
+        return;
+      }
+      const added = addUserBlock(targetRoom, canonicalTarget);
+      if (!added) {
+        socket.emit('toast', { type: 'info', text: `${cleanedTarget} is already blocked.` });
+        emitRoomUsers(targetRoom);
+        return;
+      }
+      notifyTargets({ type: 'blocked' });
+      broadcast({ action: 'block', target: cleanedTarget, performedBy: performer });
+      emitRoomUsers(targetRoom);
+      socket.emit('toast', { type: 'success', text: `Blocked ${cleanedTarget}.` });
+      return;
+    }
+
+    if (action === 'unblock') {
+      if (!socket.isAdmin) {
+        socket.emit('toast', { type: 'warn', text: 'Only admins can unblock users.' });
+        return;
+      }
+      const removed = removeUserBlock(targetRoom, canonicalTarget);
+      if (!removed) {
+        socket.emit('toast', { type: 'info', text: `${cleanedTarget} was not blocked.` });
+        emitRoomUsers(targetRoom);
+        return;
+      }
+      notifyTargets({ type: 'unblocked' });
+      broadcast({ action: 'unblock', target: cleanedTarget, performedBy: performer });
+      emitRoomUsers(targetRoom);
+      socket.emit('toast', { type: 'success', text: `Unblocked ${cleanedTarget}.` });
+      return;
+    }
+
+    if (action === 'ban') {
+      if (!socket.isAdmin) {
+        socket.emit('toast', { type: 'warn', text: 'Only admins can ban users.' });
+        return;
+      }
+      addUserBan(targetRoom, canonicalTarget);
+      notifyTargets({ type: 'banned' });
+      targets.forEach((s) => {
+        s.emit('join error', 'You were banned from the room.');
+        removeSocketFromRoom(s, targetRoom);
+      });
+      emitRoomListUpdate();
+      emitRoomUsers(targetRoom);
+      broadcast({ action: 'ban', target: cleanedTarget, performedBy: performer });
+      socket.emit('toast', { type: 'success', text: `Banned ${cleanedTarget}.` });
+      return;
+    }
+
+    socket.emit('toast', { type: 'warn', text: 'Unknown moderation action.' });
   });
 
   // ----- Disconnect -----

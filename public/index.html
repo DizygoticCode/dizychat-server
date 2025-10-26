@@ -54,38 +54,53 @@
       </div>
     </header>
 
-    <div id="pinned-messages" style="display:none;"></div>
-    <div id="search-results" hidden></div>
-    <div id="messages"></div>
-    <div id="typing-bubble" style="display:none;">Someone is typing...</div>
+    <div id="chat-main">
+      <div id="chat-content">
+        <div id="pinned-messages" style="display:none;"></div>
+        <div id="search-results" hidden></div>
+        <div id="messages"></div>
+        <div id="typing-bubble" style="display:none;">Someone is typing...</div>
 
-    <!-- Message input -->
-    <form id="form">
-      <input type="file" id="file-input" hidden />
-      <button type="button" id="file-attach" title="Attach file">📎</button>
-      <button type="button" id="gif-btn" title="Send GIF">🎞️</button>
-      <button type="button" id="emoji-btn" title="Emoji">😊</button>
-      <input id="input" autocomplete="off" placeholder="Type a message..." />
-      <button type="submit" title="Send">➤</button>
-    </form>
+        <!-- Message input -->
+        <form id="form">
+          <input type="file" id="file-input" hidden />
+          <button type="button" id="file-attach" title="Attach file">📎</button>
+          <button type="button" id="gif-btn" title="Send GIF">🎞️</button>
+          <button type="button" id="emoji-btn" title="Emoji">😊</button>
+          <input id="input" autocomplete="off" placeholder="Type a message..." />
+          <button type="submit" title="Send">➤</button>
+        </form>
 
-    <!-- Upload progress bar -->
-    <div class="upload-progress" style="display:none;">
-      <div class="upload-bar"></div>
-    </div>
-	<!-- Visible progress element (styled purple in CSS) -->
-<progress id="upload-progress" value="0" max="100" style="display:none"></progress>
+        <!-- Upload progress bar -->
+        <div class="upload-progress" style="display:none;">
+          <div class="upload-bar"></div>
+        </div>
+        <!-- Visible progress element (styled purple in CSS) -->
+        <progress id="upload-progress" value="0" max="100" style="display:none"></progress>
 
-    <!-- Emoji picker -->
-    <div id="emoji-picker">
-      <div id="quick-emojis" hidden>
-        <button>😀</button>
-        <button>😂</button>
-        <button>😍</button>
-        <button>😎</button>
-        <button>👍</button>
+        <!-- Emoji picker -->
+        <div id="emoji-picker">
+          <div id="quick-emojis" hidden>
+            <button>😀</button>
+            <button>😂</button>
+            <button>😍</button>
+            <button>😎</button>
+            <button>👍</button>
+          </div>
+        </div>
       </div>
+
+      <aside id="user-sidebar" aria-label="Room members">
+        <div class="sidebar-header">
+          <h2>Members</h2>
+          <span id="user-count">0 online</span>
+        </div>
+        <ul id="user-list"></ul>
+        <p id="user-list-empty" class="user-empty">No one else is here yet.</p>
+      </aside>
     </div>
+
+    <div id="user-context-menu" class="user-context-menu" role="menu" aria-hidden="true" hidden></div>
   </div>
 
   <!-- ===========================

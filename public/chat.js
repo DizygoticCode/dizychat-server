@@ -46,6 +46,11 @@ const leaveBtn = document.getElementById("leave-btn");
 const copyJoinLinkBtn = document.getElementById("copy-join-link");
 const publicRoomList = document.getElementById("public-room-list");
 const themeLogos = Array.from(document.querySelectorAll("img.logo"));
+const userSidebar = document.getElementById("user-sidebar");
+const userList = document.getElementById("user-list");
+const userCount = document.getElementById("user-count");
+const userListEmpty = document.getElementById("user-list-empty");
+const userContextMenu = document.getElementById("user-context-menu");
 
 const appState = {
   isAdmin: false,
@@ -54,6 +59,9 @@ const appState = {
   hidden: new Set(),
   activeMenu: null,
   highlightTimeout: null,
+  users: [],
+  moderationNotices: new Map(),
+  contextMenuTrigger: null,
 };
 
 let searchDebounceTimer = null;
@@ -69,6 +77,52 @@ if (publicRoomList && !publicRoomList.childElementCount) {
   loadingItem.className = "empty";
   loadingItem.textContent = "Loading rooms…";
   publicRoomList.appendChild(loadingItem);
+}
+
+if (userContextMenu) {
+  userContextMenu.setAttribute("role", "menu");
+  userContextMenu.setAttribute("aria-hidden", "true");
+  userContextMenu.addEventListener("click", (event) => event.stopPropagation());
+  userContextMenu.addEventListener("keydown", (event) => {
+    if (userContextMenu.hasAttribute("hidden")) return;
+    const items = Array.from(userContextMenu.querySelectorAll("button"));
+    if (!items.length) return;
+    const currentIndex = items.indexOf(document.activeElement);
+    const cycleFocus = (nextIndex) => {
+      const target = items[(nextIndex + items.length) % items.length];
+      target?.focus();
+    };
+
+    switch (event.key) {
+      case "ArrowDown": {
+        event.preventDefault();
+        cycleFocus(currentIndex >= 0 ? currentIndex + 1 : 0);
+        break;
+      }
+      case "ArrowUp": {
+        event.preventDefault();
+        cycleFocus(currentIndex >= 0 ? currentIndex - 1 : items.length - 1);
+        break;
+      }
+      case "Home": {
+        event.preventDefault();
+        items[0]?.focus();
+        break;
+      }
+      case "End": {
+        event.preventDefault();
+        items[items.length - 1]?.focus();
+        break;
+      }
+      case "Escape": {
+        event.preventDefault();
+        closeActiveMenu({ restoreFocus: true });
+        break;
+      }
+      default:
+        break;
+    }
+  });
 }
 
 const urlParams = new URLSearchParams(window.location.search);
@@ -194,6 +248,328 @@ function storeMessageData(raw) {
   return merged;
 }
 
+function formatDurationLabel(seconds) {
+  if (!seconds || seconds <= 0) return "";
+  if (seconds < 60) {
+    const value = Math.max(1, Math.round(seconds));
+    return value === 1 ? "1 second" : `${value} seconds`;
+  }
+  if (seconds < 3600) {
+    const minutes = Math.round(seconds / 60);
+    return minutes === 1 ? "1 minute" : `${minutes} minutes`;
+  }
+  const hours = Math.round(seconds / 3600);
+  return hours === 1 ? "1 hour" : `${hours} hours`;
+}
+
+function formatRemaining(ms) {
+  const totalSeconds = Math.max(1, Math.round(ms / 1000));
+  if (totalSeconds >= 3600) {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    if (minutes) return `${hours}h ${minutes}m`;
+    return `${hours}h`;
+  }
+  if (totalSeconds >= 60) {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (seconds) return `${minutes}m ${seconds}s`;
+    return `${minutes}m`;
+  }
+  return `${totalSeconds}s`;
+}
+
+function shouldSuppressModerationToast(key, cooldown = 4000) {
+  const now = Date.now();
+  const last = appState.moderationNotices.get(key) || 0;
+  if (now - last < cooldown) return true;
+  appState.moderationNotices.set(key, now);
+  return false;
+}
+
+function renderUserSidebar(users = []) {
+  if (!userList) return;
+  const array = Array.isArray(users) ? users.filter(Boolean) : [];
+  appState.users = array;
+  userList.innerHTML = "";
+  closeActiveMenu();
+
+  const now = Date.now();
+  let onlineCount = 0;
+  let othersCount = 0;
+
+  array.forEach((entry) => {
+    if (!entry || !entry.username) return;
+    const username = entry.username;
+    const isSelf = username === window.currentUser;
+    const isAdmin = Boolean(entry.isAdmin);
+    const mutedUntil = Number(entry.mutedUntil || 0);
+    const isMuted = mutedUntil && mutedUntil > now;
+    const isBlocked = Boolean(entry.isBlocked);
+    const isOnline = Boolean(entry.online);
+    const userData = { ...entry, mutedUntil, online: isOnline };
+
+    if (isOnline) onlineCount += 1;
+    if (!isSelf) othersCount += 1;
+
+    const item = document.createElement("li");
+    item.className = "user-entry";
+    item.dataset.username = username;
+    item.dataset.online = isOnline ? "true" : "false";
+    if (isAdmin) item.classList.add("admin");
+    if (!isOnline) item.classList.add("offline");
+
+    const indicator = document.createElement("span");
+    indicator.className = `user-indicator${isOnline ? " online" : ""}`;
+    indicator.title = isOnline ? "Online" : "Offline";
+    item.appendChild(indicator);
+
+    const content = document.createElement("div");
+    content.className = "user-content";
+
+    const name = document.createElement("div");
+    name.className = "user-name";
+    if (isAdmin) {
+      const crown = document.createElement("span");
+      crown.className = "user-crown";
+      crown.textContent = "👑";
+      name.appendChild(crown);
+    }
+
+    const label = document.createElement("span");
+    label.textContent = username;
+    name.appendChild(label);
+
+    if (isSelf) {
+      const pill = document.createElement("span");
+      pill.className = "self-pill";
+      pill.textContent = "you";
+      name.appendChild(pill);
+    }
+
+    content.appendChild(name);
+
+    const statusParts = [];
+    if (isMuted) {
+      statusParts.push({ text: `Muted • ${formatRemaining(mutedUntil - now)} left`, className: "warn" });
+    }
+    if (isBlocked) {
+      statusParts.push({ text: "Blocked", className: "bad" });
+    }
+    if (!isOnline) {
+      statusParts.push({ text: "Offline", className: "muted" });
+    }
+
+    if (statusParts.length) {
+      const status = document.createElement("div");
+      const priority = statusParts.find((part) => part.className === "bad") || statusParts[0];
+      status.className = `user-status ${priority.className}`;
+      status.textContent = statusParts.map((part) => part.text).join(" • ");
+      content.appendChild(status);
+    }
+
+    item.appendChild(content);
+
+    const canInteract =
+      isOnline && !isSelf && (appState.isAdmin || (!isAdmin && !isSelf));
+
+    if (canInteract) {
+      item.classList.add("actionable");
+      item.tabIndex = 0;
+      item.setAttribute("role", "button");
+      item.setAttribute("aria-haspopup", "menu");
+      item.setAttribute("aria-controls", "user-context-menu");
+      item.setAttribute("aria-expanded", "false");
+
+      const handleOpen = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openUserContextMenu(item, userData);
+      };
+
+      item.addEventListener("click", handleOpen);
+      item.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown") {
+          handleOpen(event);
+        }
+      });
+    } else if (!isSelf) {
+      item.classList.add("disabled");
+      item.setAttribute("aria-disabled", "true");
+    }
+
+    userList.appendChild(item);
+  });
+
+  if (userCount) {
+    const label = onlineCount === 1 ? "1 online" : `${onlineCount} online`;
+    userCount.textContent = label;
+  }
+
+  if (userListEmpty) {
+    const showEmpty = !window.currentRoom || othersCount === 0;
+    userListEmpty.style.display = showEmpty ? "block" : "none";
+    if (!window.currentRoom) {
+      userListEmpty.textContent = "Join a room to see who's online.";
+    } else {
+      userListEmpty.textContent = "No one else is here yet.";
+    }
+  }
+}
+
+function openUserContextMenu(trigger, user) {
+  if (!userContextMenu || !trigger || !user) return;
+  if (!window.currentRoom) return;
+
+  closeActiveMenu();
+
+  appState.contextMenuTrigger = trigger;
+  trigger.setAttribute("aria-expanded", "true");
+
+  const isSelf = user.username === window.currentUser;
+  const isTargetAdmin = Boolean(user.isAdmin);
+  const mutedUntil = Number(user.mutedUntil || 0);
+  const now = Date.now();
+  const isMuted = mutedUntil && mutedUntil > now;
+  const isBlocked = Boolean(user.isBlocked);
+
+  const options = [];
+  const canMute = !isSelf && (appState.isAdmin || (!isTargetAdmin && !isSelf));
+
+  if (canMute) {
+    if (isMuted) {
+      options.push({ action: "unmute", label: "Unmute" });
+    } else {
+      options.push({ action: "mute", label: "Mute for 1 minute", duration: 60 });
+      options.push({ action: "mute", label: "Mute for 5 minutes", duration: 300 });
+      options.push({ action: "mute", label: "Mute for 1 hour", duration: 3600 });
+    }
+  }
+
+  if (appState.isAdmin && !isSelf) {
+    if (isBlocked) {
+      options.push({ action: "unblock", label: "Unblock" });
+    } else {
+      options.push({ action: "block", label: "Block" });
+    }
+    options.push({ action: "ban", label: "Ban & remove", dangerous: true });
+  }
+
+  if (!options.length) {
+    appState.contextMenuTrigger = null;
+    trigger.setAttribute("aria-expanded", "false");
+    return;
+  }
+
+  userContextMenu.innerHTML = "";
+  userContextMenu.style.visibility = "hidden";
+  userContextMenu.style.minWidth = `${Math.max(trigger.offsetWidth, 180)}px`;
+  userContextMenu.removeAttribute("hidden");
+  userContextMenu.setAttribute("aria-hidden", "false");
+
+  options.forEach((option) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = option.label;
+    if (option.dangerous) button.classList.add("danger");
+    button.setAttribute("role", "menuitem");
+    button.tabIndex = -1;
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!window.currentRoom) return;
+      const payload = {
+        room: window.currentRoom,
+        target: user.username,
+        action: option.action,
+      };
+      if (option.duration) payload.duration = option.duration;
+      socket.emit("moderate user", payload);
+      closeActiveMenu();
+    });
+    userContextMenu.appendChild(button);
+  });
+
+  userContextMenu.classList.add("open");
+
+  requestAnimationFrame(() => {
+    const rect = trigger.getBoundingClientRect();
+    const menuRect = userContextMenu.getBoundingClientRect();
+    const viewportPadding = 12;
+    const top = rect.bottom + window.scrollY + 6;
+    const maxLeft = window.scrollX + window.innerWidth - menuRect.width - viewportPadding;
+    let left = rect.left + window.scrollX;
+    if (left > maxLeft) {
+      left = Math.max(viewportPadding + window.scrollX, maxLeft);
+    }
+    userContextMenu.style.top = `${top}px`;
+    userContextMenu.style.left = `${left}px`;
+    userContextMenu.style.visibility = "visible";
+    const firstButton = userContextMenu.querySelector("button");
+    firstButton?.focus();
+  });
+
+  appState.activeMenu = userContextMenu;
+}
+
+function handleModerationNotice({ type, room, until, reason } = {}) {
+  if (!type) return;
+  if (room && window.currentRoom && room !== window.currentRoom) return;
+
+  const normalizedType = String(type).toLowerCase();
+  const key = `${normalizedType}:${reason || "general"}`;
+  const now = Date.now();
+
+  if (normalizedType === "muted") {
+    const remaining = until ? Math.max(0, Number(until) - now) : 0;
+    const message =
+      reason === "send"
+        ? remaining > 0
+          ? `You are muted. ${formatRemaining(remaining)} remaining.`
+          : "You are muted and cannot send messages yet."
+        : remaining > 0
+        ? `You were muted. ${formatRemaining(remaining)} remaining.`
+        : "You were muted.";
+    const cooldown = reason === "send" ? 4000 : 0;
+    if (!shouldSuppressModerationToast(key, cooldown)) {
+      showToast(message, "warn");
+    }
+    return;
+  }
+
+  if (normalizedType === "unmuted") {
+    if (!shouldSuppressModerationToast(key, 0)) {
+      showToast("You are no longer muted.", "success");
+    }
+    return;
+  }
+
+  if (normalizedType === "blocked") {
+    const message =
+      reason === "send"
+        ? "You are blocked from sending messages."
+        : "You were blocked by an admin.";
+    const cooldown = reason === "send" ? 4000 : 0;
+    if (!shouldSuppressModerationToast(key, cooldown)) {
+      showToast(message, "error");
+    }
+    return;
+  }
+
+  if (normalizedType === "unblocked") {
+    if (!shouldSuppressModerationToast(key, 0)) {
+      showToast("You are no longer blocked.", "success");
+    }
+    return;
+  }
+
+  if (normalizedType === "banned") {
+    if (!shouldSuppressModerationToast(key, 0)) {
+      showToast("You were banned from the room.", "error");
+    }
+  }
+}
+
 function updatePinnedBanner() {
   if (!pinnedContainer) return;
   const pinned = Array.from(appState.pinned.values()).filter((msg) => !msg.deleted);
@@ -287,13 +663,30 @@ function toggleMenu(menu, toggle) {
   }
 }
 
-function closeActiveMenu() {
+function closeActiveMenu(options = {}) {
   if (!appState.activeMenu) return;
-  appState.activeMenu.classList.remove("open");
-  const toggle = appState.activeMenu.previousElementSibling;
-  if (toggle?.classList?.contains("message-actions-toggle")) {
-    toggle.setAttribute("aria-expanded", "false");
+  const { restoreFocus = false } = options;
+  const menu = appState.activeMenu;
+  menu.classList.remove("open");
+
+  if (menu === userContextMenu) {
+    userContextMenu.setAttribute("hidden", "");
+    userContextMenu.setAttribute("aria-hidden", "true");
+    userContextMenu.style.visibility = "";
+    if (appState.contextMenuTrigger) {
+      appState.contextMenuTrigger.setAttribute("aria-expanded", "false");
+      if (restoreFocus) {
+        appState.contextMenuTrigger.focus();
+      }
+    }
+    appState.contextMenuTrigger = null;
+  } else {
+    const toggle = menu.previousElementSibling;
+    if (toggle?.classList?.contains("message-actions-toggle")) {
+      toggle.setAttribute("aria-expanded", "false");
+    }
   }
+
   appState.activeMenu = null;
 }
 
@@ -724,10 +1117,17 @@ function linkifyTextContent(container) {
   return links;
 }
 
+window.addEventListener("resize", () => closeActiveMenu());
+document.addEventListener(
+  "scroll",
+  () => closeActiveMenu(),
+  true
+);
 document.addEventListener("click", () => closeActiveMenu());
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
-    closeActiveMenu();
+    const restoreFocus = appState.activeMenu === userContextMenu;
+    closeActiveMenu({ restoreFocus });
     hideSearchResults();
   }
 });
@@ -912,6 +1312,42 @@ socket.on("room list", (rooms) => {
   renderPublicRooms(Array.isArray(rooms) ? rooms : []);
 });
 
+socket.on("room users", ({ room, users } = {}) => {
+  if (room && window.currentRoom && room !== window.currentRoom) return;
+  renderUserSidebar(Array.isArray(users) ? users : []);
+});
+
+socket.on("user moderation", ({ room, target, action, performedBy, duration } = {}) => {
+  if (room && window.currentRoom && room !== window.currentRoom) return;
+  if (!action || !target) return;
+  if (target === window.currentUser) return;
+
+  const actor = performedBy || "Admin";
+  const normalizedAction = action.toLowerCase();
+  let message = "";
+  if (normalizedAction === "mute") {
+    const label = formatDurationLabel(Number(duration) || 0);
+    message = `${actor} muted ${target}${label ? ` for ${label}` : ""}.`;
+  } else if (normalizedAction === "unmute") {
+    message = `${actor} unmuted ${target}.`;
+  } else if (normalizedAction === "block") {
+    message = `${actor} blocked ${target}.`;
+  } else if (normalizedAction === "unblock") {
+    message = `${actor} unblocked ${target}.`;
+  } else if (normalizedAction === "ban") {
+    message = `${actor} banned ${target}.`;
+  }
+
+  if (message) {
+    const tone = normalizedAction === "ban" || normalizedAction === "block" ? "warn" : "info";
+    showToast(message, tone);
+  }
+});
+
+socket.on("moderation notice", (payload = {}) => {
+  handleModerationNotice(payload);
+});
+
 function updateQueryParams(room, password) {
   try {
     const params = new URLSearchParams();
@@ -940,6 +1376,7 @@ function showLanding({ focusUsername = true } = {}) {
     pinnedContainer.style.display = "none";
   }
   if (messages) messages.innerHTML = "";
+  renderUserSidebar([]);
 
   window.currentUser = null;
   window.currentRoom = null;
@@ -1045,6 +1482,7 @@ function completeRoomJoin(username, room, password) {
     pinnedContainer.innerHTML = "";
     pinnedContainer.style.display = "none";
   }
+  renderUserSidebar([]);
 
   updateQueryParams(room, password);
 
@@ -1834,6 +2272,10 @@ function fetchTenorPreview(link, node) {
     if (cachedPreview) {
       cachedPreview.dataset.tenorSource = link;
       cachedPreview.classList.add("tenor-inline");
+      const previewType = cachedPreview.classList.contains("inline-video") ? "video" : "image";
+      if (!cachedPreview.querySelector(".preview-actions")) {
+        attachPreviewActions(cachedPreview, { link: cached, type: previewType });
+      }
       node.appendChild(cachedPreview);
       node.classList.add("has-inline-preview");
       updateTenorBubbleState(node);
@@ -1872,6 +2314,9 @@ function fetchTenorPreview(link, node) {
       if (!preview) return;
       preview.dataset.tenorSource = link;
       preview.classList.add("tenor-inline");
+      if (!preview.querySelector(".preview-actions")) {
+        attachPreviewActions(preview, { link: direct, type: previewType });
+      }
 
       if (placeholder && placeholder.parentNode === node) {
         node.replaceChild(preview, placeholder);
@@ -2101,6 +2546,7 @@ socket.on("admin status", ({ isAdmin }) => {
   const previous = appState.isAdmin;
   appState.isAdmin = Boolean(isAdmin);
   refreshActionMenus();
+  renderUserSidebar(appState.users);
   if (appState.isAdmin && !previous) {
     showToast("Admin mode enabled", "success");
   } else if (!appState.isAdmin && previous) {
@@ -2299,10 +2745,11 @@ function autoEmbed(node) {
 
   const linkAnchors = document.createElement("div");
   linkAnchors.className = "embed-links";
-  wrap.appendChild(linkAnchors);
+  const anchorsByLink = new Map();
 
   const seenLinks = new Set();
   let wrapAdded = false;
+  let anchorsAttached = false;
   const ensureWrap = () => {
     if (!wrapAdded) {
       node.appendChild(wrap);
@@ -2313,18 +2760,74 @@ function autoEmbed(node) {
     }
   };
 
+  const attachAnchors = () => {
+    if (!anchorsAttached) {
+      wrap.insertBefore(linkAnchors, wrap.firstChild);
+      anchorsAttached = true;
+    }
+    ensureWrap();
+  };
+
+  const normalizeLinkKey = (url) => {
+    try {
+      return new URL(url).href;
+    } catch {
+      return url;
+    }
+  };
+
+  const detachAnchorsIfEmpty = () => {
+    if (anchorsAttached && !linkAnchors.childElementCount) {
+      linkAnchors.remove();
+      anchorsAttached = false;
+    }
+  };
+
+  const removeAnchorFor = (url) => {
+    const key = normalizeLinkKey(url);
+    const anchor = anchorsByLink.get(key);
+    if (anchor && anchor.parentNode === linkAnchors) {
+      linkAnchors.removeChild(anchor);
+      anchorsByLink.delete(key);
+      detachAnchorsIfEmpty();
+    }
+  };
+
   let hasTenorLink = false;
+  const textAnchors = textEl ? Array.from(textEl.querySelectorAll("a")) : [];
   links.forEach((link) => {
     let el = null;
 
+    let hasExistingAnchor = false;
+    if (textAnchors.length) {
+      try {
+        const normalized = new URL(link).href;
+        hasExistingAnchor = textAnchors.some((anchor) => {
+          try {
+            return new URL(anchor.href).href === normalized;
+          } catch {
+            return (anchor.getAttribute("href") || "") === link;
+          }
+        });
+      } catch {
+        hasExistingAnchor = textAnchors.some((anchor) => (anchor.getAttribute("href") || "") === link);
+      }
+    }
+
+    const skipLinkAnchor = /tenor\.com/i.test(link) || hasExistingAnchor;
+
     if (!seenLinks.has(link)) {
       seenLinks.add(link);
-      const anchor = document.createElement("a");
-      anchor.href = link;
-      anchor.target = "_blank";
-      anchor.rel = "noopener noreferrer";
-      anchor.textContent = link;
-      linkAnchors.appendChild(anchor);
+      if (!skipLinkAnchor) {
+        attachAnchors();
+        const anchor = document.createElement("a");
+        anchor.href = link;
+        anchor.target = "_blank";
+        anchor.rel = "noopener noreferrer";
+        anchor.textContent = link;
+        linkAnchors.appendChild(anchor);
+        anchorsByLink.set(normalizeLinkKey(link), anchor);
+      }
     }
 
     if (/tenor\.com/i.test(link)) {
@@ -2369,12 +2872,27 @@ function autoEmbed(node) {
     // Rumble
     if (!el && /https?:\/\/(?:www\.)?rumble\.com\//i.test(link)) {
       let embedUrl = "";
-      let match = link.match(/https?:\/\/(?:www\.)?rumble\.com\/embed\/([a-z0-9]+)/i);
-      if (match) {
-        embedUrl = `https://rumble.com/embed/${match[1]}/?pub=4&autoplay=0`;
-      } else {
-        match = link.match(/https?:\/\/(?:www\.)?rumble\.com\/(v[\w]+)/i);
-        if (match) embedUrl = `https://rumble.com/embed/${match[1]}/?pub=4&autoplay=0`;
+      try {
+        const parsed = new URL(link);
+        const segments = parsed.pathname.split("/").filter(Boolean);
+        let videoId = "";
+        if (segments[0] && segments[0].toLowerCase() === "embed" && segments[1]) {
+          videoId = segments[1].split(".")[0];
+        } else {
+          const candidate = segments.find((segment) => /^v[a-z0-9]+/i.test(segment));
+          if (candidate) {
+            const matchId = candidate.match(/^(v[a-z0-9]+)/i);
+            if (matchId) videoId = matchId[1];
+          }
+        }
+        if (videoId) {
+          embedUrl = `https://rumble.com/embed/${videoId}/?pub=4&autoplay=0`;
+        }
+      } catch {
+        const fallback = link.match(/https?:\/\/(?:www\.)?rumble\.com\/embed\/([a-z0-9]+)/i);
+        if (fallback) {
+          embedUrl = `https://rumble.com/embed/${fallback[1]}/?pub=4&autoplay=0`;
+        }
       }
       if (embedUrl) {
         el = document.createElement("iframe");
@@ -2424,18 +2942,20 @@ function autoEmbed(node) {
       fetchTenorPreview(link, wrap);
     }
 
-    if (el) wrap.appendChild(el);
     if (el) {
+      removeAnchorFor(link);
+      if (el.classList.contains("inline-preview")) {
+        const typeClass = Array.from(el.classList).find((cls) => cls.startsWith("inline-") && cls !== "inline-preview");
+        const previewType = typeClass ? typeClass.replace("inline-", "") : "";
+        attachPreviewActions(el, { link, type: previewType });
+      }
+      wrap.appendChild(el);
       ensureWrap();
       if (el.tagName === "IFRAME" && el.classList.contains("soundcloud")) {
         attachSoundCloudControls(el, wrap);
       }
     }
   });
-
-  if (!wrapAdded && wrap.childNodes.length > 1) {
-    ensureWrap();
-  }
 
   if (hasTenorLink && textEl) {
     const tenorRegex = /https?:\/\/(?:media\.)?tenor\.com\/\S+/i;
@@ -2490,9 +3010,8 @@ function autoEmbed(node) {
         continue;
       }
 
-      if (!wrap.isConnected) {
-        ensureWrap();
-      }
+      ensureWrap();
+      removeAnchorFor(normalized);
 
       const card = document.createElement("div");
       card.className = "link-card";
