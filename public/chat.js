@@ -842,6 +842,36 @@ function replaceCustomEmojiLinks(textEl) {
   return true;
 }
 
+function updateTenorBubbleState(node) {
+  if (!node) return;
+  const isMessage = node.classList && node.classList.contains("message");
+  let message = null;
+  if (isMessage) {
+    message = node;
+  } else if (typeof node.closest === "function") {
+    message = node.closest(".message");
+  }
+  if (!message) return;
+
+  const hasTenorPreview = message.querySelector(".inline-preview.tenor-inline");
+  if (!hasTenorPreview) {
+    message.classList.remove("tenor-only");
+    return;
+  }
+
+  const textEl = message.querySelector(".text");
+  const textVisible =
+    textEl &&
+    textEl.style.display !== "none" &&
+    (textEl.textContent || "").trim().length > 0;
+
+  if (textVisible) {
+    message.classList.remove("tenor-only");
+  } else {
+    message.classList.add("tenor-only");
+  }
+}
+
 function attachPreviewActions(preview, { link, label, type } = {}) {
   if (!preview || !link) return;
   if (preview.dataset.placeholder === "1") return;
@@ -894,7 +924,10 @@ function fetchTenorPreview(link, node) {
     const cachedPreview = createInlinePreview(cached, /\.(mp4|webm)$/i.test(cached) ? "video" : "image");
     if (cachedPreview) {
       cachedPreview.dataset.tenorSource = link;
+      cachedPreview.classList.add("tenor-inline");
       node.appendChild(cachedPreview);
+      node.classList.add("has-inline-preview");
+      updateTenorBubbleState(node);
     }
     return;
   }
@@ -903,7 +936,10 @@ function fetchTenorPreview(link, node) {
   if (placeholder) {
     placeholder.dataset.tenorSource = link;
     placeholder.dataset.placeholder = "1";
+    placeholder.classList.add("tenor-inline", "tenor-loading");
     node.appendChild(placeholder);
+    node.classList.add("has-inline-preview");
+    updateTenorBubbleState(node);
   }
 
   fetch(`/tenor-proxy?url=${encodeURIComponent(link)}`)
@@ -924,12 +960,15 @@ function fetchTenorPreview(link, node) {
       const preview = createInlinePreview(direct, previewType);
       if (!preview) return;
       preview.dataset.tenorSource = link;
+      preview.classList.add("tenor-inline");
 
       if (placeholder && placeholder.parentNode === node) {
         node.replaceChild(preview, placeholder);
       } else if (!hasInlinePreview(node, direct)) {
         node.appendChild(preview);
       }
+      node.classList.add("has-inline-preview");
+      updateTenorBubbleState(node);
     })
     .catch(() => {
       tenorPreviewCache.set(link, null);
@@ -937,6 +976,7 @@ function fetchTenorPreview(link, node) {
         const label = placeholder.querySelector(".preview-label");
         if (label) label.textContent = "GIF unavailable";
       }
+      updateTenorBubbleState(node);
     });
 }
 
@@ -944,6 +984,7 @@ function appendAttachmentFromMessage(node, msg) {
   if (!node || !msg?.fileUrl) return;
   const url = msg.fileUrl;
   const typeHint = (msg.fileType || "").toLowerCase();
+  const isTenor = /tenor\.com/i.test(url);
 
   let previewType = "";
   const imagePattern = /\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?.*)?$/i;
@@ -968,18 +1009,24 @@ function appendAttachmentFromMessage(node, msg) {
     return;
   }
 
-  const label = (msg.fileName || "").trim();
+  const label = isTenor ? "" : (msg.fileName || "").trim();
   const preview = createInlinePreview(url, previewType, label);
   if (!preview) return;
+  if (isTenor) {
+    preview.classList.add("tenor-inline");
+  }
 
   attachPreviewActions(preview, { link: url, label, type: previewType });
   node.appendChild(preview);
+  node.classList.add("has-inline-preview");
 
   const textEl = node.querySelector(".text");
   if (textEl && textEl.textContent?.trim() === url.trim()) {
     textEl.textContent = "";
     textEl.style.display = "none";
   }
+
+  updateTenorBubbleState(node);
 }
 
 // ------------------- History & Messages -------------------
@@ -1114,7 +1161,7 @@ if (attachBtn && fileInput) {
   panel.id = "gif-picker";
   panel.innerHTML = `
     <div class="gif-search"><input id="gif-search-input" placeholder="Search GIFs…"></div>
-    <div id="gif-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;"></div>`;
+    <div id="gif-grid" class="gif-grid"></div>`;
   document.body.appendChild(panel);
 
   function positionPanel() {
@@ -1141,11 +1188,7 @@ if (attachBtn && fileInput) {
         const img = document.createElement("img");
         img.src = thumb;
         img.alt = "gif";
-        img.style.width = "100%";
-        img.style.height = "100%";
-        img.style.objectFit = "cover";
-        img.style.borderRadius = "8px";
-        img.style.cursor = "pointer";
+        img.className = "gif-thumb";
         img.onclick = () => {
           const directGif =
             g?.media_formats?.gif?.url ||
@@ -1331,7 +1374,10 @@ function autoEmbed(node) {
     if (el) wrap.appendChild(el);
   });
 
-  if (wrap.childNodes.length) node.appendChild(wrap);
+  if (wrap.childNodes.length) {
+    node.appendChild(wrap);
+    node.classList.add("has-inline-preview");
+  }
 
   if (hasTenorLink && textEl) {
     const tenorRegex = /https?:\/\/(?:media\.)?tenor\.com\/\S+/i;
@@ -1344,6 +1390,10 @@ function autoEmbed(node) {
     } else {
       textEl.style.removeProperty("display");
     }
+  }
+
+  if (hasTenorLink) {
+    updateTenorBubbleState(node);
   }
 
   // Open Graph cards for remaining links
