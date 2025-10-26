@@ -15,6 +15,10 @@ window.currentUser = window.currentUser || null;
 window.currentRoom = window.currentRoom || null;
 window.currentPassword = window.currentPassword || "";
 
+let isViewingChat = false;
+let lastRoomName = "";
+let lastRoomPassword = "";
+
 // ------------------- DOM -------------------
 const form = document.getElementById("form");
 const input = document.getElementById("input");
@@ -33,10 +37,32 @@ const adminPasswordInput = document.getElementById("admin-password");
 const roomName = document.getElementById("room-name");
 const themeToggle = document.getElementById("toggle-theme");
 const emojiPicker = document.getElementById("emoji-picker");
+const leaveBtn = document.getElementById("leave-btn");
+const copyJoinLinkBtn = document.getElementById("copy-join-link");
 const themeLogos = Array.from(document.querySelectorAll("img.logo"));
 
 // Autofocus username for smoother entry
 usernameInput?.focus();
+
+if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = true;
+
+const urlParams = new URLSearchParams(window.location.search);
+const prefillRoom = urlParams.get("room") || "";
+const prefillPassword = urlParams.get("password") || "";
+
+if (prefillRoom) {
+  lastRoomName = prefillRoom;
+  if (roomInput) roomInput.value = prefillRoom;
+}
+
+if (prefillPassword) {
+  lastRoomPassword = prefillPassword;
+  if (passwordInput) passwordInput.value = prefillPassword;
+}
+
+if (prefillRoom || prefillPassword) {
+  updateQueryParams(prefillRoom, prefillPassword);
+}
 
 // ------------------- Toasts (bottom-left, glowing, auto-hide) -------------------
 (() => {
@@ -110,12 +136,82 @@ socket.on("toast", (data) => showToast(data?.text || "", data?.type || "info"));
 socket.on("connect", () => showToast("Connected", "success"));
 socket.on("disconnect", () => showToast("Disconnected", "error"));
 
+function updateQueryParams(room, password) {
+  try {
+    const params = new URLSearchParams();
+    if (room) params.set("room", room);
+    if (password) params.set("password", password);
+    const query = params.toString();
+    const newUrl = `${window.location.pathname}${query ? `?${query}` : ""}`;
+    if (window.location.search !== (query ? `?${query}` : "")) {
+      window.history.replaceState({}, "", newUrl);
+    }
+  } catch (err) {
+    console.warn("[URL] Unable to update query params", err);
+  }
+}
+
+function showLanding({ focusUsername = true } = {}) {
+  isViewingChat = false;
+  if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = true;
+  if (chatContainer) chatContainer.style.display = "none";
+  if (usernamePrompt) usernamePrompt.style.display = "flex";
+  if (roomName) roomName.textContent = lastRoomName ? `#${lastRoomName}` : "";
+
+  window.currentUser = null;
+  window.currentRoom = null;
+  window.currentPassword = lastRoomPassword || "";
+
+  if (roomInput) roomInput.value = lastRoomName || "";
+  if (passwordInput) passwordInput.value = lastRoomPassword || "";
+  if (usernameInput) usernameInput.value = "";
+  if (focusUsername) usernameInput?.focus();
+
+  updateQueryParams(lastRoomName, lastRoomPassword);
+}
+
+async function copyTextToClipboard(text) {
+  if (!text) return false;
+  if (navigator?.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (err) {
+      console.warn("[Clipboard] Async copy failed", err);
+    }
+  }
+
+  const temp = document.createElement("textarea");
+  temp.value = text;
+  temp.setAttribute("readonly", "readonly");
+  temp.style.position = "fixed";
+  temp.style.opacity = "0";
+  document.body.appendChild(temp);
+  temp.focus();
+  temp.select();
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch (err) {
+    console.warn("[Clipboard] Fallback copy failed", err);
+  }
+  document.body.removeChild(temp);
+  return copied;
+}
+
 // ===== JOIN ROOM (with corrections for transition) =====
 
 function completeRoomJoin(username, room, password) {
   window.currentUser = username;
   window.currentRoom = room;
   window.currentPassword = password;
+
+  lastRoomName = room;
+  lastRoomPassword = password;
+  isViewingChat = true;
+  if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = !room;
+
+  updateQueryParams(room, password);
 
   if (roomName) roomName.textContent = room ? `#${room}` : "";
   if (usernamePrompt) usernamePrompt.style.display = "none";
@@ -162,8 +258,51 @@ if (joinBtn) {
     });
   });
 
+if (leaveBtn) {
+  leaveBtn.addEventListener("click", () => {
+    if (window.currentRoom) {
+      lastRoomName = window.currentRoom;
+      lastRoomPassword = window.currentPassword || "";
+    }
+    showLanding({ focusUsername: true });
+    showToast("Left the room", "info");
+  });
+}
+
+if (copyJoinLinkBtn) {
+  copyJoinLinkBtn.addEventListener("click", async () => {
+    if (!window.currentRoom) {
+      showToast("Join a room first to copy its link", "error");
+      return;
+    }
+
+    const params = new URLSearchParams();
+    params.set("room", window.currentRoom);
+    if (window.currentPassword) {
+      params.set("password", window.currentPassword);
+    }
+
+    const shareQuery = params.toString();
+    const shareUrl = `${window.location.origin}${window.location.pathname}${
+      shareQuery ? `?${shareQuery}` : ""
+    }`;
+
+    const copied = await copyTextToClipboard(shareUrl);
+    if (copied) {
+      showToast("Join link copied!", "success");
+      lastRoomName = window.currentRoom;
+      lastRoomPassword = window.currentPassword || "";
+      showLanding({ focusUsername: true });
+    } else {
+      showToast("Unable to copy link", "error");
+    }
+  });
+}
+
 // Listen for successful room join
 socket.on("join room success", () => {
+  isViewingChat = true;
+  if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = !window.currentRoom;
   if (chatContainer) chatContainer.style.display = "flex";
   if (usernamePrompt) usernamePrompt.style.display = "none";
   input?.focus();
@@ -172,14 +311,12 @@ socket.on("join room success", () => {
 // Join error handling
 socket.on("join room error", (error) => {
   showToast(error || "Unable to join room", "error");
-  if (chatContainer) chatContainer.style.display = "none";
-  if (usernamePrompt) usernamePrompt.style.display = "block";
+  showLanding({ focusUsername: true });
 });
 
 // Handle disconnect and clean up
 socket.on("disconnect", () => {
-  if (chatContainer) chatContainer.style.display = "none";
-  if (usernamePrompt) usernamePrompt.style.display = "block";
+  showLanding({ focusUsername: false });
 });
 
 // If coming in with globals set (deep-link), auto-join
@@ -480,6 +617,7 @@ socket.on("typing", (users) => {
 
 // ------------------- History & Messages -------------------
 function renderMessage(msg) {
+  if (!isViewingChat || !messages) return;
   const wrap = document.createElement("div");
   // Use your existing bubble structure if present in CSS
   const isSelf = msg.user === window.currentUser;
@@ -494,12 +632,14 @@ function renderMessage(msg) {
 }
 
 socket.on("load messages", (arr) => {
+  if (!isViewingChat || !messages) return;
   messages.innerHTML = "";
   (arr || []).forEach(renderMessage);
   showToast(`✅ Joined room: ${window.currentRoom}`, "success");
 });
 
 socket.on("previous messages", (arr) => {
+  if (!isViewingChat || !messages) return;
   // legacy event, render the same way but don't double-toast
   if (!messages.childElementCount) {
     (arr || []).forEach(renderMessage);
@@ -507,6 +647,7 @@ socket.on("previous messages", (arr) => {
 });
 
 socket.on("chat message", (msg) => {
+  if (!isViewingChat) return;
   renderMessage(msg);
 });
 
@@ -695,8 +836,13 @@ function autoEmbed(node) {
   const wrap = document.createElement("div");
   wrap.className = "embed-wrap";
 
+  let hasTenorLink = false;
   links.forEach((link) => {
     let el = null;
+
+    if (/tenor\.com/i.test(link)) {
+      hasTenorLink = true;
+    }
 
     // YouTube
     let m = link.match(/https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/i);
@@ -778,6 +924,19 @@ function autoEmbed(node) {
   });
 
   if (wrap.childNodes.length) node.appendChild(wrap);
+
+  if (hasTenorLink && textEl) {
+    const tenorRegex = /https?:\/\/(?:media\.)?tenor\.com\/\S+/i;
+    const parts = textEl.textContent.split(/(\s+)/);
+    const filtered = parts.filter((segment) => !tenorRegex.test(segment.trim()));
+    const cleaned = filtered.join("").trim();
+    textEl.textContent = cleaned;
+    if (!cleaned) {
+      textEl.style.display = "none";
+    } else {
+      textEl.style.removeProperty("display");
+    }
+  }
 
   // Collapsible OG cards for non-media links
   (async () => {

@@ -207,6 +207,17 @@ header .logo { width: 40px; height: auto; }
   box-shadow: 0 8px 18px rgba(123, 47, 247, 0.25);
 }
 
+.header-right button#copy-join-link {
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  font-weight: 600;
+}
+
+.header-right button#copy-join-link:hover {
+  background: rgba(255,255,255,0.2);
+  transform: scale(1.05);
+}
+
 /* ==============================
    Messages Area
    ============================== */
