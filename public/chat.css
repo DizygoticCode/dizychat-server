@@ -263,7 +263,26 @@ header .logo { width: 40px; height: auto; }
 }
 
 .message .meta { font-size: 0.75em; color: var(--text-muted); margin-bottom: 4px; }
-.message .text { white-space: pre-wrap; }
+.message .text {
+  white-space: pre-wrap;
+}
+
+.message .text img.custom-emoji {
+  display: inline-block;
+  height: 2.5em;
+  width: auto;
+  margin: 0 2px;
+  vertical-align: middle;
+  image-rendering: auto;
+}
+
+.message .text img.custom-emoji:first-child {
+  margin-left: 0;
+}
+
+.message .text img.custom-emoji:last-child {
+  margin-right: 0;
+}
 
 /* Pin & Star Buttons */
 .message .pin-btn,

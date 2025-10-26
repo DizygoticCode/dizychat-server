@@ -766,6 +766,82 @@ function createInlinePreview(link, type, labelText) {
   return container;
 }
 
+function replaceCustomEmojiLinks(textEl) {
+  if (!textEl) return false;
+
+  const original = textEl.textContent || "";
+  if (!original.trim()) return false;
+
+  const pattern = /(https?:\/\/[\w.-]+(?::\d+)?\/[\w\-./%]+|\/?emojis\/custom\/[\w\-./%]+|emojis\/custom\/[\w\-./%]+)/gi;
+  let match;
+  let lastIndex = 0;
+  const fragment = document.createDocumentFragment();
+  let hasEmoji = false;
+
+  while ((match = pattern.exec(original)) !== null) {
+    const [rawLink] = match;
+    const start = match.index;
+
+    if (start > lastIndex) {
+      fragment.appendChild(document.createTextNode(original.slice(lastIndex, start)));
+    }
+
+    const normalizedLink = (() => {
+      let link = rawLink.trim();
+      if (!link) return null;
+
+      if (!/^https?:\/\//i.test(link)) {
+        link = link.startsWith("/") ? link : `/${link}`;
+      }
+
+      if (!/\/emojis\/custom\//i.test(link)) return null;
+
+      try {
+        const url = new URL(link, window.location.origin);
+        return url.toString();
+      } catch (err) {
+        console.warn("[Emoji] Failed to normalise link", link, err);
+        return null;
+      }
+    })();
+
+    if (normalizedLink) {
+      const img = document.createElement("img");
+      img.src = normalizedLink;
+      img.alt = (() => {
+        try {
+          const url = new URL(normalizedLink);
+          const file = url.pathname.split("/").pop() || "emoji";
+          return decodeURIComponent(file.replace(/\.[^.]+$/, ""));
+        } catch (err) {
+          return "emoji";
+        }
+      })();
+      img.title = img.alt || "Emoji";
+      img.loading = "lazy";
+      img.decoding = "async";
+      img.className = "custom-emoji";
+      fragment.appendChild(img);
+      hasEmoji = true;
+    } else {
+      fragment.appendChild(document.createTextNode(rawLink));
+    }
+
+    lastIndex = pattern.lastIndex;
+  }
+
+  if (!hasEmoji) return false;
+
+  if (lastIndex < original.length) {
+    fragment.appendChild(document.createTextNode(original.slice(lastIndex)));
+  }
+
+  textEl.textContent = "";
+  textEl.appendChild(fragment);
+
+  return true;
+}
+
 function attachPreviewActions(preview, { link, label, type } = {}) {
   if (!preview || !link) return;
   if (preview.dataset.placeholder === "1") return;
@@ -917,6 +993,8 @@ function renderMessage(msg) {
     <div class="meta">${msg.user || "Anon"} • ${new Date(msg.timestamp || Date.now()).toLocaleTimeString()}</div>
     <div class="text">${msg.text || ""}</div>
   `;
+  const textEl = wrap.querySelector(".text");
+  replaceCustomEmojiLinks(textEl);
   messages.appendChild(wrap);
   appendAttachmentFromMessage(wrap, msg);
   autoEmbed(wrap);
