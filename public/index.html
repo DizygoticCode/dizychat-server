@@ -40,6 +40,14 @@
         <span id="room-name"></span>
       </div>
       <div class="header-right">
+        <div class="search-bar">
+          <input id="message-search" type="search" placeholder="Search messages…" aria-label="Search messages" />
+          <select id="message-search-filter" aria-label="Search filter">
+            <option value="all">All</option>
+            <option value="pinned">Pinned</option>
+            <option value="starred">Starred</option>
+          </select>
+        </div>
         <button id="toggle-theme" title="Toggle Theme">🌓</button>
         <button id="copy-join-link" title="Copy Join Link">🔗 Copy Join Link</button>
         <button id="leave-btn" title="Exit Chat">Leave</button>
@@ -47,6 +55,7 @@
     </header>
 
     <div id="pinned-messages" style="display:none;"></div>
+    <div id="search-results" hidden></div>
     <div id="messages"></div>
     <div id="typing-bubble" style="display:none;">Someone is typing...</div>
 
@@ -69,7 +78,7 @@
 
     <!-- Emoji picker -->
     <div id="emoji-picker">
-      <div id="quick-emojis">
+      <div id="quick-emojis" hidden>
         <button>😀</button>
         <button>😂</button>
         <button>😍</button>

@@ -335,7 +335,7 @@ io.on('connection', socket => {
 
     // Send pinned messages
     try {
-      const pinned = await Message.find({ room: roomName, pinned: true }).sort({ timestamp: -1 }).limit(50);
+      const pinned = await Message.find({ room: roomName, pinned: true, deleted: { $ne: true } }).sort({ timestamp: -1 }).limit(50);
       socket.emit('pinned messages', pinned);
     } catch (err) { console.error("[Pinned] Error:", err); }
   });
@@ -412,32 +412,92 @@ io.on('connection', socket => {
     } catch(err){ console.error("[Edit] Error:", err); }
   });
 
-  socket.on('delete message', async ({ room, id }) => {
+  socket.on('delete message', async ({ room, id, scope }) => {
     try {
-      await Message.findByIdAndDelete(id);
-      io.to(room).emit('delete message', id);
+      const targetRoom = room || socket.currentRoom;
+      if (!targetRoom || !id) return;
+
+      if (scope === 'me') {
+        socket.emit('delete message local', { id });
+        return;
+      }
+
+      const msg = await Message.findById(id);
+      if (!msg) return;
+      if (targetRoom && msg.room !== targetRoom) return;
+
+      const username = socket.username || '';
+      const isOwner = msg.user === username;
+
+      if (!socket.isAdmin && !isOwner) {
+        socket.emit('toast', { type: 'warn', text: 'You can only delete your own messages.' });
+        return;
+      }
+
+      msg.deleted = true;
+      msg.deletedAt = new Date();
+      msg.deletedBy = username;
+      msg.text = '';
+      msg.fileUrl = '';
+      msg.fileType = '';
+      msg.fileName = '';
+      msg.reactions = [];
+      msg.starredBy = [];
+      msg.pinned = false;
+      msg.pinnedBy = '';
+      await msg.save();
+
+      const payload = msg.toJSON ? msg.toJSON() : msg;
+      io.to(targetRoom).emit('delete message', { id: payload._id || payload.id, deleted: true, deletedBy: username });
     } catch(err){ console.error("[Delete] Error:", err); }
   });
 
   socket.on('pin message', async ({ room, id }) => {
-    if (!requireAdmin(socket)) return;
     try {
-      const msg = await Message.findByIdAndUpdate(id, { pinned: true }, { new: true });
-      if (msg) io.to(room).emit('message pinned', msg);
+      const targetRoom = room || socket.currentRoom;
+      if (!targetRoom || !id) return;
+
+      const msg = await Message.findById(id);
+      if (!msg || msg.deleted) return;
+      if (targetRoom && msg.room !== targetRoom) return;
+
+      msg.pinned = true;
+      msg.pinnedBy = socket.username || '';
+      await msg.save();
+
+      const payload = msg.toJSON ? msg.toJSON() : msg;
+      io.to(targetRoom).emit('message pinned', payload);
     } catch(err){ console.error("[Pin] Error:", err); }
   });
 
   socket.on('unpin message', async ({ room, id }) => {
-    if (!requireAdmin(socket)) return;
     try {
-      const msg = await Message.findByIdAndUpdate(id, { pinned: false }, { new: true });
-      if (msg) io.to(room).emit('message unpinned', msg);
+      const targetRoom = room || socket.currentRoom;
+      if (!targetRoom || !id) return;
+
+      const msg = await Message.findById(id);
+      if (!msg) return;
+      if (targetRoom && msg.room !== targetRoom) return;
+
+      const username = socket.username || '';
+      const isOwner = msg.pinnedBy && msg.pinnedBy === username;
+      if (!socket.isAdmin && !isOwner) {
+        socket.emit('toast', { type: 'warn', text: 'Only admins can remove this pin.' });
+        return;
+      }
+
+      msg.pinned = false;
+      msg.pinnedBy = '';
+      await msg.save();
+
+      const payload = msg.toJSON ? msg.toJSON() : msg;
+      io.to(targetRoom).emit('message unpinned', payload);
     } catch(err){ console.error("[Unpin] Error:", err); }
   });
 
   socket.on('get pinned', async ({ room }) => {
     try {
-      const pinned = await Message.find({ room, pinned: true }).sort({ timestamp: -1 }).limit(50);
+      const pinned = await Message.find({ room, pinned: true, deleted: { $ne: true } }).sort({ timestamp: -1 }).limit(50);
       socket.emit('pinned messages', pinned);
     } catch(err){ console.error("[Pinned fetch] Error:", err); }
   });
@@ -445,7 +505,8 @@ io.on('connection', socket => {
   socket.on('star message', async ({ room, id, user }) => {
     try {
       const msg = await Message.findById(id);
-      if (!msg) return;
+      if (!msg || msg.deleted) return;
+      if (room && msg.room !== room) return;
       if (!msg.starredBy.includes(user)) msg.starredBy.push(user);
       await msg.save();
       io.to(room).emit('message starred', { id, starredBy: msg.starredBy });
@@ -455,7 +516,8 @@ io.on('connection', socket => {
   socket.on('unstar message', async ({ room, id, user }) => {
     try {
       const msg = await Message.findById(id);
-      if (!msg) return;
+      if (!msg || msg.deleted) return;
+      if (room && msg.room !== room) return;
       msg.starredBy = msg.starredBy.filter(u => u !== user);
       await msg.save();
       io.to(room).emit('message unstarred', { id, starredBy: msg.starredBy });
@@ -465,13 +527,50 @@ io.on('connection', socket => {
   socket.on('react message', async ({ room, id, reaction, username }) => {
     try {
       const msg = await Message.findById(id);
-      if (!msg) return;
+      if (!msg || msg.deleted) return;
+      if (room && msg.room !== room) return;
       const existing = msg.reactions.findIndex(r => r.user === username);
       if (existing >= 0) msg.reactions[existing].emoji = reaction;
       else msg.reactions.push({ user: username, emoji: reaction });
       await msg.save();
       io.to(room).emit('update reactions', { id, reactions: msg.reactions });
     } catch(err){ console.error("[React] Error:", err); }
+  });
+
+  socket.on('search messages', async ({ room, query = '', filter = 'all', limit = 50 } = {}) => {
+    try {
+      const targetRoom = normaliseRoomName(room) || socket.currentRoom;
+      if (!targetRoom) return;
+
+      const conditions = { room: targetRoom, deleted: { $ne: true } };
+
+      if (filter === 'pinned') {
+        conditions.pinned = true;
+      } else if (filter === 'starred') {
+        const username = socket.username || '';
+        if (username) conditions.starredBy = username;
+        else conditions.starredBy = { $exists: true, $not: { $size: 0 } };
+      }
+
+      const limitCount = Math.max(1, Math.min(Number(limit) || 50, 100));
+      let results;
+      if (query && query.trim()) {
+        const searchQuery = query.trim();
+        results = await Message.find({ ...conditions, $text: { $search: searchQuery } })
+          .sort({ timestamp: -1 })
+          .limit(limitCount);
+      } else {
+        results = await Message.find(conditions)
+          .sort({ timestamp: -1 })
+          .limit(limitCount);
+      }
+
+      const payload = results.map(m => (m.toJSON ? m.toJSON() : m));
+      socket.emit('search results', { room: targetRoom, query, filter, results: payload });
+    } catch(err){
+      console.error('[Search] Error:', err);
+      socket.emit('search results', { room: room || socket.currentRoom, query, filter, results: [] });
+    }
   });
 
   // ----- Typing Indicator -----

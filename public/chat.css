@@ -220,6 +220,43 @@ header .header-left { display: flex; align-items: center; gap: 10px; }
 
 header .logo { width: 40px; height: auto; }
 
+#chat-container header .header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#chat-container .search-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-alt);
+  border-radius: var(--radius);
+  padding: 4px 6px;
+  border: 1px solid var(--border-color);
+}
+
+#chat-container .search-bar input,
+#chat-container .search-bar select {
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.85em;
+}
+
+#chat-container .search-bar input::placeholder {
+  color: var(--text-muted);
+}
+
+#chat-container .search-bar select {
+  cursor: pointer;
+}
+
+#message-search:focus,
+#message-search-filter:focus {
+  outline: none;
+}
+
 #room-name { font-weight: 600; font-size: 1.1em; color: var(--text-primary); }
 
 /* Header buttons */
@@ -312,9 +349,139 @@ header .logo { width: 40px; height: auto; }
   border-bottom-left-radius: 4px;
 }
 
-.message .meta { font-size: 0.75em; color: var(--text-muted); margin-bottom: 4px; }
+.message[data-deleted="true"] {
+  opacity: 0.65;
+  background: rgba(128, 128, 128, 0.35);
+  box-shadow: none;
+}
+
+.message .meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 0.75em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.message .meta .meta-name {
+  font-weight: 600;
+}
+
+.message .meta .meta-time {
+  opacity: 0.8;
+}
+
+.message .message-flags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.message .message-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 0.75em;
+  background: rgba(255, 255, 255, 0.12);
+  color: inherit;
+}
+
+.message.other .message-flag {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.message .message-flag.pinned {
+  background: rgba(37, 211, 102, 0.2);
+  color: #20c373;
+}
+
+.message .message-flag.starred {
+  background: rgba(255, 215, 0, 0.25);
+  color: #ffd700;
+}
+
+.message .message-flag .count {
+  font-weight: 600;
+}
+
 .message .text {
   white-space: pre-wrap;
+}
+
+.message .text.hidden {
+  display: none;
+}
+
+.message .deleted-label {
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.message .message-actions-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 1.1em;
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+}
+
+.message .message-actions-toggle:hover,
+.message .message-actions-toggle[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.message .message-actions-menu {
+  position: absolute;
+  top: 28px;
+  right: 8px;
+  min-width: 160px;
+  background: var(--surface);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  display: none;
+  flex-direction: column;
+  z-index: 50;
+}
+
+.message .message-actions-menu.open {
+  display: flex;
+}
+
+.message .message-actions-menu button {
+  background: transparent;
+  border: none;
+  padding: 8px 12px;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.9em;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.message .message-actions-menu button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.message .message-actions-menu button.danger {
+  color: #ff6b6b;
+}
+
+.message.self .message-actions-menu button.danger {
+  color: #ffdede;
 }
 
 .message .text img.custom-emoji {
@@ -371,6 +538,11 @@ header .logo { width: 40px; height: auto; }
 
 .message.has-inline-preview {
   padding: 10px 12px;
+}
+
+.message.search-hit {
+  outline: 2px solid var(--accent);
+  box-shadow: 0 0 12px rgba(37, 211, 102, 0.4);
 }
 
 .message.has-inline-preview .text:empty {
@@ -605,17 +777,82 @@ header .logo { width: 40px; height: auto; }
   transition: max-height 0.3s ease, opacity 0.3s ease;
 }
 
-#pinned-messages li {
+#pinned-messages .pinned-entry {
   list-style: none;
   padding: 6px 8px;
   background: var(--surface-alt);
   border-radius: var(--radius);
   font-size: 0.9em;
-  cursor: default;
+  cursor: pointer;
   transition: background 0.2s ease, transform 0.15s ease;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-#pinned-messages li:hover { background: var(--link-preview-hover); transform: translateY(-1px); }
+#pinned-messages .pinned-entry:hover {
+  background: var(--link-preview-hover);
+  transform: translateY(-1px);
+}
+
+#pinned-messages .pinned-entry .pinned-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#pinned-messages .pinned-entry .pinned-meta {
+  font-size: 0.75em;
+  color: var(--text-muted);
+}
+
+/* ==============================
+   Search Results Overlay
+   ============================== */
+#search-results {
+  margin: 0 16px 8px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+#search-results.show {
+  display: flex;
+}
+
+#search-results .search-result-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 4px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+#search-results .search-result-item:hover {
+  background: var(--link-preview-hover);
+}
+
+#search-results .search-result-meta {
+  font-size: 0.75em;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+#search-results .search-result-text {
+  font-size: 0.85em;
+  color: var(--text-primary);
+}
 
 /* ==============================
    Typing Bubble
@@ -658,6 +895,20 @@ header .logo { width: 40px; height: auto; }
   padding: 10px;
   box-sizing: border-box;
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.inline-preview .embed-links {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.inline-preview .embed-links a {
+  color: var(--accent);
+  font-size: 0.8em;
+  text-decoration: underline;
+  word-break: break-all;
 }
 
 .inline-preview:hover {
@@ -728,6 +979,31 @@ header .logo { width: 40px; height: auto; }
 
 .preview-media audio {
   width: 100%;
+}
+
+.soundcloud-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8em;
+  color: var(--text-primary);
+}
+
+.soundcloud-controls button {
+  border: none;
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+  padding: 4px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.soundcloud-controls button:hover {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.soundcloud-controls input[type="range"] {
+  flex: 1;
 }
 
 .inline-preview.inline-audio .preview-media,
@@ -1190,6 +1466,66 @@ header .logo { width: 40px; height: auto; }
   margin: 6px 0;
   font-size: 0.9em;
   color: #d1b9ff;
+}
+
+/* ==============================
+   Dialogs
+   ============================== */
+.confirm-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 4000;
+}
+
+.confirm-dialog {
+  background: var(--surface);
+  border-radius: 16px;
+  padding: 20px;
+  width: min(320px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-color);
+}
+
+.confirm-dialog h3 {
+  margin: 0;
+  font-size: 1.1em;
+}
+
+.confirm-dialog .confirm-dialog-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.confirm-dialog .confirm-dialog-actions button {
+  flex: 1;
+  border-radius: 10px;
+  border: none;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.confirm-dialog .confirm-dialog-actions button.primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.confirm-dialog .confirm-dialog-actions button.danger {
+  background: #ff4d4d;
+  color: #fff;
+}
+
+.confirm-dialog .confirm-dialog-actions button.neutral {
+  background: var(--surface-alt);
+  color: var(--text-primary);
 }
 /* ==============================
    DIZY TOAST NOTIFICATIONS 💜

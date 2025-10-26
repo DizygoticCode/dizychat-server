@@ -27,6 +27,10 @@ const messages = document.getElementById("messages");
 const fileInput = document.getElementById("file-input");
 const attachBtn = document.getElementById("file-attach");
 const emojiBtn = document.getElementById("emoji-btn");
+const pinnedContainer = document.getElementById("pinned-messages");
+const searchInput = document.getElementById("message-search");
+const searchFilter = document.getElementById("message-search-filter");
+const searchResultsBox = document.getElementById("search-results");
 
 const usernamePrompt = document.getElementById("username-prompt");
 const chatContainer = document.getElementById("chat-container");
@@ -42,6 +46,18 @@ const leaveBtn = document.getElementById("leave-btn");
 const copyJoinLinkBtn = document.getElementById("copy-join-link");
 const publicRoomList = document.getElementById("public-room-list");
 const themeLogos = Array.from(document.querySelectorAll("img.logo"));
+
+const appState = {
+  isAdmin: false,
+  messages: new Map(),
+  pinned: new Map(),
+  hidden: new Set(),
+  activeMenu: null,
+  highlightTimeout: null,
+};
+
+let searchDebounceTimer = null;
+let soundCloudApiPromise = null;
 
 // Autofocus username for smoother entry
 usernameInput?.focus();
@@ -73,6 +89,664 @@ if (prefillRoom || prefillPassword) {
   updateQueryParams(prefillRoom, prefillPassword);
 }
 
+// ------------------- State Helpers -------------------
+const hiddenStoragePrefix = "dizychat-hidden-";
+
+const hiddenKeyForRoom = (room) => `${hiddenStoragePrefix}${room || ""}`;
+
+function loadHiddenMessagesForRoom(room) {
+  appState.hidden.clear();
+  if (!room) return;
+  try {
+    const raw = localStorage.getItem(hiddenKeyForRoom(room));
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      parsed.forEach((id) => {
+        if (typeof id === "string" && id) {
+          appState.hidden.add(id);
+        }
+      });
+    }
+  } catch (err) {
+    console.warn("[Hidden] Failed to load hidden messages", err);
+  }
+}
+
+function persistHiddenMessages(room = window.currentRoom) {
+  if (!room) return;
+  try {
+    const payload = JSON.stringify(Array.from(appState.hidden));
+    localStorage.setItem(hiddenKeyForRoom(room), payload);
+  } catch (err) {
+    console.warn("[Hidden] Failed to persist hidden messages", err);
+  }
+}
+
+function hideMessageLocally(id) {
+  if (!id) return;
+  appState.hidden.add(id);
+  persistHiddenMessages();
+  appState.pinned.delete(id);
+  updatePinnedBanner();
+  const existing = messages?.querySelector(`.message[data-id="${id}"]`);
+  if (existing) {
+    if (appState.activeMenu && existing.contains(appState.activeMenu)) {
+      closeActiveMenu();
+    }
+    existing.remove();
+  }
+}
+
+function storeMessageData(raw) {
+  if (!raw) return null;
+  const id = raw._id || raw.id;
+  if (!id) return null;
+
+  const existing = appState.messages.get(id) || {};
+  const merged = { ...existing, ...raw };
+  merged._id = id;
+  merged.id = id;
+
+  const tsValue = raw.timestamp ?? raw.time ?? existing.timestamp ?? Date.now();
+  const tsDate = tsValue instanceof Date ? tsValue : new Date(tsValue);
+  merged.timestamp = Number.isNaN(tsDate.getTime()) ? new Date() : tsDate;
+
+  merged.user = raw.user || existing.user || "Anon";
+  merged.text = raw.text !== undefined ? raw.text : existing.text || "";
+  merged.fileUrl = raw.fileUrl !== undefined ? raw.fileUrl : existing.fileUrl;
+  merged.fileType = raw.fileType !== undefined ? raw.fileType : existing.fileType;
+  merged.fileName = raw.fileName !== undefined ? raw.fileName : existing.fileName;
+  merged.reactions = Array.isArray(raw.reactions)
+    ? raw.reactions
+    : Array.isArray(existing.reactions)
+    ? existing.reactions
+    : [];
+
+  if (Array.isArray(raw.starredBy)) {
+    merged.starredBy = Array.from(new Set(raw.starredBy));
+  } else if (!Array.isArray(merged.starredBy)) {
+    merged.starredBy = [];
+  }
+
+  merged.pinned = Boolean(raw.pinned ?? merged.pinned);
+  merged.pinnedBy = raw.pinnedBy !== undefined ? (raw.pinnedBy || "") : merged.pinnedBy || "";
+  merged.deleted = raw.deleted !== undefined ? Boolean(raw.deleted) : Boolean(merged.deleted);
+  merged.deletedBy = raw.deletedBy !== undefined ? (raw.deletedBy || "") : merged.deletedBy || "";
+
+  if (merged.deleted) {
+    merged.text = "";
+    merged.fileUrl = "";
+    merged.fileType = "";
+    merged.fileName = "";
+    merged.reactions = [];
+    merged.starredBy = [];
+    merged.pinned = false;
+    merged.pinnedBy = "";
+  }
+
+  appState.messages.set(id, merged);
+  if (merged.pinned && !merged.deleted) {
+    appState.pinned.set(id, merged);
+  } else {
+    appState.pinned.delete(id);
+  }
+  return merged;
+}
+
+function updatePinnedBanner() {
+  if (!pinnedContainer) return;
+  const pinned = Array.from(appState.pinned.values()).filter((msg) => !msg.deleted);
+  if (!pinned.length) {
+    pinnedContainer.innerHTML = "";
+    pinnedContainer.style.display = "none";
+    return;
+  }
+
+  pinned.sort((a, b) => {
+    const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+    const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+    return tb - ta;
+  });
+
+  pinnedContainer.innerHTML = "";
+  pinned.forEach((msg) => {
+    const entry = document.createElement("div");
+    entry.className = "pinned-entry";
+    entry.dataset.id = msg.id;
+
+    const text = document.createElement("div");
+    text.className = "pinned-text";
+    const preview = msg.text?.trim() || msg.fileName || msg.fileUrl || "Pinned attachment";
+    text.textContent = preview.length > 120 ? `${preview.slice(0, 120)}…` : preview;
+
+    const meta = document.createElement("div");
+    meta.className = "pinned-meta";
+    meta.textContent = `${msg.user || "Anon"} • ${new Date(msg.timestamp || Date.now()).toLocaleTimeString()}`;
+
+    entry.appendChild(text);
+    entry.appendChild(meta);
+    entry.addEventListener("click", () => focusMessage(msg.id));
+    pinnedContainer.appendChild(entry);
+  });
+
+  pinnedContainer.style.display = "flex";
+}
+
+function focusMessage(id) {
+  if (!messages) return;
+  const node = messages.querySelector(`.message[data-id="${id}"]`);
+  if (!node) return;
+  node.scrollIntoView({ behavior: "smooth", block: "center" });
+  node.classList.add("search-hit");
+  if (appState.highlightTimeout) clearTimeout(appState.highlightTimeout);
+  appState.highlightTimeout = setTimeout(() => {
+    node.classList.remove("search-hit");
+  }, 2500);
+}
+
+function updateMessageFlags(node, data) {
+  const bar = node?.querySelector?.(".message-flags");
+  if (!bar) return;
+  bar.innerHTML = "";
+  if (!data || data.deleted) return;
+
+  if (data.pinned) {
+    const badge = document.createElement("span");
+    badge.className = "message-flag pinned";
+    badge.textContent = "📌 Pinned";
+    if (data.pinnedBy) {
+      const by = document.createElement("span");
+      by.className = "count";
+      by.textContent = `by ${data.pinnedBy}`;
+      badge.appendChild(by);
+    }
+    bar.appendChild(badge);
+  }
+
+  if (Array.isArray(data.starredBy) && data.starredBy.length) {
+    const badge = document.createElement("span");
+    badge.className = "message-flag starred";
+    badge.textContent = "⭐";
+    const count = document.createElement("span");
+    count.className = "count";
+    count.textContent = `×${data.starredBy.length}`;
+    badge.appendChild(count);
+    bar.appendChild(badge);
+  }
+}
+
+function toggleMenu(menu, toggle) {
+  if (!menu) return;
+  const isOpen = menu.classList.contains("open");
+  closeActiveMenu();
+  if (!isOpen) {
+    menu.classList.add("open");
+    if (toggle) toggle.setAttribute("aria-expanded", "true");
+    appState.activeMenu = menu;
+  }
+}
+
+function closeActiveMenu() {
+  if (!appState.activeMenu) return;
+  appState.activeMenu.classList.remove("open");
+  const toggle = appState.activeMenu.previousElementSibling;
+  if (toggle?.classList?.contains("message-actions-toggle")) {
+    toggle.setAttribute("aria-expanded", "false");
+  }
+  appState.activeMenu = null;
+}
+
+function setupMessageActions(node, data) {
+  if (!node || !data) return;
+  let toggle = node.querySelector(".message-actions-toggle");
+  if (!toggle) {
+    toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "message-actions-toggle";
+    toggle.setAttribute("aria-label", "Message actions");
+    toggle.textContent = "⋮";
+    node.appendChild(toggle);
+  }
+
+  let menu = node.querySelector(".message-actions-menu");
+  if (!menu) {
+    menu = document.createElement("div");
+    menu.className = "message-actions-menu";
+    node.appendChild(menu);
+  }
+
+  const isPinned = Boolean(data.pinned);
+  const isStarred = Array.isArray(data.starredBy) && data.starredBy.includes(window.currentUser);
+  const isOwn = data.user === window.currentUser;
+  const canDeleteEveryone = appState.isAdmin || isOwn;
+
+  menu.innerHTML = "";
+
+  if (!data.deleted) {
+    const pinBtn = document.createElement("button");
+    pinBtn.type = "button";
+    pinBtn.textContent = isPinned ? "Unpin" : "Pin";
+    pinBtn.addEventListener("click", () => {
+      closeActiveMenu();
+      const event = isPinned ? "unpin message" : "pin message";
+      socket.emit(event, { room: window.currentRoom, id: data.id });
+    });
+    menu.appendChild(pinBtn);
+
+    const starBtn = document.createElement("button");
+    starBtn.type = "button";
+    starBtn.textContent = isStarred ? "Unstar" : "Star";
+    starBtn.addEventListener("click", () => {
+      closeActiveMenu();
+      const event = isStarred ? "unstar message" : "star message";
+      socket.emit(event, { room: window.currentRoom, id: data.id, user: window.currentUser });
+    });
+    menu.appendChild(starBtn);
+  }
+
+  const deleteBtn = document.createElement("button");
+  deleteBtn.type = "button";
+  if (canDeleteEveryone) deleteBtn.classList.add("danger");
+  deleteBtn.textContent = "Delete";
+  deleteBtn.addEventListener("click", async () => {
+    closeActiveMenu();
+    if (data.deleted) {
+      hideMessageLocally(data.id);
+      return;
+    }
+    const choice = await confirmDeleteOptions({ canDeleteEveryone });
+    if (choice === "cancel") return;
+    if (choice === "me") {
+      hideMessageLocally(data.id);
+    } else if (choice === "everyone" && canDeleteEveryone) {
+      socket.emit("delete message", { room: window.currentRoom, id: data.id, scope: "all" });
+    } else if (choice === "everyone") {
+      showToast("Only admins or message owners can delete for everyone.", "warn");
+    }
+  });
+  menu.appendChild(deleteBtn);
+
+  toggle.onclick = (event) => {
+    event.stopPropagation();
+    toggleMenu(menu, toggle);
+  };
+}
+
+function updateMessageNode(id) {
+  const data = appState.messages.get(id);
+  if (!data || !messages) return;
+  const node = messages.querySelector(`.message[data-id="${id}"]`);
+  if (!node) return;
+
+  if (data.deleted) {
+    node.dataset.deleted = "true";
+  } else {
+    node.removeAttribute("data-deleted");
+  }
+
+  if (data.deleted && appState.activeMenu && node.contains(appState.activeMenu)) {
+    closeActiveMenu();
+  }
+
+  const timeEl = node.querySelector(".meta .meta-time");
+  if (timeEl && data.timestamp) {
+    timeEl.textContent = new Date(data.timestamp).toLocaleTimeString();
+  }
+
+  const textEl = node.querySelector(".text");
+  if (textEl) {
+    if (data.deleted) {
+      textEl.classList.add("hidden");
+      textEl.textContent = "";
+      let deleted = node.querySelector(".deleted-label");
+      if (!deleted) {
+        deleted = document.createElement("div");
+        deleted.className = "deleted-label";
+        deleted.textContent = "Message deleted";
+        node.appendChild(deleted);
+      }
+    } else {
+      textEl.classList.remove("hidden");
+      textEl.style.removeProperty("display");
+      textEl.textContent = data.text || "";
+      node.classList.remove("has-emoji-gif", "emoji-gif-only");
+      const emojiInfo = replaceCustomEmojiLinks(textEl);
+      if (emojiInfo?.hasGif) {
+        node.classList.add("has-emoji-gif");
+        if (emojiInfo.onlyEmoji) {
+          node.classList.add("emoji-gif-only");
+        } else {
+          node.classList.remove("emoji-gif-only");
+        }
+      }
+      linkifyTextContent(textEl);
+      const deleted = node.querySelector(".deleted-label");
+      if (deleted) deleted.remove();
+    }
+  }
+
+  if (data.deleted) {
+    node.classList.remove("has-inline-preview");
+    node.querySelectorAll(".inline-preview, .embed-wrap").forEach((el) => el.remove());
+  }
+
+  updateMessageFlags(node, data);
+  setupMessageActions(node, data);
+}
+
+function refreshActionMenus() {
+  if (!messages) return;
+  messages.querySelectorAll(".message").forEach((node) => {
+    const id = node.dataset.id;
+    if (!id) return;
+    const data = appState.messages.get(id);
+    if (!data) return;
+    setupMessageActions(node, data);
+  });
+}
+
+function confirmDeleteOptions({ canDeleteEveryone }) {
+  return new Promise((resolve) => {
+    const backdrop = document.createElement("div");
+    backdrop.className = "confirm-dialog-backdrop";
+
+    const dialog = document.createElement("div");
+    dialog.className = "confirm-dialog";
+
+    const title = document.createElement("h3");
+    title.textContent = "Delete message?";
+    const body = document.createElement("p");
+    body.textContent = canDeleteEveryone
+      ? "Choose whether to delete this message for everyone or just for you."
+      : "Delete this message for yourself?";
+
+    const actions = document.createElement("div");
+    actions.className = "confirm-dialog-actions";
+
+    let onKeyDown;
+    const cleanup = (value) => {
+      backdrop.remove();
+      if (onKeyDown) {
+        document.removeEventListener("keydown", onKeyDown);
+      }
+      resolve(value);
+    };
+
+    onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        cleanup("cancel");
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "neutral";
+    cancel.textContent = "Cancel";
+    cancel.onclick = () => cleanup("cancel");
+
+    const deleteMe = document.createElement("button");
+    deleteMe.type = "button";
+    deleteMe.className = "primary";
+    deleteMe.textContent = "Delete for me";
+    deleteMe.onclick = () => cleanup("me");
+
+    actions.appendChild(cancel);
+    actions.appendChild(deleteMe);
+
+    if (canDeleteEveryone) {
+      const deleteAll = document.createElement("button");
+      deleteAll.type = "button";
+      deleteAll.className = "danger";
+      deleteAll.textContent = "Delete for everyone";
+      deleteAll.onclick = () => cleanup("everyone");
+      actions.appendChild(deleteAll);
+    }
+
+    dialog.appendChild(title);
+    dialog.appendChild(body);
+    dialog.appendChild(actions);
+    backdrop.appendChild(dialog);
+    document.body.appendChild(backdrop);
+
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) {
+        cleanup("cancel");
+      }
+    });
+  });
+}
+
+function hideSearchResults() {
+  if (!searchResultsBox) return;
+  searchResultsBox.classList.remove("show");
+  searchResultsBox.hidden = true;
+  searchResultsBox.innerHTML = "";
+}
+
+function renderSearchResults(results = []) {
+  if (!searchResultsBox) return;
+  if (!Array.isArray(results) || !results.length) {
+    hideSearchResults();
+    return;
+  }
+
+  searchResultsBox.innerHTML = "";
+  results.forEach((msg) => {
+    const data = storeMessageData(msg);
+    if (!data) return;
+    const item = document.createElement("div");
+    item.className = "search-result-item";
+    item.dataset.id = data.id;
+
+    const meta = document.createElement("div");
+    meta.className = "search-result-meta";
+    const name = document.createElement("span");
+    name.textContent = data.user || "Anon";
+    const time = document.createElement("span");
+    time.textContent = new Date(data.timestamp || Date.now()).toLocaleTimeString();
+    meta.append(name, time);
+
+    const text = document.createElement("div");
+    text.className = "search-result-text";
+    const preview = data.deleted
+      ? "Message deleted"
+      : data.text?.trim() || data.fileName || data.fileUrl || "Attachment";
+    text.textContent = preview.length > 140 ? `${preview.slice(0, 140)}…` : preview;
+
+    item.append(meta, text);
+    item.addEventListener("click", () => {
+      focusMessage(data.id);
+      hideSearchResults();
+    });
+
+    searchResultsBox.appendChild(item);
+  });
+
+  searchResultsBox.hidden = false;
+  searchResultsBox.classList.add("show");
+}
+
+function triggerSearch() {
+  if (!searchInput || !searchFilter || !window.currentRoom) return;
+  const query = searchInput.value.trim();
+  const filter = searchFilter.value;
+
+  if (!query && filter === "all") {
+    hideSearchResults();
+    return;
+  }
+
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(() => {
+    socket.emit("search messages", {
+      room: window.currentRoom,
+      query,
+      filter,
+    });
+  }, 250);
+}
+
+function loadSoundCloudApi() {
+  if (soundCloudApiPromise) return soundCloudApiPromise;
+  soundCloudApiPromise = new Promise((resolve) => {
+    if (window.SC?.Widget) {
+      resolve(window.SC);
+      return;
+    }
+    const existing = document.querySelector('script[src="https://w.soundcloud.com/player/api.js"]');
+    if (existing) {
+      existing.addEventListener("load", () => resolve(window.SC || null));
+      existing.addEventListener("error", () => resolve(null));
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://w.soundcloud.com/player/api.js";
+    script.async = true;
+    script.onload = () => resolve(window.SC || null);
+    script.onerror = () => resolve(null);
+    document.head.appendChild(script);
+  });
+  return soundCloudApiPromise;
+}
+
+async function attachSoundCloudControls(iframe, wrap) {
+  if (!iframe || iframe.dataset.soundcloudControls === "1") return;
+  const SC = await loadSoundCloudApi();
+  if (!SC || !SC.Widget) return;
+
+  try {
+    const widget = SC.Widget(iframe);
+    const controls = document.createElement("div");
+    controls.className = "soundcloud-controls";
+
+    const muteBtn = document.createElement("button");
+    muteBtn.type = "button";
+    muteBtn.textContent = "Mute";
+
+    const volume = document.createElement("input");
+    volume.type = "range";
+    volume.min = "0";
+    volume.max = "100";
+    volume.value = "100";
+
+    let lastVolume = 100;
+    let isMuted = false;
+
+    const updateMuteLabel = () => {
+      muteBtn.textContent = isMuted ? "Unmute" : "Mute";
+    };
+
+    muteBtn.addEventListener("click", () => {
+      if (isMuted) {
+        const target = lastVolume || 100;
+        widget.setVolume(target);
+        volume.value = String(target);
+        isMuted = false;
+        updateMuteLabel();
+      } else {
+        lastVolume = Number(volume.value) || 100;
+        widget.setVolume(0);
+        volume.value = "0";
+        isMuted = true;
+        updateMuteLabel();
+      }
+    });
+
+    volume.addEventListener("input", () => {
+      const value = Number(volume.value) || 0;
+      widget.setVolume(value);
+      if (value === 0) {
+        isMuted = true;
+      } else {
+        lastVolume = value;
+        isMuted = false;
+      }
+      updateMuteLabel();
+    });
+
+    widget.bind(SC.Widget.Events.READY, () => {
+      widget.getVolume((value) => {
+        if (typeof value === "number") {
+          volume.value = String(Math.round(value));
+          lastVolume = Number(volume.value) || 100;
+          isMuted = Number(volume.value) === 0;
+          updateMuteLabel();
+        }
+      });
+    });
+
+    controls.appendChild(muteBtn);
+    controls.appendChild(volume);
+    wrap.appendChild(controls);
+    iframe.dataset.soundcloudControls = "1";
+  } catch (err) {
+    console.warn("[SoundCloud] Unable to attach controls", err);
+  }
+}
+
+function linkifyTextContent(container) {
+  if (!container) return [];
+  const links = [];
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
+  const replacements = [];
+
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const value = node.nodeValue;
+    if (!value || !/https?:\/\//i.test(value)) continue;
+    const parts = value.split(/(https?:\/\/[^\s]+)/gi);
+    if (parts.length > 1) {
+      replacements.push({ node, parts });
+    }
+  }
+
+  replacements.forEach(({ node, parts }) => {
+    const fragment = document.createDocumentFragment();
+    parts.forEach((part) => {
+      if (!part) return;
+      if (/^https?:\/\//i.test(part)) {
+        const anchor = document.createElement("a");
+        anchor.href = part;
+        anchor.target = "_blank";
+        anchor.rel = "noopener noreferrer";
+        anchor.textContent = part;
+        fragment.appendChild(anchor);
+        links.push(part);
+      } else {
+        fragment.appendChild(document.createTextNode(part));
+      }
+    });
+    node.parentNode?.replaceChild(fragment, node);
+  });
+
+  return links;
+}
+
+document.addEventListener("click", () => closeActiveMenu());
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    closeActiveMenu();
+    hideSearchResults();
+  }
+});
+
+if (searchInput) {
+  searchInput.addEventListener("input", () => {
+    if (!searchInput.value.trim() && (!searchFilter || searchFilter.value === "all")) {
+      hideSearchResults();
+      return;
+    }
+    triggerSearch();
+  });
+}
+
+if (searchFilter) {
+  searchFilter.addEventListener("change", () => {
+    triggerSearch();
+  });
+}
 // ------------------- Toasts (bottom-left, glowing, auto-hide) -------------------
 (() => {
   const container = document.createElement("div");
@@ -232,6 +906,7 @@ socket.on("connect", () => {
 socket.on("disconnect", () => {
   showToast("Disconnected", "error");
   renderPublicRooms([], { state: "error" });
+  hideSearchResults();
 });
 socket.on("room list", (rooms) => {
   renderPublicRooms(Array.isArray(rooms) ? rooms : []);
@@ -254,10 +929,17 @@ function updateQueryParams(room, password) {
 
 function showLanding({ focusUsername = true } = {}) {
   isViewingChat = false;
+  appState.isAdmin = false;
   if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = true;
   if (chatContainer) chatContainer.style.display = "none";
   if (usernamePrompt) usernamePrompt.style.display = "flex";
   if (roomName) roomName.textContent = lastRoomName ? `#${lastRoomName}` : "";
+  hideSearchResults();
+  if (pinnedContainer) {
+    pinnedContainer.innerHTML = "";
+    pinnedContainer.style.display = "none";
+  }
+  if (messages) messages.innerHTML = "";
 
   window.currentUser = null;
   window.currentRoom = null;
@@ -352,6 +1034,17 @@ function completeRoomJoin(username, room, password) {
   lastRoomPassword = password;
   isViewingChat = true;
   if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = !room;
+
+  appState.isAdmin = false;
+  loadHiddenMessagesForRoom(room);
+  appState.messages.clear();
+  appState.pinned.clear();
+  hideSearchResults();
+  if (messages) messages.innerHTML = "";
+  if (pinnedContainer) {
+    pinnedContainer.innerHTML = "";
+    pinnedContainer.style.display = "none";
+  }
 
   updateQueryParams(room, password);
 
@@ -561,6 +1254,7 @@ socket.on("join room error", (error) => {
 // Handle disconnect and clean up
 socket.on("disconnect", () => {
   showLanding({ focusUsername: false });
+  hideSearchResults();
 });
 
 // If coming in with globals set (deep-link), auto-join
@@ -638,6 +1332,12 @@ if (themeToggle) {
 
 // ------------------- Emoji Picker Toggle -------------------
 if (emojiBtn && emojiPicker) {
+  const quickEmojiBar = emojiPicker.querySelector("#quick-emojis");
+  if (quickEmojiBar) {
+    quickEmojiBar.hidden = true;
+    quickEmojiBar.setAttribute("aria-hidden", "true");
+  }
+
   const hideEmojiPicker = () => {
     emojiPicker.classList.remove("show");
     emojiPicker.style.display = "none";
@@ -760,9 +1460,17 @@ if (emojiBtn && emojiPicker) {
       });
       renderEmojiList(emojiEntries);
       emojiCatalogLoaded = true;
+      if (quickEmojiBar) {
+        quickEmojiBar.hidden = true;
+        quickEmojiBar.setAttribute("aria-hidden", "true");
+      }
     } catch (err) {
       console.error("[Emoji Picker] Failed to load", err);
       emojiCatalog.innerHTML = "<div class=\"emoji-empty\">Unable to load emoji.</div>";
+      if (quickEmojiBar) {
+        quickEmojiBar.hidden = false;
+        quickEmojiBar.removeAttribute("aria-hidden");
+      }
     }
   };
 
@@ -1237,47 +1945,86 @@ function appendAttachmentFromMessage(node, msg) {
 // ------------------- History & Messages -------------------
 function renderMessage(msg, { skipScroll = false, scrollBehavior = "auto", delay = 0 } = {}) {
   if (!isViewingChat || !messages) return;
+  const data = storeMessageData(msg);
+  if (!data) return;
+  if (appState.hidden.has(data.id)) {
+    appState.pinned.delete(data.id);
+    updatePinnedBanner();
+    return;
+  }
+
+  const isSelf = data.user === window.currentUser;
   const wrap = document.createElement("div");
-  // Use your existing bubble structure if present in CSS
-  const isSelf = msg.user === window.currentUser;
   wrap.className = `message ${isSelf ? "self" : "other"}`;
+  wrap.dataset.id = data.id;
+  if (data.deleted) {
+    wrap.dataset.deleted = "true";
+  }
+
   wrap.innerHTML = `
-    <div class="meta">${msg.user || "Anon"} • ${new Date(msg.timestamp || Date.now()).toLocaleTimeString()}</div>
+    <div class="meta">
+      <span class="meta-name">${data.user || "Anon"}</span>
+      <span class="meta-time">${new Date(data.timestamp || Date.now()).toLocaleTimeString()}</span>
+    </div>
     <div class="text"></div>
+    <div class="message-flags"></div>
   `;
+
   const textEl = wrap.querySelector(".text");
   if (textEl) {
-    textEl.textContent = msg.text || "";
-    const emojiInfo = replaceCustomEmojiLinks(textEl);
-    if (emojiInfo?.hasGif) {
-      wrap.classList.add("has-emoji-gif");
-      if (emojiInfo.onlyEmoji) {
-        wrap.classList.add("emoji-gif-only");
+    if (data.deleted) {
+      textEl.classList.add("hidden");
+      const deleted = document.createElement("div");
+      deleted.className = "deleted-label";
+      deleted.textContent = "Message deleted";
+      wrap.appendChild(deleted);
+    } else {
+      textEl.style.removeProperty("display");
+      textEl.textContent = data.text || "";
+      const emojiInfo = replaceCustomEmojiLinks(textEl);
+      if (emojiInfo?.hasGif) {
+        wrap.classList.add("has-emoji-gif");
+        if (emojiInfo.onlyEmoji) {
+          wrap.classList.add("emoji-gif-only");
+        }
       }
+      linkifyTextContent(textEl);
     }
   }
+
   messages.appendChild(wrap);
-  appendAttachmentFromMessage(wrap, msg);
-  autoEmbed(wrap);
-  observeMediaForScroll(wrap);
+  setupMessageActions(wrap, data);
+  updateMessageFlags(wrap, data);
+
+  if (!data.deleted) {
+    appendAttachmentFromMessage(wrap, data);
+    autoEmbed(wrap);
+    observeMediaForScroll(wrap);
+  }
+
   if (!skipScroll) {
     scrollMessagesToBottom({ behavior: scrollBehavior, delay });
   }
+
+  updatePinnedBanner();
 }
 
 socket.on("load messages", (arr) => {
   if (!isViewingChat || !messages) return;
+  appState.messages.clear();
+  appState.pinned.clear();
   messages.innerHTML = "";
   (arr || []).forEach((entry) => renderMessage(entry, { skipScroll: true }));
+  updatePinnedBanner();
   scrollMessagesToBottom({ behavior: "auto", delay: 120 });
   showToast(`✅ Joined room: ${window.currentRoom}`, "success");
 });
 
 socket.on("previous messages", (arr) => {
   if (!isViewingChat || !messages) return;
-  // legacy event, render the same way but don't double-toast
   if (!messages.childElementCount) {
     (arr || []).forEach((entry) => renderMessage(entry, { skipScroll: true }));
+    updatePinnedBanner();
     scrollMessagesToBottom({ behavior: "auto", delay: 80 });
   }
 });
@@ -1288,13 +2035,77 @@ socket.on("chat message", (msg) => {
 });
 
 socket.on("edit message", ({ id, text }) => {
-  // (Optional) If you render IDs, you can locate and update here.
+  if (!id) return;
+  const data = storeMessageData({ id, text });
+  if (!data) return;
+  updateMessageNode(data.id);
   showToast("Message edited", "info");
 });
 
-socket.on("delete message", (id) => {
-  // (Optional) If you render IDs, you can locate & remove here.
+socket.on("delete message", (payload) => {
+  const id = typeof payload === "string" ? payload : payload?.id;
+  if (!id) return;
+  storeMessageData({ id, deleted: true });
+  updateMessageNode(id);
+  updatePinnedBanner();
   showToast("Message deleted", "info");
+});
+
+socket.on("delete message local", ({ id }) => {
+  if (!id) return;
+  hideMessageLocally(id);
+});
+
+socket.on("pinned messages", (arr = []) => {
+  appState.pinned.clear();
+  (arr || []).forEach((entry) => {
+    const data = storeMessageData({ ...entry, pinned: true });
+    if (data) updateMessageNode(data.id);
+  });
+  updatePinnedBanner();
+});
+
+socket.on("message pinned", (msg) => {
+  const data = storeMessageData({ ...msg, pinned: true });
+  if (!data) return;
+  updateMessageNode(data.id);
+  updatePinnedBanner();
+  showToast("Message pinned", "info");
+});
+
+socket.on("message unpinned", (msg) => {
+  const data = storeMessageData({ ...msg, pinned: false });
+  if (!data) return;
+  updateMessageNode(data.id);
+  updatePinnedBanner();
+});
+
+socket.on("message starred", ({ id, starredBy = [] }) => {
+  const data = storeMessageData({ id, starredBy });
+  if (!data) return;
+  updateMessageNode(data.id);
+});
+
+socket.on("message unstarred", ({ id, starredBy = [] }) => {
+  const data = storeMessageData({ id, starredBy });
+  if (!data) return;
+  updateMessageNode(data.id);
+});
+
+socket.on("search results", ({ room, results } = {}) => {
+  if (room && window.currentRoom && room !== window.currentRoom) return;
+  renderSearchResults(results || []);
+});
+
+socket.on("admin status", ({ isAdmin }) => {
+  const previous = appState.isAdmin;
+  appState.isAdmin = Boolean(isAdmin);
+  refreshActionMenus();
+  if (appState.isAdmin && !previous) {
+    showToast("Admin mode enabled", "success");
+  } else if (!appState.isAdmin && previous) {
+    showToast("Admin mode disabled", "info");
+  }
 });
 
 // ------------------- File Uploads (paperclip) -------------------
@@ -1486,9 +2297,35 @@ function autoEmbed(node) {
   const wrap = document.createElement("div");
   wrap.className = "embed-wrap";
 
+  const linkAnchors = document.createElement("div");
+  linkAnchors.className = "embed-links";
+  wrap.appendChild(linkAnchors);
+
+  const seenLinks = new Set();
+  let wrapAdded = false;
+  const ensureWrap = () => {
+    if (!wrapAdded) {
+      node.appendChild(wrap);
+      node.classList.add("has-inline-preview");
+      observeMediaForScroll(node);
+      scrollMessagesToBottom();
+      wrapAdded = true;
+    }
+  };
+
   let hasTenorLink = false;
   links.forEach((link) => {
     let el = null;
+
+    if (!seenLinks.has(link)) {
+      seenLinks.add(link);
+      const anchor = document.createElement("a");
+      anchor.href = link;
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+      anchor.textContent = link;
+      linkAnchors.appendChild(anchor);
+    }
 
     if (/tenor\.com/i.test(link)) {
       hasTenorLink = true;
@@ -1588,13 +2425,16 @@ function autoEmbed(node) {
     }
 
     if (el) wrap.appendChild(el);
+    if (el) {
+      ensureWrap();
+      if (el.tagName === "IFRAME" && el.classList.contains("soundcloud")) {
+        attachSoundCloudControls(el, wrap);
+      }
+    }
   });
 
-  if (wrap.childNodes.length) {
-    node.appendChild(wrap);
-    node.classList.add("has-inline-preview");
-    observeMediaForScroll(node);
-    scrollMessagesToBottom();
+  if (!wrapAdded && wrap.childNodes.length > 1) {
+    ensureWrap();
   }
 
   if (hasTenorLink && textEl) {
@@ -1651,7 +2491,7 @@ function autoEmbed(node) {
       }
 
       if (!wrap.isConnected) {
-        node.appendChild(wrap);
+        ensureWrap();
       }
 
       const card = document.createElement("div");
