@@ -269,7 +269,7 @@ header .logo { width: 40px; height: auto; }
 
 .message .text img.custom-emoji {
   display: inline-block;
-  height: 3.5em;
+  height: 3em;
   width: auto;
   margin: 0 2px;
   vertical-align: middle;
@@ -607,7 +607,7 @@ header .logo { width: 40px; height: auto; }
 
 .inline-preview.tenor-inline {
   width: min(220px, 100%);
-  padding: 6px;
+  padding: 8px;
   gap: 6px;
 }
 
@@ -1059,9 +1059,9 @@ header .logo { width: 40px; height: auto; }
 }
 #gif-picker .gif-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
   gap: 6px;
-  grid-auto-rows: 96px;
+  grid-auto-rows: 72px;
 }
 #gif-picker .gif-thumb {
   width: 100%;
