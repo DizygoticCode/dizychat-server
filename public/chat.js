@@ -853,11 +853,8 @@ function updateTenorBubbleState(node) {
   }
   if (!message) return;
 
+  const hasAnyPreview = message.querySelector(".inline-preview");
   const hasTenorPreview = message.querySelector(".inline-preview.tenor-inline");
-  if (!hasTenorPreview) {
-    message.classList.remove("tenor-only");
-    return;
-  }
 
   const textEl = message.querySelector(".text");
   const textVisible =
@@ -865,10 +862,18 @@ function updateTenorBubbleState(node) {
     textEl.style.display !== "none" &&
     (textEl.textContent || "").trim().length > 0;
 
-  if (textVisible) {
+  if (!hasAnyPreview || textVisible) {
+    message.classList.remove("media-only");
     message.classList.remove("tenor-only");
-  } else {
+    return;
+  }
+
+  message.classList.add("media-only");
+
+  if (hasTenorPreview) {
     message.classList.add("tenor-only");
+  } else {
+    message.classList.remove("tenor-only");
   }
 }
 
