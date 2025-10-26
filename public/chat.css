@@ -138,18 +138,68 @@ body.dark { background: var(--bg); color: var(--text-primary); }
 #public-room-list li {
   background: var(--surface-alt);
   color: var(--text-primary);
-  padding: 6px 12px;
+  padding: 8px 14px;
   border-radius: var(--radius);
-  cursor: pointer;
   border: 1px solid var(--border-color);
   transition: transform 0.15s ease, background 0.2s ease, box-shadow 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 140px;
+  cursor: default;
+  align-items: flex-start;
 }
 
-#public-room-list li:hover {
+#public-room-list li.clickable {
+  cursor: pointer;
+}
+
+#public-room-list li.clickable:hover {
   transform: scale(1.05);
   background: var(--accent);
   color: #fff;
   box-shadow: 0 6px 14px rgba(37, 211, 102, 0.32);
+}
+
+#public-room-list li.locked {
+  border-style: dashed;
+  cursor: pointer;
+}
+
+#public-room-list li.locked:hover {
+  transform: none;
+  background: var(--surface-alt);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+
+#public-room-list li.empty {
+  width: 100%;
+  justify-content: center;
+  text-align: center;
+  opacity: 0.7;
+  border-style: dashed;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: default;
+  box-shadow: none;
+  pointer-events: none;
+  min-width: 0;
+}
+
+#public-room-list li .room-name {
+  font-weight: 600;
+  font-size: 1em;
+}
+
+#public-room-list li .room-meta {
+  font-size: 0.75em;
+  color: var(--text-muted);
+}
+
+#public-room-list li.clickable .room-meta {
+  color: inherit;
+  opacity: 0.85;
 }
 
 /* ==============================
@@ -274,6 +324,49 @@ header .logo { width: 40px; height: auto; }
   margin: 0 2px;
   vertical-align: middle;
   image-rendering: auto;
+}
+
+.message .text img.custom-emoji.custom-emoji-gif {
+  display: block;
+  width: min(220px, 100%);
+  height: auto;
+  margin: 6px 0;
+  border-radius: 12px;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.25);
+}
+
+.message.self .text img.custom-emoji.custom-emoji-gif {
+  margin-left: auto;
+}
+
+.message.other .text img.custom-emoji.custom-emoji-gif {
+  margin-right: auto;
+}
+
+.message .text.has-emoji-gif {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  white-space: pre-wrap;
+}
+
+.message.self .text.has-emoji-gif {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.message.other .text.has-emoji-gif {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.message .text.has-emoji-gif.emoji-gif-only {
+  gap: 10px;
+}
+
+.message.has-emoji-gif {
+  max-width: min(260px, 90vw);
+  padding: 10px 12px;
 }
 
 .message.has-inline-preview {
