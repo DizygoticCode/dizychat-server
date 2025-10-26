@@ -13,8 +13,8 @@
   <!-- ===========================
        Landing Page
        =========================== -->
-  <div id="username-prompt" style="background:#000;">
-    <img src="/logo.png" alt="DizyChat Logo" class="logo" />
+  <div id="username-prompt">
+    <img src="/logo.png" alt="DizyChat Logo" class="logo" data-dark-src="/logo.png" data-light-src="/logo-light.png" />
     <h1>Welcome to DizyChat</h1>
     <div class="landing-inputs">
       <input id="username-input" placeholder="Choose your username" />
@@ -36,7 +36,7 @@
   <div id="chat-container" style="display:none;">
     <header>
       <div class="header-left">
-        <img src="/logo.png" alt="Logo" class="logo" />
+        <img src="/logo.png" alt="Logo" class="logo" data-dark-src="/logo.png" data-light-src="/logo-light.png" />
         <span id="room-name"></span>
       </div>
       <div class="header-right">
@@ -51,6 +51,7 @@
 
     <!-- Message input -->
     <form id="form">
+      <input type="file" id="file-input" hidden />
       <button type="button" id="file-attach" title="Attach file">📎</button>
       <button type="button" id="gif-btn" title="Send GIF">🎞️</button>
       <button type="button" id="emoji-btn" title="Emoji">😊</button>

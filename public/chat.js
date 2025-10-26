@@ -33,6 +33,7 @@ const adminPasswordInput = document.getElementById("admin-password");
 const roomName = document.getElementById("room-name");
 const themeToggle = document.getElementById("toggle-theme");
 const emojiPicker = document.getElementById("emoji-picker");
+const themeLogos = Array.from(document.querySelectorAll("img.logo"));
 
 // Autofocus username for smoother entry
 usernameInput?.focus();
@@ -204,34 +205,48 @@ const storedTheme = (() => {
   }
 })();
 
-const applyTheme = (mode) => {
-  const isDark = mode !== "light";
+const applyTheme = (mode, { persist = true } = {}) => {
+  const chosen = mode === "light" ? "light" : "dark";
+  const isDark = chosen !== "light";
   document.body.classList.toggle("dark", isDark);
+  document.body.classList.toggle("light", !isDark);
+  document.body.setAttribute("data-theme", chosen);
+
+  if (document.documentElement) {
+    document.documentElement.style.colorScheme = isDark ? "dark" : "light";
+  }
+
   if (themeToggle) {
+    themeToggle.textContent = isDark ? "☀️" : "🌙";
     themeToggle.setAttribute(
       "aria-label",
       isDark ? "Switch to light mode" : "Switch to dark mode"
     );
     themeToggle.setAttribute("aria-pressed", String(isDark));
+    themeToggle.title = isDark ? "Switch to light mode" : "Switch to dark mode";
   }
 
-  try {
-    localStorage.setItem("dizychat-theme", mode);
-  } catch {
-    /* ignore persistence errors */
+  themeLogos.forEach((img) => {
+    const darkSrc = img.dataset.darkSrc || img.getAttribute("data-dark-src") || img.src;
+    const lightSrc = img.dataset.lightSrc || img.getAttribute("data-light-src");
+    if (lightSrc) {
+      img.src = isDark ? darkSrc : lightSrc;
+    } else {
+      img.src = isDark ? darkSrc : img.src;
+    }
+  });
+
+  if (persist) {
+    try {
+      localStorage.setItem("dizychat-theme", chosen);
+    } catch {
+      /* ignore persistence errors */
+    }
   }
 };
 
-if (storedTheme) {
-  applyTheme(storedTheme);
-} else if (themeToggle) {
-  const isDark = document.body.classList.contains("dark");
-  themeToggle.setAttribute(
-    "aria-label",
-    isDark ? "Switch to light mode" : "Switch to dark mode"
-  );
-  themeToggle.setAttribute("aria-pressed", String(isDark));
-}
+const initialTheme = storedTheme || (document.body.classList.contains("dark") ? "dark" : "light");
+applyTheme(initialTheme, { persist: Boolean(storedTheme) });
 
 if (themeToggle) {
   themeToggle.addEventListener("click", () => {
@@ -245,12 +260,145 @@ if (emojiBtn && emojiPicker) {
   const hideEmojiPicker = () => {
     emojiPicker.classList.remove("show");
     emojiPicker.style.display = "none";
+    emojiSearch.value = "";
+    if (emojiCatalogLoaded) {
+      renderEmojiList(emojiEntries);
+    }
   };
 
   const showEmojiPicker = () => {
     emojiPicker.classList.add("show");
     emojiPicker.style.display = "block";
+    requestAnimationFrame(() => {
+      emojiSearch.focus({ preventScroll: true });
+    });
   };
+
+  const emojiSearch = document.createElement("input");
+  emojiSearch.type = "search";
+  emojiSearch.id = "emoji-search";
+  emojiSearch.placeholder = "Search emoji…";
+  emojiPicker.appendChild(emojiSearch);
+
+  const emojiCatalog = document.createElement("div");
+  emojiCatalog.id = "emoji-catalog";
+  emojiPicker.appendChild(emojiCatalog);
+
+  const emojiEntries = [];
+  let emojiCatalogLoaded = false;
+
+  const renderEmojiList = (list) => {
+    emojiCatalog.innerHTML = "";
+    if (!list.length) {
+      const empty = document.createElement("div");
+      empty.className = "emoji-empty";
+      empty.textContent = "No emoji found";
+      emojiCatalog.appendChild(empty);
+      return;
+    }
+
+    const grouped = list.reduce((acc, item) => {
+      const key = item.category || "Emojis";
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(item);
+      return acc;
+    }, {});
+
+    Object.entries(grouped).forEach(([category, items]) => {
+      const section = document.createElement("section");
+      section.className = "emoji-category";
+
+      const title = document.createElement("h4");
+      title.className = "emoji-category-title";
+      title.textContent = category;
+      section.appendChild(title);
+
+      const grid = document.createElement("div");
+      grid.className = "emoji-grid";
+
+      items.forEach((item) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "emoji-item";
+        button.title = item.name || "";
+
+        if (item.char) {
+          button.textContent = item.char;
+        } else if (item.url) {
+          const img = document.createElement("img");
+          img.src = item.url;
+          img.alt = item.name || "emoji";
+          img.loading = "lazy";
+          button.appendChild(img);
+        }
+
+        button.addEventListener("click", () => {
+          if (item.char && input) {
+            input.value = `${input.value || ""}${item.char}`;
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            input.focus();
+            hideEmojiPicker();
+            return;
+          }
+
+          if (item.url && window.currentRoom && window.currentUser) {
+            socket.emit("chat message", {
+              room: window.currentRoom,
+              user: window.currentUser,
+              text: item.url,
+              timestamp: Date.now(),
+            });
+            showToast(`${item.name || "Emoji"} sent`, "success");
+            hideEmojiPicker();
+          }
+        });
+
+        grid.appendChild(button);
+      });
+
+      section.appendChild(grid);
+      emojiCatalog.appendChild(section);
+    });
+  };
+
+  const loadEmojiCatalog = async () => {
+    if (emojiCatalogLoaded) return;
+    try {
+      emojiCatalog.innerHTML = "<div class=\"emoji-empty\">Loading…</div>";
+      const response = await fetch("/emojis.json", { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      Object.entries(data || {}).forEach(([category, items]) => {
+        if (!Array.isArray(items)) return;
+        items.forEach((item) => {
+          emojiEntries.push({
+            ...item,
+            category,
+          });
+        });
+      });
+      renderEmojiList(emojiEntries);
+      emojiCatalogLoaded = true;
+    } catch (err) {
+      console.error("[Emoji Picker] Failed to load", err);
+      emojiCatalog.innerHTML = "<div class=\"emoji-empty\">Unable to load emoji.</div>";
+    }
+  };
+
+  emojiSearch.addEventListener("input", (event) => {
+    const query = event.target.value.trim().toLowerCase();
+    if (!query) {
+      renderEmojiList(emojiEntries);
+      return;
+    }
+
+    const filtered = emojiEntries.filter((item) => {
+      const byName = item.name && item.name.toLowerCase().includes(query);
+      const byEmoji = item.char && item.char.toLowerCase().includes(query);
+      return byName || byEmoji;
+    });
+    renderEmojiList(filtered);
+  });
 
   emojiBtn.addEventListener("click", (event) => {
     event.preventDefault();
@@ -258,6 +406,7 @@ if (emojiBtn && emojiPicker) {
       hideEmojiPicker();
     } else {
       showEmojiPicker();
+      loadEmojiCatalog();
     }
   });
 
@@ -576,22 +725,53 @@ function autoEmbed(node) {
     }
 
     // Direct media
-    if (!el && /\.(png|jpg|jpeg|gif|webp)(\?.*)?$/i.test(link)) {
-      el = document.createElement("img");
-      el.src = link;
-      el.className = "embed-image";
+    const createInlinePreview = (type) => {
+      const anchor = document.createElement("a");
+      anchor.href = link;
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+      anchor.className = `inline-preview inline-${type}`;
+
+      if (type === "image") {
+        const img = document.createElement("img");
+        img.src = link;
+        img.alt = "Embedded image";
+        img.loading = "lazy";
+        anchor.appendChild(img);
+      } else if (type === "video") {
+        const video = document.createElement("video");
+        video.src = link;
+        video.muted = true;
+        video.autoplay = true;
+        video.loop = true;
+        video.playsInline = true;
+        video.preload = "metadata";
+        video.setAttribute("aria-label", "Video preview");
+        anchor.appendChild(video);
+      } else {
+        const label = document.createElement("span");
+        label.className = "preview-label";
+        label.textContent = type.toUpperCase();
+        anchor.appendChild(label);
+      }
+
+      return anchor;
+    };
+
+    if (!el && /\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?.*)?$/i.test(link)) {
+      el = createInlinePreview("image");
     }
     if (!el && /\.(mp4|webm|mov)(\?.*)?$/i.test(link)) {
-      el = document.createElement("video");
-      el.src = link;
-      el.controls = true;
-      el.className = "embed-media";
+      el = createInlinePreview("video");
     }
     if (!el && /\.(mp3|wav|ogg)(\?.*)?$/i.test(link)) {
-      el = document.createElement("audio");
-      el.src = link;
-      el.controls = true;
-      el.className = "embed-audio";
+      el = createInlinePreview("audio");
+    }
+    if (!el && /\.(pdf)(\?.*)?$/i.test(link)) {
+      el = createInlinePreview("pdf");
+    }
+    if (!el && /\.(zip|rar|7z|tar|gz)(\?.*)?$/i.test(link)) {
+      el = createInlinePreview("file");
     }
 
     if (el) wrap.appendChild(el);
