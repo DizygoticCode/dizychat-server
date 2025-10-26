@@ -214,6 +214,8 @@ header {
   border-bottom: 1px solid var(--border-color);
   z-index: 20;
   color: var(--text-primary);
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
 header .header-left { display: flex; align-items: center; gap: 10px; }
@@ -224,6 +226,24 @@ header .logo { width: 40px; height: auto; }
   display: flex;
   align-items: center;
   gap: 10px;
+  padding-left: 12px;
+  margin-left: auto;
+}
+
+#chat-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+#chat-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg);
 }
 
 #chat-container .search-bar {
@@ -317,6 +337,182 @@ header .logo { width: 40px; height: auto; }
   gap: 10px;
   scroll-behavior: smooth;
   background: var(--surface-alt);
+}
+
+#user-sidebar {
+  width: 260px;
+  max-width: 320px;
+  background: var(--surface);
+  border-left: 1px solid var(--border-color);
+  padding: 16px 18px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#user-sidebar .sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#user-sidebar .sidebar-header h2 {
+  font-size: 1rem;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+#user-count {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+#user-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.user-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--surface-alt);
+  border: 1px solid transparent;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.2s ease;
+  cursor: default;
+}
+
+.user-entry .user-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.user-entry .user-name .user-crown {
+  font-size: 1.05em;
+}
+
+.user-entry .user-name .self-pill {
+  font-size: 0.75rem;
+  background: rgba(187, 134, 252, 0.25);
+  color: var(--accent);
+  padding: 2px 6px;
+  border-radius: 999px;
+}
+
+.user-entry .user-status {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.user-entry .user-status.bad {
+  color: #ff6b6b;
+}
+
+.user-entry .user-status.warn {
+  color: #f6c343;
+}
+
+.user-entry.actionable {
+  cursor: pointer;
+}
+
+.user-entry.actionable:focus-visible {
+  outline: 2px solid rgba(187, 134, 252, 0.85);
+  outline-offset: 2px;
+  border-color: rgba(187, 134, 252, 0.55);
+}
+
+.user-entry.actionable:hover {
+  transform: translateY(-1px);
+  border-color: rgba(187, 134, 252, 0.35);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.25);
+}
+
+.user-entry.disabled {
+  opacity: 0.65;
+}
+
+#user-list-empty {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.user-context-menu {
+  position: absolute;
+  display: none;
+  flex-direction: column;
+  min-width: 200px;
+  background: var(--surface);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.35);
+  padding: 6px;
+  z-index: 60;
+}
+
+.user-context-menu.open {
+  display: flex;
+}
+
+.user-context-menu button {
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.user-context-menu button:hover {
+  background: rgba(187, 134, 252, 0.18);
+  transform: translateY(-1px);
+}
+
+.user-context-menu button:focus-visible {
+  outline: 2px solid rgba(187, 134, 252, 0.7);
+  outline-offset: 2px;
+  background: rgba(187, 134, 252, 0.18);
+}
+
+.user-context-menu button.danger {
+  color: #ff6b6b;
+}
+
+.user-context-menu button.danger:hover {
+  background: rgba(255, 107, 107, 0.16);
+}
+
+@media (max-width: 900px) {
+  #user-sidebar {
+    display: none;
+  }
 }
 
 .message {
