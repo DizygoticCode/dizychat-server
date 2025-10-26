@@ -179,6 +179,7 @@ socket.on('join room', async ({ room, username, password }) => {
   } catch (err) { console.error("[Pinned] Error:", err); }
 });
 
+
   // ----- Admin Auth (post-join) -----
   socket.on('admin auth', ({ room, username, adminPassword }) => {
     try {
