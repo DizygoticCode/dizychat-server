@@ -25,6 +25,9 @@
   --pinned-bg: #2b2b2b;
   --typing-bg: rgba(0, 0, 0, 0.25);
   --preview-bg: rgba(255, 255, 255, 0.08);
+  --status-online: #25d366;
+  --status-offline: rgba(255, 255, 255, 0.35);
+  --status-border: rgba(0, 0, 0, 0.45);
 }
 
 body:not(.dark) {
@@ -48,6 +51,9 @@ body:not(.dark) {
   --pinned-bg: #ffffff;
   --typing-bg: rgba(17, 17, 17, 0.08);
   --preview-bg: rgba(17, 17, 17, 0.08);
+  --status-online: #1fa866;
+  --status-offline: rgba(17, 17, 17, 0.28);
+  --status-border: rgba(17, 17, 17, 0.08);
 }
 
 /* ==============================
@@ -254,6 +260,7 @@ header .logo { width: 40px; height: auto; }
   border-radius: var(--radius);
   padding: 4px 6px;
   border: 1px solid var(--border-color);
+  margin-left: 16px;
 }
 
 #chat-container .search-bar input,

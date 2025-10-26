@@ -2252,6 +2252,10 @@ function fetchTenorPreview(link, node) {
     if (cachedPreview) {
       cachedPreview.dataset.tenorSource = link;
       cachedPreview.classList.add("tenor-inline");
+      const previewType = cachedPreview.classList.contains("inline-video") ? "video" : "image";
+      if (!cachedPreview.querySelector(".preview-actions")) {
+        attachPreviewActions(cachedPreview, { link: cached, type: previewType });
+      }
       node.appendChild(cachedPreview);
       node.classList.add("has-inline-preview");
       updateTenorBubbleState(node);
@@ -2290,6 +2294,9 @@ function fetchTenorPreview(link, node) {
       if (!preview) return;
       preview.dataset.tenorSource = link;
       preview.classList.add("tenor-inline");
+      if (!preview.querySelector(".preview-actions")) {
+        attachPreviewActions(preview, { link: direct, type: previewType });
+      }
 
       if (placeholder && placeholder.parentNode === node) {
         node.replaceChild(preview, placeholder);
@@ -2718,10 +2725,11 @@ function autoEmbed(node) {
 
   const linkAnchors = document.createElement("div");
   linkAnchors.className = "embed-links";
-  wrap.appendChild(linkAnchors);
+  const anchorsByLink = new Map();
 
   const seenLinks = new Set();
   let wrapAdded = false;
+  let anchorsAttached = false;
   const ensureWrap = () => {
     if (!wrapAdded) {
       node.appendChild(wrap);
@@ -2729,6 +2737,39 @@ function autoEmbed(node) {
       observeMediaForScroll(node);
       scrollMessagesToBottom();
       wrapAdded = true;
+    }
+  };
+
+  const attachAnchors = () => {
+    if (!anchorsAttached) {
+      wrap.insertBefore(linkAnchors, wrap.firstChild);
+      anchorsAttached = true;
+    }
+    ensureWrap();
+  };
+
+  const normalizeLinkKey = (url) => {
+    try {
+      return new URL(url).href;
+    } catch {
+      return url;
+    }
+  };
+
+  const detachAnchorsIfEmpty = () => {
+    if (anchorsAttached && !linkAnchors.childElementCount) {
+      linkAnchors.remove();
+      anchorsAttached = false;
+    }
+  };
+
+  const removeAnchorFor = (url) => {
+    const key = normalizeLinkKey(url);
+    const anchor = anchorsByLink.get(key);
+    if (anchor && anchor.parentNode === linkAnchors) {
+      linkAnchors.removeChild(anchor);
+      anchorsByLink.delete(key);
+      detachAnchorsIfEmpty();
     }
   };
 
@@ -2811,12 +2852,27 @@ function autoEmbed(node) {
     // Rumble
     if (!el && /https?:\/\/(?:www\.)?rumble\.com\//i.test(link)) {
       let embedUrl = "";
-      let match = link.match(/https?:\/\/(?:www\.)?rumble\.com\/embed\/([a-z0-9]+)/i);
-      if (match) {
-        embedUrl = `https://rumble.com/embed/${match[1]}/?pub=4&autoplay=0`;
-      } else {
-        match = link.match(/https?:\/\/(?:www\.)?rumble\.com\/(v[\w]+)/i);
-        if (match) embedUrl = `https://rumble.com/embed/${match[1]}/?pub=4&autoplay=0`;
+      try {
+        const parsed = new URL(link);
+        const segments = parsed.pathname.split("/").filter(Boolean);
+        let videoId = "";
+        if (segments[0] && segments[0].toLowerCase() === "embed" && segments[1]) {
+          videoId = segments[1].split(".")[0];
+        } else {
+          const candidate = segments.find((segment) => /^v[a-z0-9]+/i.test(segment));
+          if (candidate) {
+            const matchId = candidate.match(/^(v[a-z0-9]+)/i);
+            if (matchId) videoId = matchId[1];
+          }
+        }
+        if (videoId) {
+          embedUrl = `https://rumble.com/embed/${videoId}/?pub=4&autoplay=0`;
+        }
+      } catch {
+        const fallback = link.match(/https?:\/\/(?:www\.)?rumble\.com\/embed\/([a-z0-9]+)/i);
+        if (fallback) {
+          embedUrl = `https://rumble.com/embed/${fallback[1]}/?pub=4&autoplay=0`;
+        }
       }
       if (embedUrl) {
         el = document.createElement("iframe");
@@ -2866,8 +2922,14 @@ function autoEmbed(node) {
       fetchTenorPreview(link, wrap);
     }
 
-    if (el) wrap.appendChild(el);
     if (el) {
+      removeAnchorFor(link);
+      if (el.classList.contains("inline-preview")) {
+        const typeClass = Array.from(el.classList).find((cls) => cls.startsWith("inline-") && cls !== "inline-preview");
+        const previewType = typeClass ? typeClass.replace("inline-", "") : "";
+        attachPreviewActions(el, { link, type: previewType });
+      }
+      wrap.appendChild(el);
       ensureWrap();
       if (el.tagName === "IFRAME" && el.classList.contains("soundcloud")) {
         attachSoundCloudControls(el, wrap);
@@ -2936,9 +2998,8 @@ function autoEmbed(node) {
         continue;
       }
 
-      if (!wrap.isConnected) {
-        ensureWrap();
-      }
+      ensureWrap();
+      removeAnchorFor(normalized);
 
       const card = document.createElement("div");
       card.className = "link-card";

@@ -185,6 +185,7 @@ let typingUsers = {};
 const roomPasswords = new Map();
 const roomMembers = new Map();
 const roomPresence = new Map();
+const roomUserHistory = new Map();
 const roomBans = new Map();
 const roomBlocks = new Map();
 const roomMutes = new Map();
