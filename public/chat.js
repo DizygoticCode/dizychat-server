@@ -991,10 +991,13 @@ function renderMessage(msg) {
   wrap.className = `message ${isSelf ? "self" : "other"}`;
   wrap.innerHTML = `
     <div class="meta">${msg.user || "Anon"} • ${new Date(msg.timestamp || Date.now()).toLocaleTimeString()}</div>
-    <div class="text">${msg.text || ""}</div>
+    <div class="text"></div>
   `;
   const textEl = wrap.querySelector(".text");
-  replaceCustomEmojiLinks(textEl);
+  if (textEl) {
+    textEl.textContent = msg.text || "";
+    replaceCustomEmojiLinks(textEl);
+  }
   messages.appendChild(wrap);
   appendAttachmentFromMessage(wrap, msg);
   autoEmbed(wrap);
