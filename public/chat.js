@@ -26,9 +26,13 @@ const emojiBtn = document.getElementById("emoji-btn");
 const usernamePrompt = document.getElementById("username-prompt");
 const chatContainer = document.getElementById("chat-container");
 const joinBtn = document.getElementById("join-btn");
-const usernameInput = document.getElementById("username");
-const roomInput = document.getElementById("room");
+const usernameInput = document.getElementById("username-input");
+const roomInput = document.getElementById("room-input");
 const passwordInput = document.getElementById("room-password");
+const adminPasswordInput = document.getElementById("admin-password");
+const roomName = document.getElementById("room-name");
+const themeToggle = document.getElementById("toggle-theme");
+const emojiPicker = document.getElementById("emoji-picker");
 
 // Autofocus username for smoother entry
 usernameInput?.focus();
@@ -107,51 +111,177 @@ socket.on("disconnect", () => showToast("Disconnected", "error"));
 
 // ===== JOIN ROOM (with corrections for transition) =====
 
-// Join room (with feedback to landing page)
-if (window.currentRoom && window.currentUser) {
-  console.log('[Join] emitting join room', window.currentRoom, window.currentUser);
-  socket.emit('join room', { room: window.currentRoom, username: window.currentUser });
+function completeRoomJoin(username, room, password) {
+  window.currentUser = username;
+  window.currentRoom = room;
+  window.currentPassword = password;
+
+  if (roomName) roomName.textContent = room ? `#${room}` : "";
+  if (usernamePrompt) usernamePrompt.style.display = "none";
+  if (chatContainer) chatContainer.style.display = "flex";
+
+  setTimeout(() => {
+    if (messages) {
+      messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+    }
+  }, 250);
 }
 
+function emitJoinRequest() {
+  const username = usernameInput?.value.trim();
+  const room = roomInput?.value.trim();
+  const password = passwordInput?.value.trim() || "";
+
+  if (!username || !room) {
+    showToast("Enter a username and room", "error");
+    return;
+  }
+
+  completeRoomJoin(username, room, password);
+  socket.emit("join room", { room, username, password });
+
+  const adminPassword = adminPasswordInput?.value.trim();
+  if (adminPassword) {
+    socket.emit("admin auth", { room, username, adminPassword });
+  }
+}
+
+if (joinBtn) {
+  joinBtn.addEventListener("click", emitJoinRequest);
+}
+
+[usernameInput, roomInput, passwordInput, adminPasswordInput]
+  .filter(Boolean)
+  .forEach((inputEl) => {
+    inputEl.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        emitJoinRequest();
+      }
+    });
+  });
+
 // Listen for successful room join
-socket.on('join room success', () => {
-  // Hide landing page
-  document.getElementById('username-prompt').style.display = 'none';
-  // Show chat container
-  document.getElementById('chat-container').style.display = 'flex';
+socket.on("join room success", () => {
+  if (chatContainer) chatContainer.style.display = "flex";
+  if (usernamePrompt) usernamePrompt.style.display = "none";
+  input?.focus();
 });
 
 // Join error handling
-socket.on('join room error', (error) => {
-  alert(`Error: ${error}`);
+socket.on("join room error", (error) => {
+  showToast(error || "Unable to join room", "error");
+  if (chatContainer) chatContainer.style.display = "none";
+  if (usernamePrompt) usernamePrompt.style.display = "block";
 });
 
 // Handle disconnect and clean up
-socket.on('disconnect', () => {
-  document.getElementById('chat-container').style.display = 'none';
-  document.getElementById('username-prompt').style.display = 'block';
+socket.on("disconnect", () => {
+  if (chatContainer) chatContainer.style.display = "none";
+  if (usernamePrompt) usernamePrompt.style.display = "block";
 });
-
-    // UI transition
-    usernamePrompt?.classList.add("hidden");
-    chatContainer?.classList.remove("hidden");
-    // Tiny delay to let layout settle before scrolling
-    setTimeout(() => {
-      messages?.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
-    }, 250);
-  });
-}
 
 // If coming in with globals set (deep-link), auto-join
 if (window.currentRoom && window.currentUser) {
-  console.log("[Join] Auto-join", window.currentRoom, window.currentUser);
+  completeRoomJoin(
+    window.currentUser,
+    window.currentRoom,
+    window.currentPassword || ""
+  );
   socket.emit("join room", {
     room: window.currentRoom,
     username: window.currentUser,
     password: window.currentPassword || "",
   });
-  usernamePrompt?.classList.add("hidden");
-  chatContainer?.classList.remove("hidden");
+}
+
+// ------------------- Theme Toggle -------------------
+const storedTheme = (() => {
+  try {
+    return localStorage.getItem("dizychat-theme");
+  } catch {
+    return null;
+  }
+})();
+
+const applyTheme = (mode) => {
+  const isDark = mode !== "light";
+  document.body.classList.toggle("dark", isDark);
+  if (themeToggle) {
+    themeToggle.setAttribute(
+      "aria-label",
+      isDark ? "Switch to light mode" : "Switch to dark mode"
+    );
+    themeToggle.setAttribute("aria-pressed", String(isDark));
+  }
+
+  try {
+    localStorage.setItem("dizychat-theme", mode);
+  } catch {
+    /* ignore persistence errors */
+  }
+};
+
+if (storedTheme) {
+  applyTheme(storedTheme);
+} else if (themeToggle) {
+  const isDark = document.body.classList.contains("dark");
+  themeToggle.setAttribute(
+    "aria-label",
+    isDark ? "Switch to light mode" : "Switch to dark mode"
+  );
+  themeToggle.setAttribute("aria-pressed", String(isDark));
+}
+
+if (themeToggle) {
+  themeToggle.addEventListener("click", () => {
+    const nextMode = document.body.classList.contains("dark") ? "light" : "dark";
+    applyTheme(nextMode);
+  });
+}
+
+// ------------------- Emoji Picker Toggle -------------------
+if (emojiBtn && emojiPicker) {
+  const hideEmojiPicker = () => {
+    emojiPicker.classList.remove("show");
+    emojiPicker.style.display = "none";
+  };
+
+  const showEmojiPicker = () => {
+    emojiPicker.classList.add("show");
+    emojiPicker.style.display = "block";
+  };
+
+  emojiBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    if (emojiPicker.classList.contains("show")) {
+      hideEmojiPicker();
+    } else {
+      showEmojiPicker();
+    }
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!emojiPicker.classList.contains("show")) return;
+    if (event.target === emojiBtn) return;
+    if (emojiPicker.contains(event.target)) return;
+    hideEmojiPicker();
+  });
+
+  const quickEmojiButtons = emojiPicker.querySelectorAll("#quick-emojis button");
+  quickEmojiButtons.forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.preventDefault();
+      const emoji = btn.textContent?.trim();
+      if (!emoji) return;
+      if (input) {
+        input.value = `${input.value || ""}${emoji}`;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.focus();
+      }
+      hideEmojiPicker();
+    });
+  });
 }
 
 // ------------------- Sending Messages -------------------
@@ -302,12 +432,17 @@ if (attachBtn && fileInput) {
   const TENOR_API_KEY = "LIVDSRZULELA"; // test key (can move to .env later)
   if (!emojiBtn || !form) return;
 
-  const gifBtn = document.createElement("button");
-  gifBtn.id = "gif-btn";
-  gifBtn.type = "button";
-  gifBtn.textContent = "GIF";
-  gifBtn.style.marginLeft = "6px";
-  emojiBtn.insertAdjacentElement("afterend", gifBtn);
+  const gifBtn = (() => {
+    const existing = document.getElementById("gif-btn");
+    if (existing) return existing;
+    const created = document.createElement("button");
+    created.id = "gif-btn";
+    created.type = "button";
+    created.textContent = "GIF";
+    created.style.marginLeft = "6px";
+    emojiBtn.insertAdjacentElement("afterend", created);
+    return created;
+  })();
 
   const panel = document.createElement("div");
   panel.id = "gif-picker";
