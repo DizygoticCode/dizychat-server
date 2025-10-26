@@ -145,22 +145,23 @@ io.on('connection', socket => {
   console.log('[Socket] Connected', socket.id);
   socket.isAdmin = false;
 
-// ----- Join Room -----
 socket.on('join room', async ({ room, username, password }) => {
   if (rooms[room] && rooms[room] !== password) {
     socket.emit('join error', 'Incorrect room password');
     return;
   }
 
-  // ✅ Patch: track user identity & current room
+  // Track user identity & room
   socket.username = username || `Guest-${socket.id.slice(0, 4)}`;
   socket.currentRoom = room;
 
   socket.join(room);
   console.log(`User joined room: ${room} as ${socket.username}`);
 
+  // Emit successful room join
+  socket.emit('join room success');  // Added this line!
 
-  // ✅ FULL HISTORY (no .limit(50)) + emit for old/new clients
+  // Load history and pinned messages
   try {
     const history = await Message.find({ room }).sort({ timestamp: 1 });
     console.log(`[History] Loaded ${history.length} messages from ${room}`);
@@ -171,13 +172,12 @@ socket.on('join room', async ({ room, username, password }) => {
     console.error("Error fetching history:", err);
   }
 
-
-    // Send pinned
-    try {
-      const pinned = await Message.find({ room, pinned: true }).sort({ timestamp: -1 }).limit(50);
-      socket.emit('pinned messages', pinned);
-    } catch(err){ console.error("[Pinned] Error:", err); }
-  });
+  // Send pinned messages
+  try {
+    const pinned = await Message.find({ room, pinned: true }).sort({ timestamp: -1 }).limit(50);
+    socket.emit('pinned messages', pinned);
+  } catch (err) { console.error("[Pinned] Error:", err); }
+});
 
   // ----- Admin Auth (post-join) -----
   socket.on('admin auth', ({ room, username, adminPassword }) => {

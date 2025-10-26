@@ -105,28 +105,32 @@ socket.on("toast", (data) => showToast(data?.text || "", data?.type || "info"));
 socket.on("connect", () => showToast("Connected", "success"));
 socket.on("disconnect", () => showToast("Disconnected", "error"));
 
-// ------------------- Join Room Logic (Fusion merged) -------------------
-if (joinBtn) {
-  joinBtn.addEventListener("click", () => {
-    const username = (usernameInput?.value || "").trim();
-    const room = (roomInput?.value || "").trim();
-    const password = (passwordInput?.value || "").trim();
+// ===== JOIN ROOM (with corrections for transition) =====
 
-    if (!username || !room) {
-      showToast("Enter username & room.", "error");
-      return;
-    }
+// Join room (with feedback to landing page)
+if (window.currentRoom && window.currentUser) {
+  console.log('[Join] emitting join room', window.currentRoom, window.currentUser);
+  socket.emit('join room', { room: window.currentRoom, username: window.currentUser });
+}
 
-    window.currentUser = username;
-    window.currentRoom = room;
-    window.currentPassword = password;
+// Listen for successful room join
+socket.on('join room success', () => {
+  // Hide landing page
+  document.getElementById('username-prompt').style.display = 'none';
+  // Show chat container
+  document.getElementById('chat-container').style.display = 'flex';
+});
 
-    console.log("[Join] Emitting join room:", room, username);
-    if (socket.connected) {
-      socket.emit("join room", { room, username, password });
-    } else {
-      socket.once("connect", () => socket.emit("join room", { room, username, password }));
-    }
+// Join error handling
+socket.on('join room error', (error) => {
+  alert(`Error: ${error}`);
+});
+
+// Handle disconnect and clean up
+socket.on('disconnect', () => {
+  document.getElementById('chat-container').style.display = 'none';
+  document.getElementById('username-prompt').style.display = 'block';
+});
 
     // UI transition
     usernamePrompt?.classList.add("hidden");
