@@ -19,7 +19,11 @@ const messageSchema = new mongoose.Schema({
   status: { type: String, enum: ["sent", "delivered", "read"], default: "sent" },
   reactions: { type: [reactionSchema], default: [] },   // structured reactions
   pinned: { type: Boolean, default: false },            // pin messages
-  starredBy: { type: [String], default: [] }            // list of users who starred it
+  pinnedBy: { type: String, default: "" },             // user who pinned the message
+  starredBy: { type: [String], default: [] },           // list of users who starred it
+  deleted: { type: Boolean, default: false },           // soft delete flag
+  deletedAt: { type: Date },
+  deletedBy: { type: String, default: "" }
 });
 
 // ✅ Indexes
