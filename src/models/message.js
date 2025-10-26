@@ -15,6 +15,7 @@ const messageSchema = new mongoose.Schema({
   timestamp: { type: Date, default: Date.now, index: true }, // index for sorting/pagination
   fileUrl: { type: String },
   fileType: { type: String },
+  fileName: { type: String },
   status: { type: String, enum: ["sent", "delivered", "read"], default: "sent" },
   reactions: { type: [reactionSchema], default: [] },   // structured reactions
   pinned: { type: Boolean, default: false },            // pin messages
