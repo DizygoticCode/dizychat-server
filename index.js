@@ -542,6 +542,14 @@ io.on('connection', socket => {
       const targetRoom = normaliseRoomName(room) || socket.currentRoom;
       if (!targetRoom) return;
 
+      const members = roomMembers.get(targetRoom);
+      const isMember = members?.has(socket.id) && socket.currentRoom === targetRoom;
+      if (!isMember) {
+        console.warn(`[Search] Unauthorized search attempt by ${socket.id} for room ${targetRoom}`);
+        socket.emit('search results', { room: targetRoom, query, filter, results: [] });
+        return;
+      }
+
       const conditions = { room: targetRoom, deleted: { $ne: true } };
 
       if (filter === 'pinned') {
