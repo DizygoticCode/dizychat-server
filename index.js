@@ -79,26 +79,103 @@ app.get('/link-preview', async (req, res) => {
   if (!/^https?:\/\//i.test(url)) url = 'http://' + url;
 
   try {
-    const response = await fetch(url, { timeout: 5000 });
+    const response = await fetch(url, {
+      timeout: 5000,
+      headers: {
+        'user-agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    });
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!/text\/html/i.test(contentType)) {
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      return res.json({ title: '', image: '', description: '', siteName: '', icon: '' });
+    }
+
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    const title =
-      $('meta[property="og:title"]').attr('content') ||
-      $('title').text() ||
-      '';
-    const image =
-      $('meta[property="og:image"]').attr('content') ||
-      $('img').first().attr('src') ||
-      '';
+    const pick = (...candidates) => {
+      for (const candidate of candidates) {
+        if (!candidate) continue;
+        const value = typeof candidate === 'function' ? candidate() : candidate;
+        if (value) return value;
+      }
+      return '';
+    };
 
-    // ✅ Add this one line before sending JSON:
+    const title = pick(
+      () => $('meta[property="og:title"]').attr('content'),
+      () => $('meta[name="twitter:title"]').attr('content'),
+      () => $('title').text(),
+    );
+
+    const description = pick(
+      () => $('meta[property="og:description"]').attr('content'),
+      () => $('meta[name="description"]').attr('content'),
+      () => $('meta[name="twitter:description"]').attr('content'),
+    );
+
+    const imageRaw = pick(
+      () => $('meta[property="og:image"]').attr('content'),
+      () => $('meta[name="twitter:image"]').attr('content'),
+      () => $('link[rel="image_src"]').attr('href'),
+    );
+
+    const iconRaw = pick(
+      () => $('link[rel="icon"]').attr('href'),
+      () => $('link[rel="shortcut icon"]').attr('href'),
+      () => $('link[rel="apple-touch-icon"]').attr('href'),
+    );
+
+    const siteName = pick(
+      () => $('meta[property="og:site_name"]').attr('content'),
+      () => $('meta[name="application-name"]').attr('content'),
+      () => new URL(url).hostname,
+    );
+
+    const resolveAsset = (asset) => {
+      if (!asset) return '';
+      try {
+        return new URL(asset, url).href;
+      } catch {
+        return '';
+      }
+    };
+
     res.setHeader('Cache-Control', 'public, max-age=300');
-
-    res.json({ title, image });
+    res.json({
+      title: title || '',
+      description: description || '',
+      image: resolveAsset(imageRaw),
+      icon: resolveAsset(iconRaw),
+      siteName: siteName || '',
+    });
   } catch (err) {
     console.error('[Link Preview] Error:', err.message);
-    res.json({ title: '', image: '' });
+    res.json({ title: '', image: '', description: '', siteName: '', icon: '' });
+  }
+});
+
+app.get('/tenor-proxy', async (req, res) => {
+  const { url } = req.query;
+  if (!url || !/^https?:\/\/(?:www\.)?tenor\.com\//i.test(url)) {
+    return res.status(400).json({ gif: '', tinyGif: '' });
+  }
+
+  try {
+    const response = await fetch(`https://tenor.com/oembed?url=${encodeURIComponent(url)}`);
+    const data = await response.json();
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.json({
+      gif: data?.url || '',
+      tinyGif: data?.thumbnail_url || ''
+    });
+  } catch (err) {
+    console.error('[Tenor] Error:', err.message);
+    res.json({ gif: '', tinyGif: '' });
   }
 });
 
@@ -201,6 +278,21 @@ socket.on('join room', async ({ room, username, password }) => {
     try {
       if (msgData.text?.length > 1000) msgData.text = msgData.text.substring(0,1000);
       if (msgData.text) msgData.text = sanitizeHtml(msgData.text, { allowedTags: [], allowedAttributes: {} });
+
+      if (msgData.fileUrl) {
+        const fileUrl = String(msgData.fileUrl).trim();
+        if (/^(https?:\/\/|\/)/i.test(fileUrl)) {
+          msgData.fileUrl = fileUrl;
+        } else {
+          delete msgData.fileUrl;
+        }
+      }
+      if (msgData.fileType) {
+        msgData.fileType = String(msgData.fileType).trim().slice(0, 100);
+      }
+      if (msgData.fileName) {
+        msgData.fileName = sanitizeHtml(String(msgData.fileName), { allowedTags: [], allowedAttributes: {} }).slice(0, 120);
+      }
 
       const newMsg = new Message({
         ...msgData,

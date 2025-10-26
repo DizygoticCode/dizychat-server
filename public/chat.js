@@ -130,6 +130,88 @@ if (prefillRoom || prefillPassword) {
   };
 })();
 
+// ------------------- Media Lightbox -------------------
+const MediaLightbox = (() => {
+  const overlay = document.createElement("div");
+  overlay.id = "media-lightbox";
+  overlay.innerHTML = `
+    <div class="media-frame">
+      <button type="button" class="media-close" aria-label="Close preview">×</button>
+      <div class="media-content"></div>
+      <div class="media-caption"></div>
+    </div>
+  `;
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-hidden", "true");
+  document.body.appendChild(overlay);
+
+  const frame = overlay.querySelector(".media-frame");
+  const content = overlay.querySelector(".media-content");
+  const captionEl = overlay.querySelector(".media-caption");
+  const closeBtn = overlay.querySelector(".media-close");
+  frame?.setAttribute("tabindex", "-1");
+
+  const close = () => {
+    overlay.classList.remove("show");
+    content.innerHTML = "";
+    captionEl.textContent = "";
+    overlay.setAttribute("aria-hidden", "true");
+    frame?.blur();
+  };
+
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) close();
+  });
+
+  closeBtn.addEventListener("click", close);
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && overlay.classList.contains("show")) {
+      close();
+    }
+  });
+
+  function open(type, src, caption) {
+    if (!src) return;
+    content.innerHTML = "";
+    let node = null;
+
+    if (type === "image") {
+      node = document.createElement("img");
+      node.src = src;
+      node.alt = caption || "Image preview";
+      node.loading = "lazy";
+    } else if (type === "video") {
+      node = document.createElement("video");
+      node.src = src;
+      node.controls = true;
+      node.playsInline = true;
+      node.autoplay = true;
+      node.setAttribute("controlsList", "nodownload");
+    } else if (type === "audio") {
+      node = document.createElement("audio");
+      node.src = src;
+      node.controls = true;
+    }
+
+    if (!node) return;
+    node.classList.add("lightbox-media");
+    content.appendChild(node);
+    captionEl.textContent = caption || "";
+    overlay.classList.add("show");
+    overlay.setAttribute("aria-hidden", "false");
+    requestAnimationFrame(() => frame?.focus?.());
+
+    // If video, try to enter fullscreen when user taps full screen button.
+    if (type === "video") {
+      requestAnimationFrame(() => node.focus?.());
+    }
+  }
+
+  return { open, close };
+})();
+
 // Hook some core socket events to toasts
 socket.on("join error", (msg) => showToast(msg || "Join failed.", "error"));
 socket.on("toast", (data) => showToast(data?.text || "", data?.type || "info"));
@@ -290,9 +372,6 @@ if (copyJoinLinkBtn) {
     const copied = await copyTextToClipboard(shareUrl);
     if (copied) {
       showToast("Join link copied!", "success");
-      lastRoomName = window.currentRoom;
-      lastRoomPassword = window.currentPassword || "";
-      showLanding({ focusUsername: true });
     } else {
       showToast("Unable to copy link", "error");
     }
@@ -615,6 +694,218 @@ socket.on("typing", (users) => {
   bubble.classList.add("show");
 });
 
+// ------------------- Inline Preview Helpers -------------------
+function hasInlinePreview(node, url) {
+  if (!node || !url) return false;
+  return Array.from(node.querySelectorAll(".inline-preview")).some(
+    (el) => el.dataset?.src === url || el.dataset?.tenorSource === url
+  );
+}
+
+function createInlinePreview(link, type, labelText) {
+  if (!link || !type) return null;
+
+  const container = document.createElement("div");
+  container.className = `inline-preview inline-${type}`;
+  container.dataset.src = link;
+
+  const mediaWrap = document.createElement("div");
+  mediaWrap.className = "preview-media";
+  container.appendChild(mediaWrap);
+
+  if (type === "image") {
+    const img = document.createElement("img");
+    img.src = link;
+    img.alt = labelText || "Embedded image";
+    img.loading = "lazy";
+    mediaWrap.appendChild(img);
+    mediaWrap.addEventListener("click", (event) => {
+      if (event.target.closest(".preview-actions")) return;
+      MediaLightbox.open("image", link, labelText);
+    });
+  } else if (type === "video") {
+    const video = document.createElement("video");
+    video.src = link;
+    video.controls = true;
+    video.playsInline = true;
+    video.setAttribute("playsinline", "");
+    video.setAttribute("webkit-playsinline", "");
+    video.preload = "metadata";
+    video.setAttribute("controlsList", "nodownload");
+    video.addEventListener("dblclick", (event) => {
+      event.preventDefault();
+      MediaLightbox.open("video", link, labelText);
+    });
+    mediaWrap.appendChild(video);
+  } else if (type === "audio") {
+    const audio = document.createElement("audio");
+    audio.src = link;
+    audio.controls = true;
+    audio.preload = "metadata";
+    mediaWrap.appendChild(audio);
+  } else {
+    const label = document.createElement("span");
+    label.className = "preview-label";
+
+    const linkText = labelText || type.toUpperCase();
+    if (linkText && link && type !== "placeholder") {
+      const anchor = document.createElement("a");
+      anchor.href = link;
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+      anchor.textContent = linkText;
+      anchor.className = "preview-link";
+      label.appendChild(anchor);
+    } else {
+      label.textContent = linkText;
+    }
+
+    mediaWrap.appendChild(label);
+  }
+
+  return container;
+}
+
+function attachPreviewActions(preview, { link, label, type } = {}) {
+  if (!preview || !link) return;
+  if (preview.dataset.placeholder === "1") return;
+
+  const actions = document.createElement("div");
+  actions.className = "preview-actions";
+
+  const allowExpand = type === "image" || type === "video";
+  if (allowExpand) {
+    const expand = document.createElement("button");
+    expand.type = "button";
+    expand.className = "preview-open";
+    expand.textContent = type === "video" ? "Full screen" : "View";
+    expand.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      MediaLightbox.open(type, link, label);
+    });
+    actions.appendChild(expand);
+  }
+
+  const download = document.createElement("a");
+  download.href = link;
+  download.target = "_blank";
+  download.rel = "noopener noreferrer";
+  download.className = "preview-download";
+  download.setAttribute("download", "");
+  download.textContent = label ? `Download` : "Download";
+  actions.appendChild(download);
+
+  preview.appendChild(actions);
+
+  if (label) {
+    const caption = document.createElement("div");
+    caption.className = "preview-caption";
+    caption.textContent = label;
+    preview.appendChild(caption);
+  }
+}
+
+const tenorPreviewCache = new Map();
+
+function fetchTenorPreview(link, node) {
+  if (!link || !node || hasInlinePreview(node, link)) return;
+
+  if (tenorPreviewCache.has(link)) {
+    const cached = tenorPreviewCache.get(link);
+    if (!cached) return;
+    if (hasInlinePreview(node, cached)) return;
+    const cachedPreview = createInlinePreview(cached, /\.(mp4|webm)$/i.test(cached) ? "video" : "image");
+    if (cachedPreview) {
+      cachedPreview.dataset.tenorSource = link;
+      node.appendChild(cachedPreview);
+    }
+    return;
+  }
+
+  const placeholder = createInlinePreview(link, "file", "Loading GIF…");
+  if (placeholder) {
+    placeholder.dataset.tenorSource = link;
+    placeholder.dataset.placeholder = "1";
+    node.appendChild(placeholder);
+  }
+
+  fetch(`/tenor-proxy?url=${encodeURIComponent(link)}`)
+    .then((res) => res.json())
+    .then(({ gif, tinyGif }) => {
+      const direct = gif || tinyGif || "";
+      tenorPreviewCache.set(link, direct || null);
+
+      if (!direct) {
+        if (placeholder) {
+          const label = placeholder.querySelector(".preview-label");
+          if (label) label.textContent = "GIF unavailable";
+        }
+        return;
+      }
+
+      const previewType = /\.(mp4|webm)$/i.test(direct) ? "video" : "image";
+      const preview = createInlinePreview(direct, previewType);
+      if (!preview) return;
+      preview.dataset.tenorSource = link;
+
+      if (placeholder && placeholder.parentNode === node) {
+        node.replaceChild(preview, placeholder);
+      } else if (!hasInlinePreview(node, direct)) {
+        node.appendChild(preview);
+      }
+    })
+    .catch(() => {
+      tenorPreviewCache.set(link, null);
+      if (placeholder) {
+        const label = placeholder.querySelector(".preview-label");
+        if (label) label.textContent = "GIF unavailable";
+      }
+    });
+}
+
+function appendAttachmentFromMessage(node, msg) {
+  if (!node || !msg?.fileUrl) return;
+  const url = msg.fileUrl;
+  const typeHint = (msg.fileType || "").toLowerCase();
+
+  let previewType = "";
+  const imagePattern = /\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?.*)?$/i;
+  if (typeHint.startsWith("image/") || imagePattern.test(url)) {
+    previewType = "image";
+  } else if (typeHint.startsWith("video/") || /\.(mp4|webm|mov)(\?.*)?$/i.test(url)) {
+    previewType = "video";
+  } else if (typeHint.startsWith("audio/") || /\.(mp3|wav|ogg)(\?.*)?$/i.test(url)) {
+    previewType = "audio";
+  } else if (typeHint.includes("pdf") || /\.(pdf)(\?.*)?$/i.test(url)) {
+    previewType = "pdf";
+  } else if (url) {
+    previewType = "file";
+  }
+
+  if (!previewType || hasInlinePreview(node, url)) return;
+
+  if (previewType === "image" && !imagePattern.test(url)) {
+    if (/tenor\.com/i.test(url)) {
+      fetchTenorPreview(url, node);
+    }
+    return;
+  }
+
+  const label = (msg.fileName || "").trim();
+  const preview = createInlinePreview(url, previewType, label);
+  if (!preview) return;
+
+  attachPreviewActions(preview, { link: url, label, type: previewType });
+  node.appendChild(preview);
+
+  const textEl = node.querySelector(".text");
+  if (textEl && textEl.textContent?.trim() === url.trim()) {
+    textEl.textContent = "";
+    textEl.style.display = "none";
+  }
+}
+
 // ------------------- History & Messages -------------------
 function renderMessage(msg) {
   if (!isViewingChat || !messages) return;
@@ -627,6 +918,7 @@ function renderMessage(msg) {
     <div class="text">${msg.text || ""}</div>
   `;
   messages.appendChild(wrap);
+  appendAttachmentFromMessage(wrap, msg);
   autoEmbed(wrap);
   messages.scrollTop = messages.scrollHeight;
 }
@@ -706,6 +998,9 @@ if (attachBtn && fileInput) {
         user: window.currentUser,
         text: data.url,
         timestamp: Date.now(),
+        fileUrl: data.url,
+        fileType: data.type || file.type || "",
+        fileName: data.name || file.name || "",
       });
 
       fileInput.value = "";
@@ -771,16 +1066,31 @@ if (attachBtn && fileInput) {
         img.style.borderRadius = "8px";
         img.style.cursor = "pointer";
         img.onclick = () => {
-          const url =
+          const directGif =
             g?.media_formats?.gif?.url ||
-            g?.media_formats?.mediumgif?.url ||
+            g?.media?.[0]?.gif?.url ||
             g?.media_formats?.tinygif?.url ||
-            thumb;
+            g?.media?.[0]?.tinygif?.url;
+          const videoVariant =
+            g?.media_formats?.mp4?.url ||
+            g?.media_formats?.mediumgif?.url ||
+            g?.media?.[0]?.mp4?.url;
+
+          const url = directGif || videoVariant || thumb;
+          if (!url) return;
+
+          const isVideo = /\.(mp4|webm)$/i.test(url);
+          const gifLabel = (g?.content_description || "GIF").trim() || "GIF";
+          const labelWithExt = isVideo ? `${gifLabel}.mp4` : `${gifLabel}.gif`;
+
           socket.emit("chat message", {
             room: window.currentRoom,
             user: window.currentUser,
             text: url,
             timestamp: Date.now(),
+            fileUrl: url,
+            fileType: isVideo ? "video/mp4" : "image/gif",
+            fileName: labelWithExt,
           });
           showToast("GIF added", "success");
           panel.style.display = "none";
@@ -848,8 +1158,13 @@ function autoEmbed(node) {
     let m = link.match(/https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/i);
     if (m) {
       el = document.createElement("iframe");
-      el.src = `https://www.youtube.com/embed/${m[1]}`;
-      el.className = "embed-iframe";
+      el.src = `https://www.youtube.com/embed/${m[1]}?rel=0`;
+      el.className = "embed-iframe youtube";
+      el.loading = "lazy";
+      el.setAttribute(
+        "allow",
+        "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+      );
       el.setAttribute("allowfullscreen", "true");
     }
 
@@ -859,7 +1174,9 @@ function autoEmbed(node) {
       if (m) {
         el = document.createElement("iframe");
         el.src = `https://open.spotify.com/embed/${m[1]}/${m[2]}`;
-        el.className = "embed-iframe";
+        el.className = "embed-iframe spotify";
+        el.loading = "lazy";
+        el.setAttribute("allow", "autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture");
       }
     }
 
@@ -867,57 +1184,67 @@ function autoEmbed(node) {
     if (!el && /https?:\/\/(?:soundcloud\.com|snd\.sc)\//i.test(link)) {
       el = document.createElement("iframe");
       el.src = "https://w.soundcloud.com/player/?url=" + encodeURIComponent(link);
-      el.className = "embed-iframe";
+      el.className = "embed-iframe soundcloud";
+      el.loading = "lazy";
+      el.setAttribute("allow", "autoplay");
+    }
+
+    // Rumble
+    if (!el && /https?:\/\/(?:www\.)?rumble\.com\//i.test(link)) {
+      let embedUrl = "";
+      let match = link.match(/https?:\/\/(?:www\.)?rumble\.com\/embed\/([a-z0-9]+)/i);
+      if (match) {
+        embedUrl = `https://rumble.com/embed/${match[1]}/?pub=4&autoplay=0`;
+      } else {
+        match = link.match(/https?:\/\/(?:www\.)?rumble\.com\/(v[\w]+)/i);
+        if (match) embedUrl = `https://rumble.com/embed/${match[1]}/?pub=4&autoplay=0`;
+      }
+      if (embedUrl) {
+        el = document.createElement("iframe");
+        el.src = embedUrl;
+        el.className = "embed-iframe rumble";
+        el.loading = "lazy";
+        el.setAttribute(
+          "allow",
+          "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        );
+        el.setAttribute("allowfullscreen", "true");
+      }
     }
 
     // Direct media
-    const createInlinePreview = (type) => {
-      const anchor = document.createElement("a");
-      anchor.href = link;
-      anchor.target = "_blank";
-      anchor.rel = "noopener noreferrer";
-      anchor.className = `inline-preview inline-${type}`;
-
-      if (type === "image") {
-        const img = document.createElement("img");
-        img.src = link;
-        img.alt = "Embedded image";
-        img.loading = "lazy";
-        anchor.appendChild(img);
-      } else if (type === "video") {
-        const video = document.createElement("video");
-        video.src = link;
-        video.muted = true;
-        video.autoplay = true;
-        video.loop = true;
-        video.playsInline = true;
-        video.preload = "metadata";
-        video.setAttribute("aria-label", "Video preview");
-        anchor.appendChild(video);
-      } else {
-        const label = document.createElement("span");
-        label.className = "preview-label";
-        label.textContent = type.toUpperCase();
-        anchor.appendChild(label);
-      }
-
-      return anchor;
-    };
-
     if (!el && /\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?.*)?$/i.test(link)) {
-      el = createInlinePreview("image");
+      if (!hasInlinePreview(wrap, link)) {
+        el = createInlinePreview(link, "image");
+      }
     }
     if (!el && /\.(mp4|webm|mov)(\?.*)?$/i.test(link)) {
-      el = createInlinePreview("video");
+      if (!hasInlinePreview(wrap, link)) {
+        el = createInlinePreview(link, "video");
+      }
     }
     if (!el && /\.(mp3|wav|ogg)(\?.*)?$/i.test(link)) {
-      el = createInlinePreview("audio");
+      if (!hasInlinePreview(wrap, link)) {
+        el = createInlinePreview(link, "audio");
+      }
     }
     if (!el && /\.(pdf)(\?.*)?$/i.test(link)) {
-      el = createInlinePreview("pdf");
+      if (!hasInlinePreview(wrap, link)) {
+        el = createInlinePreview(link, "pdf");
+      }
     }
     if (!el && /\.(zip|rar|7z|tar|gz)(\?.*)?$/i.test(link)) {
-      el = createInlinePreview("file");
+      if (!hasInlinePreview(wrap, link)) {
+        el = createInlinePreview(link, "file");
+      }
+    }
+
+    if (
+      !el &&
+      /tenor\.com/i.test(link) &&
+      !/media\.tenor\.com/i.test(link)
+    ) {
+      fetchTenorPreview(link, wrap);
     }
 
     if (el) wrap.appendChild(el);
@@ -938,15 +1265,15 @@ function autoEmbed(node) {
     }
   }
 
-  // Collapsible OG cards for non-media links
+  // Open Graph cards for remaining links
   (async () => {
-    const normal = links.filter(
+    const previewable = links.filter(
       (u) =>
-        !/(youtube|youtu\.be|open\.spotify|soundcloud|\.mp4|\.webm|\.mov|\.mp3|\.wav|\.ogg|\.png|\.jpg|\.jpeg|\.gif|\.webp|\.pdf)/i.test(
+        !/(youtube|youtu\.be|open\.spotify|soundcloud|rumble\.com|tenor\.com|\.mp4|\.webm|\.mov|\.mp3|\.wav|\.ogg|\.png|\.jpg|\.jpeg|\.gif|\.webp|\.pdf|\.zip|\.rar|\.7z|\.tar|\.gz)/i.test(
           u
         )
     );
-    if (!normal.length) return;
+    if (!previewable.length) return;
 
     async function fetchPreview(url) {
       try {
@@ -957,34 +1284,100 @@ function autoEmbed(node) {
       }
     }
 
-    for (const u of normal) {
-      const d = await fetchPreview(u);
-      if (!d || (!d.title && !d.image)) continue;
+    const seen = new Set();
+
+    for (const u of previewable) {
+      const normalized = u.trim();
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+
+      const d = await fetchPreview(normalized);
+      if (!d || !(d.title || d.image || d.description)) continue;
+
+      let parsedUrl;
+      try {
+        parsedUrl = new URL(normalized);
+      } catch {
+        continue;
+      }
+
+      if (!wrap.isConnected) {
+        node.appendChild(wrap);
+      }
 
       const card = document.createElement("div");
       card.className = "link-card";
+      card.dataset.href = normalized;
+      card.setAttribute("role", "button");
+      card.setAttribute("tabindex", "0");
 
-      const header = document.createElement("div");
-      header.className = "link-header";
-      header.innerHTML = `<span class="toggle">▶️</span><span class="domain">${new URL(u).hostname}</span>`;
+      let thumbEl = null;
+      if (d.image) {
+        const img = document.createElement("img");
+        img.className = "link-thumb";
+        img.src = d.image;
+        img.alt = d.title || d.siteName || parsedUrl.hostname;
+        img.loading = "lazy";
+        thumbEl = img;
+      } else if (d.icon) {
+        const iconImg = document.createElement("img");
+        iconImg.className = "link-thumb";
+        iconImg.src = d.icon;
+        iconImg.alt = d.siteName || parsedUrl.hostname;
+        iconImg.loading = "lazy";
+        thumbEl = iconImg;
+      }
 
-      const body = document.createElement("div");
-      body.className = "link-body";
-      body.innerHTML =
-        (d.image ? `<img src="${d.image}" alt="">` : "") +
-        `<div class="title">${d.title || u}</div>`;
+      if (!thumbEl) {
+        const fallback = document.createElement("div");
+        fallback.className = "link-thumb link-thumb-fallback";
+        const seed = d.siteName || parsedUrl.hostname || "";
+        fallback.textContent = seed ? seed.charAt(0).toUpperCase() : "#";
+        thumbEl = fallback;
+      }
 
-      const toggle = header.querySelector(".toggle");
-      card.appendChild(header);
-      card.appendChild(body);
+      const info = document.createElement("div");
+      info.className = "link-info";
 
-      header.onclick = () => {
-        const open = card.classList.toggle("open");
-        toggle.textContent = open ? "🔽" : "▶️";
-      };
-      body.onclick = () => window.open(u, "_blank");
+      const domainRow = document.createElement("div");
+      domainRow.className = "link-domain";
+      if (d.icon && !(thumbEl instanceof HTMLImageElement && thumbEl.src === d.icon)) {
+        const siteIcon = document.createElement("img");
+        siteIcon.className = "link-icon";
+        siteIcon.src = d.icon;
+        siteIcon.alt = "";
+        domainRow.appendChild(siteIcon);
+      }
+      const domainText = document.createElement("span");
+      domainText.textContent = d.siteName || parsedUrl.hostname;
+      domainRow.appendChild(domainText);
 
-      node.appendChild(card);
+      const title = document.createElement("div");
+      title.className = "link-title";
+      title.textContent = d.title || domainText.textContent || normalized;
+
+      info.appendChild(domainRow);
+      info.appendChild(title);
+
+      if (d.description) {
+        const desc = document.createElement("div");
+        desc.className = "link-desc";
+        desc.textContent = d.description;
+        info.appendChild(desc);
+      }
+
+      card.appendChild(thumbEl);
+      card.appendChild(info);
+      wrap.appendChild(card);
+
+      const open = () => window.open(normalized, "_blank", "noopener");
+      card.addEventListener("click", open);
+      card.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
+          event.preventDefault();
+          open();
+        }
+      });
     }
   })();
 }
