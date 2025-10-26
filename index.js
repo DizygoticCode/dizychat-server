@@ -240,65 +240,19 @@ const getMuteExpiry = (room, username) => {
   return until;
 };
 
-const ensureHistoryMap = (room) => {
-  if (!roomUserHistory.has(room)) roomUserHistory.set(room, new Map());
-  return roomUserHistory.get(room);
-};
-
-const markUserSeen = (room, username, { isAdmin } = {}) => {
-  const canonical = canonicalUsername(username);
-  if (!room || !canonical) return;
-  const history = ensureHistoryMap(room);
-  const existing = history.get(canonical) || {};
-  history.set(canonical, {
-    username: username || existing.username || '',
-    isAdmin: typeof isAdmin === 'boolean' ? Boolean(isAdmin) : Boolean(existing.isAdmin),
-    lastSeen: Date.now(),
-  });
-};
-
 const emitRoomUsers = (room) => {
   const presence = roomPresence.get(room);
-  const history = roomUserHistory.get(room);
-
-  const usersByCanonical = new Map();
-
-  if (history) {
-    for (const [canonical, record] of history.entries()) {
-      if (!record?.username) continue;
-      usersByCanonical.set(canonical, {
-        username: record.username,
-        isAdmin: Boolean(record.isAdmin),
-        online: false,
-        mutedUntil: getMuteExpiry(room, record.username) || 0,
-        isBlocked: isUserBlocked(room, record.username),
-        lastSeen: record.lastSeen || 0,
-      });
-    }
-  }
-
-  if (presence) {
-    for (const entry of presence.values()) {
-      if (!entry || !entry.username) continue;
-      const canonical = canonicalUsername(entry.username);
-      if (!canonical) continue;
-      const existing = usersByCanonical.get(canonical) || {};
-      usersByCanonical.set(canonical, {
-        username: entry.username,
-        isAdmin: typeof entry.isAdmin === 'boolean' ? Boolean(entry.isAdmin) : Boolean(existing.isAdmin),
-        online: true,
-        mutedUntil: getMuteExpiry(room, entry.username) || 0,
-        isBlocked: isUserBlocked(room, entry.username),
-        lastSeen: Date.now(),
-      });
-    }
-  }
-
-  const users = Array.from(usersByCanonical.values()).filter((entry) => entry.username);
+  const users = presence
+    ? Array.from(presence.values()).map(({ id, username, isAdmin }) => ({
+        id,
+        username,
+        isAdmin: Boolean(isAdmin),
+        mutedUntil: getMuteExpiry(room, username) || 0,
+        isBlocked: isUserBlocked(room, username),
+      }))
+    : [];
 
   users.sort((a, b) => {
-    if (a.online && !b.online) return -1;
-    if (!a.online && b.online) return 1;
     if (a.isAdmin && !b.isAdmin) return -1;
     if (!a.isAdmin && b.isAdmin) return 1;
     return a.username.localeCompare(b.username);
@@ -316,7 +270,6 @@ const registerSocketInRoom = (socket, room) => {
     username: socket.username,
     isAdmin: socket.isAdmin,
   });
-  markUserSeen(targetRoom, socket.username, { isAdmin: socket.isAdmin });
   emitRoomUsers(targetRoom);
 };
 
@@ -330,7 +283,6 @@ const refreshSocketPresence = (socket) => {
     username: socket.username,
     isAdmin: socket.isAdmin,
   });
-  markUserSeen(room, socket.username, { isAdmin: socket.isAdmin });
   emitRoomUsers(room);
 };
 
@@ -414,8 +366,6 @@ const removeSocketFromRoom = (socket, targetRoom) => {
       roomPresence.delete(room);
     }
   }
-
-  markUserSeen(room, socket.username, { isAdmin: socket.isAdmin });
 
   delete typingUsers[socket.id];
   socket.leave(room);

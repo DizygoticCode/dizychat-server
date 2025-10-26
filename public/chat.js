@@ -295,8 +295,7 @@ function renderUserSidebar(users = []) {
   closeActiveMenu();
 
   const now = Date.now();
-  let onlineCount = 0;
-  let othersCount = 0;
+  let total = 0;
 
   array.forEach((entry) => {
     if (!entry || !entry.username) return;
@@ -306,28 +305,14 @@ function renderUserSidebar(users = []) {
     const mutedUntil = Number(entry.mutedUntil || 0);
     const isMuted = mutedUntil && mutedUntil > now;
     const isBlocked = Boolean(entry.isBlocked);
-    const isOnline = Boolean(entry.online);
-    const userData = { ...entry, mutedUntil, online: isOnline };
-
-    if (isOnline) onlineCount += 1;
-    if (!isSelf) othersCount += 1;
+    const userData = { ...entry, mutedUntil };
 
     const item = document.createElement("li");
     item.className = "user-entry";
     item.dataset.username = username;
-    item.dataset.online = isOnline ? "true" : "false";
     if (isAdmin) item.classList.add("admin");
-    if (!isOnline) item.classList.add("offline");
 
-    const indicator = document.createElement("span");
-    indicator.className = `user-indicator${isOnline ? " online" : ""}`;
-    indicator.title = isOnline ? "Online" : "Offline";
-    item.appendChild(indicator);
-
-    const content = document.createElement("div");
-    content.className = "user-content";
-
-    const name = document.createElement("div");
+    const name = document.createElement("span");
     name.className = "user-name";
     if (isAdmin) {
       const crown = document.createElement("span");
@@ -347,7 +332,7 @@ function renderUserSidebar(users = []) {
       name.appendChild(pill);
     }
 
-    content.appendChild(name);
+    item.appendChild(name);
 
     const statusParts = [];
     if (isMuted) {
@@ -356,22 +341,17 @@ function renderUserSidebar(users = []) {
     if (isBlocked) {
       statusParts.push({ text: "Blocked", className: "bad" });
     }
-    if (!isOnline) {
-      statusParts.push({ text: "Offline", className: "muted" });
-    }
 
     if (statusParts.length) {
-      const status = document.createElement("div");
-      const priority = statusParts.find((part) => part.className === "bad") || statusParts[0];
-      status.className = `user-status ${priority.className}`;
+      const status = document.createElement("span");
+      const isSevere = statusParts.some((part) => part.className === "bad");
+      status.className = `user-status ${isSevere ? "bad" : statusParts[0].className}`;
       status.textContent = statusParts.map((part) => part.text).join(" • ");
-      content.appendChild(status);
+      item.appendChild(status);
     }
 
-    item.appendChild(content);
-
     const canInteract =
-      isOnline && !isSelf && (appState.isAdmin || (!isAdmin && !isSelf));
+      !isSelf && (appState.isAdmin || (!isAdmin && !isSelf));
 
     if (canInteract) {
       item.classList.add("actionable");
@@ -399,15 +379,15 @@ function renderUserSidebar(users = []) {
     }
 
     userList.appendChild(item);
+    total += 1;
   });
 
   if (userCount) {
-    const label = onlineCount === 1 ? "1 online" : `${onlineCount} online`;
-    userCount.textContent = label;
+    userCount.textContent = String(total);
   }
 
   if (userListEmpty) {
-    const showEmpty = !window.currentRoom || othersCount === 0;
+    const showEmpty = !window.currentRoom || total <= 1;
     userListEmpty.style.display = showEmpty ? "block" : "none";
     if (!window.currentRoom) {
       userListEmpty.textContent = "Join a room to see who's online.";
@@ -2795,6 +2775,7 @@ function autoEmbed(node) {
 
   let hasTenorLink = false;
   const textAnchors = textEl ? Array.from(textEl.querySelectorAll("a")) : [];
+  let anchorCount = 0;
   links.forEach((link) => {
     let el = null;
 
@@ -2819,14 +2800,13 @@ function autoEmbed(node) {
     if (!seenLinks.has(link)) {
       seenLinks.add(link);
       if (!skipLinkAnchor) {
-        attachAnchors();
         const anchor = document.createElement("a");
         anchor.href = link;
         anchor.target = "_blank";
         anchor.rel = "noopener noreferrer";
         anchor.textContent = link;
         linkAnchors.appendChild(anchor);
-        anchorsByLink.set(normalizeLinkKey(link), anchor);
+        anchorCount += 1;
       }
     }
 
@@ -2956,6 +2936,14 @@ function autoEmbed(node) {
       }
     }
   });
+
+  if (!wrapAdded && wrap.childNodes.length > 1) {
+    ensureWrap();
+  }
+
+  if (!anchorCount) {
+    linkAnchors.remove();
+  }
 
   if (hasTenorLink && textEl) {
     const tenorRegex = /https?:\/\/(?:media\.)?tenor\.com\/\S+/i;
