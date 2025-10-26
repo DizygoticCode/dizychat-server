@@ -894,7 +894,9 @@ function fetchTenorPreview(link, node) {
     const cachedPreview = createInlinePreview(cached, /\.(mp4|webm)$/i.test(cached) ? "video" : "image");
     if (cachedPreview) {
       cachedPreview.dataset.tenorSource = link;
+      cachedPreview.classList.add("tenor-inline");
       node.appendChild(cachedPreview);
+      node.classList.add("has-inline-preview");
     }
     return;
   }
@@ -903,7 +905,9 @@ function fetchTenorPreview(link, node) {
   if (placeholder) {
     placeholder.dataset.tenorSource = link;
     placeholder.dataset.placeholder = "1";
+    placeholder.classList.add("tenor-inline", "tenor-loading");
     node.appendChild(placeholder);
+    node.classList.add("has-inline-preview");
   }
 
   fetch(`/tenor-proxy?url=${encodeURIComponent(link)}`)
@@ -924,12 +928,14 @@ function fetchTenorPreview(link, node) {
       const preview = createInlinePreview(direct, previewType);
       if (!preview) return;
       preview.dataset.tenorSource = link;
+      preview.classList.add("tenor-inline");
 
       if (placeholder && placeholder.parentNode === node) {
         node.replaceChild(preview, placeholder);
       } else if (!hasInlinePreview(node, direct)) {
         node.appendChild(preview);
       }
+      node.classList.add("has-inline-preview");
     })
     .catch(() => {
       tenorPreviewCache.set(link, null);
@@ -944,6 +950,7 @@ function appendAttachmentFromMessage(node, msg) {
   if (!node || !msg?.fileUrl) return;
   const url = msg.fileUrl;
   const typeHint = (msg.fileType || "").toLowerCase();
+  const isTenor = /tenor\.com/i.test(url);
 
   let previewType = "";
   const imagePattern = /\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?.*)?$/i;
@@ -971,9 +978,13 @@ function appendAttachmentFromMessage(node, msg) {
   const label = (msg.fileName || "").trim();
   const preview = createInlinePreview(url, previewType, label);
   if (!preview) return;
+  if (isTenor) {
+    preview.classList.add("tenor-inline");
+  }
 
   attachPreviewActions(preview, { link: url, label, type: previewType });
   node.appendChild(preview);
+  node.classList.add("has-inline-preview");
 
   const textEl = node.querySelector(".text");
   if (textEl && textEl.textContent?.trim() === url.trim()) {
@@ -1114,7 +1125,7 @@ if (attachBtn && fileInput) {
   panel.id = "gif-picker";
   panel.innerHTML = `
     <div class="gif-search"><input id="gif-search-input" placeholder="Search GIFs…"></div>
-    <div id="gif-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;"></div>`;
+    <div id="gif-grid" class="gif-grid"></div>`;
   document.body.appendChild(panel);
 
   function positionPanel() {
@@ -1141,11 +1152,7 @@ if (attachBtn && fileInput) {
         const img = document.createElement("img");
         img.src = thumb;
         img.alt = "gif";
-        img.style.width = "100%";
-        img.style.height = "100%";
-        img.style.objectFit = "cover";
-        img.style.borderRadius = "8px";
-        img.style.cursor = "pointer";
+        img.className = "gif-thumb";
         img.onclick = () => {
           const directGif =
             g?.media_formats?.gif?.url ||
@@ -1331,7 +1338,10 @@ function autoEmbed(node) {
     if (el) wrap.appendChild(el);
   });
 
-  if (wrap.childNodes.length) node.appendChild(wrap);
+  if (wrap.childNodes.length) {
+    node.appendChild(wrap);
+    node.classList.add("has-inline-preview");
+  }
 
   if (hasTenorLink && textEl) {
     const tenorRegex = /https?:\/\/(?:media\.)?tenor\.com\/\S+/i;
