@@ -437,24 +437,23 @@ io.on('connection', socket => {
       roomPasswords.set(roomName, providedPassword);
     }
 
-    const previousRoom = socket.currentRoom;
-    if (previousRoom && previousRoom !== roomName) {
-      removeSocketFromRoom(socket, previousRoom);
-      emitRoomListUpdate();
-    }
+      // Track user identity & room
+      const fallbackUser = `Guest-${socket.id.slice(0, 4)}`;
+      socket.username = normaliseUsername(username, fallbackUser);
+      const canonicalUser = canonicalUsername(socket.username);
+      const bannedSet = roomBans.get(roomName);
+      if (bannedSet && bannedSet.has(canonicalUser)) {
+        sendJoinError(socket, 'You are banned from this room.');
+        return;
+      }
 
-    // Track user identity & room
-    const fallbackUser = `Guest-${socket.id.slice(0, 4)}`;
-    socket.username = normaliseUsername(username, fallbackUser);
-    const canonicalUser = canonicalUsername(socket.username);
-    const bannedSet = roomBans.get(roomName);
-    if (bannedSet && bannedSet.has(canonicalUser)) {
-      sendJoinError(socket, 'You are banned from this room.');
-      socket.currentRoom = null;
-      return;
-    }
+      const previousRoom = socket.currentRoom;
+      if (previousRoom && previousRoom !== roomName) {
+        removeSocketFromRoom(socket, previousRoom);
+        emitRoomListUpdate();
+      }
 
-    socket.currentRoom = roomName;
+      socket.currentRoom = roomName;
 
     if (!roomMembers.has(roomName)) {
       roomMembers.set(roomName, new Set());
