@@ -179,6 +179,19 @@ socket.on('join room', async ({ room, username, password }) => {
   } catch (err) { console.error("[Pinned] Error:", err); }
 });
 
+  socket.on('leave room', ({ room } = {}) => {
+    const targetRoom = room || socket.currentRoom;
+    if (!targetRoom) return;
+
+    socket.leave(targetRoom);
+    if (socket.currentRoom === targetRoom) {
+      socket.currentRoom = null;
+    }
+    delete typingUsers[socket.id];
+
+    console.log(`[Socket] ${socket.id} left room ${targetRoom}`);
+  });
+
 
   // ----- Admin Auth (post-join) -----
   socket.on('admin auth', ({ room, username, adminPassword }) => {

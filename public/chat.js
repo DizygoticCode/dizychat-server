@@ -258,14 +258,26 @@ if (joinBtn) {
     });
   });
 
+function leaveCurrentRoom({ focusUsername = true, toastMessage = "Left the room" } = {}) {
+  const previousRoom = window.currentRoom;
+  const previousPassword = window.currentPassword || "";
+
+  if (previousRoom) {
+    lastRoomName = previousRoom;
+    lastRoomPassword = previousPassword;
+    socket.emit("leave room", { room: previousRoom });
+  }
+
+  showLanding({ focusUsername });
+
+  if (toastMessage) {
+    showToast(toastMessage, "info");
+  }
+}
+
 if (leaveBtn) {
   leaveBtn.addEventListener("click", () => {
-    if (window.currentRoom) {
-      lastRoomName = window.currentRoom;
-      lastRoomPassword = window.currentPassword || "";
-    }
-    showLanding({ focusUsername: true });
-    showToast("Left the room", "info");
+    leaveCurrentRoom({ focusUsername: true });
   });
 }
 
@@ -290,9 +302,7 @@ if (copyJoinLinkBtn) {
     const copied = await copyTextToClipboard(shareUrl);
     if (copied) {
       showToast("Join link copied!", "success");
-      lastRoomName = window.currentRoom;
-      lastRoomPassword = window.currentPassword || "";
-      showLanding({ focusUsername: true });
+      leaveCurrentRoom({ focusUsername: true, toastMessage: null });
     } else {
       showToast("Unable to copy link", "error");
     }
