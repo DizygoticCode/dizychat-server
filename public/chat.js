@@ -842,6 +842,36 @@ function replaceCustomEmojiLinks(textEl) {
   return true;
 }
 
+function updateTenorBubbleState(node) {
+  if (!node) return;
+  const isMessage = node.classList && node.classList.contains("message");
+  let message = null;
+  if (isMessage) {
+    message = node;
+  } else if (typeof node.closest === "function") {
+    message = node.closest(".message");
+  }
+  if (!message) return;
+
+  const hasTenorPreview = message.querySelector(".inline-preview.tenor-inline");
+  if (!hasTenorPreview) {
+    message.classList.remove("tenor-only");
+    return;
+  }
+
+  const textEl = message.querySelector(".text");
+  const textVisible =
+    textEl &&
+    textEl.style.display !== "none" &&
+    (textEl.textContent || "").trim().length > 0;
+
+  if (textVisible) {
+    message.classList.remove("tenor-only");
+  } else {
+    message.classList.add("tenor-only");
+  }
+}
+
 function attachPreviewActions(preview, { link, label, type } = {}) {
   if (!preview || !link) return;
   if (preview.dataset.placeholder === "1") return;
@@ -897,6 +927,7 @@ function fetchTenorPreview(link, node) {
       cachedPreview.classList.add("tenor-inline");
       node.appendChild(cachedPreview);
       node.classList.add("has-inline-preview");
+      updateTenorBubbleState(node);
     }
     return;
   }
@@ -908,6 +939,7 @@ function fetchTenorPreview(link, node) {
     placeholder.classList.add("tenor-inline", "tenor-loading");
     node.appendChild(placeholder);
     node.classList.add("has-inline-preview");
+    updateTenorBubbleState(node);
   }
 
   fetch(`/tenor-proxy?url=${encodeURIComponent(link)}`)
@@ -936,6 +968,7 @@ function fetchTenorPreview(link, node) {
         node.appendChild(preview);
       }
       node.classList.add("has-inline-preview");
+      updateTenorBubbleState(node);
     })
     .catch(() => {
       tenorPreviewCache.set(link, null);
@@ -943,6 +976,7 @@ function fetchTenorPreview(link, node) {
         const label = placeholder.querySelector(".preview-label");
         if (label) label.textContent = "GIF unavailable";
       }
+      updateTenorBubbleState(node);
     });
 }
 
@@ -975,7 +1009,7 @@ function appendAttachmentFromMessage(node, msg) {
     return;
   }
 
-  const label = (msg.fileName || "").trim();
+  const label = isTenor ? "" : (msg.fileName || "").trim();
   const preview = createInlinePreview(url, previewType, label);
   if (!preview) return;
   if (isTenor) {
@@ -991,6 +1025,8 @@ function appendAttachmentFromMessage(node, msg) {
     textEl.textContent = "";
     textEl.style.display = "none";
   }
+
+  updateTenorBubbleState(node);
 }
 
 // ------------------- History & Messages -------------------
@@ -1354,6 +1390,10 @@ function autoEmbed(node) {
     } else {
       textEl.style.removeProperty("display");
     }
+  }
+
+  if (hasTenorLink) {
+    updateTenorBubbleState(node);
   }
 
   // Open Graph cards for remaining links

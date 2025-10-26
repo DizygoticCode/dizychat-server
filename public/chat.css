@@ -284,6 +284,23 @@ header .logo { width: 40px; height: auto; }
   display: none;
 }
 
+.message.tenor-only {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  max-width: min(260px, 100%);
+}
+
+.message.tenor-only .inline-preview {
+  margin-top: 0;
+}
+
+.message.tenor-only .inline-preview.tenor-inline {
+  width: 100%;
+  padding: 6px;
+}
+
 .message .text img.custom-emoji:first-child {
   margin-left: 0;
 }
