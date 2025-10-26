@@ -284,6 +284,7 @@ header .logo { width: 40px; height: auto; }
   display: none;
 }
 
+.message.media-only,
 .message.tenor-only {
   display: inline-flex;
   flex-direction: column;
@@ -292,13 +293,15 @@ header .logo { width: 40px; height: auto; }
   max-width: min(260px, 100%);
 }
 
+.message.media-only .inline-preview,
 .message.tenor-only .inline-preview {
   margin-top: 0;
+  width: 100%;
+  padding: 6px;
 }
 
 .message.tenor-only .inline-preview.tenor-inline {
   width: 100%;
-  padding: 6px;
 }
 
 .message .text img.custom-emoji:first-child {
