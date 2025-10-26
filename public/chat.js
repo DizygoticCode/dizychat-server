@@ -1,546 +1,514 @@
-/* ==============================
-   DIZYCHAT — chat.js (Render-ready, Dizy Purple Edition)
-   - Socket.IO only
-   - Single paperclip upload (all filetypes)
-   - Upload progress (Dizy Purple)
-   - Clickable link + inline previews
-   - Full history via 'load messages'
-   - Console logs kept verbose
-   - Tenor/emoji/fusion hooks untouched
-   ============================== */
+// ===== DIZYCHAT FUSION — SUPERNOVA FINAL 💜 =====
+// Unified client (fusion.js merged into chat.js)
+// (c) Dizygotic & Psybin 2025
 
+console.log("%c🎛️ DizyChat Supernova Fusion Loaded", "color:#b266ff;font-weight:bold;");
+
+const socket = io();
+window.socket = socket;
+
+// ------------------- Globals -------------------
+let typingTimeout;
+let isTyping = false;
+
+window.currentUser = window.currentUser || null;
+window.currentRoom = window.currentRoom || null;
+window.currentPassword = window.currentPassword || "";
+
+// ------------------- DOM -------------------
+const form = document.getElementById("form");
+const input = document.getElementById("input");
+const messages = document.getElementById("messages");
+const fileInput = document.getElementById("file-input");
+const attachBtn = document.getElementById("file-attach");
+const emojiBtn = document.getElementById("emoji-btn");
+
+const usernamePrompt = document.getElementById("username-prompt");
+const chatContainer = document.getElementById("chat-container");
+const joinBtn = document.getElementById("join-btn");
+const usernameInput = document.getElementById("username");
+const roomInput = document.getElementById("room");
+const passwordInput = document.getElementById("room-password");
+
+// Autofocus username for smoother entry
+usernameInput?.focus();
+
+// ------------------- Toasts (bottom-left, glowing, auto-hide) -------------------
 (() => {
-  // --- DOM refs ---
-  const messagesEl = document.getElementById('messages');
-  const formEl = document.getElementById('form');
-  const inputEl = document.getElementById('input');
-  const emojiBtn = document.getElementById('emoji-btn'); // for positioning only
+  const container = document.createElement("div");
+  container.className = "toast-container";
+  // Force bottom-left regardless of existing CSS
+  Object.assign(container.style, {
+    position: "fixed",
+    left: "16px",
+    bottom: "76px",
+    zIndex: 2000,
+    display: "flex",
+    flexDirection: "column",
+    gap: "10px",
+    pointerEvents: "none",
+  });
+  document.body.appendChild(container);
 
-  // Ensure paperclip button + hidden input exist (do NOT duplicate)
-  let attachBtn = document.getElementById('file-attach');
-  let fileInput = document.getElementById('file-input');
-
-  if (!attachBtn && formEl) {
-    attachBtn = document.createElement('button');
-    attachBtn.id = 'file-attach';
-    attachBtn.type = 'button';
-    attachBtn.title = 'Attach file';
-    attachBtn.textContent = '📎';
-    if (emojiBtn) formEl.insertBefore(attachBtn, emojiBtn.nextSibling);
-    else formEl.appendChild(attachBtn);
-  }
-  if (!fileInput) {
-    fileInput = document.createElement('input');
-    fileInput.type = 'file';
-    fileInput.id = 'file-input';
-    fileInput.style.display = 'none';
-    document.body.appendChild(fileInput);
-  }
-  fileInput.setAttribute('accept', '*/*'); // allow all types
-
-  // --- state ---
-  window.currentUser = window.currentUser || localStorage.getItem('dizy_username') || 'Guest';
-  window.currentRoom = window.currentRoom || localStorage.getItem('dizy_room') || 'lobby';
-
-  // --- Socket.IO ---
-  const socket = (window.socket = window.socket || io());
-  console.log('[Socket] init', { user: window.currentUser, room: window.currentRoom });
-
-  function scrollToBottom() {
-    try { messagesEl.scrollTop = messagesEl.scrollHeight; } catch {}
-  }
-
-  // URL linkify helper (keeps raw text clickable)
-  const urlRegex = /((https?:\/\/|www\.)[^\s<]+)/gi;
-  function linkify(str) {
-    return (str || '').replace(urlRegex, (u) => {
-      const url = u.startsWith('http') ? u : `http://${u}`;
-      return `<a href="${url}" target="_blank" rel="noopener noreferrer">${u}</a>`;
+  window.showToast = (text, type = "info") => {
+    const toast = document.createElement("div");
+    toast.className = `toast ${type}`;
+    Object.assign(toast.style, {
+      minWidth: "200px",
+      maxWidth: "320px",
+      background: "rgba(20,20,20,0.9)",
+      color: "#fff",
+      padding: "10px 14px",
+      borderRadius: "12px",
+      fontSize: "0.9em",
+      boxShadow:
+        type === "success"
+          ? "0 0 10px rgba(46, 204, 113, 0.45)"
+          : type === "error"
+          ? "0 0 10px rgba(231, 76, 60, 0.5)"
+          : "0 0 10px rgba(187,134,252,0.45)",
+      borderLeft:
+        type === "success"
+          ? "4px solid #2ecc71"
+          : type === "error"
+          ? "4px solid #e74c3c"
+          : "4px solid #bb86fc",
+      opacity: 0,
+      transform: "translateX(-12px)",
+      transition: "opacity .25s ease, transform .25s ease",
+      pointerEvents: "auto",
     });
-  }
+    toast.textContent = text;
+    container.appendChild(toast);
 
-  // --- Inline preview from URL or file meta ---
-  function createPreviewEl(opts) {
-    const { url, typeHint = '', className = '' } = opts || {};
-    if (!url) return null;
-    const lower = (url.split('?')[0] || '').toLowerCase();
-    const hint = (typeHint || '').toLowerCase();
+    requestAnimationFrame(() => {
+      toast.style.opacity = 1;
+      toast.style.transform = "translateX(0)";
+    });
 
-    // Images
-    if (hint.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg)$/.test(lower)) {
-      const img = document.createElement('img');
-      img.src = url;
-      img.className = className || 'inline-image';
-      img.alt = 'image';
-      img.style.maxWidth = '280px';
-      img.style.borderRadius = '12px';
-      img.style.marginTop = '6px';
-      img.loading = 'lazy';
-      return img;
-    }
+    const hide = () => {
+      toast.style.opacity = 0;
+      toast.style.transform = "translateX(-12px)";
+      setTimeout(() => toast.remove(), 250);
+    };
+    const timer = setTimeout(hide, 3000);
+    toast.onclick = () => {
+      clearTimeout(timer);
+      hide();
+    };
+  };
+})();
 
-    // Video
-    if (hint.startsWith('video/') || /\.(mp4|webm|mov|m4v|ogv)$/.test(lower)) {
-      const v = document.createElement('video');
-      v.src = url;
-      v.controls = true;
-      v.className = className || 'inline-video';
-      v.style.maxWidth = '320px';
-      v.style.borderRadius = '12px';
-      v.style.marginTop = '6px';
-      return v;
-    }
+// Hook some core socket events to toasts
+socket.on("join error", (msg) => showToast(msg || "Join failed.", "error"));
+socket.on("toast", (data) => showToast(data?.text || "", data?.type || "info"));
+socket.on("connect", () => showToast("Connected", "success"));
+socket.on("disconnect", () => showToast("Disconnected", "error"));
 
-    // Audio
-    if (hint.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|flac)$/.test(lower)) {
-      const a = document.createElement('audio');
-      a.src = url;
-      a.controls = true;
-      a.className = className || 'inline-audio';
-      a.style.display = 'block';
-      a.style.marginTop = '6px';
-      return a;
-    }
+// ------------------- Join Room Logic (Fusion merged) -------------------
+if (joinBtn) {
+  joinBtn.addEventListener("click", () => {
+    const username = (usernameInput?.value || "").trim();
+    const room = (roomInput?.value || "").trim();
+    const password = (passwordInput?.value || "").trim();
 
-    // PDF (iframe preview)
-    if (hint === 'application/pdf' || /\.pdf$/.test(lower)) {
-      const f = document.createElement('iframe');
-      f.src = url;
-      f.className = className || 'inline-pdf';
-      f.style.width = '100%';
-      f.style.maxWidth = '520px';
-      f.style.height = '420px';
-      f.style.border = '0';
-      f.style.borderRadius = '12px';
-      f.style.marginTop = '6px';
-      return f;
-    }
-
-    // Text files
-    if (hint.startsWith('text/') || /\.(txt|csv|md|log)$/.test(lower)) {
-      const p = document.createElement('iframe');
-      p.src = url;
-      p.className = className || 'inline-text';
-      p.style.width = '100%';
-      p.style.maxWidth = '520px';
-      p.style.height = '320px';
-      p.style.border = '0';
-      p.style.borderRadius = '12px';
-      p.style.marginTop = '6px';
-      return p;
-    }
-
-    // Fallback: no inline preview, caller can still render a link
-    return null;
-  }
-
-  // --- Render a message bubble ---
-  function addMessage(msg) {
-    try {
-      const wrap = document.createElement('div');
-      wrap.className = 'message ' + (msg.user === window.currentUser ? 'self' : 'other');
-
-      const meta = document.createElement('div');
-      meta.className = 'meta';
-      const when = msg.timestamp ? new Date(msg.timestamp) : new Date();
-      meta.textContent = `${msg.user} • ${when.toLocaleTimeString()}`;
-
-      const text = document.createElement('div');
-      text.className = 'text';
-      text.innerHTML = linkify(msg.text || '');
-
-      // Inline preview for uploaded files
-      if (msg.fileUrl) {
-        const preview = createPreviewEl({ url: msg.fileUrl, typeHint: msg.fileType || '' });
-        if (preview) text.appendChild(preview);
-      } else {
-        // Also scan message text for direct file links and preview them
-        const links = (msg.text || '').match(urlRegex) || [];
-        links.forEach((u) => {
-          const url = u.startsWith('http') ? u : `http://${u}`;
-          const el = createPreviewEl({ url });
-          if (el) text.appendChild(el);
-        });
-      }
-
-      wrap.appendChild(meta);
-      wrap.appendChild(text);
-      messagesEl.appendChild(wrap);
-      scrollToBottom();
-    } catch (e) {
-      console.log('[addMessage] error', e, msg);
-    }
-  }
-
-  // --- Bulk history ---
-  let historyLoaded = false;
-  socket.on('load messages', (arr) => {
-    if (historyLoaded && Array.isArray(arr) && arr.length > 0) {
-      console.log('[History] already loaded; skipping duplicate payload');
+    if (!username || !room) {
+      showToast("Enter username & room.", "error");
       return;
     }
-    console.log('[History] Received', Array.isArray(arr) ? arr.length : 0, 'messages');
-    if (Array.isArray(arr)) arr.forEach(addMessage);
-    historyLoaded = true;
-    scrollToBottom();
-  });
 
-  // --- Stream single messages ---
-  socket.on('chat message', (msg) => {
-    console.log('[Socket] chat message', msg);
-    addMessage(msg);
-  });
+    window.currentUser = username;
+    window.currentRoom = room;
+    window.currentPassword = password;
 
-  // misc events (kept for diagnostics)
-  socket.on('message status', (s) => console.log('[Socket] message status', s));
-  const typingBubble = document.getElementById('typing-bubble');
-  socket.on('typing', (users) => {
-    if (!typingBubble) return;
-    if (users && users.length) {
-      typingBubble.textContent = `${users.join(', ')} typing…`;
-      typingBubble.classList.add('show');
-      typingBubble.classList.remove('hide');
+    console.log("[Join] Emitting join room:", room, username);
+    if (socket.connected) {
+      socket.emit("join room", { room, username, password });
     } else {
-      typingBubble.classList.add('hide');
-      typingBubble.classList.remove('show');
+      socket.once("connect", () => socket.emit("join room", { room, username, password }));
     }
+
+    // UI transition
+    usernamePrompt?.classList.add("hidden");
+    chatContainer?.classList.remove("hidden");
+    // Tiny delay to let layout settle before scrolling
+    setTimeout(() => {
+      messages?.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+    }, 250);
   });
-  socket.on('pinned messages', (list) => console.log('[Socket] pinned messages', list));
-  socket.on('message pinned', (m) => console.log('[Socket] message pinned', m));
-  socket.on('message unpinned', (m) => console.log('[Socket] message unpinned', m));
-  socket.on('message starred', (p) => console.log('[Socket] message starred', p));
-  socket.on('message unstarred', (p) => console.log('[Socket] message unstarred', p));
-  socket.on('update reactions', (p) => console.log('[Socket] update reactions', p));
-  socket.on('toast', (t) => console.log('[Toast]', t?.type, t?.text));
-  socket.on('join error', (err) => console.log('[Join] error', err));
+}
 
-  // --- Join room (if not handled elsewhere) ---
-  if (window.currentRoom && window.currentUser) {
-    console.log('[Join] emitting join room', window.currentRoom, window.currentUser);
-    socket.emit('join room', { room: window.currentRoom, username: window.currentUser });
-  }
+// If coming in with globals set (deep-link), auto-join
+if (window.currentRoom && window.currentUser) {
+  console.log("[Join] Auto-join", window.currentRoom, window.currentUser);
+  socket.emit("join room", {
+    room: window.currentRoom,
+    username: window.currentUser,
+    password: window.currentPassword || "",
+  });
+  usernamePrompt?.classList.add("hidden");
+  chatContainer?.classList.remove("hidden");
+}
 
-  // --- Send message ---
-  if (formEl && inputEl) {
-    formEl.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const text = (inputEl.value || '').trim();
-      if (!text) return;
-      socket.emit('stop typing');
-      const msgData = {
-        user: window.currentUser,
-        room: window.currentRoom,
-        text,
-        timestamp: new Date().toISOString()
-      };
-      console.log('[Send]', msgData);
-      socket.emit('chat message', msgData);
-      inputEl.value = '';
-      scrollToBottom();
-    });
-
-    // typing indicators
-    let typingTimer;
-    inputEl.addEventListener('input', () => {
-      clearTimeout(typingTimer);
-      socket.emit('typing', window.currentUser);
-      typingTimer = setTimeout(() => socket.emit('stop typing'), 1200);
-    });
-  }
-
-  // ===============================
-  // 📎 File Upload with Progress Bar + Clickable Link + Inline Preview
-  // ===============================
-  function uploadWithProgress(file) {
-    if (!file) return;
-    const formData = new FormData();
-    formData.append('file', file);
-    console.log(`[Upload] Starting: ${file.name} (${file.type || 'unknown'})`);
-
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/upload');
-
-    // Placeholder message while uploading
-    const tempMsg = {
-      user: window.currentUser,
+// ------------------- Sending Messages -------------------
+if (form) {
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = (input?.value || "").trim();
+    if (!text) return;
+    socket.emit("chat message", {
       room: window.currentRoom,
-      text: `Uploading ${file.name}…`,
-      timestamp: new Date().toISOString()
-    };
-    addMessage(tempMsg);
-
-    // Progress bar (Dizy Purple)
-    const barWrap = document.createElement('div');
-    barWrap.className = 'upload-progress';
-    barWrap.style.width = '100%';
-    barWrap.style.maxWidth = '360px';
-    barWrap.style.height = '6px';
-    barWrap.style.borderRadius = '999px';
-    barWrap.style.background = 'rgba(123,47,247,0.15)';
-    barWrap.style.margin = '8px auto';
-
-    const bar = document.createElement('div');
-    bar.className = 'upload-bar';
-    bar.style.height = '100%';
-    bar.style.width = '0%';
-    bar.style.borderRadius = '999px';
-    bar.style.background = '#7B2FF7';
-    bar.style.boxShadow = '0 0 12px rgba(123,47,247,0.6) inset';
-    bar.style.transition = 'width .12s linear';
-
-    barWrap.appendChild(bar);
-    messagesEl.appendChild(barWrap);
-    scrollToBottom();
-
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) {
-        const pct = Math.round((e.loaded / e.total) * 100);
-        bar.style.width = pct + '%';
-        if (pct % 10 === 0) console.log(`[Upload] ${pct}% ${file.name}`);
-      }
-    };
-
-    xhr.onload = () => {
-      try {
-        const data = JSON.parse(xhr.responseText || '{}');
-        const url = data.url;
-        if (!url) {
-          console.error('[Upload] No URL in response:', data);
-          barWrap.remove();
-          return;
-        }
-        console.log('[Upload] Done:', url);
-
-        // Final message with clickable link + inline preview support
-        const msgData = {
-          user: window.currentUser,
-          room: window.currentRoom,
-          text: `<a href="${url}" target="_blank" class="file-link">${file.name}</a>`,
-          timestamp: new Date().toISOString(),
-          fileUrl: url,
-          fileType: file.type || ''
-        };
-        socket.emit('chat message', msgData);
-      } catch (err) {
-        console.error('[Upload] Parse error:', err);
-      } finally {
-        barWrap.remove();
-      }
-    };
-
-    xhr.onerror = () => {
-      console.error('[Upload] Failed:', xhr.statusText);
-      barWrap.remove();
-    };
-
-    xhr.send(formData);
-  }
-
-  // Paperclip triggers file dialog
-  attachBtn && attachBtn.addEventListener('click', () => fileInput && fileInput.click());
-  // When a file is picked
-  fileInput && fileInput.addEventListener('change', () => {
-    const f = fileInput.files && fileInput.files[0];
-    if (!f) return;
-    uploadWithProgress(f);
-    // allow reselecting same filename immediately
-    fileInput.value = '';
+      user: window.currentUser,
+      text,
+      timestamp: Date.now(),
+    });
+    input.value = "";
+    socket.emit("stop typing");
   });
+}
 
-  // expose helpers if needed elsewhere
-  window.addMessage = window.addMessage || addMessage;
-  window.scrollToBottom = window.scrollToBottom || scrollToBottom;
-
-  console.log('[chat.js] ready');
-})();
-/* ==== DIZY PATCH v2 (append-only) — unified upload + Tenor + rich embeds ==== */
-(function(){
-  const socketRef = (typeof socket !== 'undefined') ? socket : (window.socket || io());
-  const currentUser = window.currentUser || window.username || 'Guest';
-  const currentRoom = window.currentRoom || window.room || 'lobby';
-
-  // Elements
-  const fileBtn = document.getElementById('file-attach');
-  let fileInput = document.getElementById('file-input');
-  const prog = document.getElementById('upload-progress');
-  const gifBtn = document.getElementById('gif-btn');
-
-  // Ensure single hidden file input
-  if (!fileInput) {
-    fileInput = document.createElement('input');
-    fileInput.type = 'file';
-    fileInput.id = 'file-input';
-    fileInput.style.display = 'none';
-    document.body.appendChild(fileInput);
+// ------------------- Typing Indicator -------------------
+input?.addEventListener("input", () => {
+  if (!isTyping) {
+    socket.emit("typing", window.currentUser);
+    isTyping = true;
   }
-  fileInput.setAttribute('accept', '*/*');
+  clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(() => {
+    socket.emit("stop typing");
+    isTyping = false;
+  }, 1500);
+});
 
-  // Bind paperclip once
-  if (fileBtn && !fileBtn.dataset.bound) {
-    fileBtn.dataset.bound = '1';
-    fileBtn.addEventListener('click', () => fileInput.click());
+socket.on("typing", (users) => {
+  const bubble = document.getElementById("typing-bubble");
+  if (!bubble) return;
+  const others = (users || []).filter((u) => u && u !== window.currentUser);
+  if (!others.length) {
+    bubble.classList.remove("show");
+    bubble.classList.add("hide");
+    return;
   }
+  bubble.textContent =
+    others.length === 1 ? `${others[0]} is typing…` : `${others.join(", ")} are typing…`;
+  bubble.classList.remove("hide");
+  bubble.classList.add("show");
+});
 
-  // Upload with purple progress
-  function uploadWithProgress(file) {
+// ------------------- History & Messages -------------------
+function renderMessage(msg) {
+  const wrap = document.createElement("div");
+  // Use your existing bubble structure if present in CSS
+  const isSelf = msg.user === window.currentUser;
+  wrap.className = `message ${isSelf ? "self" : "other"}`;
+  wrap.innerHTML = `
+    <div class="meta">${msg.user || "Anon"} • ${new Date(msg.timestamp || Date.now()).toLocaleTimeString()}</div>
+    <div class="text">${msg.text || ""}</div>
+  `;
+  messages.appendChild(wrap);
+  autoEmbed(wrap);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+socket.on("load messages", (arr) => {
+  messages.innerHTML = "";
+  (arr || []).forEach(renderMessage);
+  showToast(`✅ Joined room: ${window.currentRoom}`, "success");
+});
+
+socket.on("previous messages", (arr) => {
+  // legacy event, render the same way but don't double-toast
+  if (!messages.childElementCount) {
+    (arr || []).forEach(renderMessage);
+  }
+});
+
+socket.on("chat message", (msg) => {
+  renderMessage(msg);
+});
+
+socket.on("edit message", ({ id, text }) => {
+  // (Optional) If you render IDs, you can locate and update here.
+  showToast("Message edited", "info");
+});
+
+socket.on("delete message", (id) => {
+  // (Optional) If you render IDs, you can locate & remove here.
+  showToast("Message deleted", "info");
+});
+
+// ------------------- File Uploads (paperclip) -------------------
+if (attachBtn && fileInput) {
+  fileInput.accept = "*/*";
+  attachBtn.addEventListener("click", () => fileInput.click());
+
+  fileInput.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
     if (!file) return;
-    const fd = new FormData();
-    fd.append('file', file);
 
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/upload');
+    showToast(`Uploading ${file.name}…`, "info");
 
-    if (prog) { prog.style.display = 'block'; prog.value = 0; }
-    xhr.upload.onprogress = (e) => {
-      if (prog && e.lengthComputable) {
-        prog.value = Math.round((e.loaded / e.total) * 100);
-      }
-    };
-    xhr.onload = () => {
-      if (prog) prog.style.display = 'none';
-      try {
-        const data = JSON.parse(xhr.responseText || '{}');
-        if (data && data.url) {
-          socketRef.emit('chat message', {
-            user: currentUser,
-            room: currentRoom,
-            text: '',
-            fileUrl: data.url,
-            fileType: data.type || '',
-            timestamp: new Date().toISOString()
-          });
-        } else {
-          console.error('[Upload] No URL in response:', data);
-        }
-      } catch (e) {
-        console.error('[Upload] Parse error:', e);
-      }
-    };
-    xhr.onerror = () => { if (prog) prog.style.display = 'none'; console.error('[Upload] Network error'); };
-    xhr.send(fd);
+    // Visual progress overlay (purple)
+    const progress = document.createElement("div");
+    progress.className = "upload-progress";
+    progress.innerHTML = `<div class="bar" style="width:0%"></div><span style="display:none"></span>`;
+    document.body.appendChild(progress);
+    const bar = progress.querySelector(".bar");
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      // Simple fetch (Render may not support chunk progress). Simulate bar fill:
+      let fake = 0;
+      const fakeTimer = setInterval(() => {
+        fake = Math.min(fake + 7, 90);
+        if (bar) bar.style.width = fake + "%";
+        if (fake >= 90) clearInterval(fakeTimer);
+      }, 120);
+
+      const response = await fetch("/upload", { method: "POST", body: formData });
+      const data = await response.json();
+
+      if (!response.ok || data.error) throw new Error(data.error || "Upload failed");
+
+      if (bar) bar.style.width = "100%";
+      setTimeout(() => progress.remove(), 800);
+
+      showToast(`Uploaded: ${file.name}`, "success");
+
+      socket.emit("chat message", {
+        room: window.currentRoom,
+        user: window.currentUser,
+        text: data.url,
+        timestamp: Date.now(),
+      });
+
+      fileInput.value = "";
+    } catch (err) {
+      console.error("[Upload Error]", err);
+      showToast(`Upload failed: ${file.name}`, "error");
+      progress.remove();
+    }
+  });
+}
+
+// ------------------- Tenor GIF Picker (beside emoji) -------------------
+(() => {
+  const TENOR_API_KEY = "LIVDSRZULELA"; // test key (can move to .env later)
+  if (!emojiBtn || !form) return;
+
+  const gifBtn = document.createElement("button");
+  gifBtn.id = "gif-btn";
+  gifBtn.type = "button";
+  gifBtn.textContent = "GIF";
+  gifBtn.style.marginLeft = "6px";
+  emojiBtn.insertAdjacentElement("afterend", gifBtn);
+
+  const panel = document.createElement("div");
+  panel.id = "gif-picker";
+  panel.innerHTML = `
+    <div class="gif-search"><input id="gif-search-input" placeholder="Search GIFs…"></div>
+    <div id="gif-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;"></div>`;
+  document.body.appendChild(panel);
+
+  function positionPanel() {
+    const rect = form.getBoundingClientRect();
+    panel.style.position = "fixed";
+    panel.style.left = rect.left + 8 + "px";
+    panel.style.bottom = window.innerHeight - rect.top + 10 + "px";
+    panel.style.display = "block";
   }
 
-  fileInput && fileInput.addEventListener('change', () => {
-    const f = fileInput.files && fileInput.files[0];
-    if (!f) return;
-    uploadWithProgress(f);
-    fileInput.value = '';
+  async function loadTenor(endpoint) {
+    try {
+      const res = await fetch(endpoint);
+      const data = await res.json();
+      const grid = document.getElementById("gif-grid");
+      grid.innerHTML = "";
+      (data.results || []).forEach((g) => {
+        const thumb =
+          g?.media_formats?.tinygif?.url ||
+          g?.media_formats?.gif?.url ||
+          g?.media?.[0]?.tinygif?.url ||
+          g?.media?.[0]?.gif?.url;
+        if (!thumb) return;
+        const img = document.createElement("img");
+        img.src = thumb;
+        img.alt = "gif";
+        img.style.width = "100%";
+        img.style.height = "100%";
+        img.style.objectFit = "cover";
+        img.style.borderRadius = "8px";
+        img.style.cursor = "pointer";
+        img.onclick = () => {
+          const url =
+            g?.media_formats?.gif?.url ||
+            g?.media_formats?.mediumgif?.url ||
+            g?.media_formats?.tinygif?.url ||
+            thumb;
+          socket.emit("chat message", {
+            room: window.currentRoom,
+            user: window.currentUser,
+            text: url,
+            timestamp: Date.now(),
+          });
+          showToast("GIF added", "success");
+          panel.style.display = "none";
+          input?.focus();
+        };
+        grid.appendChild(img);
+      });
+    } catch (e) {
+      const grid = document.getElementById("gif-grid");
+      grid.innerHTML = '<div class="gif-error">GIFs failed to load.</div>';
+      console.log("[GIF] Tenor error:", e);
+    }
+  }
+
+  gifBtn.onclick = () => {
+    if (panel.style.display === "block") {
+      panel.style.display = "none";
+      return;
+    }
+    positionPanel();
+    if (!panel.dataset.loaded) {
+      loadTenor(`https://g.tenor.com/v1/trending?key=${TENOR_API_KEY}&limit=24`);
+      panel.dataset.loaded = "1";
+    }
+  };
+
+  const searchInput = panel.querySelector("#gif-search-input");
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const q = searchInput.value.trim();
+      if (!q) return;
+      loadTenor(
+        `https://g.tenor.com/v1/search?q=${encodeURIComponent(q)}&key=${TENOR_API_KEY}&limit=24`
+      );
+    }
   });
 
-  // Tenor GIF quick search → inline embed
-  const TENOR_KEY = (window.TENOR_KEY || 'LIVDSRZULELA');
-  if (gifBtn && !gifBtn.dataset.bound) {
-    gifBtn.dataset.bound = '1';
-    gifBtn.addEventListener('click', async () => {
-      const q = prompt('Search Tenor for GIFs:');
-      if (!q) return;
-      try {
-        const res = await fetch(`https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(q)}&key=${TENOR_KEY}&limit=12`);
-        const json = await res.json();
-        const url = json?.results?.[0]?.media_formats?.tinygif?.url
-                 || json?.results?.[0]?.media?.[0]?.tinygif?.url;
-        if (url) {
-          socketRef.emit('chat message', {
-            user: currentUser,
-            room: currentRoom,
-            text: '',
-            fileUrl: url,
-            fileType: 'image/gif',
-            timestamp: new Date().toISOString()
-          });
-        }
-      } catch (e) { console.error('[Tenor]', e); }
-    });
-  }
-
-  // ----- Rich Embeds for YouTube / Spotify / SoundCloud / links -----
-  function linkify(text) {
-    if (!text) return '';
-    const urlRegex = /((https?:\/\/|www\.)[^\s]+)/g;
-    return text.replace(urlRegex, (url) => {
-      const href = url.startsWith('http') ? url : `http://${url}`;
-      return `<a href="${href}" class="link-preview-lite" target="_blank" rel="noreferrer noopener">${url}</a>`;
-    });
-  }
-
-  function buildEmbeds(container, text) {
-    if (!container || !text) return;
-
-    const yt =
-      /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_\-]{6,})/i;
-    const sp =
-      /https?:\/\/open\.spotify\.com\/(track|album|playlist|episode|show)\/([A-Za-z0-9]+)(?:\?[^ ]*)?/i;
-    const sc =
-      /https?:\/\/(soundcloud\.com\/[^\s]+)/i;
-
-    const mYt = text.match(yt);
-    if (mYt) {
-      const id = mYt[1];
-      const iframe = document.createElement('div');
-      iframe.className = 'embed-card';
-      iframe.innerHTML = `<iframe src="https://www.youtube.com/embed/${id}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
-      container.appendChild(iframe);
-    }
-
-    const mSp = text.match(sp);
-    if (mSp) {
-      const type = mSp[1]; const id = mSp[2];
-      const iframe = document.createElement('div');
-      iframe.className = 'embed-card';
-      iframe.innerHTML = `<iframe src="https://open.spotify.com/embed/${type}/${id}" loading="lazy" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"></iframe>`;
-      container.appendChild(iframe);
-    }
-
-    const mSc = text.match(sc);
-    if (mSc) {
-      const url = encodeURIComponent(mSc[0]);
-      const iframe = document.createElement('div');
-      iframe.className = 'embed-card';
-      iframe.innerHTML = `<iframe src="https://w.soundcloud.com/player/?url=${url}&auto_play=false&hide_related=false&show_comments=true&show_user=true&show_reposts=false&visual=true"></iframe>`;
-      container.appendChild(iframe);
-    }
-  }
-
-  // If your client has addMessage, extend it to inject linkified text + embeds
-  if (typeof window.addMessage === 'function') {
-    const origAdd = window.addMessage;
-    window.addMessage = function(msg, self) {
-      origAdd(msg, self);
-      try {
-        const card = document.querySelector('#messages .message:last-child');
-        const textEl = card && card.querySelector('.text');
-        if (textEl && msg.text) textEl.innerHTML = linkify(msg.text);
-        // If your renderer didn’t add preview, this enhances with embeds:
-        if (textEl && msg.text) buildEmbeds(textEl, msg.text);
-      } catch (e) { /* ignore */ }
-    };
-  }
-
-  // Also support 'load messages' in case only 'previous messages' existed
-  if (socketRef && !socketRef._dizyLoadBound) {
-    socketRef._dizyLoadBound = true;
-    socketRef.on('load messages', (msgs) => {
-      console.log('[History] load messages', msgs?.length || 0);
-      const list = document.getElementById('messages');
-      if (Array.isArray(msgs) && list) {
-        list.innerHTML = '';
-        msgs.forEach(m => {
-          if (typeof window.addMessage === 'function') {
-            window.addMessage(m, (m.user === currentUser));
-          } else {
-            // Fallback minimal renderer
-            const div = document.createElement('div');
-            div.className = `message ${m.user === currentUser ? 'self' : 'other'}`;
-            const safeText = (m.text || '');
-            div.innerHTML = `<div class="meta">${m.user} • ${new Date(m.timestamp||Date.now()).toLocaleTimeString()}</div><div class="text">${linkify(safeText)}</div>`;
-            document.getElementById('messages').appendChild(div);
-            buildEmbeds(div.querySelector('.text'), safeText);
-          }
-        });
-        list.scrollTop = list.scrollHeight;
-      }
-    });
-  }
-
-  console.log('%c[DIZY PATCH v2] unified upload + Tenor + rich embeds + load-messages hook', 'color:#bb86fc;font-weight:600;');
+  window.addEventListener("resize", () => {
+    if (panel.style.display === "block") positionPanel();
+  });
 })();
+
+// ------------------- Embeds & Link Cards -------------------
+function autoEmbed(node) {
+  const textEl = node.querySelector(".text") || node;
+  const txt = textEl ? textEl.textContent : "";
+  if (!txt) return;
+
+  const links = (txt.match(/https?:\/\/\S+/g) || []).slice(0, 3);
+  if (!links.length) return;
+
+  const wrap = document.createElement("div");
+  wrap.className = "embed-wrap";
+
+  links.forEach((link) => {
+    let el = null;
+
+    // YouTube
+    let m = link.match(/https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/i);
+    if (m) {
+      el = document.createElement("iframe");
+      el.src = `https://www.youtube.com/embed/${m[1]}`;
+      el.className = "embed-iframe";
+      el.setAttribute("allowfullscreen", "true");
+    }
+
+    // Spotify
+    if (!el) {
+      m = link.match(/https?:\/\/open\.spotify\.com\/(track|album|playlist)\/([\w]+)/i);
+      if (m) {
+        el = document.createElement("iframe");
+        el.src = `https://open.spotify.com/embed/${m[1]}/${m[2]}`;
+        el.className = "embed-iframe";
+      }
+    }
+
+    // SoundCloud
+    if (!el && /https?:\/\/(?:soundcloud\.com|snd\.sc)\//i.test(link)) {
+      el = document.createElement("iframe");
+      el.src = "https://w.soundcloud.com/player/?url=" + encodeURIComponent(link);
+      el.className = "embed-iframe";
+    }
+
+    // Direct media
+    if (!el && /\.(png|jpg|jpeg|gif|webp)(\?.*)?$/i.test(link)) {
+      el = document.createElement("img");
+      el.src = link;
+      el.className = "embed-image";
+    }
+    if (!el && /\.(mp4|webm|mov)(\?.*)?$/i.test(link)) {
+      el = document.createElement("video");
+      el.src = link;
+      el.controls = true;
+      el.className = "embed-media";
+    }
+    if (!el && /\.(mp3|wav|ogg)(\?.*)?$/i.test(link)) {
+      el = document.createElement("audio");
+      el.src = link;
+      el.controls = true;
+      el.className = "embed-audio";
+    }
+
+    if (el) wrap.appendChild(el);
+  });
+
+  if (wrap.childNodes.length) node.appendChild(wrap);
+
+  // Collapsible OG cards for non-media links
+  (async () => {
+    const normal = links.filter(
+      (u) =>
+        !/(youtube|youtu\.be|open\.spotify|soundcloud|\.mp4|\.webm|\.mov|\.mp3|\.wav|\.ogg|\.png|\.jpg|\.jpeg|\.gif|\.webp|\.pdf)/i.test(
+          u
+        )
+    );
+    if (!normal.length) return;
+
+    async function fetchPreview(url) {
+      try {
+        const r = await fetch("/link-preview?url=" + encodeURIComponent(url));
+        return await r.json();
+      } catch {
+        return null;
+      }
+    }
+
+    for (const u of normal) {
+      const d = await fetchPreview(u);
+      if (!d || (!d.title && !d.image)) continue;
+
+      const card = document.createElement("div");
+      card.className = "link-card";
+
+      const header = document.createElement("div");
+      header.className = "link-header";
+      header.innerHTML = `<span class="toggle">▶️</span><span class="domain">${new URL(u).hostname}</span>`;
+
+      const body = document.createElement("div");
+      body.className = "link-body";
+      body.innerHTML =
+        (d.image ? `<img src="${d.image}" alt="">` : "") +
+        `<div class="title">${d.title || u}</div>`;
+
+      const toggle = header.querySelector(".toggle");
+      card.appendChild(header);
+      card.appendChild(body);
+
+      header.onclick = () => {
+        const open = card.classList.toggle("open");
+        toggle.textContent = open ? "🔽" : "▶️";
+      };
+      body.onclick = () => window.open(u, "_blank");
+
+      node.appendChild(card);
+    }
+  })();
+}
+
+console.log("%c✅ DizyChat Fusion Ready — join a room to begin", "color:#b266ff;font-weight:bold;");
