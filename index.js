@@ -106,10 +106,10 @@ const PORT = process.env.PORT || 10000;
 // ---------------- Admin ----------------
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'Dizygotic';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
-let JWT_SECRET = process.env.JWT_SECRET;
+const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
-  JWT_SECRET = crypto.randomBytes(32).toString('base64url');
-  console.warn('[Auth] JWT_SECRET missing, generated ephemeral secret (sessions reset on restart).');
+  console.error('[Auth] JWT_SECRET missing');
+  process.exit(1);
 }
 const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
