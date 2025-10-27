@@ -39,10 +39,7 @@ const createRateLimiter = ({ windowMs, max }) => {
       }
     }
   };
-  const timer = setInterval(sweep, windowMs);
-  if (timer && typeof timer.unref === 'function') {
-    timer.unref();
-  }
+  setInterval(sweep, windowMs).unref?.();
 
   return (req, res, next) => {
     const key = req.ip || req.headers['x-forwarded-for'] || req.connection?.remoteAddress || 'unknown';
@@ -114,6 +111,10 @@ if (!JWT_SECRET) {
   JWT_SECRET = crypto.randomBytes(32).toString('base64url');
   process.env.JWT_SECRET = JWT_SECRET;
   console.log('[Auth] JWT_SECRET not set. Generated a temporary secret for this process. Set JWT_SECRET in your environment to persist sessions across restarts.');
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('[Auth] JWT_SECRET missing');
+  process.exit(1);
 }
 const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
