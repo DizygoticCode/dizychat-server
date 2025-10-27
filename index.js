@@ -11,21 +11,111 @@ const cheerio = require('cheerio');
 const fs = require('fs');
 const multer = require('multer');
 const sanitizeHtml = require('sanitize-html');
+const crypto = require('crypto');
+const util = require('util');
 const Message = require('./src/models/message');
+const User = require('./src/models/user');
+const RoomConfig = require('./src/models/roomConfig');
 
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 // ---------------- App Setup ----------------
 const app = express();
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: "*", methods: ["GET","POST"] }
 });
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+const createRateLimiter = ({ windowMs, max }) => {
+  const buckets = new Map();
+  const sweep = () => {
+    const now = Date.now();
+    for (const [key, entry] of buckets) {
+      if (entry.reset <= now) {
+        buckets.delete(key);
+      }
+    }
+  };
+  const timer = setInterval(sweep, windowMs);
+  if (timer && typeof timer.unref === 'function') {
+    timer.unref();
+  }
+
+  return (req, res, next) => {
+    const key = req.ip || req.headers['x-forwarded-for'] || req.connection?.remoteAddress || 'unknown';
+    const now = Date.now();
+    let entry = buckets.get(key);
+    if (!entry || entry.reset <= now) {
+      entry = { count: 0, reset: now + windowMs };
+    }
+    entry.count += 1;
+    buckets.set(key, entry);
+    if (entry.count > max) {
+      const retryAfter = Math.max(1, Math.ceil((entry.reset - now) / 1000));
+      res.set('Retry-After', String(retryAfter));
+      return res.status(429).json({ error: 'Too many requests' });
+    }
+    return next();
+  };
+};
+
+const globalHttpLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 200 });
+const authLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 30 });
+const uploadLimiter = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 60 });
+
+class SimpleCache {
+  constructor({ max = 500, ttl = 1000 * 60 * 10 } = {}) {
+    this.max = max;
+    this.ttl = ttl;
+    this.store = new Map();
+  }
+
+  get(key) {
+    const entry = this.store.get(key);
+    if (!entry) return undefined;
+    if (entry.expiresAt && entry.expiresAt <= Date.now()) {
+      this.store.delete(key);
+      return undefined;
+    }
+    return entry.value;
+  }
+
+  set(key, value, options = {}) {
+    const ttl = typeof options.ttl === 'number' ? options.ttl : this.ttl;
+    const expiresAt = ttl ? Date.now() + ttl : 0;
+    if (this.store.has(key)) {
+      this.store.delete(key);
+    }
+    this.store.set(key, { value, expiresAt });
+    if (this.store.size > this.max) {
+      const oldestKey = this.store.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.store.delete(oldestKey);
+      }
+    }
+  }
+}
+
+const linkPreviewCache = new SimpleCache({ max: 500, ttl: 1000 * 60 * 10 });
+const LINK_PREVIEW_TIMEOUT_MS = 5000;
+const LINK_PREVIEW_STALE_TTL = 1000 * 60 * 60;
+
+app.use(globalHttpLimiter);
 const PORT = process.env.PORT || 10000;
 
 // ---------------- Admin ----------------
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'Dizygotic';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+let JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  JWT_SECRET = crypto.randomBytes(32).toString('base64url');
+  process.env.JWT_SECRET = JWT_SECRET;
+  console.log('[Auth] JWT_SECRET not set. Generated a temporary secret for this process. Set JWT_SECRET in your environment to persist sessions across restarts.');
+}
+const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 // ---------------- MongoDB ----------------
 const mongoUri = process.env.MONGO_URI;
@@ -34,7 +124,10 @@ if (!mongoUri) {
   process.exit(1);
 }
 mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => console.log("[Mongo] Connected"))
+  .then(async () => {
+    console.log("[Mongo] Connected");
+    await primeRoomConfigs();
+  })
   .catch(err => { console.error("[Mongo] Error:", err); process.exit(1); });
 
 // ---------------- Static Files ----------------
@@ -59,10 +152,14 @@ const storage = multer.diskStorage({
   }
 });
 
-// NOTE: no explicit size limits (Render/infrastructure may still cap)
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 1024 * 1024 * 1024,
+  },
+});
 
-app.post('/upload', upload.single('file'), (req, res) => {
+app.post('/upload', uploadLimiter, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   res.json({
     url: `/uploads/${req.file.filename}`,
@@ -72,26 +169,250 @@ app.post('/upload', upload.single('file'), (req, res) => {
   });
 });
 
+app.use((err, req, res, next) => {
+  if (err && err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({ error: 'File exceeds 1 GB upload limit.' });
+  }
+  return next(err);
+});
+
+// ---------------- Authentication ----------------
+
+const USERNAME_REGEX = /^[a-z0-9_.-]{3,60}$/i;
+const MIN_PASSWORD_LENGTH = 8;
+
+const scryptAsync = util.promisify(crypto.scrypt);
+
+const hashPassword = async (password) => {
+  const salt = crypto.randomBytes(16);
+  const derived = await scryptAsync(password, salt, 64);
+  return `${salt.toString('base64')}:${Buffer.from(derived).toString('base64')}`;
+};
+
+const verifyPasswordHash = async (password, storedHash) => {
+  if (typeof storedHash !== 'string') return false;
+  const [saltB64, hashB64] = storedHash.split(':');
+  if (!saltB64 || !hashB64) return false;
+  const salt = Buffer.from(saltB64, 'base64');
+  const existing = Buffer.from(hashB64, 'base64');
+  const derived = await scryptAsync(password, salt, existing.length);
+  if (derived.length !== existing.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(derived), existing);
+};
+
+const base64UrlEncode = (value) => Buffer.from(value).toString('base64url');
+const base64UrlDecode = (value) => Buffer.from(value, 'base64url').toString();
+
+const signAuthToken = (user) => {
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const payload = {
+    sub: user._id.toString(),
+    username: user.username,
+    displayName: user.displayName || user.username,
+    roles: user.roles || [],
+    iat: nowSeconds,
+    exp: nowSeconds + Math.floor(TOKEN_TTL_MS / 1000),
+  };
+  const headerEncoded = base64UrlEncode(JSON.stringify(header));
+  const payloadEncoded = base64UrlEncode(JSON.stringify(payload));
+  const signature = crypto
+    .createHmac('sha256', JWT_SECRET)
+    .update(`${headerEncoded}.${payloadEncoded}`)
+    .digest('base64url');
+  return `${headerEncoded}.${payloadEncoded}.${signature}`;
+};
+
+const decodeAuthToken = (token) => {
+  if (!token || typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  const [headerEncoded, payloadEncoded, signature] = parts;
+  try {
+    const expectedSignature = crypto
+      .createHmac('sha256', JWT_SECRET)
+      .update(`${headerEncoded}.${payloadEncoded}`)
+      .digest('base64url');
+    const provided = Buffer.from(signature, 'base64url');
+    const expected = Buffer.from(expectedSignature, 'base64url');
+    if (provided.length !== expected.length || !crypto.timingSafeEqual(provided, expected)) {
+      return null;
+    }
+    const payloadJson = base64UrlDecode(payloadEncoded);
+    return JSON.parse(payloadJson);
+  } catch {
+    return null;
+  }
+};
+
+const buildUserPayload = (user) => ({
+  id: user._id,
+  username: user.username,
+  displayName: user.displayName || user.username,
+  roles: user.roles || [],
+});
+
+const extractTokenFromHeader = (req) => {
+  const header = req.get('authorization') || '';
+  const match = header.match(/bearer\s+(.*)/i);
+  return match ? match[1].trim() : '';
+};
+
+const verifyAuthToken = async (token) => {
+  if (!token) return null;
+  try {
+    const payload = decodeAuthToken(token);
+    if (!payload) return null;
+    if (payload.exp && payload.exp <= Math.floor(Date.now() / 1000)) {
+      return null;
+    }
+    const user = await User.findById(payload.sub);
+    if (!user) return null;
+    return user;
+  } catch (err) {
+    return null;
+  }
+};
+
+app.post('/auth/register', authLimiter, async (req, res) => {
+  try {
+    const { username, password, displayName } = req.body || {};
+    if (typeof username !== 'string' || !USERNAME_REGEX.test(username.trim())) {
+      return res.status(400).json({ error: 'Username must be 3-60 characters (letters, numbers, ._-).' });
+    }
+    if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) {
+      return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.` });
+    }
+
+    const normalisedUsername = username.trim().toLowerCase();
+    const existing = await User.findOne({ username: normalisedUsername });
+    if (existing) {
+      return res.status(409).json({ error: 'That username is already taken.' });
+    }
+
+    const passwordHash = await hashPassword(password);
+    const cleanDisplay = typeof displayName === 'string'
+      ? sanitizeHtml(displayName.trim(), { allowedTags: [], allowedAttributes: {} }).slice(0, 80)
+      : '';
+
+    const user = await User.create({
+      username: normalisedUsername,
+      displayName: cleanDisplay || normalisedUsername,
+      passwordHash,
+    });
+
+    const token = signAuthToken(user);
+    res.status(201).json({
+      token,
+      user: buildUserPayload(user),
+    });
+  } catch (err) {
+    console.error('[Auth] Register error:', err);
+    res.status(500).json({ error: 'Registration failed' });
+  }
+});
+
+app.post('/auth/login', authLimiter, async (req, res) => {
+  try {
+    const { username, password } = req.body || {};
+    if (typeof username !== 'string' || typeof password !== 'string') {
+      return res.status(400).json({ error: 'Username and password are required.' });
+    }
+
+    const normalisedUsername = username.trim().toLowerCase();
+    const user = await User.findOne({ username: normalisedUsername });
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials.' });
+    }
+
+    const valid = await verifyPasswordHash(password, user.passwordHash);
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid credentials.' });
+    }
+
+    user.lastSeenAt = new Date();
+    await user.save();
+
+    const token = signAuthToken(user);
+    res.json({ token, user: buildUserPayload(user) });
+  } catch (err) {
+    console.error('[Auth] Login error:', err);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+app.get('/auth/me', async (req, res) => {
+  try {
+    const token = extractTokenFromHeader(req);
+    const user = await verifyAuthToken(token);
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+    res.json({ user: buildUserPayload(user) });
+  } catch (err) {
+    console.error('[Auth] Profile error:', err);
+    res.status(500).json({ error: 'Could not verify token' });
+  }
+});
+
 // ---------------- Link Preview ----------------
+const normalisePreviewUrl = (value) => {
+  if (!value) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+  try {
+    const parsed = new URL(candidate);
+    parsed.hash = '';
+    return {
+      formatted: parsed.toString(),
+      cacheKey: `${parsed.origin}${parsed.pathname}`.toLowerCase(),
+    };
+  } catch {
+    return null;
+  }
+};
+
+const buildEmptyPreview = (overrides = {}) => ({
+  title: '',
+  image: '',
+  description: '',
+  siteName: '',
+  icon: '',
+  ...overrides,
+});
+
 app.get('/link-preview', async (req, res) => {
-  let { url } = req.query;
-  if (!url) return res.status(400).json({ error: 'No URL provided' });
-  if (!/^https?:\/\//i.test(url)) url = 'http://' + url;
+  const normalised = normalisePreviewUrl(req.query?.url);
+  if (!normalised) {
+    return res.status(400).json({ error: 'No URL provided' });
+  }
+
+  const { formatted, cacheKey } = normalised;
+  const cached = linkPreviewCache.get(cacheKey);
+  if (cached) {
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    return res.json({ ...cached, cached: true });
+  }
 
   try {
-    const response = await fetch(url, {
-      timeout: 5000,
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), LINK_PREVIEW_TIMEOUT_MS);
+    const response = await fetch(formatted, {
+      signal: controller.signal,
       headers: {
-        'user-agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36',
         accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       },
     });
+    clearTimeout(timeout);
 
     const contentType = response.headers.get('content-type') || '';
     if (!/text\/html/i.test(contentType)) {
+      const payload = buildEmptyPreview({ siteName: new URL(formatted).hostname });
+      linkPreviewCache.set(cacheKey, payload, { ttl: LINK_PREVIEW_STALE_TTL });
       res.setHeader('Cache-Control', 'public, max-age=300');
-      return res.json({ title: '', image: '', description: '', siteName: '', icon: '' });
+      return res.json(payload);
     }
 
     const html = await response.text();
@@ -106,6 +427,16 @@ app.get('/link-preview', async (req, res) => {
       return '';
     };
 
+    const ensureString = (value) => {
+      if (!value) return '';
+      if (Array.isArray(value)) return ensureString(value[0]);
+      if (typeof value === 'string') return value;
+      if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+      return '';
+    };
+
+    const first = (value) => (Array.isArray(value) ? value[0] : value);
+
     let title = pick(
       () => $('meta[property="og:title"]').attr('content'),
       () => $('meta[name="twitter:title"]').attr('content'),
@@ -117,6 +448,16 @@ app.get('/link-preview', async (req, res) => {
       () => $('meta[name="description"]').attr('content'),
       () => $('meta[name="twitter:description"]').attr('content'),
     );
+
+    const extractImage = (value) => {
+      if (!value) return '';
+      if (typeof value === 'string') return value;
+      if (Array.isArray(value)) return extractImage(value[0]);
+      if (typeof value === 'object') {
+        return extractImage(value.url || value.contentUrl || value.secure_url || value.thumbnailUrl || value['@id']);
+      }
+      return '';
+    };
 
     let imageRaw = pick(
       () => $('meta[property="og:image:secure_url"]').attr('content'),
@@ -135,45 +476,17 @@ app.get('/link-preview', async (req, res) => {
     let siteName = pick(
       () => $('meta[property="og:site_name"]').attr('content'),
       () => $('meta[name="application-name"]').attr('content'),
-      () => new URL(url).hostname,
+      () => new URL(formatted).hostname,
     );
 
     const resolveAsset = (asset) => {
       if (!asset) return '';
       try {
-        return new URL(asset, url).href;
+        return new URL(asset, formatted).href;
       } catch {
         return '';
       }
     };
-
-    const ensureString = (value) => {
-      if (!value) return '';
-      if (Array.isArray(value)) return ensureString(value[0]);
-      if (typeof value === 'string') return value;
-      if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-      return '';
-    };
-
-    const first = (value) => (Array.isArray(value) ? value[0] : value);
-
-    const extractImage = (value) => {
-      if (!value) return '';
-      if (typeof value === 'string') return value;
-      if (Array.isArray(value)) return extractImage(value[0]);
-      if (typeof value === 'object') {
-        return extractImage(value.url || value.contentUrl || value.secure_url || value.thumbnailUrl || value['@id']);
-      }
-      return '';
-    };
-
-    const host = (() => {
-      try {
-        return new URL(url).hostname;
-      } catch {
-        return '';
-      }
-    })();
 
     const refineFromJsonLd = () => {
       const scripts = $('script[type="application/ld+json"]');
@@ -234,19 +547,23 @@ app.get('/link-preview', async (req, res) => {
 
     const clean = (value) => ensureString(value).trim();
 
-    const responsePayload = {
+    const payload = {
       title: clean(title),
       description: clean(description),
       image: resolveAsset(clean(imageRaw)),
       icon: resolveAsset(clean(iconRaw)),
-      siteName: clean(siteName) || host,
+      siteName: clean(siteName) || new URL(formatted).hostname,
     };
 
+    linkPreviewCache.set(cacheKey, payload, { ttl: LINK_PREVIEW_STALE_TTL });
     res.setHeader('Cache-Control', 'public, max-age=300');
-    res.json(responsePayload);
+    res.json(payload);
   } catch (err) {
-    console.error('[Link Preview] Error:', err.message);
-    res.json({ title: '', image: '', description: '', siteName: '', icon: '' });
+    const errorType = err.name === 'AbortError' ? 'timeout' : 'fetch_failed';
+    console.error('[Link Preview] Error:', err.message || err);
+    const payload = buildEmptyPreview({ error: errorType });
+    linkPreviewCache.set(cacheKey, payload, { ttl: 60 * 1000 });
+    res.json(payload);
   }
 });
 
@@ -273,13 +590,97 @@ app.get('/tenor-proxy', async (req, res) => {
 
 // ---------------- Socket.IO ----------------
 let typingUsers = {};
-const roomPasswords = new Map();
 const roomMembers = new Map();
 const roomPresence = new Map();
-const roomUserHistory = new Map();
-const roomBans = new Map();
-const roomBlocks = new Map();
-const roomMutes = new Map();
+
+const roomState = new Map();
+
+const defaultRoomState = () => ({
+  password: '',
+  bans: new Set(),
+  blocks: new Set(),
+  mutes: new Map(),
+});
+
+const hydrateRoomState = (doc) => {
+  const state = defaultRoomState();
+  if (!doc) return state;
+  state.password = doc.password || '';
+  (doc.bans || []).forEach((user) => {
+    const canonical = canonicalUsername(user);
+    if (canonical) state.bans.add(canonical);
+  });
+  (doc.blocks || []).forEach((user) => {
+    const canonical = canonicalUsername(user);
+    if (canonical) state.blocks.add(canonical);
+  });
+  (doc.mutes || []).forEach(({ user, expiresAt }) => {
+    const canonical = canonicalUsername(user);
+    if (!canonical) return;
+    const expiry = expiresAt ? new Date(expiresAt).getTime() : 0;
+    if (expiry && expiry <= Date.now()) return;
+    if (expiry) state.mutes.set(canonical, expiry);
+  });
+  return state;
+};
+
+const serialiseRoomState = (state) => ({
+  password: state.password || '',
+  bans: Array.from(state.bans),
+  blocks: Array.from(state.blocks),
+  mutes: Array.from(state.mutes.entries()).map(([user, until]) => ({
+    user,
+    expiresAt: until ? new Date(until) : null,
+  })),
+});
+
+const ensureRoomState = async (roomName) => {
+  const key = normaliseRoomName(roomName);
+  if (!key) return null;
+  if (roomState.has(key)) return roomState.get(key);
+  let doc = await RoomConfig.findOne({ name: key });
+  if (!doc) {
+    doc = await RoomConfig.create({ name: key });
+  }
+  const state = hydrateRoomState(doc);
+  roomState.set(key, state);
+  return state;
+};
+
+const persistRoomState = async (roomName) => {
+  const key = normaliseRoomName(roomName);
+  if (!key) return;
+  const state = roomState.get(key) || defaultRoomState();
+  roomState.set(key, state);
+  const payload = serialiseRoomState(state);
+  await RoomConfig.updateOne(
+    { name: key },
+    { $set: payload, $setOnInsert: { name: key } },
+    { upsert: true },
+  );
+};
+
+const primeRoomConfigs = async () => {
+  try {
+    const docs = await RoomConfig.find({});
+    docs.forEach((doc) => {
+      const key = normaliseRoomName(doc.name);
+      if (!key) return;
+      roomState.set(key, hydrateRoomState(doc));
+    });
+
+    await Promise.all(
+      PERSISTENT_ROOMS.map(async (room) => {
+        const key = normaliseRoomName(room);
+        if (!key) return;
+        await ensureRoomState(key);
+        await persistRoomState(key);
+      })
+    );
+  } catch (err) {
+    console.error('[Rooms] Prime error:', err);
+  }
+};
 
 const PERSISTENT_ROOMS = [
   'General Chat',
@@ -292,7 +693,6 @@ PERSISTENT_ROOMS.forEach((roomName) => {
   if (!roomMembers.has(roomName)) {
     roomMembers.set(roomName, new Set());
   }
-  roomPasswords.set(roomName, '');
 });
 
 const canonicalUsername = (username) => {
@@ -316,33 +716,34 @@ const normalisePassword = (password) => {
   return password.trim().slice(0, 120);
 };
 
-const ensureSet = (map, key) => {
-  if (!map.has(key)) map.set(key, new Set());
-  return map.get(key);
-};
-
 const ensureMap = (map, key) => {
   if (!map.has(key)) map.set(key, new Map());
   return map.get(key);
 };
 
+const getRoomStateSnapshot = (room) => {
+  const key = normaliseRoomName(room);
+  if (!key) return null;
+  return roomState.get(key) || null;
+};
+
 const isUserBlocked = (room, username) => {
   const canonical = canonicalUsername(username);
-  const blocked = roomBlocks.get(room);
-  return blocked ? blocked.has(canonical) : false;
+  const state = getRoomStateSnapshot(room);
+  return state ? state.blocks.has(canonical) : false;
 };
 
 const getMuteExpiry = (room, username) => {
   const canonical = canonicalUsername(username);
-  const muteMap = roomMutes.get(room);
-  if (!muteMap) return 0;
-  const until = muteMap.get(canonical);
-  if (!until) return 0;
-  if (until <= Date.now()) {
-    muteMap.delete(canonical);
+  const state = getRoomStateSnapshot(room);
+  if (!state) return 0;
+  const until = state.mutes.get(canonical) || 0;
+  if (until && until <= Date.now()) {
+    state.mutes.delete(canonical);
+    persistRoomState(room).catch((err) => console.error('[Rooms] Persist mute cleanup error:', err));
     return 0;
   }
-  return until;
+  return until || 0;
 };
 
 const emitRoomUsers = (room) => {
@@ -401,36 +802,46 @@ const getSocketsForUser = (room, canonicalTarget) => {
   return matches;
 };
 
-const setUserMute = (room, canonicalTarget, durationMs) => {
-  const muteMap = ensureMap(roomMutes, room);
+const setUserMute = async (room, canonicalTarget, durationMs) => {
+  const state = await ensureRoomState(room);
+  if (!state) return 0;
   const until = Date.now() + durationMs;
-  muteMap.set(canonicalTarget, until);
+  state.mutes.set(canonicalTarget, until);
+  await persistRoomState(room);
   return until;
 };
 
-const clearUserMute = (room, canonicalTarget) => {
-  const muteMap = roomMutes.get(room);
-  if (!muteMap) return false;
-  return muteMap.delete(canonicalTarget);
+const clearUserMute = async (room, canonicalTarget) => {
+  const state = await ensureRoomState(room);
+  if (!state) return false;
+  const removed = state.mutes.delete(canonicalTarget);
+  if (removed) await persistRoomState(room);
+  return removed;
 };
 
-const addUserBlock = (room, canonicalTarget) => {
-  const blocked = ensureSet(roomBlocks, room);
-  const existed = blocked.has(canonicalTarget);
-  blocked.add(canonicalTarget);
+const addUserBlock = async (room, canonicalTarget) => {
+  const state = await ensureRoomState(room);
+  if (!state) return false;
+  const existed = state.blocks.has(canonicalTarget);
+  state.blocks.add(canonicalTarget);
+  if (!existed) await persistRoomState(room);
   return !existed;
 };
 
-const removeUserBlock = (room, canonicalTarget) => {
-  const blocked = roomBlocks.get(room);
-  if (!blocked) return false;
-  return blocked.delete(canonicalTarget);
+const removeUserBlock = async (room, canonicalTarget) => {
+  const state = await ensureRoomState(room);
+  if (!state) return false;
+  const removed = state.blocks.delete(canonicalTarget);
+  if (removed) await persistRoomState(room);
+  return removed;
 };
 
-const addUserBan = (room, canonicalTarget) => {
-  const bans = ensureSet(roomBans, room);
-  const existed = bans.has(canonicalTarget);
-  bans.add(canonicalTarget);
+const addUserBan = async (room, canonicalTarget) => {
+  const state = await ensureRoomState(room);
+  if (!state) return false;
+  const existed = state.bans.has(canonicalTarget);
+  state.bans.add(canonicalTarget);
+  if (!existed) await persistRoomState(room);
   return !existed;
 };
 
@@ -439,10 +850,11 @@ const getPublicRoomsSnapshot = () => {
 
   PERSISTENT_ROOMS.forEach((room) => {
     const members = roomMembers.get(room);
+    const state = getRoomStateSnapshot(room);
     rooms.set(room, {
       name: room,
       occupants: members ? members.size : 0,
-      requiresPassword: Boolean(roomPasswords.get(room)),
+      requiresPassword: Boolean(state?.password),
     });
   });
 
@@ -450,16 +862,18 @@ const getPublicRoomsSnapshot = () => {
     if (rooms.has(room)) {
       const entry = rooms.get(room);
       entry.occupants = members ? members.size : 0;
-      entry.requiresPassword = Boolean(roomPasswords.get(room));
+      const state = getRoomStateSnapshot(room);
+      entry.requiresPassword = Boolean(state?.password);
       continue;
     }
 
     if (!members || !members.size) continue;
 
+    const state = getRoomStateSnapshot(room);
     rooms.set(room, {
       name: room,
       occupants: members.size,
-      requiresPassword: Boolean(roomPasswords.get(room)),
+      requiresPassword: Boolean(state?.password),
     });
   }
 
@@ -506,32 +920,151 @@ const sendJoinError = (socket, message) => {
   socket.emit('join error', message);
   socket.emit('join room error', message);
 };
-const RATE_LIMIT_WINDOW = 2000;
+const SOCKET_RATE_LIMIT_WINDOW = 2000;
 const MAX_MESSAGES_PER_WINDOW = 3;
 const MAX_TYPING_EVENTS_PER_WINDOW = 5;
 
 const messageTimestamps = new Map();
 const typingTimestamps = new Map();
+const ipRateBuckets = new Map();
 
-function canSendMessage(socketId) {
+const takeRateToken = (ip, bucket, limit, windowMs) => {
+  if (!ip) return true;
+  const key = `${ip}:${bucket}`;
   const now = Date.now();
+  let entry = ipRateBuckets.get(key);
+  if (!entry || now - entry.start > windowMs) {
+    entry = { count: 0, start: now };
+  }
+  entry.count += 1;
+  entry.start = entry.start || now;
+  ipRateBuckets.set(key, entry);
+  return entry.count <= limit;
+};
+
+const getSocketIp = (socket) => {
+  const forwarded = socket.handshake.headers?.['x-forwarded-for'];
+  if (forwarded) return forwarded.split(',')[0].trim();
+  return socket.handshake.address || socket.request?.socket?.remoteAddress || 'unknown';
+};
+
+function canSendMessage(socket) {
+  const now = Date.now();
+  const socketId = socket.id;
   if (!messageTimestamps.has(socketId)) messageTimestamps.set(socketId, []);
   const ts = messageTimestamps.get(socketId);
-  while(ts.length && now - ts[0] > RATE_LIMIT_WINDOW) ts.shift();
+  while(ts.length && now - ts[0] > SOCKET_RATE_LIMIT_WINDOW) ts.shift();
   if (ts.length >= MAX_MESSAGES_PER_WINDOW) return false;
   ts.push(now);
-  return true;
+  return takeRateToken(socket.ipAddress, 'message', 40, 60 * 1000);
 }
 
-function canSendTyping(socketId) {
+function canSendTyping(socket) {
   const now = Date.now();
+  const socketId = socket.id;
   if (!typingTimestamps.has(socketId)) typingTimestamps.set(socketId, []);
   const ts = typingTimestamps.get(socketId);
-  while(ts.length && now - ts[0] > RATE_LIMIT_WINDOW) ts.shift();
+  while(ts.length && now - ts[0] > SOCKET_RATE_LIMIT_WINDOW) ts.shift();
   if (ts.length >= MAX_TYPING_EVENTS_PER_WINDOW) return false;
   ts.push(now);
-  return true;
+  return takeRateToken(socket.ipAddress, 'typing', 120, 60 * 1000);
 }
+
+const HISTORY_PAGE_SIZE = 200;
+
+const fetchHistoryChunk = async (room, { before, limit } = {}) => {
+  const resolvedLimit = Math.max(1, Math.min(Number(limit) || HISTORY_PAGE_SIZE, 500));
+  const conditions = { room };
+  if (before) {
+    const beforeDate = new Date(before);
+    if (!Number.isNaN(beforeDate.getTime())) {
+      conditions.timestamp = { $lt: beforeDate };
+    }
+  }
+
+  const results = await Message.find(conditions)
+    .sort({ timestamp: -1 })
+    .limit(resolvedLimit + 1);
+
+  const hasMore = results.length > resolvedLimit;
+  const trimmed = hasMore ? results.slice(0, resolvedLimit) : results;
+  const ordered = trimmed.reverse().map((m) => (m.toJSON ? m.toJSON() : m));
+  const nextCursor = ordered.length ? ordered[0].timestamp : before || null;
+
+  return {
+    messages: ordered,
+    hasMore,
+    nextCursor,
+  };
+};
+
+const sendHistoryChunk = async (socket, room, { before, limit, mode } = {}) => {
+  try {
+    const chunk = await fetchHistoryChunk(room, { before, limit });
+    const finalMode = mode || (before ? 'prepend' : 'replace');
+    socket.emit('history chunk', {
+      room,
+      mode: finalMode,
+      ...chunk,
+    });
+    if (finalMode === 'replace') {
+      socket.emit('load messages', chunk.messages);
+      socket.emit('previous messages', chunk.messages);
+    }
+  } catch (err) {
+    console.error('[History] Chunk error:', err);
+    socket.emit('history chunk', {
+      room,
+      mode: mode || 'replace',
+      messages: [],
+      hasMore: false,
+      nextCursor: null,
+      error: 'history_unavailable',
+    });
+  }
+};
+
+const applySocketUser = (socket, user, { silent } = {}) => {
+  if (!user) {
+    socket.userRecord = null;
+    socket.userPayload = null;
+    socket.userId = null;
+    socket.username = null;
+    if (!silent) socket.emit('auth state', { authenticated: false, user: null });
+    return;
+  }
+
+  const payload = buildUserPayload(user);
+  socket.userRecord = user;
+  socket.userPayload = payload;
+  socket.userId = user._id.toString();
+  socket.username = payload.displayName || payload.username;
+  if (!silent) socket.emit('auth state', { authenticated: true, user: payload });
+};
+
+const authenticateSocketWithToken = async (socket, token, { silent } = {}) => {
+  if (!token) {
+    applySocketUser(socket, null, { silent });
+    return false;
+  }
+
+  try {
+    const user = await verifyAuthToken(token);
+    if (!user) {
+      applySocketUser(socket, null, { silent });
+      return false;
+    }
+
+    user.lastSeenAt = new Date();
+    await user.save().catch((err) => console.error('[Auth] Last seen update error:', err));
+    applySocketUser(socket, user, { silent });
+    return true;
+  } catch (err) {
+    console.error('[Auth] Socket token error:', err);
+    applySocketUser(socket, null, { silent });
+    return false;
+  }
+};
 
 function requireAdmin(socket){
   if (!socket.isAdmin) {
@@ -541,12 +1074,45 @@ function requireAdmin(socket){
   return true;
 }
 
-io.on('connection', socket => {
+io.on('connection', async (socket) => {
   console.log('[Socket] Connected', socket.id);
+  socket.ipAddress = getSocketIp(socket);
   socket.isAdmin = false;
+  applySocketUser(socket, null, { silent: true });
+
+  const handshakeToken = socket.handshake.auth?.token;
+  if (handshakeToken) {
+    await authenticateSocketWithToken(socket, handshakeToken, { silent: true });
+  }
+
+  socket.emit('auth state', {
+    authenticated: Boolean(socket.userPayload),
+    user: socket.userPayload,
+  });
+
   socket.emit('room list', getPublicRoomsSnapshot());
 
-  socket.on('join room', async ({ room, username, password }) => {
+  socket.on('authenticate', async ({ token } = {}) => {
+    const success = await authenticateSocketWithToken(socket, token);
+    if (success) refreshSocketPresence(socket);
+  });
+
+  socket.on('logout', () => {
+    applySocketUser(socket, null);
+    refreshSocketPresence(socket);
+  });
+
+  socket.on('join room', async ({ room, password } = {}) => {
+    if (!socket.userRecord) {
+      sendJoinError(socket, 'Please sign in before joining rooms.');
+      return;
+    }
+
+    if (!takeRateToken(socket.ipAddress, 'join', 10, 60 * 1000)) {
+      sendJoinError(socket, 'Too many join attempts. Please wait a moment.');
+      return;
+    }
+
     const roomName = normaliseRoomName(room);
     if (!roomName) {
       sendJoinError(socket, 'Room name is required');
@@ -554,14 +1120,20 @@ io.on('connection', socket => {
     }
 
     const providedPassword = normalisePassword(password);
-    const storedPassword = roomPasswords.get(roomName);
-    if (storedPassword !== undefined && storedPassword !== providedPassword) {
-      sendJoinError(socket, 'Incorrect room password');
+    const state = await ensureRoomState(roomName);
+    if (!state) {
+      sendJoinError(socket, 'Room is unavailable.');
       return;
     }
 
-    if (storedPassword === undefined) {
-      roomPasswords.set(roomName, providedPassword);
+    if (state.password) {
+      if (state.password !== providedPassword) {
+        sendJoinError(socket, 'Incorrect room password');
+        return;
+      }
+    } else if (providedPassword) {
+      state.password = providedPassword;
+      await persistRoomState(roomName);
     }
 
     const previousRoom = socket.currentRoom;
@@ -570,17 +1142,14 @@ io.on('connection', socket => {
       emitRoomListUpdate();
     }
 
-    // Track user identity & room
-    const fallbackUser = `Guest-${socket.id.slice(0, 4)}`;
-    socket.username = normaliseUsername(username, fallbackUser);
-    const canonicalUser = canonicalUsername(socket.username);
-    const bannedSet = roomBans.get(roomName);
-    if (bannedSet && bannedSet.has(canonicalUser)) {
+    const canonicalAccount = canonicalUsername(socket.userRecord.username);
+    if (state.bans.has(canonicalAccount)) {
       sendJoinError(socket, 'You are banned from this room.');
       socket.currentRoom = null;
       return;
     }
 
+    socket.username = socket.userRecord.displayName || socket.userRecord.username;
     socket.currentRoom = roomName;
 
     if (!roomMembers.has(roomName)) {
@@ -597,15 +1166,7 @@ io.on('connection', socket => {
     emitRoomListUpdate();
 
     // Load history and pinned messages
-    try {
-      const history = await Message.find({ room: roomName }).sort({ timestamp: 1 });
-      console.log(`[History] Loaded ${history.length} messages from ${roomName}`);
-      const plain = history.map(m => (m.toJSON ? m.toJSON() : m));
-      socket.emit('load messages', plain);     // new clients
-      socket.emit('previous messages', plain); // legacy clients
-    } catch (err) {
-      console.error("Error fetching history:", err);
-    }
+    await sendHistoryChunk(socket, roomName, { mode: 'replace' });
 
     // Send pinned messages
     try {
@@ -623,6 +1184,13 @@ io.on('connection', socket => {
 
   socket.on('request rooms', () => {
     socket.emit('room list', getPublicRoomsSnapshot());
+  });
+
+  socket.on('history request', async ({ room, before, limit } = {}) => {
+    const target = normaliseRoomName(room) || socket.currentRoom;
+    if (!target) return;
+    if (socket.currentRoom !== target) return;
+    await sendHistoryChunk(socket, target, { before, limit, mode: 'prepend' });
   });
 
 
@@ -646,6 +1214,7 @@ io.on('connection', socket => {
   socket.on('chat message', async (msgDataRaw = {}) => {
     const roomName = normaliseRoomName(msgDataRaw.room) || socket.currentRoom;
     if (!roomName || socket.currentRoom !== roomName) return;
+    if (!socket.userRecord) return;
 
     if (isUserBlocked(roomName, socket.username)) {
       socket.emit('moderation notice', { type: 'blocked', room: roomName, reason: 'send' });
@@ -658,7 +1227,7 @@ io.on('connection', socket => {
       return;
     }
 
-    if (!canSendMessage(socket.id)) return;
+    if (!canSendMessage(socket)) return;
 
     const msgData = { ...msgDataRaw, room: roomName, user: socket.username };
     try {
@@ -865,9 +1434,9 @@ io.on('connection', socket => {
   });
 
   // ----- Typing Indicator -----
-  socket.on('typing', username => {
-    if (!canSendTyping(socket.id)) return;
-    typingUsers[socket.id] = username;
+  socket.on('typing', () => {
+    if (!canSendTyping(socket)) return;
+    typingUsers[socket.id] = socket.username;
     io.emit('typing', Object.values(typingUsers));
   });
 
@@ -884,13 +1453,13 @@ io.on('connection', socket => {
     console.log('[Announce]', room, clean);
   });
 
-  socket.on('moderate', ({ room, cmd, target }) => {
+  socket.on('moderate', async ({ room, cmd, target }) => {
     if (!requireAdmin(socket)) return;
     if (!room) return;
 
     if (cmd === 'ban' && target) {
       const canonicalTarget = canonicalUsername(target);
-      addUserBan(room, canonicalTarget);
+      await addUserBan(room, canonicalTarget);
       const sockets = getSocketsForUser(room, canonicalTarget);
       sockets.forEach((s) => {
         s.emit('moderation notice', { type: 'banned', room });
@@ -921,7 +1490,7 @@ io.on('connection', socket => {
     }
   });
 
-  socket.on('moderate user', ({ room, target, action, duration }) => {
+  socket.on('moderate user', async ({ room, target, action, duration }) => {
     const targetRoom = normaliseRoomName(room) || socket.currentRoom;
     if (!targetRoom || !target) return;
     if (!socket.currentRoom || socket.currentRoom !== targetRoom) return;
@@ -990,7 +1559,7 @@ io.on('connection', socket => {
       const maxSeconds = socket.isAdmin ? 86400 : 3600;
       const requested = Number(duration) || 60;
       const seconds = Math.max(30, Math.min(requested, maxSeconds));
-      const until = setUserMute(targetRoom, canonicalTarget, seconds * 1000);
+      const until = await setUserMute(targetRoom, canonicalTarget, seconds * 1000);
       notifyTargets({ type: 'muted', until });
       broadcast({ action: 'mute', target: cleanedTarget, performedBy: performer, duration: seconds, until });
       emitRoomUsers(targetRoom);
@@ -1002,7 +1571,7 @@ io.on('connection', socket => {
     }
 
     if (action === 'unmute') {
-      const removed = clearUserMute(targetRoom, canonicalTarget);
+      const removed = await clearUserMute(targetRoom, canonicalTarget);
       if (!removed) {
         socket.emit('toast', { type: 'info', text: `${cleanedTarget} is not muted.` });
         emitRoomUsers(targetRoom);
@@ -1020,7 +1589,7 @@ io.on('connection', socket => {
         socket.emit('toast', { type: 'warn', text: 'Only admins can block users.' });
         return;
       }
-      const added = addUserBlock(targetRoom, canonicalTarget);
+      const added = await addUserBlock(targetRoom, canonicalTarget);
       if (!added) {
         socket.emit('toast', { type: 'info', text: `${cleanedTarget} is already blocked.` });
         emitRoomUsers(targetRoom);
@@ -1038,7 +1607,7 @@ io.on('connection', socket => {
         socket.emit('toast', { type: 'warn', text: 'Only admins can unblock users.' });
         return;
       }
-      const removed = removeUserBlock(targetRoom, canonicalTarget);
+      const removed = await removeUserBlock(targetRoom, canonicalTarget);
       if (!removed) {
         socket.emit('toast', { type: 'info', text: `${cleanedTarget} was not blocked.` });
         emitRoomUsers(targetRoom);
@@ -1056,7 +1625,7 @@ io.on('connection', socket => {
         socket.emit('toast', { type: 'warn', text: 'Only admins can ban users.' });
         return;
       }
-      addUserBan(targetRoom, canonicalTarget);
+      await addUserBan(targetRoom, canonicalTarget);
       notifyTargets({ type: 'banned' });
       targets.forEach((s) => {
         s.emit('join error', 'You were banned from the room.');
