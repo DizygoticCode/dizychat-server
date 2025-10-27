@@ -67,6 +67,52 @@ const appState = {
 let searchDebounceTimer = null;
 let soundCloudApiPromise = null;
 
+function getDateKey(date) {
+  if (!(date instanceof Date)) return "";
+  const time = date.getTime();
+  return Number.isNaN(time) ? "" : date.toDateString();
+}
+
+function formatDayLabel(date) {
+  if (!(date instanceof Date)) return "";
+  const time = date.getTime();
+  if (Number.isNaN(time)) return "";
+
+  const today = new Date();
+  const todayKey = today.toDateString();
+  if (date.toDateString() === todayKey) {
+    return "Today";
+  }
+
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) {
+    return "Yesterday";
+  }
+
+  const options = { weekday: "long", month: "long", day: "numeric" };
+  if (date.getFullYear() !== today.getFullYear()) {
+    options.year = "numeric";
+  }
+
+  return date.toLocaleDateString(undefined, options);
+}
+
+function ensureDaySeparator(date) {
+  if (!messages) return;
+  const key = getDateKey(date);
+  if (!key) return;
+  if (messages.dataset.lastDateKey === key) return;
+
+  const label = formatDayLabel(date) || key;
+  const separator = document.createElement("div");
+  separator.className = "day-separator";
+  separator.dataset.dateKey = key;
+  separator.textContent = label;
+  messages.appendChild(separator);
+  messages.dataset.lastDateKey = key;
+}
+
 // Autofocus username for smoother entry
 usernameInput?.focus();
 
@@ -1355,7 +1401,10 @@ function showLanding({ focusUsername = true } = {}) {
     pinnedContainer.innerHTML = "";
     pinnedContainer.style.display = "none";
   }
-  if (messages) messages.innerHTML = "";
+  if (messages) {
+    messages.innerHTML = "";
+    delete messages.dataset.lastDateKey;
+  }
   renderUserSidebar([]);
 
   window.currentUser = null;
@@ -1457,7 +1506,10 @@ function completeRoomJoin(username, room, password) {
   appState.messages.clear();
   appState.pinned.clear();
   hideSearchResults();
-  if (messages) messages.innerHTML = "";
+  if (messages) {
+    messages.innerHTML = "";
+    delete messages.dataset.lastDateKey;
+  }
   if (pinnedContainer) {
     pinnedContainer.innerHTML = "";
     pinnedContainer.style.display = "none";
@@ -2378,6 +2430,12 @@ function renderMessage(msg, { skipScroll = false, scrollBehavior = "auto", delay
     return;
   }
 
+  const timestamp = new Date(data.timestamp || Date.now());
+  ensureDaySeparator(timestamp);
+  const timeLabel = Number.isNaN(timestamp.getTime())
+    ? new Date().toLocaleTimeString()
+    : timestamp.toLocaleTimeString();
+
   const isSelf = data.user === window.currentUser;
   const wrap = document.createElement("div");
   wrap.className = `message ${isSelf ? "self" : "other"}`;
@@ -2389,7 +2447,7 @@ function renderMessage(msg, { skipScroll = false, scrollBehavior = "auto", delay
   wrap.innerHTML = `
     <div class="meta">
       <span class="meta-name">${data.user || "Anon"}</span>
-      <span class="meta-time">${new Date(data.timestamp || Date.now()).toLocaleTimeString()}</span>
+      <span class="meta-time">${timeLabel}</span>
     </div>
     <div class="text"></div>
     <div class="message-flags"></div>
@@ -2439,6 +2497,7 @@ socket.on("load messages", (arr) => {
   appState.messages.clear();
   appState.pinned.clear();
   messages.innerHTML = "";
+  delete messages.dataset.lastDateKey;
   (arr || []).forEach((entry) => renderMessage(entry, { skipScroll: true }));
   updatePinnedBanner();
   scrollMessagesToBottom({ behavior: "auto", delay: 120 });
