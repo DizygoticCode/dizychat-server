@@ -277,6 +277,23 @@ header .logo { width: 40px; height: auto; }
 
 #chat-container .search-bar select {
   cursor: pointer;
+  background-color: var(--surface);
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 16px) center, calc(100% - 11px) center;
+  background-size: 8px 8px, 8px 8px;
+  background-repeat: no-repeat;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 4px 24px 4px 10px;
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+}
+
+#chat-container .search-bar select option {
+  background: var(--surface-alt);
+  color: var(--text-primary);
 }
 
 #message-search:focus,
@@ -344,6 +361,27 @@ header .logo { width: 40px; height: auto; }
   gap: 10px;
   scroll-behavior: smooth;
   background: var(--surface-alt);
+}
+
+.day-separator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 0.8em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin: 18px 0 8px;
+}
+
+.day-separator::before,
+.day-separator::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
+  opacity: 0.6;
 }
 
 #user-sidebar {
@@ -582,6 +620,7 @@ header .logo { width: 40px; height: auto; }
   font-size: 0.75em;
   color: var(--text-muted);
   margin-bottom: 4px;
+  padding-right: 28px;
 }
 
 .message .meta .meta-name {
