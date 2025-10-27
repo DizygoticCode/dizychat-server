@@ -49,7 +49,10 @@
           </select>
         </div>
         <button id="toggle-theme" title="Toggle Theme">🌓</button>
-        <button id="copy-join-link" title="Copy Join Link">🔗 Copy Join Link</button>
+        <button id="copy-join-link" title="Copy Join Link">
+          <span class="icon" aria-hidden="true">🔗</span>
+          <span class="label">Copy Join Link</span>
+        </button>
         <button id="leave-btn" title="Exit Chat">Leave</button>
       </div>
     </header>
@@ -65,7 +68,10 @@
         <form id="form">
           <input type="file" id="file-input" hidden />
           <button type="button" id="file-attach" title="Attach file">📎</button>
-          <button type="button" id="gif-btn" title="Send GIF">🎞️</button>
+          <button type="button" id="gif-btn" title="Send GIF">
+            <span aria-hidden="true">GIF</span>
+            <span class="sr-only">Open GIF picker</span>
+          </button>
           <button type="button" id="emoji-btn" title="Emoji">😊</button>
           <input id="input" autocomplete="off" placeholder="Type a message..." />
           <button type="submit" title="Send">➤</button>

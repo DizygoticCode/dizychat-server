@@ -72,6 +72,18 @@ body {
 
 body.dark { background: var(--bg); color: var(--text-primary); }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 #chat-container {
   display: flex;
   flex-direction: column;
@@ -339,11 +351,25 @@ header .logo { width: 40px; height: auto; }
 }
 
 .header-right button#copy-join-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
   background: var(--surface);
   border-color: var(--border-color);
   color: var(--text-primary);
   font-weight: 600;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  line-height: 1.1;
+}
+
+.header-right button#copy-join-link .icon {
+  font-size: 1.1em;
+  line-height: 1;
+}
+
+.header-right button#copy-join-link .label {
+  letter-spacing: 0.02em;
 }
 
 .header-right button#copy-join-link:hover {
@@ -355,6 +381,17 @@ header .logo { width: 40px; height: auto; }
 .header-right button#copy-join-link:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+body:not(.dark) .header-right button#copy-join-link {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(17, 17, 17, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(17, 17, 17, 0.05);
+  color: #1f2933;
+}
+
+body:not(.dark) .header-right button#copy-join-link:hover {
+  background: #eef2fb;
 }
 
 /* ==============================
@@ -915,6 +952,54 @@ header .logo { width: 40px; height: auto; }
 }
 
 #form button:hover { transform: scale(1.2); }
+
+#gif-btn {
+  font-size: 0.75em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-alt);
+  color: var(--text-primary);
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+#gif-btn span[aria-hidden="true"] {
+  pointer-events: none;
+}
+
+body.dark #gif-btn {
+  background: rgba(123, 47, 247, 0.22);
+  border-color: rgba(123, 47, 247, 0.45);
+  color: #f5f0ff;
+}
+
+body:not(.dark) #gif-btn {
+  background: rgba(123, 47, 247, 0.12);
+  border-color: rgba(123, 47, 247, 0.35);
+  color: #5b21b6;
+}
+
+#gif-btn:hover,
+#gif-btn:focus-visible {
+  background: #7b2ff7;
+  color: #ffffff;
+  border-color: #6820d7;
+  box-shadow: 0 0 12px rgba(123, 47, 247, 0.45);
+  transform: scale(1.1);
+}
+
+#gif-btn:focus-visible {
+  outline: 2px solid rgba(123, 47, 247, 0.6);
+  outline-offset: 2px;
+}
 
 /* ==============================
    Emoji Picker
@@ -1587,7 +1672,6 @@ header .logo { width: 40px; height: auto; }
 }
 
 #file-attach:hover,
-#gif-btn:hover,
 #emoji-btn:hover {
   transform: scale(1.1);
   box-shadow: 0 0 8px rgba(123,47,247,0.4);
@@ -1637,7 +1721,6 @@ header .logo { width: 40px; height: auto; }
 }
 
 #file-attach:hover,
-#gif-btn:hover,
 #emoji-btn:hover {
   transform: scale(1.1);
   filter: drop-shadow(0 0 6px rgba(187,134,252,0.45));
