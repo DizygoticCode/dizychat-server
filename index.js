@@ -106,21 +106,23 @@ app.get('/link-preview', async (req, res) => {
       return '';
     };
 
-    const title = pick(
+    let title = pick(
       () => $('meta[property="og:title"]').attr('content'),
       () => $('meta[name="twitter:title"]').attr('content'),
       () => $('title').text(),
     );
 
-    const description = pick(
+    let description = pick(
       () => $('meta[property="og:description"]').attr('content'),
       () => $('meta[name="description"]').attr('content'),
       () => $('meta[name="twitter:description"]').attr('content'),
     );
 
-    const imageRaw = pick(
+    let imageRaw = pick(
+      () => $('meta[property="og:image:secure_url"]').attr('content'),
       () => $('meta[property="og:image"]').attr('content'),
       () => $('meta[name="twitter:image"]').attr('content'),
+      () => $('meta[name="twitter:image:src"]').attr('content'),
       () => $('link[rel="image_src"]').attr('href'),
     );
 
@@ -130,7 +132,7 @@ app.get('/link-preview', async (req, res) => {
       () => $('link[rel="apple-touch-icon"]').attr('href'),
     );
 
-    const siteName = pick(
+    let siteName = pick(
       () => $('meta[property="og:site_name"]').attr('content'),
       () => $('meta[name="application-name"]').attr('content'),
       () => new URL(url).hostname,
@@ -145,14 +147,103 @@ app.get('/link-preview', async (req, res) => {
       }
     };
 
+    const ensureString = (value) => {
+      if (!value) return '';
+      if (Array.isArray(value)) return ensureString(value[0]);
+      if (typeof value === 'string') return value;
+      if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+      return '';
+    };
+
+    const first = (value) => (Array.isArray(value) ? value[0] : value);
+
+    const extractImage = (value) => {
+      if (!value) return '';
+      if (typeof value === 'string') return value;
+      if (Array.isArray(value)) return extractImage(value[0]);
+      if (typeof value === 'object') {
+        return extractImage(value.url || value.contentUrl || value.secure_url || value.thumbnailUrl || value['@id']);
+      }
+      return '';
+    };
+
+    const host = (() => {
+      try {
+        return new URL(url).hostname;
+      } catch {
+        return '';
+      }
+    })();
+
+    const refineFromJsonLd = () => {
+      const scripts = $('script[type="application/ld+json"]');
+      const candidates = [];
+      scripts.each((_, el) => {
+        try {
+          const raw = $(el).contents().text();
+          if (!raw) return;
+          const parsed = JSON.parse(raw);
+          const queue = Array.isArray(parsed) ? [...parsed] : [parsed];
+          while (queue.length) {
+            const item = queue.shift();
+            if (!item || typeof item !== 'object') continue;
+            if (Array.isArray(item)) {
+              queue.push(...item);
+              continue;
+            }
+            const type = item['@type'];
+            if (typeof type === 'string' && /VideoObject|NewsArticle|Article|CreativeWork/i.test(type)) {
+              candidates.push(item);
+            }
+            for (const value of Object.values(item)) {
+              if (value && typeof value === 'object') queue.push(value);
+            }
+          }
+        } catch {
+          /* ignore malformed JSON-LD */
+        }
+      });
+
+      if (!candidates.length) return;
+
+      const preferVideo = candidates.find((item) => {
+        const type = item['@type'];
+        return typeof type === 'string' && /VideoObject/i.test(type);
+      });
+
+      const chosen = preferVideo || candidates[0];
+
+      const candidateTitle = ensureString(chosen.name || chosen.headline || chosen.title);
+      const candidateDescription = ensureString(chosen.description);
+      const candidateImage = ensureString(extractImage(chosen.thumbnailUrl || chosen.image));
+      const publisher = first(chosen.publisher);
+      const candidateSite = ensureString(
+        (publisher && (publisher.name || (publisher['@type'] === 'Organization' && publisher.title)))
+        || chosen.source
+        || first(chosen.isPartOf)?.name
+        || chosen.provider_name
+      );
+
+      if (candidateTitle) title = candidateTitle;
+      if (candidateDescription) description = candidateDescription;
+      if (candidateImage) imageRaw = candidateImage;
+      if (candidateSite) siteName = candidateSite;
+    };
+
+    refineFromJsonLd();
+
+    const clean = (value) => ensureString(value).trim();
+
+    const responsePayload = {
+      title: clean(title),
+      description: clean(description),
+      image: resolveAsset(clean(imageRaw)),
+      icon: resolveAsset(clean(iconRaw)),
+      siteName: clean(siteName) || host,
+    };
+
     res.setHeader('Cache-Control', 'public, max-age=300');
-    res.json({
-      title: title || '',
-      description: description || '',
-      image: resolveAsset(imageRaw),
-      icon: resolveAsset(iconRaw),
-      siteName: siteName || '',
-    });
+    res.json(responsePayload);
   } catch (err) {
     console.error('[Link Preview] Error:', err.message);
     res.json({ title: '', image: '', description: '', siteName: '', icon: '' });
