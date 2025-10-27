@@ -2925,12 +2925,35 @@ function autoEmbed(node) {
           }
         }
         if (videoId) {
-          embedUrl = `https://rumble.com/embed/${videoId}/?pub=4&autoplay=0`;
+          const embedParams = new URLSearchParams();
+          const allowedParams = ["pub", "video"];
+          for (const param of allowedParams) {
+            const value = parsed.searchParams.get(param);
+            if (value) {
+              embedParams.set(param, value);
+            }
+          }
+          if (!embedParams.has("autoplay")) {
+            embedParams.set("autoplay", "0");
+          }
+          const query = embedParams.toString();
+          embedUrl = `https://rumble.com/embed/${videoId}/${query ? `?${query}` : ""}`;
         }
       } catch {
         const fallback = link.match(/https?:\/\/(?:www\.)?rumble\.com\/embed\/([a-z0-9]+)/i);
         if (fallback) {
-          embedUrl = `https://rumble.com/embed/${fallback[1]}/?pub=4&autoplay=0`;
+          const embedParams = new URLSearchParams();
+          const pubMatch = link.match(/[?&]pub=([^&]+)/i);
+          if (pubMatch) {
+            embedParams.set("pub", pubMatch[1]);
+          }
+          const videoParamMatch = link.match(/[?&]video=([^&]+)/i);
+          if (videoParamMatch) {
+            embedParams.set("video", videoParamMatch[1]);
+          }
+          embedParams.set("autoplay", "0");
+          const query = embedParams.toString();
+          embedUrl = `https://rumble.com/embed/${fallback[1]}/${query ? `?${query}` : ""}`;
         }
       }
       if (embedUrl) {
