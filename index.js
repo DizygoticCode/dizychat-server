@@ -513,8 +513,10 @@ app.get('/link-preview', async (req, res) => {
               if (value && typeof value === 'object') queue.push(value);
             }
           }
-        } catch {
-          /* ignore malformed JSON-LD */
+        } catch (err) {
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('[Preview] JSON-LD parsing skipped', err);
+          }
         }
       });
 
