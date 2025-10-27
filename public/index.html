@@ -16,8 +16,36 @@
   <div id="username-prompt">
     <img src="/logo.png" alt="DizyChat Logo" class="logo" data-dark-src="/logo.png" data-light-src="/logo-light.png" />
     <h1>Welcome to DizyChat</h1>
+    <section id="auth-panel" class="auth-panel">
+      <h2>Account</h2>
+      <div class="auth-tabs" role="tablist">
+        <button type="button" class="auth-tab" data-auth-mode="login" aria-selected="true" role="tab">Sign in</button>
+        <button type="button" class="auth-tab" data-auth-mode="register" role="tab" aria-selected="false">Register</button>
+      </div>
+      <form id="login-form" class="auth-form" autocomplete="on">
+        <label for="login-username" class="sr-only">Username</label>
+        <input id="login-username" name="username" placeholder="Username" autocomplete="username" />
+        <label for="login-password" class="sr-only">Password</label>
+        <input id="login-password" name="password" type="password" placeholder="Password" autocomplete="current-password" />
+        <button type="submit">Sign in</button>
+      </form>
+      <form id="register-form" class="auth-form" hidden autocomplete="on">
+        <label for="register-username" class="sr-only">Username</label>
+        <input id="register-username" name="username" placeholder="Choose a username" autocomplete="username" />
+        <label for="register-display" class="sr-only">Display name</label>
+        <input id="register-display" name="displayName" placeholder="Display name" autocomplete="nickname" />
+        <label for="register-password" class="sr-only">Password</label>
+        <input id="register-password" name="password" type="password" placeholder="Password" autocomplete="new-password" />
+        <button type="submit">Create account</button>
+      </form>
+      <div id="auth-summary" class="auth-summary" hidden>
+        <span>Signed in as <strong id="current-user-name">Guest</strong></span>
+        <button type="button" id="logout-btn">Sign out</button>
+      </div>
+      <p id="auth-status" class="auth-status" role="status" aria-live="polite"></p>
+    </section>
     <div class="landing-inputs">
-      <input id="username-input" placeholder="Choose your username" />
+      <input id="username-input" placeholder="Sign in to chat" readonly />
       <input id="room-input" placeholder="Enter room name" />
       <input id="room-password" type="password" placeholder="Room password (optional)" />
       <input id="admin-password" type="password" placeholder="Admin Password" style="display:none;" autocomplete="current-password" />
@@ -68,6 +96,7 @@
         <form id="form">
           <input type="file" id="file-input" hidden />
           <button type="button" id="file-attach" title="Attach file">📎</button>
+          <button type="button" id="audio-record-btn" title="Record audio clip">🎙️</button>
           <button type="button" id="gif-btn" title="Send GIF">
             <span aria-hidden="true">GIF</span>
             <span class="sr-only">Open GIF picker</span>
@@ -115,18 +144,5 @@
   <script src="/socket.io/socket.io.js"></script>
   <script src="/chat.js"></script>
   <script src="/fusion.js"></script>
-
-  <script>
-    const u = document.getElementById("username-input");
-    const ap = document.getElementById("admin-password");
-    function toggleAdminField() {
-      if (!u || !ap) return;
-      ap.style.display = (u.value.trim() === "Dizygotic") ? "block" : "none";
-    }
-    if (u) {
-      u.addEventListener("input", toggleAdminField);
-      toggleAdminField();
-    }
-  </script>
 </body>
 </html>
