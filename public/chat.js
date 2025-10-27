@@ -4,7 +4,7 @@
 
 console.log("%c🎛️ DizyChat Supernova Fusion Loaded", "color:#b266ff;font-weight:bold;");
 
-const socket = io({ autoConnect: false });
+const socket = io();
 window.socket = socket;
 
 // ------------------- Globals -------------------
@@ -20,20 +20,12 @@ let lastRoomName = "";
 let lastRoomPassword = "";
 let latestPublicRooms = [];
 
-const authState = {
-  token: localStorage.getItem("dizychat-token") || "",
-  user: null,
-  authenticated: false,
-  mode: "login",
-};
-
 // ------------------- DOM -------------------
 const form = document.getElementById("form");
 const input = document.getElementById("input");
 const messages = document.getElementById("messages");
 const fileInput = document.getElementById("file-input");
 const attachBtn = document.getElementById("file-attach");
-const audioRecordBtn = document.getElementById("audio-record-btn");
 const emojiBtn = document.getElementById("emoji-btn");
 const pinnedContainer = document.getElementById("pinned-messages");
 const searchInput = document.getElementById("message-search");
@@ -60,20 +52,6 @@ const userCount = document.getElementById("user-count");
 const userListEmpty = document.getElementById("user-list-empty");
 const userContextMenu = document.getElementById("user-context-menu");
 
-const authPanel = document.getElementById("auth-panel");
-const authTabs = Array.from(document.querySelectorAll(".auth-tab"));
-const loginForm = document.getElementById("login-form");
-const registerForm = document.getElementById("register-form");
-const logoutBtn = document.getElementById("logout-btn");
-const authStatus = document.getElementById("auth-status");
-const authSummary = document.getElementById("auth-summary");
-const currentUserName = document.getElementById("current-user-name");
-const loginUsernameInput = document.getElementById("login-username");
-const loginPasswordInput = document.getElementById("login-password");
-const registerUsernameInput = document.getElementById("register-username");
-const registerDisplayInput = document.getElementById("register-display");
-const registerPasswordInput = document.getElementById("register-password");
-
 const appState = {
   isAdmin: false,
   messages: new Map(),
@@ -84,20 +62,10 @@ const appState = {
   users: [],
   moderationNotices: new Map(),
   contextMenuTrigger: null,
-  history: {
-    cursor: null,
-    hasMore: false,
-    loading: false,
-  },
 };
 
 let searchDebounceTimer = null;
 let soundCloudApiPromise = null;
-let audioRecorder = null;
-let audioChunks = [];
-let audioRecordingTimeout = null;
-let audioStream = null;
-let audioCancelRequested = false;
 
 function getDateKey(date) {
   if (!(date instanceof Date)) return "";
@@ -146,7 +114,7 @@ function ensureDaySeparator(date) {
 }
 
 // Autofocus username for smoother entry
-if (loginUsernameInput) loginUsernameInput.focus();
+usernameInput?.focus();
 
 if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = true;
 
@@ -203,17 +171,6 @@ if (userContextMenu) {
   });
 }
 
-if (messages) {
-  messages.addEventListener("scroll", () => {
-    if (!window.currentRoom) return;
-    if (!appState.history.hasMore || appState.history.loading) return;
-    if (messages.scrollTop <= 80) {
-      appState.history.loading = true;
-      socket.emit("history request", { room: window.currentRoom, before: appState.history.cursor });
-    }
-  });
-}
-
 const urlParams = new URLSearchParams(window.location.search);
 const prefillRoom = urlParams.get("room") || "";
 const prefillPassword = urlParams.get("password") || "";
@@ -230,185 +187,6 @@ if (prefillPassword) {
 
 if (prefillRoom || prefillPassword) {
   updateQueryParams(prefillRoom, prefillPassword);
-}
-
-function setAuthStatus(message = "", tone = "info") {
-  if (!authStatus) return;
-  authStatus.textContent = message || "";
-  authStatus.classList.remove("success", "error");
-  if (tone === "success" || tone === "error") {
-    authStatus.classList.add(tone);
-  }
-}
-
-function updateAdminFieldVisibility() {
-  if (!adminPasswordInput) return;
-  const isAdminAccount = (authState.user?.username || "").toLowerCase() === "dizygotic";
-  adminPasswordInput.style.display = isAdminAccount ? "block" : "none";
-}
-
-function updateAuthUI() {
-  const authenticated = Boolean(authState.authenticated && authState.user);
-  if (authenticated) {
-    const display = authState.user?.displayName || authState.user?.username || "";
-    if (authSummary) authSummary.hidden = false;
-    if (currentUserName) currentUserName.textContent = display;
-    if (loginForm) loginForm.hidden = true;
-    if (registerForm) registerForm.hidden = true;
-    authTabs.forEach((tab) => {
-      tab.setAttribute("aria-disabled", "true");
-      tab.setAttribute("aria-selected", "false");
-      tab.classList.remove("active");
-    });
-    if (usernameInput) {
-      usernameInput.value = display;
-      usernameInput.placeholder = display || "Signed in";
-    }
-    if (joinBtn) joinBtn.disabled = false;
-    setAuthStatus("", "info");
-  } else {
-    if (authSummary) authSummary.hidden = true;
-    authTabs.forEach((tab) => {
-      tab.removeAttribute("aria-disabled");
-      tab.classList.toggle("active", tab.dataset.authMode === authState.mode);
-      tab.setAttribute("aria-selected", tab.dataset.authMode === authState.mode ? "true" : "false");
-    });
-    if (loginForm) loginForm.hidden = authState.mode !== "login";
-    if (registerForm) registerForm.hidden = authState.mode !== "register";
-    if (usernameInput) {
-      usernameInput.value = "";
-      usernameInput.placeholder = "Sign in to chat";
-    }
-    if (joinBtn) joinBtn.disabled = true;
-  }
-  if (logoutBtn) logoutBtn.hidden = !authenticated;
-  updateAdminFieldVisibility();
-}
-
-function setAuthMode(mode) {
-  if (!mode || (mode !== "login" && mode !== "register")) return;
-  authState.mode = mode;
-  updateAuthUI();
-}
-
-async function fetchProfileFromToken(token) {
-  if (!token) return null;
-  try {
-    const res = await fetch("/auth/me", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data?.user || null;
-  } catch (err) {
-    console.warn("[Auth] Failed to verify token", err);
-    return null;
-  }
-}
-
-function applySession(token, user, { silent = false } = {}) {
-  authState.token = token || "";
-  authState.user = user || null;
-  authState.authenticated = Boolean(authState.token && authState.user);
-
-  if (authState.authenticated) {
-    const display = authState.user?.displayName || authState.user?.username || "";
-    window.currentUser = display;
-    localStorage.setItem("dizychat-token", authState.token);
-    socket.auth = { token: authState.token };
-    if (socket.connected) {
-      socket.emit("authenticate", { token: authState.token });
-    }
-    if (!silent) {
-      showToast(`Signed in as ${display}`, "success");
-    }
-  } else {
-    window.currentUser = null;
-    localStorage.removeItem("dizychat-token");
-    socket.auth = {};
-    if (!silent && user === null) {
-      showToast("Signed out", "info");
-    }
-  }
-
-  updateAuthUI();
-}
-
-let authSubmitting = false;
-
-async function handleLoginSubmit(event) {
-  event.preventDefault();
-  if (authSubmitting || authState.authenticated) return;
-  const username = loginUsernameInput?.value.trim();
-  const password = loginPasswordInput?.value || "";
-  if (!username || !password) {
-    setAuthStatus("Enter username and password", "error");
-    return;
-  }
-  authSubmitting = true;
-  setAuthStatus("Signing in…");
-  try {
-    const res = await fetch("/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
-    });
-    const data = await res.json();
-    if (!res.ok || data?.error) {
-      throw new Error(data?.error || "Login failed");
-    }
-    applySession(data.token, data.user);
-    setAuthStatus("Signed in", "success");
-    if (loginPasswordInput) loginPasswordInput.value = "";
-  } catch (err) {
-    console.error("[Auth] Login error", err);
-    setAuthStatus(err?.message || "Login failed", "error");
-  } finally {
-    authSubmitting = false;
-  }
-}
-
-async function handleRegisterSubmit(event) {
-  event.preventDefault();
-  if (authSubmitting || authState.authenticated) return;
-  const username = registerUsernameInput?.value.trim();
-  const displayName = registerDisplayInput?.value.trim();
-  const password = registerPasswordInput?.value || "";
-  if (!username || !password) {
-    setAuthStatus("Choose a username and password", "error");
-    return;
-  }
-  authSubmitting = true;
-  setAuthStatus("Creating account…");
-  try {
-    const res = await fetch("/auth/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password, displayName }),
-    });
-    const data = await res.json();
-    if (!res.ok || data?.error) {
-      throw new Error(data?.error || "Registration failed");
-    }
-    applySession(data.token, data.user);
-    setAuthStatus("Account created", "success");
-    setAuthMode("login");
-    if (registerPasswordInput) registerPasswordInput.value = "";
-  } catch (err) {
-    console.error("[Auth] Register error", err);
-    setAuthStatus(err?.message || "Registration failed", "error");
-  } finally {
-    authSubmitting = false;
-  }
-}
-
-function handleLogout() {
-  socket.emit("logout");
-  applySession("", null, { silent: true });
-  authState.mode = "login";
-  updateAuthUI();
-  showLanding({ focusUsername: false });
-  setAuthStatus("Signed out", "info");
 }
 
 // ------------------- State Helpers -------------------
@@ -1544,10 +1322,7 @@ const MediaLightbox = (() => {
 })();
 
 // Hook some core socket events to toasts
-socket.on("join error", (msg) => {
-  appState.history.loading = false;
-  showToast(msg || "Join failed.", "error");
-});
+socket.on("join error", (msg) => showToast(msg || "Join failed.", "error"));
 socket.on("toast", (data) => showToast(data?.text || "", data?.type || "info"));
 socket.on("connect", () => {
   showToast("Connected", "success");
@@ -1620,9 +1395,6 @@ function showLanding({ focusUsername = true } = {}) {
   if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = true;
   if (chatContainer) chatContainer.style.display = "none";
   if (usernamePrompt) usernamePrompt.style.display = "flex";
-  if (audioRecorder && audioRecorder.state === 'recording') {
-    stopAudioRecording({ cancel: true });
-  }
   if (roomName) roomName.textContent = lastRoomName ? `#${lastRoomName}` : "";
   hideSearchResults();
   if (pinnedContainer) {
@@ -1641,15 +1413,8 @@ function showLanding({ focusUsername = true } = {}) {
 
   if (roomInput) roomInput.value = lastRoomName || "";
   if (passwordInput) passwordInput.value = lastRoomPassword || "";
-  const display = authState.user?.displayName || authState.user?.username || "";
-  if (usernameInput) {
-    usernameInput.value = display;
-    usernameInput.placeholder = authState.authenticated ? display || "Signed in" : "Sign in to chat";
-  }
-  if (focusUsername) {
-    if (authState.authenticated) roomInput?.focus();
-    else loginUsernameInput?.focus();
-  }
+  if (usernameInput) usernameInput.value = "";
+  if (focusUsername) usernameInput?.focus();
 
   updateQueryParams(lastRoomName, lastRoomPassword);
 
@@ -1745,9 +1510,6 @@ function completeRoomJoin(username, room, password) {
     messages.innerHTML = "";
     delete messages.dataset.lastDateKey;
   }
-  appState.history.cursor = null;
-  appState.history.hasMore = false;
-  appState.history.loading = true;
   if (pinnedContainer) {
     pinnedContainer.innerHTML = "";
     pinnedContainer.style.display = "none";
@@ -1764,17 +1526,12 @@ function completeRoomJoin(username, room, password) {
 }
 
 function emitJoinRequest() {
-  if (!authState.authenticated || !authState.user) {
-    setAuthStatus("Sign in before joining a room", "error");
-    showToast("Sign in before joining a room", "error");
-    return;
-  }
-
+  const username = usernameInput?.value.trim();
   const room = roomInput?.value.trim();
   const password = passwordInput?.value.trim() || "";
 
-  if (!room) {
-    showToast("Enter a room name", "error");
+  if (!username || !room) {
+    showToast("Enter a username and room", "error");
     return;
   }
 
@@ -1782,13 +1539,12 @@ function emitJoinRequest() {
     socket.emit("leave room", { room: window.currentRoom });
   }
 
-  const display = authState.user.displayName || authState.user.username;
-  completeRoomJoin(display, room, password);
-  socket.emit("join room", { room, password });
+  completeRoomJoin(username, room, password);
+  socket.emit("join room", { room, username, password });
 
   const adminPassword = adminPasswordInput?.value.trim();
-  if (adminPassword && authState.user?.username) {
-    socket.emit("admin auth", { room, username: authState.user.username, adminPassword });
+  if (adminPassword) {
+    socket.emit("admin auth", { room, username, adminPassword });
   }
 }
 
@@ -1853,14 +1609,12 @@ function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
       item.title = "Password required";
       const handleLocked = () => {
         if (roomInput) roomInput.value = roomNameValue;
-        if (!authState.authenticated) {
-          showToast("Sign in to join locked rooms", "warn");
-          setAuthStatus("Sign in to join locked rooms", "error");
-          loginUsernameInput?.focus();
-          return;
+        showToast("Enter your username and the room password to join.", "info");
+        if (!usernameInput?.value.trim()) {
+          usernameInput?.focus();
+        } else {
+          passwordInput?.focus();
         }
-        showToast("Enter the room password to join.", "info");
-        passwordInput?.focus();
       };
       item.addEventListener("click", handleLocked);
       item.addEventListener("keydown", (event) => {
@@ -1873,10 +1627,9 @@ function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
       item.classList.add("clickable");
       item.title = "Join this room";
       const attemptJoin = () => {
-        if (!authState.authenticated) {
-          showToast("Sign in before joining a room", "error");
-          setAuthStatus("Sign in before joining a room", "error");
-          loginUsernameInput?.focus();
+        if (!usernameInput?.value.trim()) {
+          showToast("Enter your username first", "error");
+          usernameInput?.focus();
           return;
         }
 
@@ -1896,26 +1649,6 @@ function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
 
     publicRoomList.appendChild(item);
   });
-}
-
-authTabs.forEach((tab) => {
-  tab.addEventListener("click", () => {
-    if (authState.authenticated) return;
-    const mode = tab.dataset.authMode;
-    setAuthMode(mode === "register" ? "register" : "login");
-  });
-});
-
-if (loginForm) {
-  loginForm.addEventListener("submit", handleLoginSubmit);
-}
-
-if (registerForm) {
-  registerForm.addEventListener("submit", handleRegisterSubmit);
-}
-
-if (logoutBtn) {
-  logoutBtn.addEventListener("click", handleLogout);
 }
 
 if (joinBtn) {
@@ -2759,71 +2492,24 @@ function renderMessage(msg, { skipScroll = false, scrollBehavior = "auto", delay
   updatePinnedBanner();
 }
 
-function rebuildMessageList({ mode = "replace", previousHeight = 0, previousTop = 0 } = {}) {
+socket.on("load messages", (arr) => {
   if (!isViewingChat || !messages) return;
+  appState.messages.clear();
+  appState.pinned.clear();
   messages.innerHTML = "";
   delete messages.dataset.lastDateKey;
-
-  const sorted = Array.from(appState.messages.values())
-    .filter((entry) => !appState.hidden.has(entry.id))
-    .sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
-
-  sorted.forEach((entry) => renderMessage(entry, { skipScroll: true }));
+  (arr || []).forEach((entry) => renderMessage(entry, { skipScroll: true }));
   updatePinnedBanner();
-
-  if (mode === "prepend") {
-    const newHeight = messages.scrollHeight;
-    const added = newHeight - previousHeight;
-    messages.scrollTop = previousTop + added;
-  } else {
-    scrollMessagesToBottom({ behavior: "auto", delay: 120 });
-  }
-}
-
-socket.on("load messages", () => {});
-
-socket.on("previous messages", () => {});
-
-socket.on("history chunk", ({ room, messages: chunkMessages = [], mode = "replace", hasMore, nextCursor, error } = {}) => {
-  if (room && window.currentRoom && room !== window.currentRoom) return;
-  if (!Array.isArray(chunkMessages)) chunkMessages = [];
-
-  const previousHeight = messages?.scrollHeight || 0;
-  const previousTop = messages?.scrollTop || 0;
-
-  chunkMessages.forEach((entry) => storeMessageData(entry));
-
-  appState.history.cursor = nextCursor ? new Date(nextCursor).toISOString() : null;
-  appState.history.hasMore = Boolean(hasMore);
-  appState.history.loading = false;
-
-  rebuildMessageList({ mode, previousHeight, previousTop });
-
-  if (mode === "replace" && !error) {
-    showToast(`✅ Joined room: ${window.currentRoom}`, "success");
-  }
-  if (error) {
-    showToast("History unavailable", "error");
-  }
+  scrollMessagesToBottom({ behavior: "auto", delay: 120 });
+  showToast(`✅ Joined room: ${window.currentRoom}`, "success");
 });
 
-socket.on("auth state", ({ authenticated, user } = {}) => {
-  if (authenticated && user) {
-    authState.user = user;
-    authState.authenticated = true;
-    window.currentUser = user.displayName || user.username;
-    updateAuthUI();
-    setAuthStatus("Signed in", "success");
-  } else {
-    const wasAuthenticated = authState.authenticated;
-    applySession("", null, { silent: true });
-    authState.mode = "login";
-    updateAuthUI();
-    if (wasAuthenticated) {
-      showToast("Session expired. Please sign in again.", "warn");
-      setAuthStatus("Session expired. Please sign in again.", "error");
-      showLanding({ focusUsername: false });
-    }
+socket.on("previous messages", (arr) => {
+  if (!isViewingChat || !messages) return;
+  if (!messages.childElementCount) {
+    (arr || []).forEach((entry) => renderMessage(entry, { skipScroll: true }));
+    updatePinnedBanner();
+    scrollMessagesToBottom({ behavior: "auto", delay: 80 });
   }
 });
 
@@ -2908,159 +2594,6 @@ socket.on("admin status", ({ isAdmin }) => {
 });
 
 // ------------------- File Uploads (paperclip) -------------------
-async function uploadFileAndSend(file, { label } = {}) {
-  if (!file) return;
-  if (!window.currentRoom) {
-    showToast("Join a room before sending files", "error");
-    return;
-  }
-
-  const displayLabel = label || file.name || "file";
-  showToast(`Uploading ${displayLabel}…`, "info");
-
-  const progress = document.createElement("div");
-  progress.className = "upload-progress";
-  progress.innerHTML = `<div class="bar" style="width:0%"></div><span style="display:none"></span>`;
-  document.body.appendChild(progress);
-  const bar = progress.querySelector(".bar");
-
-  const formData = new FormData();
-  formData.append("file", file);
-
-  let fake = 0;
-  const fakeTimer = setInterval(() => {
-    fake = Math.min(fake + 7, 90);
-    if (bar) bar.style.width = fake + "%";
-    if (fake >= 90) clearInterval(fakeTimer);
-  }, 120);
-
-  try {
-    const response = await fetch("/upload", { method: "POST", body: formData });
-    const data = await response.json();
-
-    if (!response.ok || data?.error) throw new Error(data?.error || "Upload failed");
-
-    clearInterval(fakeTimer);
-    if (bar) bar.style.width = "100%";
-    setTimeout(() => progress.remove(), 800);
-
-    showToast(`Uploaded: ${displayLabel}`, "success");
-
-    socket.emit("chat message", {
-      room: window.currentRoom,
-      user: window.currentUser,
-      text: data.url,
-      timestamp: Date.now(),
-      fileUrl: data.url,
-      fileType: data.type || file.type || "",
-      fileName: data.name || file.name || displayLabel,
-    });
-  } catch (err) {
-    console.error("[Upload Error]", err);
-    showToast(`Upload failed: ${displayLabel}`, "error");
-    progress.remove();
-    clearInterval(fakeTimer);
-  }
-}
-
-async function startAudioRecording() {
-  if (audioRecorder && audioRecorder.state === 'recording') {
-    stopAudioRecording();
-    return;
-  }
-
-  if (!navigator.mediaDevices?.getUserMedia) {
-    showToast('Audio recording is not supported in this browser.', 'error');
-    return;
-  }
-
-  try {
-    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    audioChunks = [];
-    audioCancelRequested = false;
-    const recorder = new MediaRecorder(audioStream);
-    audioRecorder = recorder;
-
-    recorder.addEventListener('dataavailable', (event) => {
-      if (event.data && event.data.size) {
-        audioChunks.push(event.data);
-      }
-    });
-
-    recorder.addEventListener('stop', async () => {
-      clearTimeout(audioRecordingTimeout);
-      audioRecordingTimeout = null;
-      audioRecordBtn?.classList.remove('recording');
-
-      const streamRef = audioStream;
-      audioStream = null;
-      if (streamRef) {
-        streamRef.getTracks().forEach((track) => track.stop());
-      }
-
-      const chunks = audioChunks.slice();
-      audioChunks = [];
-      const cancel = audioCancelRequested;
-      audioCancelRequested = false;
-      audioRecorder = null;
-
-      if (cancel || !chunks.length) {
-        if (cancel) showToast('Recording cancelled', 'info');
-        return;
-      }
-
-      const mimeType = recorder.mimeType || 'audio/webm';
-      const blob = new Blob(chunks, { type: mimeType });
-      const extension = mimeType.includes('ogg')
-        ? 'ogg'
-        : mimeType.includes('mp3')
-        ? 'mp3'
-        : 'webm';
-      const filename = `voice-${Date.now()}.${extension}`;
-      await uploadFileAndSend(new File([blob], filename, { type: mimeType }), { label: 'Voice note' });
-    });
-
-    recorder.start();
-    audioRecordBtn?.classList.add('recording');
-    showToast('Recording… tap again to send', 'info');
-    audioRecordingTimeout = setTimeout(() => stopAudioRecording({ timedOut: true }), 120000);
-  } catch (err) {
-    console.error('[Audio] Recording error', err);
-    showToast('Microphone access denied', 'error');
-    audioRecordBtn?.classList.remove('recording');
-    if (audioStream) {
-      audioStream.getTracks().forEach((track) => track.stop());
-      audioStream = null;
-    }
-    audioRecorder = null;
-    audioChunks = [];
-    audioCancelRequested = false;
-    if (audioRecordingTimeout) {
-      clearTimeout(audioRecordingTimeout);
-      audioRecordingTimeout = null;
-    }
-  }
-}
-
-function stopAudioRecording({ cancel = false, timedOut = false } = {}) {
-  if (!audioRecorder) return;
-  if (cancel) audioCancelRequested = true;
-  if (audioRecordingTimeout) {
-    clearTimeout(audioRecordingTimeout);
-    audioRecordingTimeout = null;
-  }
-  try {
-    if (audioRecorder.state !== 'inactive') {
-      audioRecorder.stop();
-    }
-  } catch (err) {
-    console.warn('[Audio] Stop error', err);
-  }
-  if (timedOut) {
-    showToast('Recording stopped (2 minute limit)', 'info');
-  }
-}
-
 if (attachBtn && fileInput) {
   fileInput.accept = "*/*";
   attachBtn.addEventListener("click", () => fileInput.click());
@@ -3068,21 +2601,53 @@ if (attachBtn && fileInput) {
   fileInput.addEventListener("change", async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    await uploadFileAndSend(file);
-    fileInput.value = "";
-  });
-}
 
-if (audioRecordBtn) {
-  audioRecordBtn.addEventListener("click", () => {
-    if (!window.currentRoom) {
-      showToast("Join a room before recording audio", "error");
-      return;
-    }
-    if (audioRecorder && audioRecorder.state === 'recording') {
-      stopAudioRecording();
-    } else {
-      startAudioRecording();
+    showToast(`Uploading ${file.name}…`, "info");
+
+    // Visual progress overlay (purple)
+    const progress = document.createElement("div");
+    progress.className = "upload-progress";
+    progress.innerHTML = `<div class="bar" style="width:0%"></div><span style="display:none"></span>`;
+    document.body.appendChild(progress);
+    const bar = progress.querySelector(".bar");
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      // Simple fetch (Render may not support chunk progress). Simulate bar fill:
+      let fake = 0;
+      const fakeTimer = setInterval(() => {
+        fake = Math.min(fake + 7, 90);
+        if (bar) bar.style.width = fake + "%";
+        if (fake >= 90) clearInterval(fakeTimer);
+      }, 120);
+
+      const response = await fetch("/upload", { method: "POST", body: formData });
+      const data = await response.json();
+
+      if (!response.ok || data.error) throw new Error(data.error || "Upload failed");
+
+      if (bar) bar.style.width = "100%";
+      setTimeout(() => progress.remove(), 800);
+
+      showToast(`Uploaded: ${file.name}`, "success");
+
+      socket.emit("chat message", {
+        room: window.currentRoom,
+        user: window.currentUser,
+        text: data.url,
+        timestamp: Date.now(),
+        fileUrl: data.url,
+        fileType: data.type || file.type || "",
+        fileName: data.name || file.name || "",
+      });
+
+      fileInput.value = "";
+    } catch (err) {
+      console.error("[Upload Error]", err);
+      showToast(`Upload failed: ${file.name}`, "error");
+      progress.remove();
     }
   });
 }
@@ -3597,28 +3162,5 @@ function autoEmbed(node) {
     }
   })();
 }
-
-async function initializeAuth() {
-  updateAuthUI();
-  if (authState.token) {
-    setAuthStatus("Restoring session…");
-    const profile = await fetchProfileFromToken(authState.token);
-    if (profile) {
-      authState.user = profile;
-      authState.authenticated = true;
-      window.currentUser = profile.displayName || profile.username;
-      setAuthStatus("Session restored", "success");
-    } else {
-      applySession("", null, { silent: true });
-      setAuthStatus("Session expired. Please sign in again.", "error");
-    }
-    updateAuthUI();
-  }
-
-  socket.auth = authState.token ? { token: authState.token } : {};
-  socket.connect();
-}
-
-initializeAuth();
 
 console.log("%c✅ DizyChat Fusion Ready — join a room to begin", "color:#b266ff;font-weight:bold;");
