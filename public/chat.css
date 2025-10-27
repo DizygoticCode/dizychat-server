@@ -339,14 +339,22 @@ header .logo { width: 40px; height: auto; }
 }
 
 .header-right button#copy-join-link {
-  background: rgba(255,255,255,0.08);
-  color: #fff;
+  background: var(--surface);
+  border-color: var(--border-color);
+  color: var(--text-primary);
   font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
 .header-right button#copy-join-link:hover {
-  background: rgba(255,255,255,0.2);
-  transform: scale(1.05);
+  background: var(--surface-alt);
+  box-shadow: 0 8px 18px rgba(123, 47, 247, 0.25);
+  transform: translateY(-1px);
+}
+
+.header-right button#copy-join-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* ==============================

@@ -190,6 +190,20 @@ const roomBans = new Map();
 const roomBlocks = new Map();
 const roomMutes = new Map();
 
+const PERSISTENT_ROOMS = [
+  'General Chat',
+  'InfoWars Chat',
+  'Drum & Bass Chat',
+];
+const PERSISTENT_ROOM_SET = new Set(PERSISTENT_ROOMS);
+
+PERSISTENT_ROOMS.forEach((roomName) => {
+  if (!roomMembers.has(roomName)) {
+    roomMembers.set(roomName, new Set());
+  }
+  roomPasswords.set(roomName, '');
+});
+
 const canonicalUsername = (username) => {
   if (typeof username !== 'string') return '';
   return username.trim().toLowerCase();
@@ -330,17 +344,38 @@ const addUserBan = (room, canonicalTarget) => {
 };
 
 const getPublicRoomsSnapshot = () => {
-  return Array.from(roomMembers.entries())
-    .filter(([, members]) => members && members.size)
-    .map(([room, members]) => ({
+  const rooms = new Map();
+
+  PERSISTENT_ROOMS.forEach((room) => {
+    const members = roomMembers.get(room);
+    rooms.set(room, {
+      name: room,
+      occupants: members ? members.size : 0,
+      requiresPassword: Boolean(roomPasswords.get(room)),
+    });
+  });
+
+  for (const [room, members] of roomMembers.entries()) {
+    if (rooms.has(room)) {
+      const entry = rooms.get(room);
+      entry.occupants = members ? members.size : 0;
+      entry.requiresPassword = Boolean(roomPasswords.get(room));
+      continue;
+    }
+
+    if (!members || !members.size) continue;
+
+    rooms.set(room, {
       name: room,
       occupants: members.size,
-      requiresPassword: Boolean(roomPasswords.get(room))
-    }))
-    .sort((a, b) => {
-      if (b.occupants !== a.occupants) return b.occupants - a.occupants;
-      return a.name.localeCompare(b.name);
+      requiresPassword: Boolean(roomPasswords.get(room)),
     });
+  }
+
+  return Array.from(rooms.values()).sort((a, b) => {
+    if (b.occupants !== a.occupants) return b.occupants - a.occupants;
+    return a.name.localeCompare(b.name);
+  });
 };
 
 const emitRoomListUpdate = () => {
@@ -354,7 +389,7 @@ const removeSocketFromRoom = (socket, targetRoom) => {
   const members = roomMembers.get(room);
   if (members) {
     members.delete(socket.id);
-    if (!members.size) {
+    if (!members.size && !PERSISTENT_ROOM_SET.has(room)) {
       roomMembers.delete(room);
     }
   }
