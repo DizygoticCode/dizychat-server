@@ -106,6 +106,11 @@ const PORT = process.env.PORT || 10000;
 // ---------------- Admin ----------------
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'Dizygotic';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+let JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  JWT_SECRET = crypto.randomBytes(32).toString('base64url');
+  process.env.JWT_SECRET = JWT_SECRET;
+  console.log('[Auth] JWT_SECRET not set. Generated a temporary secret for this process. Set JWT_SECRET in your environment to persist sessions across restarts.');
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
   console.error('[Auth] JWT_SECRET missing');
