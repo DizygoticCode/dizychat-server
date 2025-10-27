@@ -39,10 +39,7 @@ const createRateLimiter = ({ windowMs, max }) => {
       }
     }
   };
-  const timer = setInterval(sweep, windowMs);
-  if (timer && typeof timer.unref === 'function') {
-    timer.unref();
-  }
+  setInterval(sweep, windowMs).unref?.();
 
   return (req, res, next) => {
     const key = req.ip || req.headers['x-forwarded-for'] || req.connection?.remoteAddress || 'unknown';
@@ -114,6 +111,10 @@ if (!JWT_SECRET) {
   JWT_SECRET = crypto.randomBytes(32).toString('base64url');
   process.env.JWT_SECRET = JWT_SECRET;
   console.log('[Auth] JWT_SECRET not set. Generated a temporary secret for this process. Set JWT_SECRET in your environment to persist sessions across restarts.');
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('[Auth] JWT_SECRET missing');
+  process.exit(1);
 }
 const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -240,10 +241,7 @@ const decodeAuthToken = (token) => {
     }
     const payloadJson = base64UrlDecode(payloadEncoded);
     return JSON.parse(payloadJson);
-  } catch (err) {
-    if (process.env.NODE_ENV === 'development') {
-      console.warn('[Auth] Failed to decode token', err);
-    }
+  } catch {
     return null;
   }
 };
@@ -371,10 +369,7 @@ const normalisePreviewUrl = (value) => {
       formatted: parsed.toString(),
       cacheKey: `${parsed.origin}${parsed.pathname}`.toLowerCase(),
     };
-  } catch (err) {
-    if (process.env.NODE_ENV === 'development') {
-      console.warn('[Preview] URL normalisation failed', err);
-    }
+  } catch {
     return null;
   }
 };
@@ -489,10 +484,7 @@ app.get('/link-preview', async (req, res) => {
       if (!asset) return '';
       try {
         return new URL(asset, formatted).href;
-      } catch (err) {
-        if (process.env.NODE_ENV === 'development') {
-          console.warn('[Preview] Failed to resolve asset URL', err);
-        }
+      } catch {
         return '';
       }
     };
