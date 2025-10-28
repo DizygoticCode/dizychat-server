@@ -1463,13 +1463,30 @@ body:not(.dark) #gif-btn {
   align-self: center;
   max-width: 60%;
   word-wrap: break-word;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
   opacity: 0;
   transform: translateY(10px);
   transition: opacity 0.3s ease, transform 0.2s ease;
+  visibility: hidden;
+  pointer-events: none;
 }
 
-#typing-bubble.show { opacity: 1; transform: translateY(0); }
-#typing-bubble.hide { opacity: 0; transform: translateY(10px); }
+#typing-bubble.show {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+  pointer-events: auto;
+}
+
+#typing-bubble.hide {
+  opacity: 0;
+  transform: translateY(10px);
+  visibility: hidden;
+  pointer-events: none;
+}
 
 /* ==============================
    File & Link Previews
