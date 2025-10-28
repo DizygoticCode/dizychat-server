@@ -1090,18 +1090,73 @@ body:not(.dark) .message.self .meta .meta-status[data-status="delivered"]::after
   margin-top: 6px;
   display: flex;
   flex-wrap: wrap;
+  gap: 6px;
+}
+
+.message .reactions .reaction-chip {
+  display: inline-flex;
+  align-items: center;
   gap: 4px;
-}
-
-.message .reactions span {
-  background: rgba(255,255,255,0.15);
-  border-radius: 12px;
-  padding: 2px 6px;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.12);
+  border-radius: 14px;
+  padding: 3px 8px;
   font-size: 0.85em;
-  transition: transform 0.15s ease;
+  color: inherit;
+  cursor: default;
+  transition: transform 0.15s ease, background 0.2s ease, border 0.2s ease;
 }
 
-.message .reactions span:hover { transform: scale(1.2); }
+.message .reactions .reaction-chip.own {
+  cursor: pointer;
+}
+
+.message .reactions .reaction-chip.own:hover,
+.message .reactions .reaction-chip.own:focus-visible {
+  transform: translateY(-1px) scale(1.05);
+  background: rgba(187,134,252,0.28);
+  border-color: rgba(187,134,252,0.6);
+  outline: none;
+}
+
+.message .reactions .reaction-chip .reaction-emoji,
+.message .reactions .reaction-chip .reaction-count {
+  line-height: 1;
+}
+
+.message .reactions .reaction-chip .reaction-count {
+  font-size: 0.75em;
+  opacity: 0.85;
+}
+
+.message .reactions .reaction-chip img {
+  width: 1.2em;
+  height: 1.2em;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.message .reactions .reaction-chip.own {
+  background: rgba(187,134,252,0.35);
+  border-color: rgba(187,134,252,0.75);
+  box-shadow: 0 0 8px rgba(187,134,252,0.35);
+}
+
+body.light .message .reactions .reaction-chip {
+  border-color: rgba(0,0,0,0.12);
+  background: rgba(0,0,0,0.05);
+}
+
+body.light .message .reactions .reaction-chip.own:hover,
+body.light .message .reactions .reaction-chip.own:focus-visible {
+  background: rgba(187,134,252,0.25);
+  border-color: rgba(187,134,252,0.55);
+}
+
+body.light .message .reactions .reaction-chip.own {
+  background: rgba(187,134,252,0.32);
+  border-color: rgba(187,134,252,0.7);
+}
 
 /* ==============================
    Input Bar

@@ -887,9 +887,11 @@ io.on('connection', socket => {
       const msg = await Message.findById(id);
       if (!msg || msg.deleted) return;
       if (room && msg.room !== room) return;
+      const targetRoom = room || msg.room;
+      if (!targetRoom) return;
       if (!msg.starredBy.includes(user)) msg.starredBy.push(user);
       await msg.save();
-      io.to(room).emit('message starred', { id, starredBy: msg.starredBy });
+      io.to(targetRoom).emit('message starred', { id, starredBy: msg.starredBy });
     } catch(err){ console.error("[Star] Error:", err); }
   });
 
@@ -898,9 +900,11 @@ io.on('connection', socket => {
       const msg = await Message.findById(id);
       if (!msg || msg.deleted) return;
       if (room && msg.room !== room) return;
+      const targetRoom = room || msg.room;
+      if (!targetRoom) return;
       msg.starredBy = msg.starredBy.filter(u => u !== user);
       await msg.save();
-      io.to(room).emit('message unstarred', { id, starredBy: msg.starredBy });
+      io.to(targetRoom).emit('message unstarred', { id, starredBy: msg.starredBy });
     } catch(err){ console.error("[Unstar] Error:", err); }
   });
 
@@ -909,11 +913,27 @@ io.on('connection', socket => {
       const msg = await Message.findById(id);
       if (!msg || msg.deleted) return;
       if (room && msg.room !== room) return;
-      const existing = msg.reactions.findIndex(r => r.user === username);
-      if (existing >= 0) msg.reactions[existing].emoji = reaction;
-      else msg.reactions.push({ user: username, emoji: reaction });
+      const targetRoom = room || msg.room;
+      if (!targetRoom) return;
+
+      const user = typeof username === 'string' ? username.trim() : '';
+      if (!user) return;
+
+      const normalizedReaction = typeof reaction === 'string' ? reaction.trim().slice(0, 128) : '';
+      const existingIndex = msg.reactions.findIndex((r) => r.user === user);
+
+      if (!normalizedReaction) {
+        if (existingIndex >= 0) {
+          msg.reactions.splice(existingIndex, 1);
+        }
+      } else if (existingIndex >= 0) {
+        msg.reactions[existingIndex].emoji = normalizedReaction;
+      } else {
+        msg.reactions.push({ user, emoji: normalizedReaction });
+      }
+
       await msg.save();
-      io.to(room).emit('update reactions', { id, reactions: msg.reactions });
+      io.to(targetRoom).emit('update reactions', { id, reactions: msg.reactions });
     } catch(err){ console.error("[React] Error:", err); }
   });
 

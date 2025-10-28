@@ -51,6 +51,7 @@ const adminPasswordInput = document.getElementById("admin-password");
 const roomName = document.getElementById("room-name");
 const themeToggle = document.getElementById("toggle-theme");
 const emojiPicker = document.getElementById("emoji-picker");
+let emojiPickerController = null;
 const leaveBtn = document.getElementById("leave-btn");
 const copyJoinLinkBtn = document.getElementById("copy-join-link");
 const publicRoomList = document.getElementById("public-room-list");
@@ -147,6 +148,31 @@ function normalizeReplySnapshot(raw) {
     fileName: raw.fileName ? String(raw.fileName) : "",
     deleted: Boolean(raw.deleted),
   };
+}
+
+function normalizeReactions(list) {
+  if (!Array.isArray(list)) return [];
+  const normalized = [];
+  const indexByUser = new Map();
+
+  list.forEach((entry) => {
+    if (!entry || typeof entry !== "object") return;
+    const user = entry.user !== undefined ? String(entry.user || "").trim() : "";
+    let emoji = entry.emoji !== undefined ? String(entry.emoji || "").trim() : "";
+    if (emoji.length > 128) {
+      emoji = emoji.slice(0, 128);
+    }
+    if (!user || !emoji) return;
+
+    if (indexByUser.has(user)) {
+      normalized[indexByUser.get(user)].emoji = emoji;
+    } else {
+      indexByUser.set(user, normalized.length);
+      normalized.push({ user, emoji });
+    }
+  });
+
+  return normalized;
 }
 
 function resetMessageReadObserver() {
@@ -408,9 +434,9 @@ function storeMessageData(raw) {
   merged.fileName = raw.fileName !== undefined ? raw.fileName : existing.fileName;
   merged.status = normalizeMessageStatus(raw.status ?? existing.status ?? "sent");
   merged.reactions = Array.isArray(raw.reactions)
-    ? raw.reactions
+    ? normalizeReactions(raw.reactions)
     : Array.isArray(existing.reactions)
-    ? existing.reactions
+    ? normalizeReactions(existing.reactions)
     : [];
 
   if (Array.isArray(raw.starredBy)) {
@@ -1141,6 +1167,109 @@ function closeActiveMenu(options = {}) {
   appState.activeMenu = null;
 }
 
+function renderMessageReactions(node, data) {
+  if (!node) return;
+  const list = Array.isArray(data?.reactions) ? data.reactions : [];
+  let container = node.querySelector(".reactions");
+
+  if (!list.length || data?.deleted) {
+    if (container) container.remove();
+    return;
+  }
+
+  if (!container) {
+    container = document.createElement("div");
+    container.className = "reactions";
+    node.appendChild(container);
+  }
+
+  container.innerHTML = "";
+
+  const groups = new Map();
+  list.forEach((entry) => {
+    if (!entry || typeof entry !== "object") return;
+    const emoji = entry.emoji !== undefined ? String(entry.emoji || "").trim() : "";
+    const user = entry.user !== undefined ? String(entry.user || "").trim() : "";
+    if (!emoji || !user) return;
+
+    if (!groups.has(emoji)) {
+      groups.set(emoji, { emoji, users: new Set(), order: [] });
+    }
+    const group = groups.get(emoji);
+    if (!group.users.has(user)) {
+      group.users.add(user);
+      group.order.push(user);
+    }
+  });
+
+  const currentUser = window.currentUser || "";
+  const room = window.currentRoom || "";
+
+  groups.forEach((group) => {
+    const count = group.order.length;
+    if (!count) return;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "reaction-chip";
+    button.dataset.emoji = group.emoji;
+
+    const isImage = /^(https?:)?\/\//i.test(group.emoji) || group.emoji.startsWith("/");
+    if (isImage) {
+      const img = document.createElement("img");
+      img.src = group.emoji;
+      img.alt = "Reaction";
+      img.loading = "lazy";
+      button.appendChild(img);
+    } else {
+      const emojiEl = document.createElement("span");
+      emojiEl.className = "reaction-emoji";
+      emojiEl.textContent = group.emoji;
+      button.appendChild(emojiEl);
+    }
+
+    if (count > 1) {
+      const countEl = document.createElement("span");
+      countEl.className = "reaction-count";
+      countEl.textContent = `×${count}`;
+      button.appendChild(countEl);
+    }
+
+    const orderedUsers = group.order;
+    const isOwn = orderedUsers.includes(currentUser);
+    button.setAttribute("aria-pressed", String(isOwn));
+    if (isOwn) {
+      button.classList.add("own");
+    }
+
+    if (orderedUsers.length) {
+      let label = `${group.emoji} by ${orderedUsers.join(", ")}`;
+      if (isOwn) {
+        label += " (click to remove)";
+      }
+      button.title = label;
+      button.setAttribute("aria-label", label);
+      if (isOwn && room && currentUser) {
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          socket.emit("react message", {
+            room,
+            id: data.id,
+            reaction: "",
+            username: currentUser,
+          });
+        });
+      }
+    } else {
+      button.title = group.emoji;
+      button.setAttribute("aria-label", group.emoji);
+    }
+
+    container.appendChild(button);
+  });
+}
+
 function setupMessageActions(node, data) {
   if (!node || !data) return;
   let toggle = node.querySelector(".message-actions-toggle");
@@ -1176,6 +1305,40 @@ function setupMessageActions(node, data) {
       beginReply(data);
     });
     menu.appendChild(replyBtn);
+
+    const reactionBtn = document.createElement("button");
+    reactionBtn.type = "button";
+    reactionBtn.textContent = "React";
+    reactionBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      closeActiveMenu();
+      if (!window.currentUser || !window.currentRoom) {
+        showToast("Join the chat to react to messages.", "warn");
+        return;
+      }
+      const handleSelect = (value) => {
+        const emoji = typeof value === "string" ? value.trim() : "";
+        if (!emoji) return;
+        socket.emit("react message", {
+          room: window.currentRoom,
+          id: data.id,
+          reaction: emoji,
+          username: window.currentUser,
+        });
+      };
+      if (emojiPickerController?.show) {
+        const anchorTarget = toggle || node;
+        emojiPickerController.show({
+          mode: "reaction",
+          anchor: anchorTarget,
+          onSelect: handleSelect,
+        });
+      } else {
+        handleSelect(prompt("Pick an emoji"));
+      }
+    });
+    menu.appendChild(reactionBtn);
 
     const pinBtn = document.createElement("button");
     pinBtn.type = "button";
@@ -1292,6 +1455,7 @@ function updateMessageNode(id) {
   applyReplyContext(node, data);
   updateMessageFlags(node, data);
   setupMessageActions(node, data);
+  renderMessageReactions(node, data);
 
   if (replyState.targetId && normalizeMessageId(replyState.targetId) === data.id) {
     if (data.deleted) {
@@ -2257,195 +2421,283 @@ if (themeToggle) {
 }
 
 // ------------------- Emoji Picker Toggle -------------------
-if (emojiBtn && emojiPicker) {
-  const quickEmojiBar = emojiPicker.querySelector("#quick-emojis");
-  if (quickEmojiBar) {
-    quickEmojiBar.hidden = true;
-    quickEmojiBar.setAttribute("aria-hidden", "true");
-  }
-
-  const hideEmojiPicker = () => {
-    emojiPicker.classList.remove("show");
-    emojiPicker.style.display = "none";
-    emojiSearch.value = "";
-    if (emojiCatalogLoaded) {
-      renderEmojiList(emojiEntries);
-    }
-  };
-
-  const showEmojiPicker = () => {
-    emojiPicker.classList.add("show");
-    emojiPicker.style.display = "block";
-    requestAnimationFrame(() => {
-      emojiSearch.focus({ preventScroll: true });
-    });
-  };
-
-  const emojiSearch = document.createElement("input");
-  emojiSearch.type = "search";
-  emojiSearch.id = "emoji-search";
-  emojiSearch.placeholder = "Search emoji…";
-  emojiPicker.appendChild(emojiSearch);
-
-  const emojiCatalog = document.createElement("div");
-  emojiCatalog.id = "emoji-catalog";
-  emojiPicker.appendChild(emojiCatalog);
-
-  const emojiEntries = [];
-  let emojiCatalogLoaded = false;
-
-  const renderEmojiList = (list) => {
-    emojiCatalog.innerHTML = "";
-    if (!list.length) {
-      const empty = document.createElement("div");
-      empty.className = "emoji-empty";
-      empty.textContent = "No emoji found";
-      emojiCatalog.appendChild(empty);
-      return;
+if (emojiPicker) {
+  emojiPickerController = (() => {
+    const quickEmojiBar = emojiPicker.querySelector("#quick-emojis");
+    if (quickEmojiBar) {
+      quickEmojiBar.hidden = true;
+      quickEmojiBar.setAttribute("aria-hidden", "true");
     }
 
-    const grouped = list.reduce((acc, item) => {
-      const key = item.category || "Emojis";
-      if (!acc[key]) acc[key] = [];
-      acc[key].push(item);
-      return acc;
-    }, {});
+    const emojiSearch = document.createElement("input");
+    emojiSearch.type = "search";
+    emojiSearch.id = "emoji-search";
+    emojiSearch.placeholder = "Search emoji…";
+    emojiPicker.appendChild(emojiSearch);
 
-    Object.entries(grouped).forEach(([category, items]) => {
-      const section = document.createElement("section");
-      section.className = "emoji-category";
+    const emojiCatalog = document.createElement("div");
+    emojiCatalog.id = "emoji-catalog";
+    emojiPicker.appendChild(emojiCatalog);
 
-      const title = document.createElement("h4");
-      title.className = "emoji-category-title";
-      title.textContent = category;
-      section.appendChild(title);
+    const emojiEntries = [];
+    let emojiCatalogLoaded = false;
 
-      const grid = document.createElement("div");
-      grid.className = "emoji-grid";
+    const renderEmojiList = (list) => {
+      emojiCatalog.innerHTML = "";
+      if (!list.length) {
+        const empty = document.createElement("div");
+        empty.className = "emoji-empty";
+        empty.textContent = "No emoji found";
+        emojiCatalog.appendChild(empty);
+        return;
+      }
 
-      items.forEach((item) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "emoji-item";
-        button.title = item.name || "";
+      const grouped = list.reduce((acc, item) => {
+        const key = item.category || "Emojis";
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(item);
+        return acc;
+      }, {});
 
-        if (item.char) {
-          button.textContent = item.char;
-        } else if (item.url) {
-          const img = document.createElement("img");
-          img.src = item.url;
-          img.alt = item.name || "emoji";
-          img.loading = "lazy";
-          button.appendChild(img);
-        }
+      Object.entries(grouped).forEach(([category, items]) => {
+        const section = document.createElement("section");
+        section.className = "emoji-category";
 
-        button.addEventListener("click", () => {
-          if (item.char && input) {
-            input.value = `${input.value || ""}${item.char}`;
-            input.dispatchEvent(new Event("input", { bubbles: true }));
-            input.focus();
-            hideEmojiPicker();
-            return;
+        const title = document.createElement("h4");
+        title.className = "emoji-category-title";
+        title.textContent = category;
+        section.appendChild(title);
+
+        const grid = document.createElement("div");
+        grid.className = "emoji-grid";
+
+        items.forEach((item) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "emoji-item";
+          button.title = item.name || "";
+
+          if (item.char) {
+            button.textContent = item.char;
+          } else if (item.url) {
+            const img = document.createElement("img");
+            img.src = item.url;
+            img.alt = item.name || "emoji";
+            img.loading = "lazy";
+            button.appendChild(img);
           }
 
-          if (item.url && window.currentRoom && window.currentUser) {
-            socket.emit("chat message", {
-              room: window.currentRoom,
-              user: window.currentUser,
-              text: item.url,
-              timestamp: Date.now(),
-            });
-            showToast(`${item.name || "Emoji"} sent`, "success");
-            hideEmojiPicker();
-          }
+          button.addEventListener("click", () => handleItemSelection(item));
+
+          grid.appendChild(button);
         });
 
-        grid.appendChild(button);
+        section.appendChild(grid);
+        emojiCatalog.appendChild(section);
       });
+    };
 
-      section.appendChild(grid);
-      emojiCatalog.appendChild(section);
-    });
-  };
-
-  const loadEmojiCatalog = async () => {
-    if (emojiCatalogLoaded) return;
-    try {
-      emojiCatalog.innerHTML = "<div class=\"emoji-empty\">Loading…</div>";
-      const response = await fetch("/emojis.json", { cache: "no-store" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      Object.entries(data || {}).forEach(([category, items]) => {
-        if (!Array.isArray(items)) return;
-        items.forEach((item) => {
-          emojiEntries.push({
-            ...item,
-            category,
+    const loadEmojiCatalog = async () => {
+      if (emojiCatalogLoaded) return;
+      try {
+        emojiCatalog.innerHTML = "<div class=\"emoji-empty\">Loading…</div>";
+        const response = await fetch("/emojis.json", { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        Object.entries(data || {}).forEach(([category, items]) => {
+          if (!Array.isArray(items)) return;
+          items.forEach((item) => {
+            emojiEntries.push({
+              ...item,
+              category,
+            });
           });
         });
+        renderEmojiList(emojiEntries);
+        emojiCatalogLoaded = true;
+        if (quickEmojiBar) {
+          quickEmojiBar.hidden = true;
+          quickEmojiBar.setAttribute("aria-hidden", "true");
+        }
+      } catch (err) {
+        console.error("[Emoji Picker] Failed to load", err);
+        emojiCatalog.innerHTML = "<div class=\"emoji-empty\">Unable to load emoji.</div>";
+        if (quickEmojiBar) {
+          quickEmojiBar.hidden = false;
+          quickEmojiBar.removeAttribute("aria-hidden");
+        }
+      }
+    };
+
+    const state = {
+      mode: "input",
+      anchor: null,
+      onSelect: null,
+    };
+
+    const resetPosition = () => {
+      emojiPicker.style.removeProperty("top");
+      emojiPicker.style.removeProperty("left");
+      emojiPicker.style.removeProperty("bottom");
+      emojiPicker.style.removeProperty("right");
+    };
+
+    const positionToAnchor = (anchor) => {
+      if (!anchor) return;
+      const rect = anchor.getBoundingClientRect();
+      const width = emojiPicker.offsetWidth || 320;
+      const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+      const scrollX = window.pageXOffset || document.documentElement.scrollLeft || 0;
+      const scrollY = window.pageYOffset || document.documentElement.scrollTop || 0;
+
+      let left = rect.left + scrollX;
+      if (left + width > viewportWidth - 16) {
+        left = Math.max(16, viewportWidth - width - 16);
+      }
+      if (left < 16) left = 16;
+
+      const top = rect.bottom + scrollY + 8;
+
+      emojiPicker.style.left = `${left}px`;
+      emojiPicker.style.top = `${top}px`;
+      emojiPicker.style.removeProperty("bottom");
+      emojiPicker.style.removeProperty("right");
+    };
+
+    const hide = () => {
+      emojiPicker.classList.remove("show");
+      emojiPicker.style.display = "none";
+      emojiSearch.value = "";
+      if (emojiCatalogLoaded) {
+        renderEmojiList(emojiEntries);
+      }
+      resetPosition();
+      state.mode = "input";
+      state.anchor = null;
+      state.onSelect = null;
+    };
+
+    const show = ({ mode = "input", anchor = null, onSelect = null } = {}) => {
+      state.mode = mode;
+      state.anchor = anchor || null;
+      state.onSelect = typeof onSelect === "function" ? onSelect : null;
+      if (!anchor) {
+        resetPosition();
+      }
+      emojiPicker.classList.add("show");
+      emojiPicker.style.display = "block";
+      if (anchor) {
+        positionToAnchor(anchor);
+        requestAnimationFrame(() => positionToAnchor(anchor));
+      }
+      requestAnimationFrame(() => {
+        emojiSearch.focus({ preventScroll: true });
       });
-      renderEmojiList(emojiEntries);
-      emojiCatalogLoaded = true;
-      if (quickEmojiBar) {
-        quickEmojiBar.hidden = true;
-        quickEmojiBar.setAttribute("aria-hidden", "true");
-      }
-    } catch (err) {
-      console.error("[Emoji Picker] Failed to load", err);
-      emojiCatalog.innerHTML = "<div class=\"emoji-empty\">Unable to load emoji.</div>";
-      if (quickEmojiBar) {
-        quickEmojiBar.hidden = false;
-        quickEmojiBar.removeAttribute("aria-hidden");
-      }
-    }
-  };
-
-  emojiSearch.addEventListener("input", (event) => {
-    const query = event.target.value.trim().toLowerCase();
-    if (!query) {
-      renderEmojiList(emojiEntries);
-      return;
-    }
-
-    const filtered = emojiEntries.filter((item) => {
-      const byName = item.name && item.name.toLowerCase().includes(query);
-      const byEmoji = item.char && item.char.toLowerCase().includes(query);
-      return byName || byEmoji;
-    });
-    renderEmojiList(filtered);
-  });
-
-  emojiBtn.addEventListener("click", (event) => {
-    event.preventDefault();
-    if (emojiPicker.classList.contains("show")) {
-      hideEmojiPicker();
-    } else {
-      showEmojiPicker();
       loadEmojiCatalog();
-    }
-  });
+    };
 
-  document.addEventListener("click", (event) => {
-    if (!emojiPicker.classList.contains("show")) return;
-    if (event.target === emojiBtn) return;
-    if (emojiPicker.contains(event.target)) return;
-    hideEmojiPicker();
-  });
+    const handleValueSelection = (value, meta = {}) => {
+      const emojiValue = typeof value === "string" ? value : "";
+      if (!emojiValue) return;
 
-  const quickEmojiButtons = emojiPicker.querySelectorAll("#quick-emojis button");
-  quickEmojiButtons.forEach((btn) => {
-    btn.addEventListener("click", (event) => {
-      event.preventDefault();
-      const emoji = btn.textContent?.trim();
-      if (!emoji) return;
+      if (state.mode === "reaction" && typeof state.onSelect === "function") {
+        state.onSelect(emojiValue, meta);
+        hide();
+        return;
+      }
+
+      if (meta.kind === "url") {
+        if (window.currentRoom && window.currentUser) {
+          socket.emit("chat message", {
+            room: window.currentRoom,
+            user: window.currentUser,
+            text: emojiValue,
+            timestamp: Date.now(),
+          });
+          showToast(`${meta.item?.name || "Emoji"} sent`, "success");
+        } else {
+          showToast("Join a room to send emoji.", "warn");
+        }
+        hide();
+        return;
+      }
+
       if (input) {
-        input.value = `${input.value || ""}${emoji}`;
+        input.value = `${input.value || ""}${emojiValue}`;
         input.dispatchEvent(new Event("input", { bubbles: true }));
         input.focus();
       }
-      hideEmojiPicker();
+      hide();
+    };
+
+    const handleItemSelection = (item) => {
+      if (!item) return;
+      if (item.char) {
+        handleValueSelection(item.char, { kind: "char", item });
+        return;
+      }
+      if (item.url) {
+        handleValueSelection(item.url, { kind: "url", item });
+      }
+    };
+
+    emojiSearch.addEventListener("input", (event) => {
+      const query = event.target.value.trim().toLowerCase();
+      if (!query) {
+        renderEmojiList(emojiEntries);
+        return;
+      }
+
+      const filtered = emojiEntries.filter((item) => {
+        const byName = item.name && item.name.toLowerCase().includes(query);
+        const byEmoji = item.char && item.char.toLowerCase().includes(query);
+        return byName || byEmoji;
+      });
+      renderEmojiList(filtered);
     });
-  });
+
+    if (emojiBtn) {
+      emojiBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (emojiPicker.classList.contains("show") && state.mode === "input") {
+          hide();
+        } else {
+          show({ mode: "input" });
+        }
+      });
+    }
+
+    document.addEventListener("click", (event) => {
+      if (!emojiPicker.classList.contains("show")) return;
+      if (emojiPicker.contains(event.target)) return;
+      if (emojiBtn && (event.target === emojiBtn || emojiBtn.contains(event.target))) return;
+      hide();
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && emojiPicker.classList.contains("show")) {
+        hide();
+      }
+    });
+
+    const quickEmojiButtons = emojiPicker.querySelectorAll("#quick-emojis button");
+    quickEmojiButtons.forEach((btn) => {
+      btn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const emoji = btn.textContent?.trim();
+        if (!emoji) return;
+        handleValueSelection(emoji, { kind: "char", source: "quick" });
+      });
+    });
+
+    return {
+      show,
+      hide,
+      isVisible: () => emojiPicker.classList.contains("show"),
+    };
+  })();
 }
 
 // ------------------- Sending Messages -------------------
@@ -2954,6 +3206,8 @@ function renderMessage(msg, { skipScroll = false, scrollBehavior = "auto", delay
     observeMediaForScroll(wrap);
   }
 
+  renderMessageReactions(wrap, data);
+
   if (!skipScroll) {
     scrollMessagesToBottom({ behavior: scrollBehavior, delay });
   }
@@ -3048,6 +3302,13 @@ socket.on("message starred", ({ id, starredBy = [] }) => {
 
 socket.on("message unstarred", ({ id, starredBy = [] }) => {
   const data = storeMessageData({ id, starredBy });
+  if (!data) return;
+  updateMessageNode(data.id);
+});
+
+socket.on("update reactions", ({ id, reactions = [] } = {}) => {
+  if (!id) return;
+  const data = storeMessageData({ id, reactions });
   if (!data) return;
   updateMessageNode(data.id);
 });
