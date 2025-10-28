@@ -707,6 +707,41 @@ io.on('connection', socket => {
         msgData.fileName = sanitizeHtml(String(msgData.fileName), { allowedTags: [], allowedAttributes: {} }).slice(0, 120);
       }
 
+      let replyToDocId = null;
+      let replySnapshot = null;
+      if (msgData.replyTo) {
+        const replyId = String(msgData.replyTo).trim();
+        if (mongoose.Types.ObjectId.isValid(replyId)) {
+          try {
+            const repliedMessage = await Message.findById(replyId).lean();
+            if (repliedMessage && repliedMessage.room === roomName) {
+              replyToDocId = repliedMessage._id;
+              const safeText = sanitizeHtml(String(repliedMessage.text || ""), { allowedTags: [], allowedAttributes: {} });
+              const safeName = sanitizeHtml(String(repliedMessage.fileName || ""), { allowedTags: [], allowedAttributes: {} });
+              replySnapshot = {
+                id: String(repliedMessage._id),
+                user: repliedMessage.user || "Anon",
+                text: safeText.slice(0, 240),
+                fileUrl: repliedMessage.fileUrl || "",
+                fileType: repliedMessage.fileType || "",
+                fileName: safeName.slice(0, 120),
+                deleted: Boolean(repliedMessage.deleted),
+              };
+            }
+          } catch (err) {
+            console.warn('[Message] Failed to load reply target', err);
+          }
+        }
+      }
+
+      if (!replyToDocId) {
+        msgData.replyTo = undefined;
+        msgData.replyToSnapshot = undefined;
+      } else {
+        msgData.replyTo = replyToDocId;
+        msgData.replyToSnapshot = replySnapshot;
+      }
+
       const newMsg = new Message({
         ...msgData,
         timestamp: msgData.timestamp ? new Date(msgData.timestamp) : new Date(),

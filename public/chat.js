@@ -20,6 +20,10 @@ let lastRoomName = "";
 let lastRoomPassword = "";
 let latestPublicRooms = [];
 
+const replyState = {
+  targetId: null,
+};
+
 // ------------------- DOM -------------------
 const form = document.getElementById("form");
 const input = document.getElementById("input");
@@ -31,6 +35,11 @@ const pinnedContainer = document.getElementById("pinned-messages");
 const searchInput = document.getElementById("message-search");
 const searchFilter = document.getElementById("message-search-filter");
 const searchResultsBox = document.getElementById("search-results");
+const replyPreviewBar = document.getElementById("reply-preview");
+const replyPreviewContent = replyPreviewBar?.querySelector?.(".reply-preview-content") || null;
+const replyPreviewAuthor = document.getElementById("reply-preview-author");
+const replyPreviewText = document.getElementById("reply-preview-text");
+const replyPreviewCancel = document.getElementById("reply-preview-cancel");
 
 const usernamePrompt = document.getElementById("username-prompt");
 const chatContainer = document.getElementById("chat-container");
@@ -86,6 +95,58 @@ function getMessageStatusLabel(status) {
     default:
       return "Sent";
   }
+}
+
+function escapeHtml(value) {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function truncateText(value, maxLength = 140) {
+  if (!value) return "";
+  const str = String(value).trim();
+  if (!str) return "";
+  if (str.length <= maxLength) return str;
+  return `${str.slice(0, Math.max(0, maxLength - 1))}…`;
+}
+
+function normalizeMessageId(value) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    if (value instanceof Date) return "";
+    if (value._id) return normalizeMessageId(value._id);
+    if (typeof value.toString === "function" && value.toString !== Object.prototype.toString) {
+      const str = value.toString();
+      if (str && str !== "[object Object]") return str;
+    }
+  }
+  try {
+    const str = String(value);
+    return str === "[object Object]" ? "" : str;
+  } catch {
+    return "";
+  }
+}
+
+function normalizeReplySnapshot(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const id = normalizeMessageId(raw.id || raw._id);
+  if (!id) return null;
+  return {
+    id,
+    user: raw.user ? String(raw.user) : "",
+    text: raw.text ? String(raw.text) : "",
+    fileUrl: raw.fileUrl ? String(raw.fileUrl) : "",
+    fileType: raw.fileType ? String(raw.fileType) : "",
+    fileName: raw.fileName ? String(raw.fileName) : "",
+    deleted: Boolean(raw.deleted),
+  };
 }
 
 function resetMessageReadObserver() {
@@ -314,6 +375,9 @@ function hideMessageLocally(id) {
   persistHiddenMessages();
   appState.pinned.delete(id);
   updatePinnedBanner();
+  if (normalizeMessageId(replyState.targetId) === id) {
+    clearReplyTarget();
+  }
   const existing = messages?.querySelector(`.message[data-id="${id}"]`);
   if (existing) {
     if (appState.activeMenu && existing.contains(appState.activeMenu)) {
@@ -360,6 +424,37 @@ function storeMessageData(raw) {
   merged.deleted = raw.deleted !== undefined ? Boolean(raw.deleted) : Boolean(merged.deleted);
   merged.deletedBy = raw.deletedBy !== undefined ? (raw.deletedBy || "") : merged.deletedBy || "";
 
+  let replySnapshot = null;
+  if (raw.replyToSnapshot !== undefined) {
+    replySnapshot = normalizeReplySnapshot(raw.replyToSnapshot);
+  } else if (existing.replyToSnapshot) {
+    replySnapshot = normalizeReplySnapshot(existing.replyToSnapshot);
+  }
+
+  let replyId = "";
+  if (raw.replyTo === null) {
+    replyId = "";
+  } else {
+    const candidates = [
+      raw.replyTo,
+      raw.replyId,
+      raw.reply_to,
+      replySnapshot?.id,
+      existing.replyTo,
+      existing.replyToSnapshot?.id,
+    ];
+    for (const candidate of candidates) {
+      const normalized = normalizeMessageId(candidate);
+      if (normalized) {
+        replyId = normalized;
+        break;
+      }
+    }
+  }
+
+  merged.replyTo = replyId;
+  merged.replyToSnapshot = replyId ? replySnapshot : null;
+
   if (merged.deleted) {
     merged.text = "";
     merged.fileUrl = "";
@@ -379,6 +474,250 @@ function storeMessageData(raw) {
   }
   return merged;
 }
+
+function resolveReplyDetails(replyId, fallbackSnapshot) {
+  const normalizedId = normalizeMessageId(replyId || fallbackSnapshot?.id);
+  if (!normalizedId) return null;
+  const targetData = appState.messages.get(normalizedId);
+  const snapshot = targetData
+    ? {
+        id: normalizedId,
+        user: targetData.user || "Anon",
+        text: targetData.text || "",
+        fileUrl: targetData.fileUrl || "",
+        fileType: targetData.fileType || "",
+        fileName: targetData.fileName || "",
+        deleted: Boolean(targetData.deleted),
+      }
+    : normalizeReplySnapshot(fallbackSnapshot);
+
+  if (!snapshot) {
+    return {
+      id: normalizedId,
+      user: "Unknown",
+      snippet: "Message unavailable",
+      deleted: false,
+      hasAttachment: false,
+      fileName: "",
+    };
+  }
+
+  const isDeleted = Boolean(targetData?.deleted || snapshot.deleted);
+  const base = targetData && !targetData.deleted ? targetData : snapshot;
+  let snippet = (base.text || "").trim();
+  if (!snippet) {
+    snippet = base.fileName || base.fileUrl || "";
+  }
+  if (!snippet) {
+    snippet = isDeleted ? "Message deleted" : "Attachment";
+  }
+
+  return {
+    id: normalizedId,
+    user: snapshot.user || targetData?.user || "Anon",
+    snippet: truncateText(snippet, 180),
+    deleted: isDeleted,
+    hasAttachment: Boolean(base.fileUrl && !isDeleted),
+    fileName: base.fileName || "",
+  };
+}
+
+function applyReplyContext(node, data) {
+  if (!node || !data) return;
+  const info = resolveReplyDetails(data.replyTo, data.replyToSnapshot);
+  let container = node.querySelector(".reply-context");
+  if (!info) {
+    if (container) container.remove();
+    node.classList.remove("has-reply");
+    node.removeAttribute("data-reply-id");
+    return;
+  }
+
+  if (!container) {
+    container = document.createElement("div");
+    container.className = "reply-context";
+    container.setAttribute("role", "button");
+    container.setAttribute("tabindex", "0");
+    const textEl = node.querySelector(".text");
+    if (textEl) {
+      node.insertBefore(container, textEl);
+    } else {
+      node.insertBefore(container, node.firstChild);
+    }
+  }
+
+  node.dataset.replyId = info.id;
+  container.dataset.replyId = info.id;
+  container.classList.toggle("deleted", Boolean(info.deleted));
+  container.innerHTML = "";
+
+  const author = document.createElement("div");
+  author.className = "reply-author";
+  author.textContent = info.user || "Anon";
+  container.appendChild(author);
+
+  const snippet = document.createElement("div");
+  snippet.className = "reply-snippet";
+  if (info.hasAttachment) {
+    const badge = document.createElement("span");
+    badge.className = "reply-attachment-label";
+    badge.textContent = info.fileName ? `📎 ${info.fileName}` : "📎 Attachment";
+    snippet.appendChild(badge);
+  }
+  const snippetText = document.createElement("span");
+  snippetText.textContent = info.snippet;
+  snippet.appendChild(snippetText);
+  container.appendChild(snippet);
+
+  container.onclick = (event) => {
+    event.stopPropagation();
+    focusMessage(info.id);
+  };
+  container.onkeydown = (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      focusMessage(info.id);
+    }
+  };
+
+  node.classList.add("has-reply");
+}
+
+function refreshReplyContextsForTarget(targetId) {
+  if (!messages) return;
+  const normalized = normalizeMessageId(targetId);
+  if (!normalized) return;
+  messages.querySelectorAll(".message").forEach((node) => {
+    const replyNode = node.querySelector(".reply-context");
+    if (!replyNode) return;
+    if (replyNode.dataset.replyId !== normalized) return;
+    const id = node.dataset.id;
+    if (!id) return;
+    const data = appState.messages.get(id);
+    if (!data) return;
+    applyReplyContext(node, data);
+  });
+}
+
+function createReplyBarInfo(targetId) {
+  const normalized = normalizeMessageId(targetId);
+  if (!normalized) return null;
+  const data = appState.messages.get(normalized);
+  if (!data) return null;
+  let snippet = (data.text || "").trim();
+  if (!snippet) {
+    snippet = data.fileName || data.fileUrl || "";
+  }
+  const deleted = Boolean(data.deleted);
+  if (!snippet) {
+    snippet = deleted ? "Message deleted" : "Attachment";
+  }
+  return {
+    id: normalized,
+    user: data.user || "Anon",
+    snippet: truncateText(snippet, 180),
+    deleted,
+  };
+}
+
+function updateReplyPreviewBar() {
+  if (!replyPreviewBar) return;
+  const info = createReplyBarInfo(replyState.targetId);
+  if (!info || !replyPreviewAuthor || !replyPreviewText) {
+    replyPreviewBar.classList.remove("show");
+    replyPreviewBar.setAttribute("hidden", "");
+    replyPreviewBar.setAttribute("aria-hidden", "true");
+    replyPreviewBar.removeAttribute("data-reply-id");
+    return;
+  }
+
+  replyPreviewAuthor.textContent = info.user || "Anon";
+  replyPreviewText.textContent = info.snippet;
+  replyPreviewBar.dataset.replyId = info.id;
+  replyPreviewBar.classList.add("show");
+  replyPreviewBar.removeAttribute("hidden");
+  replyPreviewBar.setAttribute("aria-hidden", "false");
+}
+
+function beginReply(target) {
+  if (!target) return;
+  const data = typeof target === "string" ? appState.messages.get(target) : target;
+  if (!data) return;
+  const id = normalizeMessageId(data.id || data._id);
+  if (!id) return;
+  if (data.deleted) {
+    showToast("Cannot reply to a deleted message.", "warn");
+    return;
+  }
+  replyState.targetId = id;
+  updateReplyPreviewBar();
+  input?.focus();
+}
+
+function clearReplyTarget() {
+  replyState.targetId = null;
+  updateReplyPreviewBar();
+}
+
+function attachMessageReplyInteractions(node, data) {
+  if (!node || !data || data.deleted) return;
+  if (node.dataset.replyClickBound === "true") return;
+  node.addEventListener("click", (event) => {
+    if (event.defaultPrevented) return;
+    const target = event.target;
+    if (target?.closest?.(
+      ".message-actions-toggle, .message-actions-menu, .reply-context, .inline-preview, a, button, audio, video, .embed-wrap"
+    )) {
+      return;
+    }
+    const selection = window.getSelection?.();
+    if (selection && selection.toString()) return;
+    const current = appState.messages.get(data.id);
+    if (!current || current.deleted) return;
+    beginReply(current);
+  });
+  node.dataset.replyClickBound = "true";
+}
+
+if (replyPreviewCancel) {
+  replyPreviewCancel.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    clearReplyTarget();
+  });
+}
+
+if (replyPreviewContent) {
+  replyPreviewContent.setAttribute("role", "button");
+  replyPreviewContent.setAttribute("tabindex", "0");
+  replyPreviewContent.addEventListener("click", () => {
+    const id = normalizeMessageId(replyState.targetId);
+    if (id) focusMessage(id);
+  });
+  replyPreviewContent.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      const id = normalizeMessageId(replyState.targetId);
+      if (id) focusMessage(id);
+    }
+  });
+}
+
+if (replyPreviewBar) {
+  replyPreviewBar.addEventListener("click", (event) => {
+    if (event.target === replyPreviewCancel) return;
+    if (event.target === replyPreviewBar) {
+      const id = normalizeMessageId(replyState.targetId);
+      if (id) focusMessage(id);
+    }
+  });
+}
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && replyState.targetId) {
+    clearReplyTarget();
+  }
+});
 
 function formatDurationLabel(seconds) {
   if (!seconds || seconds <= 0) return "";
@@ -829,6 +1168,15 @@ function setupMessageActions(node, data) {
   menu.innerHTML = "";
 
   if (!data.deleted) {
+    const replyBtn = document.createElement("button");
+    replyBtn.type = "button";
+    replyBtn.textContent = "Reply";
+    replyBtn.addEventListener("click", () => {
+      closeActiveMenu();
+      beginReply(data);
+    });
+    menu.appendChild(replyBtn);
+
     const pinBtn = document.createElement("button");
     pinBtn.type = "button";
     pinBtn.textContent = isPinned ? "Unpin" : "Pin";
@@ -876,6 +1224,8 @@ function setupMessageActions(node, data) {
     event.stopPropagation();
     toggleMenu(menu, toggle);
   };
+
+  attachMessageReplyInteractions(node, data);
 }
 
 function updateMessageNode(id) {
@@ -939,8 +1289,20 @@ function updateMessageNode(id) {
     node.querySelectorAll(".inline-preview, .embed-wrap").forEach((el) => el.remove());
   }
 
+  applyReplyContext(node, data);
   updateMessageFlags(node, data);
   setupMessageActions(node, data);
+
+  if (replyState.targetId && normalizeMessageId(replyState.targetId) === data.id) {
+    if (data.deleted) {
+      showToast("Reply target was deleted.", "warn");
+      clearReplyTarget();
+    } else {
+      updateReplyPreviewBar();
+    }
+  }
+
+  refreshReplyContextsForTarget(data.id);
 }
 
 function refreshActionMenus() {
@@ -1481,6 +1843,7 @@ function updateQueryParams(room, password) {
 function showLanding({ focusUsername = true } = {}) {
   isViewingChat = false;
   appState.isAdmin = false;
+  clearReplyTarget();
   if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = true;
   if (chatContainer) chatContainer.style.display = "none";
   if (usernamePrompt) usernamePrompt.style.display = "flex";
@@ -1764,6 +2127,7 @@ if (leaveBtn) {
       lastRoomPassword = window.currentPassword || "";
       socket.emit("leave room", { room: window.currentRoom });
     }
+    clearReplyTarget();
     showLanding({ focusUsername: true });
     showToast("Left the room", "info");
   });
@@ -1798,6 +2162,7 @@ if (copyJoinLinkBtn) {
 
 // Listen for successful room join
 socket.on("join room success", () => {
+  clearReplyTarget();
   isViewingChat = true;
   if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = !window.currentRoom;
   if (chatContainer) chatContainer.style.display = "flex";
@@ -2089,13 +2454,16 @@ if (form) {
     e.preventDefault();
     const text = (input?.value || "").trim();
     if (!text) return;
+    const replyTo = normalizeMessageId(replyState.targetId) || undefined;
     socket.emit("chat message", {
       room: window.currentRoom,
       user: window.currentUser,
       text,
       timestamp: Date.now(),
+      replyTo,
     });
     input.value = "";
+    clearReplyTarget();
     socket.emit("stop typing");
   });
 }
@@ -2572,6 +2940,8 @@ function renderMessage(msg, { skipScroll = false, scrollBehavior = "auto", delay
     }
   }
 
+  applyReplyContext(wrap, data);
+
   messages.appendChild(wrap);
   applyMessageStatus(wrap, data);
   setupMessageActions(wrap, data);
@@ -2593,6 +2963,7 @@ function renderMessage(msg, { skipScroll = false, scrollBehavior = "auto", delay
 
 socket.on("load messages", (arr) => {
   if (!isViewingChat || !messages) return;
+  clearReplyTarget();
   appState.messages.clear();
   appState.pinned.clear();
   messages.innerHTML = "";
@@ -2738,6 +3109,7 @@ if (attachBtn && fileInput) {
 
       showToast(`Uploaded: ${file.name}`, "success");
 
+      const replyTo = normalizeMessageId(replyState.targetId) || undefined;
       socket.emit("chat message", {
         room: window.currentRoom,
         user: window.currentUser,
@@ -2746,9 +3118,11 @@ if (attachBtn && fileInput) {
         fileUrl: data.url,
         fileType: data.type || file.type || "",
         fileName: data.name || file.name || "",
+        replyTo,
       });
 
       fileInput.value = "";
+      clearReplyTarget();
     } catch (err) {
       console.error("[Upload Error]", err);
       showToast(`Upload failed: ${file.name}`, "error");

@@ -7,6 +7,17 @@ const reactionSchema = new mongoose.Schema({
   emoji: { type: String, required: true }
 }, { _id: false }); // no separate _id for reactions
 
+// ✅ Snapshot schema for replies (stored alongside message for quick lookup)
+const replySnapshotSchema = new mongoose.Schema({
+  id: { type: String },
+  user: { type: String },
+  text: { type: String },
+  fileUrl: { type: String },
+  fileType: { type: String },
+  fileName: { type: String },
+  deleted: { type: Boolean, default: false }
+}, { _id: false });
+
 // ✅ Main message schema
 const messageSchema = new mongoose.Schema({
   room: { type: String, required: true, index: true },  // index for fast room queries
@@ -23,7 +34,9 @@ const messageSchema = new mongoose.Schema({
   starredBy: { type: [String], default: [] },           // list of users who starred it
   deleted: { type: Boolean, default: false },           // soft delete flag
   deletedAt: { type: Date },
-  deletedBy: { type: String, default: "" }
+  deletedBy: { type: String, default: "" },
+  replyTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null },
+  replyToSnapshot: { type: replySnapshotSchema, default: null }
 });
 
 // ✅ Indexes
