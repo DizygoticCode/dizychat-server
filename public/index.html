@@ -21,7 +21,6 @@
       <input id="room-input" placeholder="Enter room name" />
       <input id="room-password" type="password" placeholder="Room password (optional)" />
       <input id="admin-password" type="password" placeholder="Admin Password" style="display:none;" autocomplete="current-password" />
-      <input id="access-code" type="password" placeholder="Access code (optional)" autocomplete="off" />
       <button id="join-btn">Join Chat</button>
     </div>
 
@@ -39,7 +38,6 @@
       <div class="header-left">
         <img src="/logo.png" alt="Logo" class="logo" data-dark-src="/logo.png" data-light-src="/logo-light.png" />
         <span id="room-name"></span>
-        <span id="role-badge" class="role-badge" hidden aria-live="polite"></span>
       </div>
       <div class="header-right">
         <div class="search-bar">
@@ -61,7 +59,6 @@
 
     <div id="chat-main">
       <div id="chat-content">
-        <div id="room-media-banner" hidden></div>
         <div id="pinned-messages" style="display:none;"></div>
         <div id="search-results" hidden></div>
         <div id="messages"></div>
@@ -69,13 +66,6 @@
 
         <!-- Message input -->
         <form id="form">
-          <div id="reply-banner" hidden>
-            <div class="reply-target">
-              <strong id="reply-username"></strong>
-              <span id="reply-snippet"></span>
-            </div>
-            <button type="button" id="reply-cancel" title="Cancel reply" aria-label="Cancel reply">✕</button>
-          </div>
           <input type="file" id="file-input" hidden />
           <button type="button" id="file-attach" title="Attach file">📎</button>
           <button type="button" id="gif-btn" title="Send GIF">
@@ -86,7 +76,6 @@
           <input id="input" autocomplete="off" placeholder="Type a message..." />
           <button type="submit" title="Send">➤</button>
         </form>
-        <button id="scroll-bottom" type="button" hidden>Scroll to latest</button>
 
         <!-- Upload progress bar -->
         <div class="upload-progress" style="display:none;">
