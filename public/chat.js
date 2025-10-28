@@ -2733,17 +2733,42 @@ input?.addEventListener("input", () => {
   }, 1500);
 });
 
+input?.addEventListener("blur", () => {
+  if (!isTyping) return;
+  socket.emit("stop typing");
+  isTyping = false;
+  clearTimeout(typingTimeout);
+});
+
 socket.on("typing", (users) => {
   const bubble = document.getElementById("typing-bubble");
   if (!bubble) return;
-  const others = (users || []).filter((u) => u && u !== window.currentUser);
-  if (!others.length) {
+  const uniqueOthers = Array.from(
+    new Set((users || []).filter((u) => u && u !== window.currentUser))
+  );
+  if (!uniqueOthers.length) {
+    bubble.textContent = "";
+    bubble.setAttribute("aria-hidden", "true");
     bubble.classList.remove("show");
     bubble.classList.add("hide");
     return;
   }
-  bubble.textContent =
-    others.length === 1 ? `${others[0]} is typing…` : `${others.join(", ")} are typing…`;
+
+  const formatTypingUsers = (list) => {
+    if (list.length === 1) {
+      return `${list[0]} is typing…`;
+    }
+    if (list.length === 2) {
+      return `${list[0]} and ${list[1]} are typing…`;
+    }
+    if (list.length === 3) {
+      return `${list[0]}, ${list[1]}, and ${list[2]} are typing…`;
+    }
+    return `${list[0]}, ${list[1]}, and ${list.length - 2} others are typing…`;
+  };
+
+  bubble.textContent = formatTypingUsers(uniqueOthers);
+  bubble.setAttribute("aria-hidden", "false");
   bubble.classList.remove("hide");
   bubble.classList.add("show");
 });

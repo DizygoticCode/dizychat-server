@@ -299,7 +299,7 @@ app.get('/tenor-proxy', async (req, res) => {
 
 
 // ---------------- Socket.IO ----------------
-let typingUsers = {};
+const typingUsersByRoom = new Map();
 const roomPasswords = new Map();
 const roomMembers = new Map();
 const roomPresence = new Map();
@@ -330,6 +330,36 @@ const canonicalUsername = (username) => {
 const normaliseRoomName = (room) => {
   if (typeof room !== 'string') return '';
   return room.trim().slice(0, 80);
+};
+
+const broadcastTypingUsers = (room) => {
+  if (!room) return;
+  const roomUsers = typingUsersByRoom.get(room);
+  const payload = roomUsers ? Array.from(roomUsers.values()) : [];
+  io.to(room).emit('typing', payload);
+};
+
+const registerTypingUser = (socket, username) => {
+  const room = normaliseRoomName(socket.currentRoom);
+  if (!room || !username) return;
+  if (!typingUsersByRoom.has(room)) {
+    typingUsersByRoom.set(room, new Map());
+  }
+  const roomUsers = typingUsersByRoom.get(room);
+  roomUsers.set(socket.id, username);
+  broadcastTypingUsers(room);
+};
+
+const clearTypingUser = (socket, targetRoom) => {
+  const room = normaliseRoomName(targetRoom || socket.currentRoom);
+  if (!room) return;
+  const roomUsers = typingUsersByRoom.get(room);
+  if (!roomUsers) return;
+  roomUsers.delete(socket.id);
+  if (!roomUsers.size) {
+    typingUsersByRoom.delete(room);
+  }
+  broadcastTypingUsers(room);
 };
 
 const normaliseUsername = (username, fallback) => {
@@ -520,7 +550,7 @@ const removeSocketFromRoom = (socket, targetRoom) => {
     }
   }
 
-  delete typingUsers[socket.id];
+  clearTypingUser(socket, room);
   socket.leave(room);
   if (socket.currentRoom === room) {
     socket.currentRoom = null;
@@ -976,13 +1006,13 @@ io.on('connection', socket => {
   // ----- Typing Indicator -----
   socket.on('typing', username => {
     if (!canSendTyping(socket.id)) return;
-    typingUsers[socket.id] = username;
-    io.emit('typing', Object.values(typingUsers));
+    const safeName = typeof username === 'string' ? username.trim().slice(0, 64) : '';
+    if (!safeName) return;
+    registerTypingUser(socket, safeName);
   });
 
   socket.on('stop typing', () => {
-    delete typingUsers[socket.id];
-    io.emit('typing', Object.values(typingUsers));
+    clearTypingUser(socket);
   });
 
   // ----- Announcement & Moderation -----
@@ -1189,7 +1219,7 @@ io.on('connection', socket => {
       removeSocketFromRoom(socket, lastRoom);
       emitRoomListUpdate();
     }
-    delete typingUsers[socket.id];
+    clearTypingUser(socket, lastRoom);
   });
 });
 
