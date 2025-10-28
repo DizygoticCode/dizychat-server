@@ -59,10 +59,37 @@ const storage = multer.diskStorage({
   }
 });
 
-// NOTE: no explicit size limits (Render/infrastructure may still cap)
-const upload = multer({ storage });
+const parseUploadLimitMb = () => {
+  const raw = Number(process.env.MAX_UPLOAD_SIZE_MB);
+  if (Number.isNaN(raw) || !raw) return 512; // default 512 MB
+  return Math.max(raw, 10); // ensure at least 10 MB
+};
 
-app.post('/upload', upload.single('file'), (req, res) => {
+const MAX_UPLOAD_SIZE_MB = parseUploadLimitMb();
+const MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024;
+
+const upload = multer({
+  storage,
+  limits: { fileSize: MAX_UPLOAD_SIZE_BYTES },
+  fileFilter: (_req, _file, cb) => cb(null, true), // accept any file type (handled on client display)
+});
+
+const uploadSingleMiddleware = (req, res, next) => {
+  upload.single('file')(req, res, (err) => {
+    if (!err) return next();
+
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({
+        error: `File too large. Maximum upload size is ${MAX_UPLOAD_SIZE_MB}MB.`,
+      });
+    }
+
+    console.error('[Upload] Error:', err);
+    return res.status(400).json({ error: err.message || 'Upload failed' });
+  });
+};
+
+app.post('/upload', uploadSingleMiddleware, (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   res.json({
     url: `/uploads/${req.file.filename}`,
