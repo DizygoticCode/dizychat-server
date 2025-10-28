@@ -11,7 +11,6 @@ const cheerio = require('cheerio');
 const fs = require('fs');
 const multer = require('multer');
 const sanitizeHtml = require('sanitize-html');
-const crypto = require('crypto');
 const Message = require('./src/models/message');
 
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
@@ -23,42 +22,6 @@ const io = new Server(server, {
   cors: { origin: "*", methods: ["GET","POST"] }
 });
 const PORT = process.env.PORT || 10000;
-const MESSAGE_HISTORY_LIMIT = Math.max(1, Number(process.env.MESSAGE_HISTORY_LIMIT) || 500);
-const PRIVILEGED_TOKEN = process.env.PRIVILEGED_TOKEN || '';
-const PRIVILEGED_USERS = new Set(
-  (process.env.PRIVILEGED_USERS || '')
-    .split(',')
-    .map((entry) => entry.trim().toLowerCase())
-    .filter(Boolean)
-);
-const UPLOAD_EXTENSION_DENYLIST = new Set(
-  (process.env.UPLOAD_EXTENSION_DENYLIST || 'exe,bat,cmd,sh,js,msi,apk')
-    .split(',')
-    .map((ext) => ext.trim().replace(/^\./, '').toLowerCase())
-    .filter(Boolean)
-);
-const UPLOAD_MAX_BYTES = Math.max(1, Number(process.env.UPLOAD_MAX_BYTES) || 200 * 1024 * 1024);
-const INFOWARS_STREAM_URL = process.env.INFO_WARS_STREAM_URL
-  || process.env.INFOWARS_STREAM_URL
-  || 'https://rumble.com/embed/v4be8jz/?pub=4';
-const INFOWARS_STREAM_WATCH_URL = process.env.INFO_WARS_STREAM_LINK
-  || process.env.INFOWARS_STREAM_LINK
-  || INFOWARS_STREAM_URL;
-const INFOWARS_STREAM_CONFIG = {
-  title: process.env.INFO_WARS_STREAM_TITLE
-    || process.env.INFOWARS_STREAM_TITLE
-    || 'Infowars Live Stream',
-  embedUrl: INFOWARS_STREAM_URL,
-  watchUrl: INFOWARS_STREAM_WATCH_URL,
-};
-
-const PSYBIN_STREAM_URL = process.env.PSYBIN_STREAM_URL || 'https://www.psyb.in:8000/psytrance';
-const PSYBIN_STREAM_WATCH_URL = process.env.PSYBIN_STREAM_LINK || PSYBIN_STREAM_URL;
-const PSYBIN_STREAM_CONFIG = {
-  title: process.env.PSYBIN_STREAM_TITLE || 'Psybin Radio Live',
-  streamUrl: PSYBIN_STREAM_URL,
-  watchUrl: PSYBIN_STREAM_WATCH_URL,
-};
 
 // ---------------- Admin ----------------
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'Dizygotic';
@@ -97,54 +60,15 @@ const storage = multer.diskStorage({
 });
 
 // NOTE: no explicit size limits (Render/infrastructure may still cap)
-const upload = multer({ storage, limits: { fileSize: UPLOAD_MAX_BYTES } });
-
-const validateUploadAccess = (req) => {
-  const username = (req.headers['x-upload-user'] || '').trim();
-  const token = (req.headers['x-upload-token'] || '').trim();
-  if (!username || !token) return false;
-  const stored = uploadTokens.get(username);
-  return stored && stored === token;
-};
-
-const isExtensionBlocked = (filename) => {
-  if (!filename) return false;
-  const ext = path.extname(filename).replace(/^\./, '').toLowerCase();
-  if (!ext) return false;
-  return UPLOAD_EXTENSION_DENYLIST.has(ext);
-};
+const upload = multer({ storage });
 
 app.post('/upload', upload.single('file'), (req, res) => {
-  if (!validateUploadAccess(req)) {
-    if (req.file?.path) {
-      fs.unlink(req.file.path, () => {});
-    }
-    return res.status(403).json({ error: 'Uploads disabled for your account' });
-  }
-
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-
-  if (isExtensionBlocked(req.file.originalname)) {
-    fs.unlink(req.file.path, () => {});
-    return res.status(415).json({ error: 'File type is not allowed' });
-  }
-
   res.json({
     url: `/uploads/${req.file.filename}`,
     name: req.file.originalname,
     type: req.file.mimetype,
     size: req.file.size
-  });
-});
-
-app.get('/client-config', (req, res) => {
-  res.setHeader('Cache-Control', 'no-store');
-  res.json({
-    messageHistoryLimit: MESSAGE_HISTORY_LIMIT,
-    streams: {
-      infowars: INFOWARS_STREAM_CONFIG,
-      psybin: PSYBIN_STREAM_CONFIG,
-    },
   });
 });
 
@@ -356,15 +280,11 @@ const roomUserHistory = new Map();
 const roomBans = new Map();
 const roomBlocks = new Map();
 const roomMutes = new Map();
-const uploadTokens = new Map();
-const socketRoles = new Map();
-const ROLE_WITH_UPLOAD = new Set(['admin', 'privileged']);
 
 const PERSISTENT_ROOMS = [
   'General Chat',
   'InfoWars Chat',
   'Drum & Bass Chat',
-  'Psybin Radio Chat',
 ];
 const PERSISTENT_ROOM_SET = new Set(PERSISTENT_ROOMS);
 
@@ -423,45 +343,6 @@ const getMuteExpiry = (room, username) => {
     return 0;
   }
   return until;
-};
-
-const getBaseRoleForUser = (username) => {
-  const canonical = canonicalUsername(username);
-  if (!canonical) return 'guest';
-  if (PRIVILEGED_USERS.has(canonical)) return 'privileged';
-  return 'guest';
-};
-
-const generateUploadToken = (username) => {
-  if (!username) return '';
-  const token = crypto.randomBytes(24).toString('hex');
-  uploadTokens.set(username, token);
-  return token;
-};
-
-const applyRoleToSocket = (socket, role = 'guest', { silent = false } = {}) => {
-  if (!socket) return;
-  const normalized = role === 'admin' ? 'admin' : role === 'privileged' ? 'privileged' : 'guest';
-  socketRoles.set(socket.id, normalized);
-  socket.role = normalized;
-  socket.isAdmin = normalized === 'admin';
-
-  let uploadToken = '';
-  if (ROLE_WITH_UPLOAD.has(normalized) && socket.username) {
-    uploadToken = generateUploadToken(socket.username);
-  } else if (socket.username) {
-    uploadTokens.delete(socket.username);
-  }
-
-  if (!silent) {
-    socket.emit('role update', {
-      role: normalized,
-      canUpload: ROLE_WITH_UPLOAD.has(normalized),
-      uploadToken,
-      uploadMaxBytes: UPLOAD_MAX_BYTES,
-      blockedExtensions: Array.from(UPLOAD_EXTENSION_DENYLIST),
-    });
-  }
 };
 
 const emitRoomUsers = (room) => {
@@ -702,9 +583,6 @@ io.on('connection', socket => {
 
     socket.currentRoom = roomName;
 
-    const baseRole = getBaseRoleForUser(socket.username);
-    applyRoleToSocket(socket, baseRole);
-
     if (!roomMembers.has(roomName)) {
       roomMembers.set(roomName, new Set());
     }
@@ -720,12 +598,9 @@ io.on('connection', socket => {
 
     // Load history and pinned messages
     try {
-      const history = await Message.find({ room: roomName })
-        .sort({ timestamp: -1 })
-        .limit(MESSAGE_HISTORY_LIMIT);
-      const ordered = history.slice().reverse();
-      console.log(`[History] Loaded ${ordered.length} messages from ${roomName}`);
-      const plain = ordered.map(m => (m.toJSON ? m.toJSON() : m));
+      const history = await Message.find({ room: roomName }).sort({ timestamp: 1 });
+      console.log(`[History] Loaded ${history.length} messages from ${roomName}`);
+      const plain = history.map(m => (m.toJSON ? m.toJSON() : m));
       socket.emit('load messages', plain);     // new clients
       socket.emit('previous messages', plain); // legacy clients
     } catch (err) {
@@ -756,27 +631,15 @@ io.on('connection', socket => {
     try {
       const _user = username || socket.username;
       if (_user === ADMIN_USERNAME && adminPassword && adminPassword === ADMIN_PASSWORD) {
-        applyRoleToSocket(socket, 'admin');
+        socket.isAdmin = true;
         socket.emit('admin status', { isAdmin: true });
         console.log('[Admin] Authenticated', _user);
       } else {
-        const fallbackRole = getBaseRoleForUser(_user);
-        applyRoleToSocket(socket, fallbackRole);
+        socket.isAdmin = false;
         socket.emit('admin status', { isAdmin: false });
       }
       refreshSocketPresence(socket);
     } catch(e){ console.log('[admin auth error]', e); }
-  });
-
-  socket.on('privileged auth', ({ code }) => {
-    if (!code) return;
-    if (PRIVILEGED_TOKEN && code === PRIVILEGED_TOKEN) {
-      applyRoleToSocket(socket, 'privileged');
-      socket.emit('toast', { type: 'success', text: 'Privileged mode unlocked.' });
-      refreshSocketPresence(socket);
-    } else {
-      socket.emit('toast', { type: 'error', text: 'Invalid access code.' });
-    }
   });
 
   // ----- Chat message -----
@@ -815,30 +678,6 @@ io.on('connection', socket => {
       }
       if (msgData.fileName) {
         msgData.fileName = sanitizeHtml(String(msgData.fileName), { allowedTags: [], allowedAttributes: {} }).slice(0, 120);
-      }
-
-      if (msgData.replyTo && typeof msgData.replyTo === 'object') {
-        const replyId = String(msgData.replyTo.id || msgData.replyTo._id || '').trim();
-        if (replyId) {
-          try {
-            const replied = await Message.findById(replyId);
-            if (replied && replied.room === roomName) {
-              msgData.replyTo = {
-                id: replied._id.toString(),
-                user: replied.user,
-                text: replied.text?.slice(0, 280) || replied.fileName || '',
-                deleted: Boolean(replied.deleted),
-              };
-            } else {
-              delete msgData.replyTo;
-            }
-          } catch (err) {
-            console.warn('[Message] Failed to resolve reply target', err.message);
-            delete msgData.replyTo;
-          }
-        } else {
-          delete msgData.replyTo;
-        }
       }
 
       const newMsg = new Message({
@@ -981,28 +820,9 @@ io.on('connection', socket => {
       const msg = await Message.findById(id);
       if (!msg || msg.deleted) return;
       if (room && msg.room !== room) return;
-
-      let cleanReaction = '';
-      if (typeof reaction === 'string') {
-        const trimmed = reaction.trim();
-        if (trimmed) {
-          if (/^(https?:\/\/|\/)/i.test(trimmed)) {
-            const sanitized = trimmed.replace(/[\s'"`<>]/g, '');
-            cleanReaction = sanitized.slice(0, 256);
-          } else {
-            cleanReaction = trimmed.slice(0, 32);
-          }
-        }
-      }
-
-      const cleanUser = username || '';
-      if (!cleanReaction) {
-        msg.reactions = msg.reactions.filter((r) => r.user !== cleanUser);
-      } else {
-        const existing = msg.reactions.findIndex(r => r.user === cleanUser);
-        if (existing >= 0) msg.reactions[existing].emoji = cleanReaction;
-        else msg.reactions.push({ user: cleanUser, emoji: cleanReaction });
-      }
+      const existing = msg.reactions.findIndex(r => r.user === username);
+      if (existing >= 0) msg.reactions[existing].emoji = reaction;
+      else msg.reactions.push({ user: username, emoji: reaction });
       await msg.save();
       io.to(room).emit('update reactions', { id, reactions: msg.reactions });
     } catch(err){ console.error("[React] Error:", err); }
@@ -1261,10 +1081,6 @@ io.on('connection', socket => {
       emitRoomListUpdate();
     }
     delete typingUsers[socket.id];
-    if (socket.username) {
-      uploadTokens.delete(socket.username);
-    }
-    socketRoles.delete(socket.id);
   });
 });
 
