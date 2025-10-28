@@ -660,20 +660,95 @@ body:not(.dark) .header-right button#copy-join-link:hover {
 .message .meta {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
-  gap: 6px;
+  align-items: center;
+  gap: 10px;
   font-size: 0.75em;
   color: var(--text-muted);
   margin-bottom: 4px;
-  padding-right: 28px;
 }
 
 .message .meta .meta-name {
   font-weight: 600;
 }
 
+.message .meta .meta-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .message .meta .meta-time {
   opacity: 0.8;
+}
+
+.message .meta .meta-status {
+  position: relative;
+  width: 18px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  font-size: 0.95em;
+  letter-spacing: -0.02em;
+}
+
+.message .meta .meta-status::before,
+.message .meta .meta-status::after {
+  content: "✓";
+  position: absolute;
+  font-weight: 700;
+  line-height: 1;
+  font-size: 0.95em;
+}
+
+.message .meta .meta-status::after {
+  opacity: 0;
+}
+
+.message .meta .meta-status[data-status="sent"]::before {
+  color: rgba(255, 255, 255, 0.75);
+  right: 0;
+}
+
+body:not(.dark) .message.self .meta .meta-status[data-status="sent"]::before {
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.message .meta .meta-status[data-status="delivered"]::before,
+.message .meta .meta-status[data-status="delivered"]::after {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+body:not(.dark) .message.self .meta .meta-status[data-status="delivered"]::before,
+body:not(.dark) .message.self .meta .meta-status[data-status="delivered"]::after {
+  color: rgba(0, 0, 0, 0.7);
+}
+
+.message .meta .meta-status[data-status="delivered"]::before {
+  right: 0;
+}
+
+.message .meta .meta-status[data-status="delivered"]::after {
+  right: 5px;
+  opacity: 1;
+}
+
+.message .meta .meta-status[data-status="read"]::before,
+.message .meta .meta-status[data-status="read"]::after {
+  color: #34b7f1;
+}
+
+.message .meta .meta-status[data-status="read"]::before {
+  right: 0;
+}
+
+.message .meta .meta-status[data-status="read"]::after {
+  right: 5px;
+  opacity: 1;
+}
+
+.message.other .meta .meta-status {
+  display: none;
 }
 
 .message .message-flags {

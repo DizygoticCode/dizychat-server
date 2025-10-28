@@ -716,9 +716,36 @@ io.on('connection', socket => {
       });
       await newMsg.save();
       io.to(roomName).emit('chat message', newMsg);
+      try {
+        if (newMsg.status !== 'delivered') {
+          await Message.findByIdAndUpdate(newMsg._id, { status: 'delivered' });
+          newMsg.status = 'delivered';
+        }
+      } catch (err) {
+        console.error('[Message] Failed to update delivery status:', err);
+      }
       io.to(roomName).emit('message status', { id: newMsg._id, status: 'delivered' });
       console.log('[Message]', msgData.user, '→', roomName, ':', newMsg.text);
     } catch(err){ console.error("[Message] Error:", err); }
+  });
+
+  socket.on('message read', async ({ room, id }) => {
+    try {
+      const targetRoom = normaliseRoomName(room) || socket.currentRoom;
+      if (!targetRoom || !id) return;
+      const msg = await Message.findById(id);
+      if (!msg) return;
+      if (msg.room !== targetRoom) return;
+      if (msg.deleted) return;
+      const reader = socket.username || '';
+      if (msg.user === reader) return;
+      if (msg.status === 'read') return;
+      msg.status = 'read';
+      await msg.save();
+      io.to(targetRoom).emit('message status', { id: msg._id, status: 'read' });
+    } catch (err) {
+      console.error('[Message] Read receipt error:', err);
+    }
   });
 
   // ----- Edit / Delete / Pin / Star / React -----

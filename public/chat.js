@@ -67,6 +67,91 @@ const appState = {
 let searchDebounceTimer = null;
 let soundCloudApiPromise = null;
 
+const MESSAGE_STATUS_VALUES = new Set(["sent", "delivered", "read"]);
+let messageReadObserver = null;
+
+function normalizeMessageStatus(status) {
+  if (typeof status !== "string") return "sent";
+  const value = status.toLowerCase();
+  return MESSAGE_STATUS_VALUES.has(value) ? value : "sent";
+}
+
+function getMessageStatusLabel(status) {
+  switch (status) {
+    case "delivered":
+      return "Delivered";
+    case "read":
+      return "Read";
+    case "sent":
+    default:
+      return "Sent";
+  }
+}
+
+function resetMessageReadObserver() {
+  if (messageReadObserver) {
+    messageReadObserver.disconnect();
+    messageReadObserver = null;
+  }
+}
+
+function ensureMessageReadObserver() {
+  if (messageReadObserver || !messages) return messageReadObserver;
+  try {
+    messageReadObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting || entry.intersectionRatio < 0.75) return;
+          const node = entry.target;
+          const id = node?.dataset?.id;
+          if (!id || node.dataset.readNotified === "true") return;
+          if (!window.currentRoom || !isViewingChat) return;
+          node.dataset.readNotified = "true";
+          messageReadObserver?.unobserve(node);
+          if (socket?.emit) {
+            socket.emit("message read", { id, room: window.currentRoom });
+          }
+        });
+      },
+      { root: messages, threshold: 0.75 }
+    );
+  } catch (err) {
+    console.warn("[Read Receipts] Unable to create observer", err);
+    messageReadObserver = null;
+  }
+  return messageReadObserver;
+}
+
+function trackMessageRead(node, data) {
+  if (!node || !data) return;
+  if (data.user === window.currentUser) return;
+  if (!messages || !isViewingChat) return;
+  const status = normalizeMessageStatus(data.status);
+  if (status === "read") return;
+  if (node.dataset.readTracked === "true") return;
+  const observer = ensureMessageReadObserver();
+  if (!observer) return;
+  node.dataset.readTracked = "true";
+  observer.observe(node);
+}
+
+function applyMessageStatus(node, data) {
+  if (!node) return;
+  const statusEl = node.querySelector(".meta-status");
+  if (!statusEl) return;
+  const status = normalizeMessageStatus(data?.status ?? node.dataset.status);
+  node.dataset.status = status;
+  statusEl.dataset.status = status;
+  const label = getMessageStatusLabel(status);
+  statusEl.setAttribute("title", label);
+  statusEl.setAttribute("aria-label", label);
+  if (node.classList.contains("self")) {
+    statusEl.hidden = false;
+  } else {
+    statusEl.hidden = true;
+  }
+}
+
 function getDateKey(date) {
   if (!(date instanceof Date)) return "";
   const time = date.getTime();
@@ -257,6 +342,7 @@ function storeMessageData(raw) {
   merged.fileUrl = raw.fileUrl !== undefined ? raw.fileUrl : existing.fileUrl;
   merged.fileType = raw.fileType !== undefined ? raw.fileType : existing.fileType;
   merged.fileName = raw.fileName !== undefined ? raw.fileName : existing.fileName;
+  merged.status = normalizeMessageStatus(raw.status ?? existing.status ?? "sent");
   merged.reactions = Array.isArray(raw.reactions)
     ? raw.reactions
     : Array.isArray(existing.reactions)
@@ -803,6 +889,9 @@ function updateMessageNode(id) {
   } else {
     node.removeAttribute("data-deleted");
   }
+
+  node.dataset.status = normalizeMessageStatus(data.status);
+  applyMessageStatus(node, data);
 
   if (data.deleted && appState.activeMenu && node.contains(appState.activeMenu)) {
     closeActiveMenu();
@@ -1401,6 +1490,7 @@ function showLanding({ focusUsername = true } = {}) {
     pinnedContainer.innerHTML = "";
     pinnedContainer.style.display = "none";
   }
+  resetMessageReadObserver();
   if (messages) {
     messages.innerHTML = "";
     delete messages.dataset.lastDateKey;
@@ -1506,6 +1596,7 @@ function completeRoomJoin(username, room, password) {
   appState.messages.clear();
   appState.pinned.clear();
   hideSearchResults();
+  resetMessageReadObserver();
   if (messages) {
     messages.innerHTML = "";
     delete messages.dataset.lastDateKey;
@@ -2437,17 +2528,23 @@ function renderMessage(msg, { skipScroll = false, scrollBehavior = "auto", delay
     : timestamp.toLocaleTimeString();
 
   const isSelf = data.user === window.currentUser;
+  const initialStatus = normalizeMessageStatus(data.status);
   const wrap = document.createElement("div");
   wrap.className = `message ${isSelf ? "self" : "other"}`;
   wrap.dataset.id = data.id;
+  wrap.dataset.status = initialStatus;
   if (data.deleted) {
     wrap.dataset.deleted = "true";
   }
 
+  const statusMarkup = isSelf ? '<span class="meta-status"></span>' : "";
   wrap.innerHTML = `
     <div class="meta">
       <span class="meta-name">${data.user || "Anon"}</span>
-      <span class="meta-time">${timeLabel}</span>
+      <div class="meta-right">
+        <span class="meta-time">${timeLabel}</span>
+        ${statusMarkup}
+      </div>
     </div>
     <div class="text"></div>
     <div class="message-flags"></div>
@@ -2476,8 +2573,10 @@ function renderMessage(msg, { skipScroll = false, scrollBehavior = "auto", delay
   }
 
   messages.appendChild(wrap);
+  applyMessageStatus(wrap, data);
   setupMessageActions(wrap, data);
   updateMessageFlags(wrap, data);
+  trackMessageRead(wrap, data);
 
   if (!data.deleted) {
     appendAttachmentFromMessage(wrap, data);
@@ -2516,6 +2615,12 @@ socket.on("previous messages", (arr) => {
 socket.on("chat message", (msg) => {
   if (!isViewingChat) return;
   renderMessage(msg, { scrollBehavior: "smooth" });
+});
+
+socket.on("message status", ({ id, status }) => {
+  if (!id) return;
+  const data = storeMessageData({ id, status });
+  if (data) updateMessageNode(id);
 });
 
 socket.on("edit message", ({ id, text }) => {
