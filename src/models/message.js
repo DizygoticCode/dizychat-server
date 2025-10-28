@@ -23,7 +23,13 @@ const messageSchema = new mongoose.Schema({
   starredBy: { type: [String], default: [] },           // list of users who starred it
   deleted: { type: Boolean, default: false },           // soft delete flag
   deletedAt: { type: Date },
-  deletedBy: { type: String, default: "" }
+  deletedBy: { type: String, default: "" },
+  replyTo: {
+    id: { type: String },
+    user: { type: String },
+    text: { type: String },
+    deleted: { type: Boolean, default: false },
+  }
 });
 
 // ✅ Indexes
