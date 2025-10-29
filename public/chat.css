@@ -450,6 +450,39 @@ header .logo { width: 40px; height: auto; }
   box-shadow: 0 8px 18px rgba(123, 47, 247, 0.25);
 }
 
+.header-right button#toggle-sounds {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  min-width: 42px;
+  width: 42px;
+  height: 42px;
+  background: var(--surface-alt);
+  border-color: var(--border-color);
+}
+
+.header-right button#toggle-sounds .icon {
+  font-size: 1.15em;
+  line-height: 1;
+}
+
+.header-right button#toggle-sounds:hover {
+  transform: scale(1.05);
+  box-shadow: 0 8px 18px rgba(123, 47, 247, 0.25);
+}
+
+.header-right button#toggle-sounds[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  box-shadow: 0 10px 22px rgba(37, 211, 102, 0.3);
+}
+
+.header-right button#toggle-sounds[aria-pressed="true"] .icon {
+  filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.25));
+}
+
 .header-right button#copy-join-link {
   display: inline-flex;
   align-items: center;
