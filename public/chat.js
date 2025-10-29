@@ -286,6 +286,33 @@ const infowarsModalState = {
   embedAllow: "",
 };
 
+const ADMIN_PASSWORD_HINT_USERS = new Set(["psybin", "dizygotic"]);
+
+function normaliseAdminHintValue(value) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function shouldRevealAdminPassword(usernameValue) {
+  if (!adminPasswordInput) return false;
+  if (adminPasswordInput.value?.trim()) return true;
+  const normalised = normaliseAdminHintValue(usernameValue);
+  return ADMIN_PASSWORD_HINT_USERS.has(normalised);
+}
+
+function updateAdminPasswordVisibility() {
+  if (!adminPasswordInput) return;
+  const usernameValue = usernameInput?.value || "";
+  const reveal = shouldRevealAdminPassword(usernameValue);
+  adminPasswordInput.toggleAttribute("hidden", !reveal);
+  adminPasswordInput.setAttribute("aria-hidden", String(!reveal));
+}
+
+if (usernameInput && adminPasswordInput) {
+  usernameInput.addEventListener("input", updateAdminPasswordVisibility);
+  usernameInput.addEventListener("blur", updateAdminPasswordVisibility);
+  updateAdminPasswordVisibility();
+}
+
 function parsePositiveNumber(value) {
   if (value === null || value === undefined) return null;
   const number = Number.parseFloat(value);
