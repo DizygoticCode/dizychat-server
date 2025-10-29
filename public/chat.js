@@ -156,6 +156,8 @@ const infowarsModalState = {
   naturalWidth: null,
   naturalHeight: null,
   hasCustomSize: false,
+  embedSrc: "",
+  embedAllow: "",
 };
 
 function parsePositiveNumber(value) {
@@ -270,6 +272,7 @@ function syncInfowarsStreamEmbedSize() {
     if (originalWidth || originalHeight) {
       updateInfowarsModalNaturalSize(originalWidth, originalHeight);
     }
+    rememberInfowarsStreamAttributes(iframe);
   }
 
   if (rumbleContainer) {
@@ -289,6 +292,96 @@ function syncInfowarsStreamEmbedSize() {
     iframe.style.maxWidth = "none";
     iframe.style.maxHeight = "none";
     iframe.style.display = "block";
+  }
+}
+
+function getInfowarsStreamIframe() {
+  if (!infowarsStreamFrame) return null;
+  const rumbleContainer = infowarsStreamFrame.querySelector?.(".rumble") || null;
+  return (
+    rumbleContainer?.querySelector?.("iframe") ||
+    infowarsStreamFrame.querySelector?.("iframe") ||
+    null
+  );
+}
+
+function rememberInfowarsStreamAttributes(iframe) {
+  if (!iframe) return;
+  const src = iframe.dataset?.originalSrc || iframe.getAttribute?.("data-original-src") || iframe.src;
+  if (src) {
+    infowarsModalState.embedSrc = src;
+    try {
+      iframe.dataset.originalSrc = src;
+    } catch {
+      iframe.setAttribute("data-original-src", src);
+    }
+  }
+
+  const allowAttr = iframe.getAttribute?.("allow");
+  if (allowAttr) {
+    infowarsModalState.embedAllow = allowAttr;
+  }
+}
+
+function stopInfowarsStreamPlayback() {
+  const iframe = getInfowarsStreamIframe();
+  if (!iframe) return;
+  rememberInfowarsStreamAttributes(iframe);
+
+  try {
+    iframe.dataset.infowarsStopped = "1";
+  } catch {
+    iframe.setAttribute("data-infowars-stopped", "1");
+  }
+
+  try {
+    iframe.src = "about:blank";
+  } catch {
+    try {
+      iframe.removeAttribute("src");
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (iframe.removeAttribute) {
+    iframe.removeAttribute("allow");
+  }
+}
+
+function resumeInfowarsStreamPlayback() {
+  const iframe = getInfowarsStreamIframe();
+  if (!iframe) return;
+
+  const desiredSrc =
+    iframe.dataset?.originalSrc ||
+    iframe.getAttribute?.("data-original-src") ||
+    infowarsModalState.embedSrc ||
+    "";
+
+  if (!desiredSrc) return;
+
+  const currentSrcAttr = iframe.getAttribute?.("src") || "";
+  const isCurrentlyBlank = !currentSrcAttr || /about:blank/i.test(currentSrcAttr);
+  const stopFlag = iframe.dataset?.infowarsStopped || iframe.getAttribute?.("data-infowars-stopped");
+
+  if (!isCurrentlyBlank && !stopFlag) {
+    return;
+  }
+
+  try {
+    iframe.setAttribute("src", desiredSrc);
+    if (iframe.dataset) {
+      iframe.dataset.infowarsStopped = "0";
+    } else {
+      iframe.setAttribute("data-infowars-stopped", "0");
+    }
+  } catch {
+    /* ignore */
+  }
+
+  if (infowarsModalState.embedAllow) {
+    iframe.setAttribute("allow", infowarsModalState.embedAllow);
   }
 }
 
@@ -3089,6 +3182,7 @@ function setInfowarsStreamRoom(roomName) {
   infowarsModalState.visible = shouldShow;
 
   if (!shouldShow) {
+    stopInfowarsStreamPlayback();
     infowarsModal.hidden = true;
     infowarsModal.setAttribute("aria-hidden", "true");
     infowarsModal.classList.remove("collapsed", "dragging", "resizing");
@@ -3116,6 +3210,7 @@ function setInfowarsStreamRoom(roomName) {
   infowarsModal.hidden = false;
   infowarsModal.setAttribute("aria-hidden", "false");
   syncInfowarsStreamEmbedSize();
+  resumeInfowarsStreamPlayback();
 }
 
 function handleInfowarsPointerMove(event) {
@@ -3300,6 +3395,19 @@ if (typeof window !== "undefined") {
   window.addEventListener("resize", () => {
     if (infowarsModalState.visible) {
       applyInfowarsModalLayout();
+    }
+  });
+
+  window.addEventListener("beforeunload", () => {
+    stopInfowarsStreamPlayback();
+    if (psybinAudio) {
+      try {
+        psybinAudio.pause();
+        psybinAudio.removeAttribute("src");
+        psybinAudio.load?.();
+      } catch {
+        /* ignore */
+      }
     }
   });
 }
