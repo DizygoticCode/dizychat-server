@@ -2912,6 +2912,7 @@ if (emojiPicker) {
           if (item.char) {
             button.textContent = item.char;
           } else if (item.url) {
+            button.classList.add("emoji-item-image");
             const img = document.createElement("img");
             img.src = item.url;
             img.alt = item.name || "emoji";
