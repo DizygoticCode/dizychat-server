@@ -963,7 +963,6 @@ io.on('connection', socket => {
         console.error('[Message] Failed to update delivery status:', err);
       }
       io.to(roomName).emit('message status', { id: newMsg._id, status: 'delivered' });
-      console.log('[Message]', msgData.user, '→', roomName, ':', newMsg.text);
     } catch(err){ console.error("[Message] Error:", err); }
   });
 
@@ -1193,7 +1192,7 @@ io.on('connection', socket => {
     if (!requireAdmin(socket)) return;
     const clean = sanitizeHtml(text || '', { allowedTags: [], allowedAttributes: {} });
     io.to(room).emit('announcement', { text: clean, at: new Date().toISOString(), by: socket.username || 'Admin' });
-    console.log('[Announce]', room, clean);
+    console.log('[Announce]', room, 'broadcast by', socket.username || 'Admin');
   });
 
   socket.on('moderate', ({ room, cmd, target }) => {
