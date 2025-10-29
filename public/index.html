@@ -33,12 +33,12 @@
   <!-- ===========================
        Chat Container
        =========================== -->
-  <div id="chat-container" style="display:none;">
-    <header>
-      <div class="header-left">
-        <img src="/logo.png" alt="Logo" class="logo" data-dark-src="/logo.png" data-light-src="/logo-light.png" />
-        <span id="room-name"></span>
-      </div>
+    <div id="chat-container" style="display:none;">
+      <header>
+        <div class="header-left">
+          <img src="/logo.png" alt="Logo" class="logo" data-dark-src="/logo.png" data-light-src="/logo-light.png" />
+          <span id="room-name"></span>
+        </div>
       <div id="psybin-player" class="psybin-player" hidden aria-hidden="true">
         <span class="psybin-player-label">Psybin Radio</span>
         <button type="button" id="psybin-play" class="psybin-player-button" aria-label="Play Psybin Radio">▶</button>
@@ -68,6 +68,35 @@
         <button id="leave-btn" title="Exit Chat">Leave</button>
       </div>
     </header>
+
+    <div id="infowars-stream-modal" class="stream-modal" hidden aria-hidden="true">
+      <div class="stream-modal-header">
+        <div class="stream-modal-title">
+          <span aria-hidden="true">📺</span>
+          <span>InfoWars Live Stream</span>
+        </div>
+        <div class="stream-modal-controls">
+          <button
+            type="button"
+            id="infowars-stream-collapse"
+            class="stream-modal-button"
+            title="Minimize stream"
+            aria-label="Minimize stream"
+          >▾</button>
+        </div>
+      </div>
+      <div class="stream-modal-body">
+        <iframe
+          id="infowars-stream-frame"
+          title="InfoWars Live Stream"
+          src=""
+          allow="autoplay; encrypted-media; picture-in-picture"
+          allowfullscreen
+          loading="lazy"
+        ></iframe>
+      </div>
+      <div class="stream-resize-handle" aria-hidden="true"></div>
+    </div>
 
     <div id="chat-main">
       <div id="chat-content">

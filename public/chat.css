@@ -347,6 +347,158 @@ header .logo { width: 40px; height: auto; }
   accent-color: var(--accent, #b266ff);
 }
 
+.stream-modal {
+  position: fixed;
+  top: 88px;
+  left: 20px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+  width: min(640px, calc(100vw - 40px));
+  height: min(360px, calc(100vh - 180px));
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 120px);
+  overflow: hidden;
+  z-index: 40;
+  user-select: none;
+}
+
+.stream-modal[hidden] {
+  display: none !important;
+}
+
+.stream-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--border-color);
+  cursor: grab;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  touch-action: none;
+}
+
+.stream-modal:active .stream-modal-header,
+.stream-modal.dragging .stream-modal-header {
+  cursor: grabbing;
+}
+
+.stream-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95em;
+}
+
+.stream-modal-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stream-modal-button {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 1.1em;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 8px;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.stream-modal-button:hover,
+.stream-modal-button:focus-visible {
+  background: rgba(255, 255, 255, 0.12);
+  outline: none;
+}
+
+body:not(.dark) .stream-modal-button:hover,
+body:not(.dark) .stream-modal-button:focus-visible {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.stream-modal-body {
+  position: relative;
+  flex: 1;
+  background: #000;
+}
+
+.stream-modal-body iframe {
+  border: none;
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: #000;
+}
+
+.stream-resize-handle {
+  width: 18px;
+  height: 18px;
+  background: transparent;
+  align-self: flex-end;
+  cursor: nwse-resize;
+  margin: 0 6px 6px 0;
+  border-radius: 4px;
+  position: relative;
+  touch-action: none;
+}
+
+.stream-resize-handle::before,
+.stream-resize-handle::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.stream-resize-handle::before {
+  width: 60%;
+  height: 2px;
+  bottom: 4px;
+  right: 2px;
+}
+
+.stream-resize-handle::after {
+  width: 2px;
+  height: 60%;
+  bottom: 2px;
+  right: 4px;
+}
+
+.stream-modal.collapsed {
+  height: auto !important;
+  min-height: 0;
+}
+
+.stream-modal.collapsed .stream-modal-body {
+  display: none;
+}
+
+.stream-modal.collapsed .stream-resize-handle {
+  display: none;
+}
+
+.stream-modal.collapsed .stream-modal-header {
+  cursor: pointer;
+}
+
+@media (max-width: 768px) {
+  .stream-modal {
+    left: 10px;
+    top: 74px;
+    width: min(520px, calc(100vw - 20px));
+    height: min(300px, calc(100vh - 160px));
+  }
+}
+
 #chat-main {
   display: flex;
   flex: 1;

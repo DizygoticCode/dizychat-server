@@ -71,6 +71,11 @@ const psybinVolumeInput = document.getElementById("psybin-volume");
 const scrollToLatestBtn = document.getElementById("scroll-to-latest");
 const scrollToLatestLabel = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-label") || null;
 const scrollToLatestCount = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-count") || null;
+const infowarsModal = document.getElementById("infowars-stream-modal");
+const infowarsModalHeader = infowarsModal?.querySelector?.(".stream-modal-header") || null;
+const infowarsCollapseBtn = document.getElementById("infowars-stream-collapse");
+const infowarsResizeHandle = infowarsModal?.querySelector?.(".stream-resize-handle") || null;
+const infowarsFrame = document.getElementById("infowars-stream-frame");
 
 const chromeToolbarState = {
   originalTitle: document.title || "DizyChat",
@@ -120,6 +125,31 @@ const psybinPlayerState = {
   lastVolume: 1,
 };
 
+const INFOWARS_STREAM_URL = "https://banned.video/watch?id=5c59c724f7c188001c3d8e2f";
+const INFOWARS_ROOM_KEYWORD = "infowars";
+const INFOWARS_MODAL_MIN_WIDTH = 320;
+const INFOWARS_MODAL_MIN_HEIGHT = 180;
+const INFOWARS_MODAL_MARGIN = 12;
+
+const infowarsModalState = {
+  visible: false,
+  collapsed: false,
+  dragging: false,
+  resizing: false,
+  pointerId: null,
+  resizePointerId: null,
+  dragOffsetX: 0,
+  dragOffsetY: 0,
+  resizeStartWidth: 0,
+  resizeStartHeight: 0,
+  resizeStartX: 0,
+  resizeStartY: 0,
+  width: 480,
+  height: 270,
+  left: null,
+  top: null,
+};
+
 const MESSAGE_STATUS_VALUES = new Set(["sent", "delivered", "read"]);
 let messageReadObserver = null;
 
@@ -157,6 +187,24 @@ function truncateText(value, maxLength = 140) {
   if (!str) return "";
   if (str.length <= maxLength) return str;
   return `${str.slice(0, Math.max(0, maxLength - 1))}…`;
+}
+
+function clampNumber(value, min, max) {
+  const minValue = Number(min);
+  const maxValue = Number(max);
+  if (!Number.isFinite(minValue) || !Number.isFinite(maxValue)) {
+    return Number(value) || 0;
+  }
+  if (maxValue <= minValue) {
+    return minValue;
+  }
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return minValue;
+  }
+  if (numericValue < minValue) return minValue;
+  if (numericValue > maxValue) return maxValue;
+  return numericValue;
 }
 
 function normalizeMessageId(value) {
@@ -2481,6 +2529,7 @@ function showLanding({ focusUsername = true } = {}) {
   window.currentPassword = lastRoomPassword || "";
 
   setPsybinPlayerRoom(null);
+  setInfowarsStreamRoom(null);
 
   if (roomInput) roomInput.value = lastRoomName || "";
   if (passwordInput) passwordInput.value = lastRoomPassword || "";
@@ -2764,6 +2813,241 @@ function setPsybinPlayerRoom(roomName) {
   }
 }
 
+function isInfowarsRoom(roomName) {
+  if (!roomName) return false;
+  try {
+    return String(roomName).toLowerCase().includes(INFOWARS_ROOM_KEYWORD);
+  } catch {
+    return false;
+  }
+}
+
+function getInfowarsToolbarBottom() {
+  if (!toolbar) return INFOWARS_MODAL_MARGIN;
+  try {
+    const rect = toolbar.getBoundingClientRect();
+    if (!rect) return INFOWARS_MODAL_MARGIN;
+    const offset = rect.bottom + INFOWARS_MODAL_MARGIN;
+    return Number.isFinite(offset) ? offset : INFOWARS_MODAL_MARGIN;
+  } catch {
+    return INFOWARS_MODAL_MARGIN;
+  }
+}
+
+function getInfowarsActiveHeight() {
+  if (infowarsModalState.collapsed) {
+    const headerHeight = infowarsModalHeader?.getBoundingClientRect?.()?.height;
+    if (Number.isFinite(headerHeight) && headerHeight > 0) {
+      return headerHeight;
+    }
+    return 52;
+  }
+  return infowarsModalState.height;
+}
+
+function applyInfowarsModalLayout({ clampPosition = true } = {}) {
+  if (!infowarsModal || !infowarsModalState.visible) return;
+
+  const maxWidth = Math.max(
+    INFOWARS_MODAL_MIN_WIDTH,
+    window.innerWidth - INFOWARS_MODAL_MARGIN * 2
+  );
+  const maxHeight = Math.max(
+    INFOWARS_MODAL_MIN_HEIGHT,
+    window.innerHeight - INFOWARS_MODAL_MARGIN * 2
+  );
+
+  const width = clampNumber(infowarsModalState.width, INFOWARS_MODAL_MIN_WIDTH, maxWidth);
+  const height = clampNumber(infowarsModalState.height, INFOWARS_MODAL_MIN_HEIGHT, maxHeight);
+
+  infowarsModalState.width = width;
+  infowarsModalState.height = height;
+
+  let left = Number.isFinite(infowarsModalState.left)
+    ? infowarsModalState.left
+    : null;
+  let top = Number.isFinite(infowarsModalState.top)
+    ? infowarsModalState.top
+    : null;
+
+  const activeHeight = getInfowarsActiveHeight();
+  const minLeft = INFOWARS_MODAL_MARGIN;
+  const maxLeft = Math.max(minLeft, window.innerWidth - width - INFOWARS_MODAL_MARGIN);
+  const minTop = Math.max(INFOWARS_MODAL_MARGIN, getInfowarsToolbarBottom());
+  const maxTop = Math.max(minTop, window.innerHeight - activeHeight - INFOWARS_MODAL_MARGIN);
+
+  if (left === null) {
+    left = clampNumber(INFOWARS_MODAL_MARGIN * 1.5, minLeft, maxLeft);
+  }
+  if (top === null) {
+    top = clampNumber(minTop, minTop, maxTop);
+  }
+
+  if (clampPosition) {
+    left = clampNumber(left, minLeft, maxLeft);
+    top = clampNumber(top, minTop, maxTop);
+  }
+
+  infowarsModalState.left = left;
+  infowarsModalState.top = top;
+
+  infowarsModal.style.width = `${width}px`;
+  infowarsModal.style.height = `${height}px`;
+  infowarsModal.style.left = `${left}px`;
+  infowarsModal.style.top = `${top}px`;
+  infowarsModal.classList.toggle("collapsed", Boolean(infowarsModalState.collapsed));
+  infowarsModal.classList.toggle("dragging", Boolean(infowarsModalState.dragging));
+  infowarsModal.classList.toggle("resizing", Boolean(infowarsModalState.resizing));
+}
+
+function updateInfowarsCollapseButton() {
+  if (!infowarsCollapseBtn) return;
+  const collapsed = Boolean(infowarsModalState.collapsed);
+  infowarsCollapseBtn.textContent = collapsed ? "▴" : "▾";
+  infowarsCollapseBtn.setAttribute(
+    "aria-label",
+    collapsed ? "Expand stream" : "Minimize stream"
+  );
+  infowarsCollapseBtn.title = collapsed ? "Expand stream" : "Minimize stream";
+}
+
+function toggleInfowarsCollapse(force) {
+  if (!infowarsModalState.visible) return;
+  const nextState = typeof force === "boolean" ? force : !infowarsModalState.collapsed;
+  if (nextState === infowarsModalState.collapsed) return;
+  infowarsModalState.collapsed = nextState;
+  updateInfowarsCollapseButton();
+  applyInfowarsModalLayout();
+}
+
+function resetInfowarsPointerState() {
+  infowarsModalState.dragging = false;
+  infowarsModalState.resizing = false;
+  infowarsModalState.pointerId = null;
+  infowarsModalState.resizePointerId = null;
+  infowarsModal?.classList?.remove?.("dragging");
+  infowarsModal?.classList?.remove?.("resizing");
+}
+
+function setInfowarsStreamRoom(roomName) {
+  if (!infowarsModal) return;
+
+  const shouldShow = isInfowarsRoom(roomName);
+  infowarsModalState.visible = shouldShow;
+
+  if (!shouldShow) {
+    if (infowarsFrame && infowarsFrame.src) {
+      infowarsFrame.src = "";
+    }
+    infowarsModal.hidden = true;
+    infowarsModal.setAttribute("aria-hidden", "true");
+    infowarsModal.classList.remove("collapsed", "dragging", "resizing");
+    if (infowarsModalState.collapsed) {
+      infowarsModalState.collapsed = false;
+      updateInfowarsCollapseButton();
+    }
+    if (infowarsModalState.pointerId !== null) {
+      infowarsModalHeader?.releasePointerCapture?.(infowarsModalState.pointerId);
+    }
+    if (infowarsModalState.resizePointerId !== null) {
+      infowarsResizeHandle?.releasePointerCapture?.(infowarsModalState.resizePointerId);
+    }
+    resetInfowarsPointerState();
+    return;
+  }
+
+  if (infowarsFrame && !infowarsFrame.src) {
+    infowarsFrame.src = INFOWARS_STREAM_URL;
+  }
+
+  if (!Number.isFinite(infowarsModalState.left) || !Number.isFinite(infowarsModalState.top)) {
+    infowarsModalState.left = INFOWARS_MODAL_MARGIN * 1.5;
+    infowarsModalState.top = Math.max(getInfowarsToolbarBottom(), INFOWARS_MODAL_MARGIN);
+  }
+
+  applyInfowarsModalLayout({ clampPosition: true });
+  updateInfowarsCollapseButton();
+  infowarsModal.hidden = false;
+  infowarsModal.setAttribute("aria-hidden", "false");
+}
+
+function handleInfowarsPointerMove(event) {
+  if (!infowarsModalState.visible || !infowarsModal) return;
+
+  if (infowarsModalState.dragging && event.pointerId === infowarsModalState.pointerId) {
+    const width = infowarsModalState.width;
+    const activeHeight = getInfowarsActiveHeight();
+    const minLeft = INFOWARS_MODAL_MARGIN;
+    const maxLeft = Math.max(minLeft, window.innerWidth - width - INFOWARS_MODAL_MARGIN);
+    const minTop = Math.max(INFOWARS_MODAL_MARGIN, getInfowarsToolbarBottom());
+    const maxTop = Math.max(minTop, window.innerHeight - activeHeight - INFOWARS_MODAL_MARGIN);
+
+    const nextLeft = clampNumber(
+      event.clientX - infowarsModalState.dragOffsetX,
+      minLeft,
+      maxLeft
+    );
+    const nextTop = clampNumber(
+      event.clientY - infowarsModalState.dragOffsetY,
+      minTop,
+      maxTop
+    );
+
+    infowarsModalState.left = nextLeft;
+    infowarsModalState.top = nextTop;
+    infowarsModal.style.left = `${nextLeft}px`;
+    infowarsModal.style.top = `${nextTop}px`;
+  } else if (infowarsModalState.resizing && event.pointerId === infowarsModalState.resizePointerId) {
+    const maxWidth = Math.max(
+      INFOWARS_MODAL_MIN_WIDTH,
+      window.innerWidth - infowarsModalState.left - INFOWARS_MODAL_MARGIN
+    );
+    const maxHeight = Math.max(
+      INFOWARS_MODAL_MIN_HEIGHT,
+      window.innerHeight - infowarsModalState.top - INFOWARS_MODAL_MARGIN
+    );
+
+    const width = clampNumber(
+      infowarsModalState.resizeStartWidth + (event.clientX - infowarsModalState.resizeStartX),
+      INFOWARS_MODAL_MIN_WIDTH,
+      maxWidth
+    );
+    const height = clampNumber(
+      infowarsModalState.resizeStartHeight + (event.clientY - infowarsModalState.resizeStartY),
+      INFOWARS_MODAL_MIN_HEIGHT,
+      maxHeight
+    );
+
+    infowarsModalState.width = width;
+    infowarsModalState.height = height;
+
+    infowarsModal.style.width = `${width}px`;
+    if (!infowarsModalState.collapsed) {
+      infowarsModal.style.height = `${height}px`;
+    }
+  }
+}
+
+function handleInfowarsPointerUp(event) {
+  if (!infowarsModal) return;
+
+  if (infowarsModalState.dragging && event.pointerId === infowarsModalState.pointerId) {
+    infowarsModalHeader?.releasePointerCapture?.(event.pointerId);
+    infowarsModalState.dragging = false;
+    infowarsModalState.pointerId = null;
+    infowarsModal.classList.remove("dragging");
+    applyInfowarsModalLayout();
+  }
+
+  if (infowarsModalState.resizing && event.pointerId === infowarsModalState.resizePointerId) {
+    infowarsResizeHandle?.releasePointerCapture?.(event.pointerId);
+    infowarsModalState.resizing = false;
+    infowarsModalState.resizePointerId = null;
+    infowarsModal.classList.remove("resizing");
+    applyInfowarsModalLayout();
+  }
+}
+
 function observeMediaForScroll(node) {
   if (!node) return;
   const media = node.querySelectorAll?.("img, video") || [];
@@ -2797,6 +3081,66 @@ if (messages) {
   );
 }
 
+if (infowarsModalHeader && infowarsModal) {
+  infowarsModalHeader.addEventListener("pointerdown", (event) => {
+    if (!infowarsModalState.visible) return;
+    const isTouch = event.pointerType === "touch";
+    if (!isTouch && event.button !== 0) return;
+    const rect = infowarsModal.getBoundingClientRect();
+    infowarsModalState.dragging = true;
+    infowarsModalState.pointerId = event.pointerId;
+    infowarsModalState.dragOffsetX = event.clientX - rect.left;
+    infowarsModalState.dragOffsetY = event.clientY - rect.top;
+    infowarsModal.classList.add("dragging");
+    infowarsModalHeader.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  });
+
+  infowarsModalHeader.addEventListener("dblclick", () => {
+    if (!infowarsModalState.visible) return;
+    toggleInfowarsCollapse();
+  });
+}
+
+if (infowarsCollapseBtn) {
+  infowarsCollapseBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleInfowarsCollapse();
+  });
+}
+
+if (infowarsResizeHandle && infowarsModal) {
+  infowarsResizeHandle.addEventListener("pointerdown", (event) => {
+    if (!infowarsModalState.visible || infowarsModalState.collapsed) return;
+    const isTouch = event.pointerType === "touch";
+    if (!isTouch && event.button !== 0) return;
+    const rect = infowarsModal.getBoundingClientRect();
+    infowarsModalState.resizing = true;
+    infowarsModalState.resizePointerId = event.pointerId;
+    infowarsModalState.resizeStartWidth = rect.width;
+    infowarsModalState.resizeStartHeight = rect.height;
+    infowarsModalState.resizeStartX = event.clientX;
+    infowarsModalState.resizeStartY = event.clientY;
+    infowarsModal.classList.add("resizing");
+    infowarsResizeHandle.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  });
+}
+
+if (typeof document !== "undefined") {
+  document.addEventListener("pointermove", handleInfowarsPointerMove, { passive: true });
+  document.addEventListener("pointerup", handleInfowarsPointerUp, { passive: true });
+  document.addEventListener("pointercancel", handleInfowarsPointerUp, { passive: true });
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("resize", () => {
+    if (infowarsModalState.visible) {
+      applyInfowarsModalLayout();
+    }
+  });
+}
+
 if (scrollToLatestBtn) {
   scrollToLatestBtn.addEventListener("click", () => {
     resetMissedMessages();
@@ -2819,6 +3163,7 @@ function completeRoomJoin(username, room, password) {
   if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = !room;
 
   setPsybinPlayerRoom(room);
+  setInfowarsStreamRoom(room);
 
   appState.isAdmin = false;
   loadHiddenMessagesForRoom(room);
@@ -2843,6 +3188,10 @@ function completeRoomJoin(username, room, password) {
   if (roomName) roomName.textContent = room ? `#${room}` : "";
   if (usernamePrompt) usernamePrompt.style.display = "none";
   if (chatContainer) chatContainer.style.display = "flex";
+
+  if (infowarsModalState.visible) {
+    applyInfowarsModalLayout();
+  }
 
   scrollMessagesToBottom({ behavior: "smooth", delay: 200, force: true });
 }
