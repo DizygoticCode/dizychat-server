@@ -312,6 +312,7 @@ const PERSISTENT_ROOMS = [
   'General Chat',
   'InfoWars Chat',
   'Drum & Bass Chat',
+  'Psybin Radio',
 ];
 const PERSISTENT_ROOM_SET = new Set(PERSISTENT_ROOMS);
 

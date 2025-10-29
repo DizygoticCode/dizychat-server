@@ -296,6 +296,57 @@ header .logo { width: 40px; height: auto; }
   margin-left: auto;
 }
 
+.psybin-player {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  color: var(--text-primary);
+  flex: 0 1 320px;
+  min-width: 220px;
+}
+
+.psybin-player[hidden] {
+  display: none !important;
+}
+
+.psybin-player-label {
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.psybin-player-button {
+  border: none;
+  background: var(--surface);
+  color: inherit;
+  border-radius: var(--radius-sm, 6px);
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.psybin-player-button[disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.psybin-player-button:not([disabled]):hover,
+.psybin-player-button:not([disabled]):focus-visible {
+  background: var(--accent-muted, rgba(178, 102, 255, 0.15));
+  outline: none;
+}
+
+.psybin-player-volume {
+  width: 110px;
+  accent-color: var(--accent, #b266ff);
+}
+
 #chat-main {
   display: flex;
   flex: 1;
