@@ -39,6 +39,14 @@
         <img src="/logo.png" alt="Logo" class="logo" data-dark-src="/logo.png" data-light-src="/logo-light.png" />
         <span id="room-name"></span>
       </div>
+      <div id="psybin-player" class="psybin-player" hidden aria-hidden="true">
+        <span class="psybin-player-label">Psybin Radio</span>
+        <button type="button" id="psybin-play" class="psybin-player-button" aria-label="Play Psybin Radio">▶</button>
+        <button type="button" id="psybin-mute" class="psybin-player-button" aria-label="Mute Psybin Radio" disabled>🔊</button>
+        <label for="psybin-volume" class="sr-only">Psybin Radio volume</label>
+        <input type="range" id="psybin-volume" class="psybin-player-volume" min="0" max="1" step="0.01" value="1" disabled />
+        <audio id="psybin-audio" preload="none" aria-hidden="true"></audio>
+      </div>
       <div class="header-right">
         <div class="search-bar">
           <input id="message-search" type="search" placeholder="Search messages…" aria-label="Search messages" />
