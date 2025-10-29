@@ -85,8 +85,128 @@ const chromeToolbarState = {
   messageCount: 0,
   joinTimeout: null,
   tintedIcons: new Map(),
-  messageCountIcons: new Map(),
 };
+
+const faviconImage = new Image();
+faviconImage.src = "/logo.png";
+const faviconCanvas = document.createElement("canvas");
+faviconCanvas.width = 32;
+faviconCanvas.height = 32;
+const faviconCtx = faviconCanvas.getContext("2d");
+let faviconUnreadCount = 0;
+let faviconBadgeScale = 1;
+let faviconPopBoost = 0;
+let faviconTargetScale = 1;
+let faviconPulse = 0;
+let faviconUnreadAlpha = 0;
+let faviconAnimationFrame = null;
+
+function scheduleFaviconDraw() {
+  if (!faviconCtx) return;
+  if (faviconAnimationFrame !== null) return;
+  faviconAnimationFrame = window.requestAnimationFrame(drawFaviconFrame);
+}
+
+function ensureFaviconImageSource() {
+  if (chromeToolbarState.originalFaviconHref && faviconImage.src !== chromeToolbarState.originalFaviconHref) {
+    faviconImage.src = chromeToolbarState.originalFaviconHref;
+  }
+}
+
+function updateUnreadFaviconCount(count) {
+  if (!Number.isFinite(count)) return;
+  const next = Math.max(0, Math.floor(count));
+  if (next > faviconUnreadCount) {
+    faviconPopBoost = Math.min(faviconPopBoost + 0.25, 0.6);
+    faviconTargetScale = 1 + faviconPopBoost;
+  }
+  faviconUnreadCount = next;
+  scheduleFaviconDraw();
+}
+
+function resetUnreadFavicon() {
+  faviconUnreadCount = 0;
+  faviconPopBoost = 0;
+  faviconBadgeScale = 1;
+  faviconTargetScale = 1;
+  scheduleFaviconDraw();
+}
+
+function drawFaviconFrame() {
+  faviconAnimationFrame = null;
+  if (!faviconCtx) return;
+
+  ensureFaviconImageSource();
+  if (!faviconImage.complete) {
+    scheduleFaviconDraw();
+    return;
+  }
+
+  faviconCtx.clearRect(0, 0, 32, 32);
+  faviconCtx.drawImage(faviconImage, 0, 0, 32, 32);
+
+  const joinActive = Boolean(chromeToolbarState.joinTimeout);
+
+  if (faviconUnreadCount > 0) {
+    faviconUnreadAlpha += (1 - faviconUnreadAlpha) * 0.15;
+    faviconPulse += 0.15;
+    const scaleOffset = Math.sin(faviconPulse) * 0.15;
+    faviconBadgeScale += (faviconTargetScale - faviconBadgeScale) * 0.2;
+    faviconBadgeScale = Math.min(faviconBadgeScale, 1.6);
+    faviconPopBoost *= 0.92;
+
+    const x = 26;
+    const y = 8;
+    const radius = 6;
+    const glowRadius = radius * 1.8 + scaleOffset * 6;
+    const glow = faviconCtx.createRadialGradient(x, y, radius / 2, x, y, glowRadius);
+    glow.addColorStop(0, `rgba(255,68,68,${faviconUnreadAlpha * 0.5})`);
+    glow.addColorStop(1, "rgba(255,68,68,0)");
+    faviconCtx.fillStyle = glow;
+    faviconCtx.beginPath();
+    faviconCtx.arc(x, y, glowRadius, 0, Math.PI * 2);
+    faviconCtx.fill();
+
+    faviconCtx.save();
+    faviconCtx.translate(x, y);
+    faviconCtx.scale(faviconBadgeScale, faviconBadgeScale);
+    faviconCtx.translate(-x, -y);
+    faviconCtx.beginPath();
+    faviconCtx.arc(x, y, radius, 0, Math.PI * 2);
+    faviconCtx.fillStyle = `rgba(255,68,68,${faviconUnreadAlpha})`;
+    faviconCtx.fill();
+    faviconCtx.fillStyle = `rgba(255,255,255,${faviconUnreadAlpha})`;
+    faviconCtx.font = "bold 10px sans-serif";
+    faviconCtx.textAlign = "center";
+    faviconCtx.textBaseline = "middle";
+    const label = faviconUnreadCount > 9 ? "9+" : faviconUnreadCount.toString();
+    faviconCtx.fillText(label, x, y);
+    faviconCtx.restore();
+  } else {
+    faviconUnreadAlpha *= 0.85;
+  }
+
+  if (joinActive && faviconUnreadCount === 0) {
+    if (faviconUnreadAlpha > 0.01) {
+      scheduleFaviconDraw();
+    } else {
+      faviconUnreadAlpha = 0;
+      faviconPulse = 0;
+    }
+    return;
+  }
+
+  if (faviconUnreadCount > 0 || faviconUnreadAlpha > 0.01) {
+    const dataUrl = faviconCanvas.toDataURL("image/png");
+    if (dataUrl) {
+      setFaviconHref(dataUrl);
+    }
+    scheduleFaviconDraw();
+  } else {
+    faviconUnreadAlpha = 0;
+    faviconPulse = 0;
+  }
+}
 
 const SOUND_NOTIFICATION_STORAGE_KEY = "dizychat.soundNotifications";
 const NOTIFICATION_SOUND_SRC = "/newmessage.wav";
@@ -526,6 +646,9 @@ function rememberOriginalFavicon() {
   const link = getFaviconLink();
   if (!link) return;
   chromeToolbarState.originalFaviconHref = link.getAttribute("href") || link.href || "";
+  if (chromeToolbarState.originalFaviconHref) {
+    faviconImage.src = chromeToolbarState.originalFaviconHref;
+  }
 }
 
 function setFaviconHref(href) {
@@ -599,45 +722,6 @@ function getTintedFavicon(color) {
   }
 }
 
-function getMessageCountFavicon(count) {
-  if (!count || count < 1) return null;
-  const label = formatMissedMessageCount(count);
-  const key = `count:${label}`;
-  if (chromeToolbarState.messageCountIcons.has(key)) {
-    return chromeToolbarState.messageCountIcons.get(key);
-  }
-
-  try {
-    const canvas = document.createElement("canvas");
-    const size = 64;
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
-
-    ctx.fillStyle = "#ff9f1c";
-    ctx.beginPath();
-    ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
-    ctx.fill();
-
-    const fontSize = label.length >= 3 ? 26 : 32;
-    ctx.fillStyle = "#ffffff";
-    ctx.font = `700 ${fontSize}px \"Inter\", \"Segoe UI\", sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(label, size / 2, size / 2);
-
-    const dataUrl = canvas.toDataURL("image/png");
-    if (dataUrl) {
-      chromeToolbarState.messageCountIcons.set(key, dataUrl);
-    }
-    return dataUrl;
-  } catch (err) {
-    console.warn("[Toolbar] Unable to create counter favicon", err);
-    return null;
-  }
-}
-
 function stopMessageToolbarFlash({ restore = false } = {}) {
   const hadTimeout = Boolean(chromeToolbarState.messageStopTimer);
   if (hadTimeout) {
@@ -649,6 +733,7 @@ function stopMessageToolbarFlash({ restore = false } = {}) {
     chromeToolbarState.messageCount = 0;
   }
   if (restore || hadTimeout || hadCount) {
+    resetUnreadFavicon();
     restoreFavicon();
     restoreTitle();
   }
@@ -696,10 +781,7 @@ function startMessageToolbarFlash() {
 
   const label = formatMissedMessageCount(clamped);
   document.title = `(${label}) ${baseTitle}`;
-  const counterIcon = getMessageCountFavicon(clamped);
-  if (counterIcon) {
-    setFaviconHref(counterIcon);
-  }
+  updateUnreadFaviconCount(clamped);
 
   if (!persist) {
     chromeToolbarState.messageStopTimer = window.setTimeout(() => {
