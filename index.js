@@ -9,6 +9,7 @@ const mongoose = require('mongoose');
 const path = require('path');
 const cheerio = require('cheerio');
 const fs = require('fs');
+const { execFile } = require('child_process');
 const multer = require('multer');
 const sanitizeHtml = require('sanitize-html');
 const Message = require('./src/models/message');
@@ -50,6 +51,43 @@ app.get('/version', (req, res) => {
 // ---------------- File Uploads ----------------
 const uploadDir = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+const fsPromises = fs.promises;
+
+const scanFileWithClamAV = (filePath) =>
+  new Promise((resolve, reject) => {
+    const args = ['--stdout', '--no-summary', filePath];
+    execFile('clamscan', args, (error, stdout = '', stderr = '') => {
+      if (!error) {
+        return resolve({ clean: true });
+      }
+
+      if (error.code === 1) {
+        const message = (stdout || stderr || 'Virus detected').trim();
+        return resolve({ clean: false, details: message });
+      }
+
+      if (error.code === 'ENOENT') {
+        const notFoundError = new Error('ClamAV (clamscan) not found');
+        notFoundError.code = 'CLAMAV_NOT_FOUND';
+        return reject(notFoundError);
+      }
+
+      const errMsg = (stderr || stdout || error.message || '').trim();
+      const scanError = new Error(
+        errMsg ? `ClamAV scan failed: ${errMsg}` : 'ClamAV scan failed',
+      );
+      scanError.code = 'CLAMAV_SCAN_ERROR';
+      return reject(scanError);
+    });
+  });
+
+const removeFileSilently = async (filePath) => {
+  try {
+    await fsPromises.unlink(filePath);
+  } catch (_err) {
+    // Ignore unlink errors to avoid masking the original failure.
+  }
+};
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
@@ -141,8 +179,32 @@ const uploadSingleMiddleware = (req, res, next) => {
   });
 };
 
-app.post('/upload', uploadSingleMiddleware, (req, res) => {
+app.post('/upload', uploadSingleMiddleware, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+  const filePath = path.join(uploadDir, req.file.filename);
+
+  try {
+    const scanResult = await scanFileWithClamAV(filePath);
+    if (!scanResult.clean) {
+      await removeFileSilently(filePath);
+      return res.status(400).json({
+        error: 'File failed antivirus scan',
+        details: scanResult.details,
+      });
+    }
+  } catch (err) {
+    await removeFileSilently(filePath);
+
+    if (err && err.code === 'CLAMAV_NOT_FOUND') {
+      console.error('[Upload] ClamAV not installed:', err);
+      return res.status(500).json({ error: 'Antivirus scanner unavailable' });
+    }
+
+    console.error('[Upload] Antivirus scan error:', err);
+    return res.status(500).json({ error: 'Antivirus scan failed' });
+  }
+
   res.json({
     url: `/uploads/${req.file.filename}`,
     name: req.file.originalname,
