@@ -125,7 +125,7 @@ const psybinPlayerState = {
   lastVolume: 1,
 };
 
-const INFOWARS_STREAM_URL = "https://banned.video/watch?id=5c59c724f7c188001c3d8e2f";
+const INFOWARS_STREAM_URL = "https://rumble.com/embed/v66kw07/?mref=1hdamo&mc=56tu4";
 const INFOWARS_ROOM_KEYWORD = "infowars";
 const INFOWARS_MODAL_MIN_WIDTH = 320;
 const INFOWARS_MODAL_MIN_HEIGHT = 180;
