@@ -118,6 +118,8 @@ const scrollLockState = {
   missed: 0,
 };
 
+let muteCountdownInterval = null;
+
 const PSYBIN_RADIO_ROOM = "Psybin Radio";
 const PSYBIN_RADIO_STREAM_URL = "https://www.psyb.in/radio/";
 const PSYBIN_RADIO_ROOM_CANONICAL = PSYBIN_RADIO_ROOM.toLowerCase();
@@ -1390,6 +1392,78 @@ function formatRemaining(ms) {
   return `${totalSeconds}s`;
 }
 
+function updateUserEntryStatus(item, now = Date.now()) {
+  if (!item) return false;
+
+  const mutedUntil = Number(item.dataset.mutedUntil || 0);
+  const isBlocked = item.dataset.isBlocked === "true";
+  const statuses = [];
+  let severity = "";
+
+  if (mutedUntil && mutedUntil > now) {
+    statuses.push(`Muted • ${formatRemaining(mutedUntil - now)} left`);
+    severity = "warn";
+  } else if (mutedUntil) {
+    delete item.dataset.mutedUntil;
+  }
+
+  if (isBlocked) {
+    statuses.push("Blocked");
+    severity = "bad";
+  }
+
+  const statusEl = item.querySelector(".user-status");
+
+  if (!statuses.length) {
+    if (statusEl) statusEl.remove();
+    return false;
+  }
+
+  let element = statusEl;
+  if (!element) {
+    element = document.createElement("span");
+    item.appendChild(element);
+  }
+
+  element.className = `user-status${severity ? ` ${severity}` : ""}`;
+  element.textContent = statuses.join(" • ");
+
+  return mutedUntil && mutedUntil > now;
+}
+
+function updateAllUserEntryStatuses() {
+  if (!userList) return false;
+
+  const now = Date.now();
+  let hasActiveMute = false;
+
+  const entries = Array.from(userList.querySelectorAll(".user-entry"));
+  entries.forEach((entry) => {
+    const active = updateUserEntryStatus(entry, now);
+    if (active) hasActiveMute = true;
+  });
+
+  return hasActiveMute;
+}
+
+function ensureMuteCountdownInterval() {
+  if (muteCountdownInterval) return;
+
+  muteCountdownInterval = setInterval(() => {
+    const hasActive = updateAllUserEntryStatuses();
+    if (!hasActive) {
+      clearInterval(muteCountdownInterval);
+      muteCountdownInterval = null;
+    }
+  }, 1000);
+}
+
+function stopMuteCountdownInterval() {
+  if (!muteCountdownInterval) return;
+  clearInterval(muteCountdownInterval);
+  muteCountdownInterval = null;
+}
+
 function shouldSuppressModerationToast(key, cooldown = 4000) {
   const now = Date.now();
   const last = appState.moderationNotices.get(key) || 0;
@@ -1426,6 +1500,8 @@ function renderUserSidebar(users = []) {
   if (newJoiners.length && isViewingChat) {
     flashToolbar("join");
   }
+
+  let hasActiveMuteCountdowns = false;
 
   array.forEach((entry) => {
     if (!entry || !entry.username) return;
@@ -1464,20 +1540,17 @@ function renderUserSidebar(users = []) {
 
     item.appendChild(name);
 
-    const statusParts = [];
     if (isMuted) {
-      statusParts.push({ text: `Muted • ${formatRemaining(mutedUntil - now)} left`, className: "warn" });
-    }
-    if (isBlocked) {
-      statusParts.push({ text: "Blocked", className: "bad" });
+      item.dataset.mutedUntil = String(mutedUntil);
     }
 
-    if (statusParts.length) {
-      const status = document.createElement("span");
-      const isSevere = statusParts.some((part) => part.className === "bad");
-      status.className = `user-status ${isSevere ? "bad" : statusParts[0].className}`;
-      status.textContent = statusParts.map((part) => part.text).join(" • ");
-      item.appendChild(status);
+    if (isBlocked) {
+      item.dataset.isBlocked = "true";
+    }
+
+    if (isMuted || isBlocked) {
+      const active = updateUserEntryStatus(item, now);
+      if (active) hasActiveMuteCountdowns = true;
     }
 
     const canInteract =
@@ -1511,6 +1584,17 @@ function renderUserSidebar(users = []) {
     userList.appendChild(item);
     total += 1;
   });
+
+  if (!hasActiveMuteCountdowns) {
+    const active = updateAllUserEntryStatuses();
+    if (active) hasActiveMuteCountdowns = true;
+  }
+
+  if (hasActiveMuteCountdowns) {
+    ensureMuteCountdownInterval();
+  } else {
+    stopMuteCountdownInterval();
+  }
 
   if (userCount) {
     userCount.textContent = String(total);
