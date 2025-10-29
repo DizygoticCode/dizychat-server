@@ -60,18 +60,68 @@ const storage = multer.diskStorage({
 });
 
 const parseUploadLimitMb = () => {
-  const raw = Number(process.env.MAX_UPLOAD_SIZE_MB);
-  if (Number.isNaN(raw) || !raw) return 512; // default 512 MB
-  return Math.max(raw, 10); // ensure at least 10 MB
+  const rawValue = process.env.MAX_UPLOAD_SIZE_MB;
+  if (!rawValue) return 1024; // default 1 GB
+
+  const normalized = String(rawValue).trim().toLowerCase();
+  if (!normalized) return 1024;
+
+  if (["unlimited", "infinite", "infinity", "no-limit", "none"].includes(normalized)) {
+    return null; // no explicit limit
+  }
+
+  const match = normalized.match(/^(\d+(?:\.\d+)?)(kb|mb|gb)?$/);
+  if (!match) {
+    const numeric = Number(normalized);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return Math.max(numeric, 10);
+    }
+    return 1024;
+  }
+
+  const value = Number(match[1]);
+  if (!Number.isFinite(value) || value <= 0) return 1024;
+
+  const unit = match[2] || 'mb';
+  const unitMultiplier = {
+    kb: 1 / 1024,
+    mb: 1,
+    gb: 1024,
+  };
+  const multiplier = unitMultiplier[unit] ?? 1;
+  const result = value * multiplier;
+
+  if (!Number.isFinite(result) || result <= 0) return 1024;
+
+  return Math.max(result, 10);
 };
 
 const MAX_UPLOAD_SIZE_MB = parseUploadLimitMb();
-const MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024;
+const formatUploadLimit = (mb) => {
+  if (!Number.isFinite(mb)) return '';
+  if (mb >= 1024) {
+    const gb = mb / 1024;
+    return `${parseFloat(gb.toFixed(2))}GB`;
+  }
+  return `${parseFloat(mb.toFixed(2))}MB`;
+};
+
+const MAX_UPLOAD_SIZE_BYTES =
+  MAX_UPLOAD_SIZE_MB === null ? null : Math.ceil(MAX_UPLOAD_SIZE_MB * 1024 * 1024);
+const uploadLimits = {};
+if (typeof MAX_UPLOAD_SIZE_BYTES === 'number' && Number.isFinite(MAX_UPLOAD_SIZE_BYTES)) {
+  uploadLimits.fileSize = MAX_UPLOAD_SIZE_BYTES;
+}
+const UPLOAD_LIMIT_LABEL = MAX_UPLOAD_SIZE_MB === null
+  ? 'unlimited'
+  : formatUploadLimit(MAX_UPLOAD_SIZE_MB);
+
+console.log(`[Upload] File size limit: ${UPLOAD_LIMIT_LABEL}`);
 
 const upload = multer({
   storage,
-  limits: { fileSize: MAX_UPLOAD_SIZE_BYTES },
-  fileFilter: (_req, _file, cb) => cb(null, true), // accept any file type (handled on client display)
+  limits: Object.keys(uploadLimits).length ? uploadLimits : undefined,
+  fileFilter: (_req, _file, cb) => cb(null, true), // accept any file type (mp3, archives, etc.)
 });
 
 const uploadSingleMiddleware = (req, res, next) => {
@@ -80,7 +130,9 @@ const uploadSingleMiddleware = (req, res, next) => {
 
     if (err.code === 'LIMIT_FILE_SIZE') {
       return res.status(413).json({
-        error: `File too large. Maximum upload size is ${MAX_UPLOAD_SIZE_MB}MB.`,
+        error: MAX_UPLOAD_SIZE_MB === null
+          ? 'File too large for the current configuration.'
+          : `File too large. Maximum upload size is ${UPLOAD_LIMIT_LABEL}.`,
       });
     }
 
