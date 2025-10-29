@@ -309,6 +309,7 @@ header .logo { width: 40px; height: auto; }
   display: flex;
   flex-direction: column;
   min-width: 0;
+  position: relative;
   background: var(--bg);
 }
 
@@ -454,6 +455,88 @@ body:not(.dark) .header-right button#copy-join-link:hover {
   gap: 10px;
   scroll-behavior: smooth;
   background: var(--surface-alt);
+}
+
+.scroll-to-latest {
+  position: absolute;
+  right: 24px;
+  bottom: 128px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: rgba(17, 17, 17, 0.65);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 12px 24px rgba(17, 17, 17, 0.35);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  z-index: 5;
+}
+
+body:not(.dark) .scroll-to-latest {
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--text-primary);
+  border-color: rgba(17, 17, 17, 0.12);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.18);
+}
+
+.scroll-to-latest:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 30px rgba(17, 17, 17, 0.38);
+}
+
+.scroll-to-latest:active {
+  transform: translateY(0);
+  box-shadow: 0 10px 20px rgba(17, 17, 17, 0.28);
+}
+
+.scroll-to-latest:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.scroll-to-latest .scroll-to-latest-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.25);
+  font-size: 0.8rem;
+  line-height: 1.1;
+}
+
+.scroll-to-latest.has-new {
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 18px 32px rgba(123, 47, 247, 0.35);
+}
+
+body:not(.dark) .scroll-to-latest.has-new {
+  box-shadow: 0 18px 32px rgba(123, 47, 247, 0.28);
+}
+
+.scroll-to-latest.has-new .scroll-to-latest-count {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.scroll-to-latest:not(.has-new) .scroll-to-latest-count {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .scroll-to-latest {
+    right: 16px;
+    bottom: 110px;
+    font-size: 0.85rem;
+    padding: 9px 14px;
+  }
 }
 
 .day-separator {

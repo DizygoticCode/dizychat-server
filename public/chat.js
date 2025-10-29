@@ -62,6 +62,9 @@ const userCount = document.getElementById("user-count");
 const userListEmpty = document.getElementById("user-list-empty");
 const userContextMenu = document.getElementById("user-context-menu");
 const toolbar = document.querySelector("#chat-container > header");
+const scrollToLatestBtn = document.getElementById("scroll-to-latest");
+const scrollToLatestLabel = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-label") || null;
+const scrollToLatestCount = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-count") || null;
 
 const chromeToolbarState = {
   originalTitle: document.title || "DizyChat",
@@ -88,6 +91,13 @@ const appState = {
 
 let searchDebounceTimer = null;
 let soundCloudApiPromise = null;
+
+const SCROLL_LOCK_THRESHOLD_PX = 160;
+const MAX_MISSED_MESSAGE_COUNT = 999;
+const scrollLockState = {
+  locked: false,
+  missed: 0,
+};
 
 const MESSAGE_STATUS_VALUES = new Set(["sent", "delivered", "read"]);
 let messageReadObserver = null;
@@ -2355,15 +2365,99 @@ async function copyTextToClipboard(text) {
   return copied;
 }
 
-function scrollMessagesToBottom({ behavior = "auto", delay = 0 } = {}) {
+function getMessagesDistanceFromBottom() {
+  if (!messages) return 0;
+  return Math.max(0, messages.scrollHeight - messages.scrollTop - messages.clientHeight);
+}
+
+function isMessagesNearBottom(distance = SCROLL_LOCK_THRESHOLD_PX) {
+  if (!messages) return true;
+  return getMessagesDistanceFromBottom() <= distance;
+}
+
+function formatMissedMessageCount(count) {
+  if (count >= 100) return "99+";
+  return String(count);
+}
+
+function updateScrollLockIndicator() {
+  if (!scrollToLatestBtn) return;
+
+  if (!scrollLockState.locked) {
+    scrollToLatestBtn.hidden = true;
+    scrollToLatestBtn.setAttribute("aria-hidden", "true");
+    scrollToLatestBtn.classList.remove("has-new");
+    if (scrollToLatestLabel) scrollToLatestLabel.textContent = "Jump to present";
+    if (scrollToLatestCount) {
+      scrollToLatestCount.textContent = "";
+      scrollToLatestCount.setAttribute("aria-hidden", "true");
+    }
+    return;
+  }
+
+  scrollToLatestBtn.hidden = false;
+  scrollToLatestBtn.setAttribute("aria-hidden", "false");
+
+  const hasNew = scrollLockState.missed > 0;
+  scrollToLatestBtn.classList.toggle("has-new", hasNew);
+
+  if (hasNew) {
+    const countLabel = formatMissedMessageCount(scrollLockState.missed);
+    if (scrollToLatestLabel) scrollToLatestLabel.textContent = "New messages";
+    if (scrollToLatestCount) {
+      scrollToLatestCount.textContent = countLabel;
+      scrollToLatestCount.setAttribute("aria-hidden", "false");
+    }
+    scrollToLatestBtn.setAttribute("aria-label", `${countLabel} new messages. Jump to latest.`);
+  } else {
+    if (scrollToLatestLabel) scrollToLatestLabel.textContent = "Jump to present";
+    if (scrollToLatestCount) {
+      scrollToLatestCount.textContent = "";
+      scrollToLatestCount.setAttribute("aria-hidden", "true");
+    }
+    scrollToLatestBtn.setAttribute("aria-label", "Jump to latest messages");
+  }
+}
+
+function setScrollLockState(locked) {
+  scrollLockState.locked = Boolean(locked);
+  if (messages) {
+    if (scrollLockState.locked) {
+      messages.dataset.scrollLock = "1";
+    } else {
+      delete messages.dataset.scrollLock;
+    }
+  }
+  updateScrollLockIndicator();
+}
+
+function resetMissedMessages() {
+  if (scrollLockState.missed !== 0) {
+    scrollLockState.missed = 0;
+  }
+  updateScrollLockIndicator();
+}
+
+function incrementMissedMessages() {
+  const next = scrollLockState.missed + 1;
+  scrollLockState.missed = next > MAX_MISSED_MESSAGE_COUNT ? MAX_MISSED_MESSAGE_COUNT : next;
+  updateScrollLockIndicator();
+}
+
+function scrollMessagesToBottom({ behavior = "auto", delay = 0, force = false } = {}) {
   if (!messages) return;
 
   const performScroll = () => {
+    if (!force && scrollLockState.locked) return;
+
     try {
       messages.scrollTo({ top: messages.scrollHeight, behavior });
     } catch {
       messages.scrollTop = messages.scrollHeight;
     }
+
+    setScrollLockState(false);
+    resetMissedMessages();
   };
 
   if (delay > 0) {
@@ -2392,6 +2486,29 @@ function observeMediaForScroll(node) {
   });
 }
 
+if (messages) {
+  messages.addEventListener(
+    "scroll",
+    () => {
+      const locked = !isMessagesNearBottom();
+      setScrollLockState(locked);
+      if (!locked) {
+        resetMissedMessages();
+      }
+    },
+    { passive: true }
+  );
+}
+
+if (scrollToLatestBtn) {
+  scrollToLatestBtn.addEventListener("click", () => {
+    resetMissedMessages();
+    scrollMessagesToBottom({ behavior: "smooth", force: true });
+  });
+
+  updateScrollLockIndicator();
+}
+
 // ===== JOIN ROOM (with corrections for transition) =====
 
 function completeRoomJoin(username, room, password) {
@@ -2414,6 +2531,8 @@ function completeRoomJoin(username, room, password) {
     messages.innerHTML = "";
     delete messages.dataset.lastDateKey;
   }
+  setScrollLockState(false);
+  resetMissedMessages();
   if (pinnedContainer) {
     pinnedContainer.innerHTML = "";
     pinnedContainer.style.display = "none";
@@ -2426,7 +2545,7 @@ function completeRoomJoin(username, room, password) {
   if (usernamePrompt) usernamePrompt.style.display = "none";
   if (chatContainer) chatContainer.style.display = "flex";
 
-  scrollMessagesToBottom({ behavior: "smooth", delay: 200 });
+  scrollMessagesToBottom({ behavior: "smooth", delay: 200, force: true });
 }
 
 function emitJoinRequest() {
@@ -2618,7 +2737,7 @@ socket.on("join room success", () => {
   if (chatContainer) chatContainer.style.display = "flex";
   if (usernamePrompt) usernamePrompt.style.display = "none";
   input?.focus();
-  scrollMessagesToBottom({ behavior: "smooth", delay: 80 });
+  scrollMessagesToBottom({ behavior: "smooth", delay: 80, force: true });
 });
 
 // Join error handling
@@ -3442,7 +3561,10 @@ function appendAttachmentFromMessage(node, msg) {
 }
 
 // ------------------- History & Messages -------------------
-function renderMessage(msg, { skipScroll = false, scrollBehavior = "auto", delay = 0 } = {}) {
+function renderMessage(
+  msg,
+  { skipScroll = false, scrollBehavior = "auto", delay = 0, respectScrollLock = false } = {}
+) {
   if (!isViewingChat || !messages) return;
   const data = storeMessageData(msg);
   if (!data) return;
@@ -3451,6 +3573,8 @@ function renderMessage(msg, { skipScroll = false, scrollBehavior = "auto", delay
     updatePinnedBanner();
     return;
   }
+
+  const wasNearBottom = isMessagesNearBottom();
 
   const timestamp = new Date(data.timestamp || Date.now());
   ensureDaySeparator(timestamp);
@@ -3520,7 +3644,16 @@ function renderMessage(msg, { skipScroll = false, scrollBehavior = "auto", delay
   renderMessageReactions(wrap, data);
 
   if (!skipScroll) {
-    scrollMessagesToBottom({ behavior: scrollBehavior, delay });
+    if (respectScrollLock) {
+      if (wasNearBottom) {
+        scrollMessagesToBottom({ behavior: scrollBehavior, delay, force: true });
+      } else {
+        incrementMissedMessages();
+        setScrollLockState(true);
+      }
+    } else {
+      scrollMessagesToBottom({ behavior: scrollBehavior, delay, force: true });
+    }
   }
 
   updatePinnedBanner();
@@ -3533,9 +3666,11 @@ socket.on("load messages", (arr) => {
   appState.pinned.clear();
   messages.innerHTML = "";
   delete messages.dataset.lastDateKey;
+  setScrollLockState(false);
+  resetMissedMessages();
   (arr || []).forEach((entry) => renderMessage(entry, { skipScroll: true }));
   updatePinnedBanner();
-  scrollMessagesToBottom({ behavior: "auto", delay: 120 });
+  scrollMessagesToBottom({ behavior: "auto", delay: 120, force: true });
   showToast(`✅ Joined room: ${window.currentRoom}`, "success");
 });
 
@@ -3544,13 +3679,13 @@ socket.on("previous messages", (arr) => {
   if (!messages.childElementCount) {
     (arr || []).forEach((entry) => renderMessage(entry, { skipScroll: true }));
     updatePinnedBanner();
-    scrollMessagesToBottom({ behavior: "auto", delay: 80 });
+    scrollMessagesToBottom({ behavior: "auto", delay: 80, force: true });
   }
 });
 
 socket.on("chat message", (msg) => {
   if (!isViewingChat) return;
-  renderMessage(msg, { scrollBehavior: "smooth" });
+  renderMessage(msg, { scrollBehavior: "smooth", respectScrollLock: true });
   flashToolbar("message");
 });
 
