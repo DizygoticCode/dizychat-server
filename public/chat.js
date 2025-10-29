@@ -164,6 +164,62 @@ function parsePositiveNumber(value) {
   return Number.isFinite(number) && number > 0 ? number : null;
 }
 
+function computeInfowarsModalAutoSize() {
+  if (typeof window === "undefined") return null;
+
+  const padding = INFOWARS_EMBED_CONTROL_PADDING;
+  const availableWidth = Math.max(
+    INFOWARS_MODAL_MIN_WIDTH,
+    window.innerWidth - INFOWARS_MODAL_MARGIN * 2
+  );
+  const availableHeight = Math.max(
+    INFOWARS_MODAL_MIN_HEIGHT,
+    window.innerHeight - INFOWARS_MODAL_MARGIN * 2
+  );
+
+  let naturalWidth = parsePositiveNumber(infowarsModalState.naturalWidth);
+  let naturalHeight = parsePositiveNumber(infowarsModalState.naturalHeight);
+
+  if (!Number.isFinite(naturalWidth) && Number.isFinite(naturalHeight)) {
+    naturalWidth = naturalHeight * INFOWARS_VIDEO_ASPECT_RATIO;
+  } else if (Number.isFinite(naturalWidth) && !Number.isFinite(naturalHeight)) {
+    naturalHeight = naturalWidth / INFOWARS_VIDEO_ASPECT_RATIO;
+  }
+
+  if (!Number.isFinite(naturalWidth) || !Number.isFinite(naturalHeight)) {
+    naturalWidth = INFOWARS_MODAL_DEFAULT_WIDTH;
+    naturalHeight = INFOWARS_MODAL_DEFAULT_HEIGHT;
+  } else {
+    naturalWidth = Math.max(naturalWidth, INFOWARS_MODAL_DEFAULT_WIDTH);
+    naturalHeight = Math.max(naturalHeight, INFOWARS_MODAL_DEFAULT_HEIGHT);
+  }
+
+  let aspect = naturalWidth / naturalHeight;
+  if (!Number.isFinite(aspect) || Math.abs(aspect - INFOWARS_VIDEO_ASPECT_RATIO) > INFOWARS_ASPECT_TOLERANCE) {
+    aspect = INFOWARS_VIDEO_ASPECT_RATIO;
+    naturalHeight = naturalWidth / aspect;
+  }
+
+  let videoWidth = Math.min(naturalWidth, availableWidth);
+  let videoHeight = videoWidth / aspect;
+
+  const maxVideoHeight = Math.max(
+    INFOWARS_MODAL_MIN_HEIGHT - padding,
+    availableHeight - padding,
+    1
+  );
+
+  if (videoHeight > maxVideoHeight) {
+    videoHeight = maxVideoHeight;
+    videoWidth = videoHeight * aspect;
+  }
+
+  const width = clampNumber(videoWidth, INFOWARS_MODAL_MIN_WIDTH, availableWidth);
+  const height = clampNumber(videoHeight + padding, INFOWARS_MODAL_MIN_HEIGHT, availableHeight);
+
+  return { width, height };
+}
+
 function updateInfowarsModalNaturalSize(width, height) {
   if (!infowarsModal) return;
 
@@ -181,8 +237,12 @@ function updateInfowarsModalNaturalSize(width, height) {
     return;
   }
 
-  const nextWidth = Math.max(parsedWidth, INFOWARS_MODAL_MIN_WIDTH);
-  const nextHeight = Math.max(parsedHeight, INFOWARS_MODAL_MIN_HEIGHT);
+  const autoSize = computeInfowarsModalAutoSize();
+  if (!autoSize) {
+    return;
+  }
+
+  const { width: nextWidth, height: nextHeight } = autoSize;
   const widthChanged = nextWidth !== infowarsModalState.width;
   const heightChanged = nextHeight !== infowarsModalState.height;
 
@@ -2929,6 +2989,14 @@ function getInfowarsActiveHeight() {
 
 function applyInfowarsModalLayout({ clampPosition = true } = {}) {
   if (!infowarsModal || !infowarsModalState.visible) return;
+
+  if (!infowarsModalState.hasCustomSize && !infowarsModalState.collapsed) {
+    const autoSize = computeInfowarsModalAutoSize();
+    if (autoSize) {
+      infowarsModalState.width = autoSize.width;
+      infowarsModalState.height = autoSize.height;
+    }
+  }
 
   const maxWidth = Math.max(
     INFOWARS_MODAL_MIN_WIDTH,
