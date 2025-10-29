@@ -130,6 +130,13 @@ const INFOWARS_ROOM_KEYWORD = "infowars";
 const INFOWARS_MODAL_MIN_WIDTH = 320;
 const INFOWARS_MODAL_MIN_HEIGHT = 180;
 const INFOWARS_MODAL_MARGIN = 12;
+const INFOWARS_VIDEO_ASPECT_RATIO = 16 / 9;
+const INFOWARS_EMBED_CONTROL_PADDING = 96;
+const INFOWARS_MODAL_DEFAULT_WIDTH = 960;
+const INFOWARS_MODAL_DEFAULT_HEIGHT = Math.round(
+  INFOWARS_MODAL_DEFAULT_WIDTH / INFOWARS_VIDEO_ASPECT_RATIO + INFOWARS_EMBED_CONTROL_PADDING
+);
+const INFOWARS_ASPECT_TOLERANCE = 0.03;
 
 const infowarsModalState = {
   visible: false,
@@ -144,11 +151,257 @@ const infowarsModalState = {
   resizeStartHeight: 0,
   resizeStartX: 0,
   resizeStartY: 0,
-  width: 480,
-  height: 270,
+  width: INFOWARS_MODAL_DEFAULT_WIDTH,
+  height: INFOWARS_MODAL_DEFAULT_HEIGHT,
   left: null,
   top: null,
+  naturalWidth: INFOWARS_MODAL_DEFAULT_WIDTH,
+  naturalHeight: INFOWARS_MODAL_DEFAULT_HEIGHT,
+  hasCustomSize: false,
 };
+
+function parsePositiveNumber(value) {
+  if (value === null || value === undefined) return null;
+  const number = Number.parseFloat(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function parsePixelSize(value) {
+  if (value === null || value === undefined) return null;
+  let source = value;
+  if (typeof source === "string") {
+    const trimmed = source.trim();
+    if (!trimmed) return null;
+    const lower = trimmed.toLowerCase();
+    if (
+      lower.includes("%") ||
+      lower.includes("calc(") ||
+      lower.endsWith("vw") ||
+      lower.endsWith("vh")
+    ) {
+      return null;
+    }
+    source = trimmed;
+  }
+  const parsed = parsePositiveNumber(source);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function extractElementDimension(element, dimension) {
+  if (!element) return null;
+  const lowerDimension = String(dimension || "").toLowerCase();
+  if (!lowerDimension) return null;
+
+  const candidates = [];
+
+  if (typeof element.getAttribute === "function") {
+    const direct = element.getAttribute(dimension);
+    if (direct !== null) {
+      candidates.push(direct);
+    }
+
+    if (typeof element.getAttributeNames === "function") {
+      try {
+        const attributeNames = element.getAttributeNames();
+        if (Array.isArray(attributeNames)) {
+          attributeNames.forEach((name) => {
+            if (!name) return;
+            if (name === dimension) return;
+            if (!name.toLowerCase().includes(lowerDimension)) return;
+            const value = element.getAttribute(name);
+            if (value !== null) {
+              candidates.push(value);
+            }
+          });
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  const dataset = element.dataset || null;
+  if (dataset) {
+    try {
+      Object.entries(dataset).forEach(([key, value]) => {
+        if (!key || !value) return;
+        if (!key.toLowerCase().includes(lowerDimension)) return;
+        candidates.push(value);
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (element.style) {
+    const styleValue = element.style[dimension];
+    if (styleValue) {
+      candidates.push(styleValue);
+    }
+    const cssValue = element.style.getPropertyValue?.(dimension);
+    if (cssValue && cssValue !== styleValue) {
+      candidates.push(cssValue);
+    }
+  }
+
+  for (const candidate of candidates) {
+    const parsed = parsePixelSize(candidate);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function measureElementDimension(element, dimension) {
+  if (!element) return null;
+
+  const axis = dimension === "height" ? "height" : "width";
+  let best = null;
+
+  const rect = typeof element.getBoundingClientRect === "function"
+    ? element.getBoundingClientRect()
+    : null;
+  if (rect) {
+    const rectValue = axis === "height" ? rect.height : rect.width;
+    if (Number.isFinite(rectValue) && rectValue > 0) {
+      best = rectValue;
+    }
+  }
+
+  const dimensionCandidates = [
+    axis === "height" ? element.offsetHeight : element.offsetWidth,
+    axis === "height" ? element.scrollHeight : element.scrollWidth,
+    axis === "height" ? element.clientHeight : element.clientWidth,
+  ];
+
+  for (const candidate of dimensionCandidates) {
+    const numeric = Number(candidate);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      if (!Number.isFinite(best) || numeric > best) {
+        best = numeric;
+      }
+    }
+  }
+
+  const inlineStyle = element?.style || null;
+  if (inlineStyle) {
+    const inlineValue = parsePixelSize(inlineStyle[axis]);
+    if (Number.isFinite(inlineValue) && inlineValue > 0) {
+      if (!Number.isFinite(best) || inlineValue > best) {
+        best = inlineValue;
+      }
+    }
+    const inlineProperty = typeof inlineStyle.getPropertyValue === "function"
+      ? parsePixelSize(inlineStyle.getPropertyValue(axis))
+      : null;
+    if (Number.isFinite(inlineProperty) && inlineProperty > 0) {
+      if (!Number.isFinite(best) || inlineProperty > best) {
+        best = inlineProperty;
+      }
+    }
+  }
+
+  const computedStyle =
+    typeof window !== "undefined" && typeof window.getComputedStyle === "function"
+      ? window.getComputedStyle(element)
+      : null;
+  if (computedStyle) {
+    const computedValue = parsePixelSize(computedStyle[axis]);
+    if (Number.isFinite(computedValue) && computedValue > 0) {
+      if (!Number.isFinite(best) || computedValue > best) {
+        best = computedValue;
+      }
+    }
+  }
+
+  return Number.isFinite(best) && best > 0 ? best : null;
+}
+
+function updateInfowarsModalNaturalSize(width, height) {
+  if (!infowarsModal) return;
+
+  const parsedWidth = parsePixelSize(width);
+  const parsedHeight = parsePixelSize(height);
+
+  const fallbackWidth = Number.isFinite(infowarsModalState.naturalWidth)
+    ? infowarsModalState.naturalWidth
+    : INFOWARS_MODAL_DEFAULT_WIDTH;
+  const fallbackHeight = Number.isFinite(infowarsModalState.naturalHeight)
+    ? infowarsModalState.naturalHeight
+    : INFOWARS_MODAL_DEFAULT_HEIGHT;
+
+  let resolvedWidth = Number.isFinite(parsedWidth) ? parsedWidth : null;
+  let resolvedHeight = Number.isFinite(parsedHeight) ? parsedHeight : null;
+
+  if (!Number.isFinite(resolvedWidth) && Number.isFinite(resolvedHeight)) {
+    const usableHeight = Math.max(resolvedHeight - INFOWARS_EMBED_CONTROL_PADDING, resolvedHeight);
+    const computedWidth = usableHeight * INFOWARS_VIDEO_ASPECT_RATIO;
+    if (Number.isFinite(computedWidth) && computedWidth > 0) {
+      resolvedWidth = computedWidth;
+    }
+  } else if (!Number.isFinite(resolvedHeight) && Number.isFinite(resolvedWidth)) {
+    const computedHeight =
+      resolvedWidth / INFOWARS_VIDEO_ASPECT_RATIO + INFOWARS_EMBED_CONTROL_PADDING;
+    if (Number.isFinite(computedHeight) && computedHeight > 0) {
+      resolvedHeight = computedHeight;
+    }
+  }
+
+  if (!Number.isFinite(resolvedWidth) || resolvedWidth <= 0) {
+    resolvedWidth = Number.isFinite(fallbackWidth) && fallbackWidth > 0
+      ? fallbackWidth
+      : INFOWARS_MODAL_DEFAULT_WIDTH;
+  }
+  if (!Number.isFinite(resolvedHeight) || resolvedHeight <= 0) {
+    resolvedHeight = Number.isFinite(fallbackHeight) && fallbackHeight > 0
+      ? fallbackHeight
+      : INFOWARS_MODAL_DEFAULT_HEIGHT;
+  }
+
+  if (!Number.isFinite(resolvedWidth) || !Number.isFinite(resolvedHeight)) {
+    return;
+  }
+
+  const aspect = resolvedHeight > 0 ? resolvedWidth / resolvedHeight : null;
+  if (
+    Number.isFinite(aspect) &&
+    Math.abs(aspect - INFOWARS_VIDEO_ASPECT_RATIO) <= INFOWARS_ASPECT_TOLERANCE
+  ) {
+    resolvedHeight += INFOWARS_EMBED_CONTROL_PADDING;
+  }
+
+  resolvedWidth = Math.round(resolvedWidth);
+  resolvedHeight = Math.round(resolvedHeight);
+
+  const naturalWidthChanged = resolvedWidth !== infowarsModalState.naturalWidth;
+  const naturalHeightChanged = resolvedHeight !== infowarsModalState.naturalHeight;
+
+  if (naturalWidthChanged) {
+    infowarsModalState.naturalWidth = resolvedWidth;
+  }
+  if (naturalHeightChanged) {
+    infowarsModalState.naturalHeight = resolvedHeight;
+  }
+
+  if (infowarsModalState.hasCustomSize) {
+    return;
+  }
+
+  const nextWidth = Math.max(resolvedWidth, INFOWARS_MODAL_MIN_WIDTH);
+  const nextHeight = Math.max(resolvedHeight, INFOWARS_MODAL_MIN_HEIGHT);
+  const widthChanged = nextWidth !== infowarsModalState.width;
+  const heightChanged = nextHeight !== infowarsModalState.height;
+
+  if (!widthChanged && !heightChanged) {
+    return;
+  }
+
+  infowarsModalState.width = nextWidth;
+  infowarsModalState.height = nextHeight;
+  applyInfowarsModalLayout({ clampPosition: true });
+}
 
 function syncInfowarsStreamEmbedSize() {
   if (!infowarsStreamFrame) return;
@@ -158,6 +411,56 @@ function syncInfowarsStreamEmbedSize() {
     rumbleContainer?.querySelector?.("iframe") ||
     infowarsStreamFrame.querySelector?.("iframe") ||
     null;
+
+  const candidateElements = [
+    rumbleContainer,
+    rumbleContainer?.firstElementChild || null,
+    iframe,
+    iframe?.parentElement || null,
+  ].filter(Boolean);
+
+  let naturalWidth = null;
+  let naturalHeight = null;
+
+  candidateElements.forEach((element) => {
+    if (!Number.isFinite(naturalWidth)) {
+      const widthValue = extractElementDimension(element, "width");
+      if (Number.isFinite(widthValue) && widthValue > 0) {
+        naturalWidth = widthValue;
+      }
+    }
+    if (!Number.isFinite(naturalHeight)) {
+      const heightValue = extractElementDimension(element, "height");
+      if (Number.isFinite(heightValue) && heightValue > 0) {
+        naturalHeight = heightValue;
+      }
+    }
+  });
+
+  let measuredWidth = Number.isFinite(naturalWidth) && naturalWidth > 0 ? naturalWidth : null;
+  let measuredHeight = Number.isFinite(naturalHeight) && naturalHeight > 0 ? naturalHeight : null;
+
+  candidateElements.forEach((element) => {
+    const widthValue = measureElementDimension(element, "width");
+    if (Number.isFinite(widthValue) && widthValue > 0) {
+      measuredWidth = Number.isFinite(measuredWidth)
+        ? Math.max(measuredWidth, widthValue)
+        : widthValue;
+    }
+    const heightValue = measureElementDimension(element, "height");
+    if (Number.isFinite(heightValue) && heightValue > 0) {
+      measuredHeight = Number.isFinite(measuredHeight)
+        ? Math.max(measuredHeight, heightValue)
+        : heightValue;
+    }
+  });
+
+  if (Number.isFinite(measuredWidth) || Number.isFinite(measuredHeight)) {
+    updateInfowarsModalNaturalSize(
+      Number.isFinite(measuredWidth) ? measuredWidth : naturalWidth,
+      Number.isFinite(measuredHeight) ? measuredHeight : naturalHeight,
+    );
+  }
 
   if (rumbleContainer) {
     rumbleContainer.style.width = "100%";
@@ -3046,6 +3349,7 @@ function handleInfowarsPointerMove(event) {
 
     infowarsModalState.width = width;
     infowarsModalState.height = height;
+    infowarsModalState.hasCustomSize = true;
 
     infowarsModal.style.width = `${width}px`;
     if (!infowarsModalState.collapsed) {
