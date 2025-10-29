@@ -637,6 +637,16 @@ body:not(.dark) .header-right button#copy-join-link:hover {
 
 .message:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
 
+.message.menu-open {
+  z-index: 100;
+}
+
+.message.menu-open,
+.message.menu-open:hover {
+  transform: none;
+  box-shadow: var(--shadow);
+}
+
 .message.self {
   align-self: flex-end;
   background: var(--bubble-self);
