@@ -665,6 +665,7 @@ body:not(.dark) .header-right button#copy-join-link:hover {
   font-size: 0.75em;
   color: var(--text-muted);
   margin-bottom: 4px;
+  padding-right: 32px;
 }
 
 .message .meta .meta-name {
