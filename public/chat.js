@@ -63,6 +63,16 @@ const userListEmpty = document.getElementById("user-list-empty");
 const userContextMenu = document.getElementById("user-context-menu");
 const toolbar = document.querySelector("#chat-container > header");
 
+const chromeToolbarState = {
+  originalTitle: document.title || "DizyChat",
+  originalFaviconHref: null,
+  messageInterval: null,
+  messageStopTimer: null,
+  messageStep: 0,
+  joinTimeout: null,
+  tintedIcons: new Map(),
+};
+
 const appState = {
   isAdmin: false,
   messages: new Map(),
@@ -179,6 +189,219 @@ function normalizeReactions(list) {
 
 const TOOLBAR_FLASH_CLASSES = ["toolbar-flash-message", "toolbar-flash-join"];
 
+function getFaviconLink() {
+  const head = document.head || document.getElementsByTagName("head")[0];
+  if (!head) return null;
+  let link = head.querySelector('link[rel*="icon" i]');
+  if (!link) {
+    link = document.createElement("link");
+    link.setAttribute("rel", "icon");
+    head.appendChild(link);
+  }
+  return link;
+}
+
+function rememberOriginalFavicon() {
+  if (chromeToolbarState.originalFaviconHref) return;
+  const link = getFaviconLink();
+  if (!link) return;
+  chromeToolbarState.originalFaviconHref = link.getAttribute("href") || link.href || "";
+}
+
+function setFaviconHref(href) {
+  const link = getFaviconLink();
+  if (!link || !href) return;
+  if (link.href === href || link.getAttribute("href") === href) return;
+  link.setAttribute("href", href);
+}
+
+function restoreFavicon() {
+  if (!chromeToolbarState.originalFaviconHref) return;
+  setFaviconHref(chromeToolbarState.originalFaviconHref);
+}
+
+function rememberOriginalTitle() {
+  const title = document.title;
+  if (title && title !== chromeToolbarState.originalTitle) {
+    chromeToolbarState.originalTitle = title;
+  } else if (!title && !chromeToolbarState.originalTitle) {
+    chromeToolbarState.originalTitle = "DizyChat";
+  }
+}
+
+function restoreTitle() {
+  if (!chromeToolbarState.originalTitle) {
+    chromeToolbarState.originalTitle = "DizyChat";
+  }
+  document.title = chromeToolbarState.originalTitle;
+}
+
+function getTintedFavicon(color) {
+  if (!color) return null;
+  if (chromeToolbarState.tintedIcons.has(color)) {
+    return chromeToolbarState.tintedIcons.get(color);
+  }
+  try {
+    const canvas = document.createElement("canvas");
+    const size = 64;
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#ffffff";
+    const bubbleWidth = size * 0.56;
+    const bubbleHeight = size * 0.38;
+    const bubbleX = (size - bubbleWidth) / 2;
+    const bubbleY = size * 0.24;
+    ctx.fillRect(bubbleX, bubbleY, bubbleWidth, bubbleHeight);
+
+    ctx.beginPath();
+    ctx.moveTo(size * 0.42, bubbleY + bubbleHeight);
+    ctx.lineTo(size * 0.32, bubbleY + bubbleHeight + size * 0.14);
+    ctx.lineTo(size * 0.54, bubbleY + bubbleHeight);
+    ctx.closePath();
+    ctx.fill();
+
+    const dataUrl = canvas.toDataURL("image/png");
+    if (dataUrl) {
+      chromeToolbarState.tintedIcons.set(color, dataUrl);
+    }
+    return dataUrl;
+  } catch (err) {
+    console.warn("[Toolbar] Unable to create tinted favicon", err);
+    return null;
+  }
+}
+
+function stopMessageToolbarFlash({ restore = false } = {}) {
+  const hadInterval = Boolean(chromeToolbarState.messageInterval);
+  const hadTimeout = Boolean(chromeToolbarState.messageStopTimer);
+  if (hadInterval) {
+    clearInterval(chromeToolbarState.messageInterval);
+    chromeToolbarState.messageInterval = null;
+  }
+  if (hadTimeout) {
+    clearTimeout(chromeToolbarState.messageStopTimer);
+    chromeToolbarState.messageStopTimer = null;
+  }
+  chromeToolbarState.messageStep = 0;
+  if (restore || hadInterval || hadTimeout) {
+    restoreFavicon();
+    restoreTitle();
+  }
+}
+
+function cancelJoinBlink({ force = false } = {}) {
+  if (chromeToolbarState.joinTimeout) {
+    clearTimeout(chromeToolbarState.joinTimeout);
+    chromeToolbarState.joinTimeout = null;
+    restoreFavicon();
+    restoreTitle();
+  } else if (force) {
+    restoreFavicon();
+    restoreTitle();
+  }
+}
+
+function resetChromeToolbarAttention() {
+  stopMessageToolbarFlash({ restore: true });
+  cancelJoinBlink({ force: true });
+}
+
+function shouldPersistMessageFlash() {
+  if (document.hidden) return true;
+  if (typeof document.hasFocus === "function") {
+    return !document.hasFocus();
+  }
+  return false;
+}
+
+function startMessageToolbarFlash() {
+  rememberOriginalTitle();
+  rememberOriginalFavicon();
+  const color = "#ff9f1c";
+  const tintedIcon = getTintedFavicon(color);
+  const baseTitle = chromeToolbarState.originalTitle || "DizyChat";
+  const highlightTitle = `🟠 New message — ${baseTitle}`;
+  const persist = shouldPersistMessageFlash();
+
+  const applyState = (isHighlight) => {
+    if (tintedIcon) {
+      if (isHighlight) {
+        setFaviconHref(tintedIcon);
+      } else {
+        restoreFavicon();
+      }
+    }
+    document.title = isHighlight ? highlightTitle : baseTitle;
+  };
+
+  applyState(true);
+  chromeToolbarState.messageStep = 0;
+
+  chromeToolbarState.messageInterval = window.setInterval(() => {
+    chromeToolbarState.messageStep += 1;
+    applyState(chromeToolbarState.messageStep % 2 === 0);
+  }, 900);
+
+  if (!persist) {
+    if (chromeToolbarState.messageStopTimer) {
+      clearTimeout(chromeToolbarState.messageStopTimer);
+    }
+    chromeToolbarState.messageStopTimer = window.setTimeout(() => {
+      resetChromeToolbarAttention();
+    }, 2200);
+  }
+}
+
+function startJoinToolbarBlink() {
+  rememberOriginalTitle();
+  rememberOriginalFavicon();
+  const color = "#2ecc71";
+  const tintedIcon = getTintedFavicon(color);
+  const baseTitle = chromeToolbarState.originalTitle || "DizyChat";
+  const highlightTitle = `🟢 New user joined — ${baseTitle}`;
+
+  cancelJoinBlink();
+
+  if (tintedIcon) {
+    setFaviconHref(tintedIcon);
+  }
+  document.title = highlightTitle;
+
+  chromeToolbarState.joinTimeout = window.setTimeout(() => {
+    chromeToolbarState.joinTimeout = null;
+    restoreFavicon();
+    restoreTitle();
+  }, 1400);
+}
+
+function triggerChromeToolbarAttention(type) {
+  if (!type) return;
+  if (type === "message") {
+    stopMessageToolbarFlash();
+    cancelJoinBlink();
+    startMessageToolbarFlash();
+  } else if (type === "join") {
+    if (chromeToolbarState.messageInterval) return;
+    startJoinToolbarBlink();
+  }
+}
+
+window.addEventListener("focus", () => resetChromeToolbarAttention());
+window.addEventListener("pointerdown", () => resetChromeToolbarAttention(), { capture: true });
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    resetChromeToolbarAttention();
+  }
+});
+
 function flashToolbar(type) {
   if (!isViewingChat) return;
   if (!toolbar) return;
@@ -206,6 +429,8 @@ function flashToolbar(type) {
     toolbar.classList.remove(className);
     appState.toolbarFlashTimer = null;
   }, duration);
+
+  triggerChromeToolbarAttention(type);
 }
 
 function resetMessageReadObserver() {
@@ -2066,6 +2291,7 @@ function updateQueryParams(room, password) {
 
 function showLanding({ focusUsername = true } = {}) {
   isViewingChat = false;
+  resetChromeToolbarAttention();
   appState.isAdmin = false;
   clearReplyTarget();
   if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = true;
