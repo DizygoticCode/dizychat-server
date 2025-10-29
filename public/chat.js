@@ -2732,7 +2732,9 @@ function formatMissedMessageCount(count) {
 function updateScrollLockIndicator() {
   if (!scrollToLatestBtn) return;
 
-  if (!scrollLockState.locked) {
+  const isAtBottom = isMessagesNearBottom(0);
+
+  if (!scrollLockState.locked || isAtBottom) {
     scrollToLatestBtn.hidden = true;
     scrollToLatestBtn.setAttribute("aria-hidden", "true");
     scrollToLatestBtn.classList.remove("has-new");
