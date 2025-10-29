@@ -459,8 +459,8 @@ body:not(.dark) .header-right button#copy-join-link:hover {
 
 .scroll-to-latest {
   position: absolute;
-  right: 24px;
-  bottom: 128px;
+  left: 50%;
+  bottom: 110px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -474,6 +474,7 @@ body:not(.dark) .header-right button#copy-join-link:hover {
   cursor: pointer;
   box-shadow: 0 12px 24px rgba(17, 17, 17, 0.35);
   transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  transform: translateX(-50%);
   z-index: 5;
 }
 
@@ -485,12 +486,12 @@ body:not(.dark) .scroll-to-latest {
 }
 
 .scroll-to-latest:hover {
-  transform: translateY(-1px);
+  transform: translate(-50%, -1px);
   box-shadow: 0 16px 30px rgba(17, 17, 17, 0.38);
 }
 
 .scroll-to-latest:active {
-  transform: translateY(0);
+  transform: translate(-50%, 0);
   box-shadow: 0 10px 20px rgba(17, 17, 17, 0.28);
 }
 
@@ -532,8 +533,7 @@ body:not(.dark) .scroll-to-latest.has-new {
 
 @media (max-width: 768px) {
   .scroll-to-latest {
-    right: 16px;
-    bottom: 110px;
+    bottom: 96px;
     font-size: 0.85rem;
     padding: 9px 14px;
   }
