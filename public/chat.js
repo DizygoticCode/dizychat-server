@@ -145,10 +145,14 @@ const infowarsModalState = {
   resizePointerId: null,
   dragOffsetX: 0,
   dragOffsetY: 0,
+  dragStartX: 0,
+  dragStartY: 0,
   resizeStartWidth: 0,
   resizeStartHeight: 0,
   resizeStartX: 0,
   resizeStartY: 0,
+  dragMoved: false,
+  ignoreHeaderClick: false,
   width: 640,
   height: 360,
   left: null,
@@ -3171,6 +3175,10 @@ function resetInfowarsPointerState() {
   infowarsModalState.resizing = false;
   infowarsModalState.pointerId = null;
   infowarsModalState.resizePointerId = null;
+  infowarsModalState.dragMoved = false;
+  infowarsModalState.ignoreHeaderClick = false;
+  infowarsModalState.dragStartX = 0;
+  infowarsModalState.dragStartY = 0;
   infowarsModal?.classList?.remove?.("dragging");
   infowarsModal?.classList?.remove?.("resizing");
 }
@@ -3217,12 +3225,23 @@ function handleInfowarsPointerMove(event) {
   if (!infowarsModalState.visible || !infowarsModal) return;
 
   if (infowarsModalState.dragging && event.pointerId === infowarsModalState.pointerId) {
+    if (!infowarsModalState.dragMoved) {
+      const dx = Math.abs(event.clientX - infowarsModalState.dragStartX);
+      const dy = Math.abs(event.clientY - infowarsModalState.dragStartY);
+      if (dx > 2 || dy > 2) {
+        infowarsModalState.dragMoved = true;
+      }
+    }
+
     const width = infowarsModalState.width;
     const activeHeight = getInfowarsActiveHeight();
     const minLeft = INFOWARS_MODAL_MARGIN;
     const maxLeft = Math.max(minLeft, window.innerWidth - width - INFOWARS_MODAL_MARGIN);
     const minTop = Math.max(INFOWARS_MODAL_MARGIN, getInfowarsToolbarBottom());
     const maxTop = Math.max(minTop, window.innerHeight - activeHeight - INFOWARS_MODAL_MARGIN);
+
+    const prevLeft = infowarsModalState.left;
+    const prevTop = infowarsModalState.top;
 
     const nextLeft = clampNumber(
       event.clientX - infowarsModalState.dragOffsetX,
@@ -3234,6 +3253,15 @@ function handleInfowarsPointerMove(event) {
       minTop,
       maxTop
     );
+
+    if (
+      !infowarsModalState.dragMoved &&
+      Number.isFinite(prevLeft) &&
+      Number.isFinite(prevTop) &&
+      (Math.abs(nextLeft - prevLeft) > 0 || Math.abs(nextTop - prevTop) > 0)
+    ) {
+      infowarsModalState.dragMoved = true;
+    }
 
     infowarsModalState.left = nextLeft;
     infowarsModalState.top = nextTop;
@@ -3280,6 +3308,8 @@ function handleInfowarsPointerUp(event) {
     infowarsModalHeader?.releasePointerCapture?.(event.pointerId);
     infowarsModalState.dragging = false;
     infowarsModalState.pointerId = null;
+    infowarsModalState.ignoreHeaderClick = infowarsModalState.dragMoved;
+    infowarsModalState.dragMoved = false;
     infowarsModal.classList.remove("dragging");
     applyInfowarsModalLayout();
   }
@@ -3336,13 +3366,22 @@ if (infowarsModalHeader && infowarsModal) {
     infowarsModalState.pointerId = event.pointerId;
     infowarsModalState.dragOffsetX = event.clientX - rect.left;
     infowarsModalState.dragOffsetY = event.clientY - rect.top;
+    infowarsModalState.dragStartX = event.clientX;
+    infowarsModalState.dragStartY = event.clientY;
+    infowarsModalState.dragMoved = false;
+    infowarsModalState.ignoreHeaderClick = false;
     infowarsModal.classList.add("dragging");
     infowarsModalHeader.setPointerCapture?.(event.pointerId);
     event.preventDefault();
   });
 
-  infowarsModalHeader.addEventListener("dblclick", () => {
+  infowarsModalHeader.addEventListener("click", (event) => {
     if (!infowarsModalState.visible) return;
+    if (event.detail && event.detail > 1) return;
+    if (infowarsModalState.ignoreHeaderClick) {
+      infowarsModalState.ignoreHeaderClick = false;
+      return;
+    }
     toggleInfowarsCollapse();
   });
 }
@@ -3369,7 +3408,7 @@ if (infowarsStreamFrame && typeof MutationObserver === "function") {
 
 if (infowarsResizeHandle && infowarsModal) {
   infowarsResizeHandle.addEventListener("pointerdown", (event) => {
-    if (!infowarsModalState.visible || infowarsModalState.collapsed) return;
+    if (!infowarsModalState.visible) return;
     const isTouch = event.pointerType === "touch";
     if (!isTouch && event.button !== 0) return;
     const rect = infowarsModal.getBoundingClientRect();

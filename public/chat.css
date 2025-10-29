@@ -432,6 +432,7 @@ body:not(.dark) .stream-modal-button:focus-visible {
   display: flex;
   align-items: stretch;
   justify-content: center;
+  padding-bottom: 24px;
 }
 
 .stream-modal-body > * {
@@ -472,11 +473,11 @@ body:not(.dark) .stream-modal-button:focus-visible {
   width: 18px;
   height: 18px;
   background: transparent;
-  align-self: flex-end;
   cursor: nwse-resize;
-  margin: 0 6px 6px 0;
   border-radius: 4px;
-  position: relative;
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
   touch-action: none;
 }
 
@@ -508,10 +509,6 @@ body:not(.dark) .stream-modal-button:focus-visible {
 }
 
 .stream-modal.collapsed .stream-modal-body {
-  display: none;
-}
-
-.stream-modal.collapsed .stream-resize-handle {
   display: none;
 }
 
