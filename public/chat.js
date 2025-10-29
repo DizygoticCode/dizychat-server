@@ -148,7 +148,47 @@ const infowarsModalState = {
   height: 270,
   left: null,
   top: null,
+  naturalWidth: null,
+  naturalHeight: null,
+  hasCustomSize: false,
 };
+
+function parsePositiveNumber(value) {
+  if (value === null || value === undefined) return null;
+  const number = Number.parseFloat(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function updateInfowarsModalNaturalSize(width, height) {
+  if (!infowarsModal) return;
+
+  const parsedWidth = parsePositiveNumber(width);
+  const parsedHeight = parsePositiveNumber(height);
+
+  if (!Number.isFinite(parsedWidth) || !Number.isFinite(parsedHeight)) {
+    return;
+  }
+
+  infowarsModalState.naturalWidth = parsedWidth;
+  infowarsModalState.naturalHeight = parsedHeight;
+
+  if (infowarsModalState.hasCustomSize) {
+    return;
+  }
+
+  const nextWidth = Math.max(parsedWidth, INFOWARS_MODAL_MIN_WIDTH);
+  const nextHeight = Math.max(parsedHeight, INFOWARS_MODAL_MIN_HEIGHT);
+  const widthChanged = nextWidth !== infowarsModalState.width;
+  const heightChanged = nextHeight !== infowarsModalState.height;
+
+  if (!widthChanged && !heightChanged) {
+    return;
+  }
+
+  infowarsModalState.width = nextWidth;
+  infowarsModalState.height = nextHeight;
+  applyInfowarsModalLayout({ clampPosition: true });
+}
 
 function syncInfowarsStreamEmbedSize() {
   if (!infowarsStreamFrame) return;
@@ -158,6 +198,14 @@ function syncInfowarsStreamEmbedSize() {
     rumbleContainer?.querySelector?.("iframe") ||
     infowarsStreamFrame.querySelector?.("iframe") ||
     null;
+
+  if (iframe) {
+    const originalWidth = iframe.getAttribute?.("width");
+    const originalHeight = iframe.getAttribute?.("height");
+    if (originalWidth || originalHeight) {
+      updateInfowarsModalNaturalSize(originalWidth, originalHeight);
+    }
+  }
 
   if (rumbleContainer) {
     rumbleContainer.style.width = "100%";
@@ -3046,6 +3094,7 @@ function handleInfowarsPointerMove(event) {
 
     infowarsModalState.width = width;
     infowarsModalState.height = height;
+    infowarsModalState.hasCustomSize = true;
 
     infowarsModal.style.width = `${width}px`;
     if (!infowarsModalState.collapsed) {
