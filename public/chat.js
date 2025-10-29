@@ -69,11 +69,11 @@ const scrollToLatestCount = scrollToLatestBtn?.querySelector?.(".scroll-to-lates
 const chromeToolbarState = {
   originalTitle: document.title || "DizyChat",
   originalFaviconHref: null,
-  messageInterval: null,
   messageStopTimer: null,
-  messageStep: 0,
+  messageCount: 0,
   joinTimeout: null,
   tintedIcons: new Map(),
+  messageCountIcons: new Map(),
 };
 
 const appState = {
@@ -289,19 +289,56 @@ function getTintedFavicon(color) {
   }
 }
 
-function stopMessageToolbarFlash({ restore = false } = {}) {
-  const hadInterval = Boolean(chromeToolbarState.messageInterval);
-  const hadTimeout = Boolean(chromeToolbarState.messageStopTimer);
-  if (hadInterval) {
-    clearInterval(chromeToolbarState.messageInterval);
-    chromeToolbarState.messageInterval = null;
+function getMessageCountFavicon(count) {
+  if (!count || count < 1) return null;
+  const label = formatMissedMessageCount(count);
+  const key = `count:${label}`;
+  if (chromeToolbarState.messageCountIcons.has(key)) {
+    return chromeToolbarState.messageCountIcons.get(key);
   }
+
+  try {
+    const canvas = document.createElement("canvas");
+    const size = 64;
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    ctx.fillStyle = "#ff9f1c";
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    const fontSize = label.length >= 3 ? 26 : 32;
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `700 ${fontSize}px \"Inter\", \"Segoe UI\", sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label, size / 2, size / 2);
+
+    const dataUrl = canvas.toDataURL("image/png");
+    if (dataUrl) {
+      chromeToolbarState.messageCountIcons.set(key, dataUrl);
+    }
+    return dataUrl;
+  } catch (err) {
+    console.warn("[Toolbar] Unable to create counter favicon", err);
+    return null;
+  }
+}
+
+function stopMessageToolbarFlash({ restore = false } = {}) {
+  const hadTimeout = Boolean(chromeToolbarState.messageStopTimer);
   if (hadTimeout) {
     clearTimeout(chromeToolbarState.messageStopTimer);
     chromeToolbarState.messageStopTimer = null;
   }
-  chromeToolbarState.messageStep = 0;
-  if (restore || hadInterval || hadTimeout) {
+  const hadCount = chromeToolbarState.messageCount > 0;
+  if (hadCount) {
+    chromeToolbarState.messageCount = 0;
+  }
+  if (restore || hadTimeout || hadCount) {
     restoreFavicon();
     restoreTitle();
   }
@@ -335,37 +372,28 @@ function shouldPersistMessageFlash() {
 function startMessageToolbarFlash() {
   rememberOriginalTitle();
   rememberOriginalFavicon();
-  const color = "#ff9f1c";
-  const tintedIcon = getTintedFavicon(color);
   const baseTitle = chromeToolbarState.originalTitle || "DizyChat";
-  const highlightTitle = `🟠 New message — ${baseTitle}`;
   const persist = shouldPersistMessageFlash();
 
-  const applyState = (isHighlight) => {
-    if (tintedIcon) {
-      if (isHighlight) {
-        setFaviconHref(tintedIcon);
-      } else {
-        restoreFavicon();
-      }
-    }
-    document.title = isHighlight ? highlightTitle : baseTitle;
-  };
+  if (chromeToolbarState.messageStopTimer) {
+    clearTimeout(chromeToolbarState.messageStopTimer);
+    chromeToolbarState.messageStopTimer = null;
+  }
 
-  applyState(true);
-  chromeToolbarState.messageStep = 0;
+  const next = chromeToolbarState.messageCount + 1;
+  const clamped = next > MAX_MISSED_MESSAGE_COUNT ? MAX_MISSED_MESSAGE_COUNT : next;
+  chromeToolbarState.messageCount = clamped;
 
-  chromeToolbarState.messageInterval = window.setInterval(() => {
-    chromeToolbarState.messageStep += 1;
-    applyState(chromeToolbarState.messageStep % 2 === 0);
-  }, 900);
+  const label = formatMissedMessageCount(clamped);
+  document.title = `(${label}) ${baseTitle}`;
+  const counterIcon = getMessageCountFavicon(clamped);
+  if (counterIcon) {
+    setFaviconHref(counterIcon);
+  }
 
   if (!persist) {
-    if (chromeToolbarState.messageStopTimer) {
-      clearTimeout(chromeToolbarState.messageStopTimer);
-    }
     chromeToolbarState.messageStopTimer = window.setTimeout(() => {
-      resetChromeToolbarAttention();
+      stopMessageToolbarFlash({ restore: true });
     }, 2200);
   }
 }
@@ -395,11 +423,10 @@ function startJoinToolbarBlink() {
 function triggerChromeToolbarAttention(type) {
   if (!type) return;
   if (type === "message") {
-    stopMessageToolbarFlash();
     cancelJoinBlink();
     startMessageToolbarFlash();
   } else if (type === "join") {
-    if (chromeToolbarState.messageInterval) return;
+    if (chromeToolbarState.messageCount > 0) return;
     startJoinToolbarBlink();
   }
 }
