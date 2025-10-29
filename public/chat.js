@@ -61,6 +61,7 @@ const userList = document.getElementById("user-list");
 const userCount = document.getElementById("user-count");
 const userListEmpty = document.getElementById("user-list-empty");
 const userContextMenu = document.getElementById("user-context-menu");
+const toolbar = document.querySelector("#chat-container > header");
 
 const appState = {
   isAdmin: false,
@@ -72,6 +73,7 @@ const appState = {
   users: [],
   moderationNotices: new Map(),
   contextMenuTrigger: null,
+  toolbarFlashTimer: null,
 };
 
 let searchDebounceTimer = null;
@@ -173,6 +175,37 @@ function normalizeReactions(list) {
   });
 
   return normalized;
+}
+
+const TOOLBAR_FLASH_CLASSES = ["toolbar-flash-message", "toolbar-flash-join"];
+
+function flashToolbar(type) {
+  if (!isViewingChat) return;
+  if (!toolbar) return;
+
+  const className =
+    type === "message"
+      ? "toolbar-flash-message"
+      : type === "join"
+        ? "toolbar-flash-join"
+        : "";
+  if (!className) return;
+
+  if (appState.toolbarFlashTimer) {
+    clearTimeout(appState.toolbarFlashTimer);
+    appState.toolbarFlashTimer = null;
+  }
+
+  toolbar.classList.remove(...TOOLBAR_FLASH_CLASSES);
+  // Force reflow so animation can restart when the class is re-added.
+  void toolbar.offsetWidth;
+  toolbar.classList.add(className);
+
+  const duration = className === "toolbar-flash-message" ? 1600 : 1200;
+  appState.toolbarFlashTimer = window.setTimeout(() => {
+    toolbar.classList.remove(className);
+    appState.toolbarFlashTimer = null;
+  }, duration);
 }
 
 function resetMessageReadObserver() {
@@ -786,13 +819,32 @@ function shouldSuppressModerationToast(key, cooldown = 4000) {
 
 function renderUserSidebar(users = []) {
   if (!userList) return;
+
+  const previousUsers = Array.isArray(appState.users) ? appState.users : [];
+  const previousNames = new Set(
+    previousUsers.map((entry) => entry?.username).filter(Boolean),
+  );
+  const hadUsersBefore = previousUsers.length > 0;
+
   const array = Array.isArray(users) ? users.filter(Boolean) : [];
+  const newJoiners = hadUsersBefore
+    ? array.filter((entry) => {
+        const name = entry?.username;
+        if (!name || name === window.currentUser) return false;
+        return !previousNames.has(name);
+      })
+    : [];
+
   appState.users = array;
   userList.innerHTML = "";
   closeActiveMenu();
 
   const now = Date.now();
   let total = 0;
+
+  if (newJoiners.length && isViewingChat) {
+    flashToolbar("join");
+  }
 
   array.forEach((entry) => {
     if (!entry || !entry.username) return;
@@ -3273,6 +3325,7 @@ socket.on("previous messages", (arr) => {
 socket.on("chat message", (msg) => {
   if (!isViewingChat) return;
   renderMessage(msg, { scrollBehavior: "smooth" });
+  flashToolbar("message");
 });
 
 socket.on("message status", ({ id, status }) => {
