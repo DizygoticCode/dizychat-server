@@ -75,7 +75,6 @@ const infowarsModal = document.getElementById("infowars-stream-modal");
 const infowarsModalHeader = infowarsModal?.querySelector?.(".stream-modal-header") || null;
 const infowarsCollapseBtn = document.getElementById("infowars-stream-collapse");
 const infowarsResizeHandle = infowarsModal?.querySelector?.(".stream-resize-handle") || null;
-const infowarsFrame = document.getElementById("infowars-stream-frame");
 
 const chromeToolbarState = {
   originalTitle: document.title || "DizyChat",
@@ -125,7 +124,6 @@ const psybinPlayerState = {
   lastVolume: 1,
 };
 
-const INFOWARS_STREAM_URL = "https://rumble.com/embed/v66kw07/?mref=1hdamo&mc=56tu4";
 const INFOWARS_ROOM_KEYWORD = "infowars";
 const INFOWARS_MODAL_MIN_WIDTH = 320;
 const INFOWARS_MODAL_MIN_HEIGHT = 180;
@@ -2936,9 +2934,6 @@ function setInfowarsStreamRoom(roomName) {
   infowarsModalState.visible = shouldShow;
 
   if (!shouldShow) {
-    if (infowarsFrame && infowarsFrame.src) {
-      infowarsFrame.src = "";
-    }
     infowarsModal.hidden = true;
     infowarsModal.setAttribute("aria-hidden", "true");
     infowarsModal.classList.remove("collapsed", "dragging", "resizing");
@@ -2954,10 +2949,6 @@ function setInfowarsStreamRoom(roomName) {
     }
     resetInfowarsPointerState();
     return;
-  }
-
-  if (infowarsFrame && !infowarsFrame.src) {
-    infowarsFrame.src = INFOWARS_STREAM_URL;
   }
 
   if (!Number.isFinite(infowarsModalState.left) || !Number.isFinite(infowarsModalState.top)) {
