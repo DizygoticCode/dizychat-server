@@ -3,20 +3,37 @@
   { "char": null, "name": "Badger Badger Badger", "url": "/emojis/custom/badger1.gif"},  
   { "char": null, "name": "Snake 1", "url": "/emojis/custom/snake1.gif"},  
   { "char": null, "name": "Ayaya", "url": "/emojis/custom/ayaya.gif"},
+  { "char": null, "name": "Ahegao", "url": "/emojis/custom/anime1.gif"},
   { "char": null, "name": "Doom", "url": "/emojis/custom/computer-kid-doom.gif"},
   { "char": null, "name": "Raver 1", "url": "/emojis/custom/raver1.gif"},  
   { "char": null, "name": "Ferret Dance", "url": "/emojis/custom/ferret1.gif"},
   { "char": null, "name": "Tunak", "url": "/emojis/custom/tunak1.gif"},
-  { "char": null, "name": "Derp Pepsi", "url": "/emojis/custom/pepsi1.gif"},
-  { "char": null, "name": "Derp Woody", "url": "/emojis/custom/woody-derp.gif"},
   { "char": null, "name": "Twerk Cat", "url": "/emojis/custom/cat-twerk.gif"},
   { "char": null, "name": "Horse Girl", "url": "/emojis/custom/horse-girl.gif"},
   { "char": null, "name": "DJ Cat", "url": "/emojis/custom/DJ-cat2.gif"},
   { "char": null, "name": "Teletubby JPONRY", "url": "/emojis/custom/teletubby-japan.gif"},  
-    { "char": null, "name": "Blobfish", "url": "/emojis/custom/blobfish1.gif"},
-  { "char": null, "name": "Illusion Mario", "url": "/emojis/custom/illusion-animation1.gif"}
+  { "char": null, "name": "Blobfish", "url": "/emojis/custom/blobfish1.gif"},
+  { "char": null, "name": "Horse Run", "url": "/emojis/custom/horse1.gif"},
+  { "char": null, "name": "Homer Hide", "url": "/emojis/custom/homer-bush.gif"},
+  { "char": null, "name": "Thinking", "url": "/emojis/custom/think1.gif"},
+  { "char": null, "name": "Elmo Burn", "url": "/emojis/custom/elmo-burn.gif"},
+  { "char": null, "name": "Sick Burn", "url": "/emojis/custom/sick-burn.gif"},
+  { "char": null, "name": "Musk Rolled", "url": "/emojis/custom/rick1.gif"},
+  { "char": null, "name": "Doge Mining", "url": "/emojis/custom/doge-mining.gif"},
+  { "char": null, "name": "Titty Explosion", "url": "/emojis/custom/titty-explosion.gif"},
+  { "char": null, "name": "Illusion Mario", "url": "/emojis/custom/illusion-animation1.gif"},
+  { "char": null, "name": "Illusion Spiral", "url": "/emojis/custom/illusion-animation2.gif"}
   ],  
-    "Shrooms": [
+  "DERP": [
+    { "char": null, "name": "Derp Pepsi", "url": "/emojis/custom/pepsi1.gif"},
+    { "char": null, "name": "Derpbob", "url": "/emojis/custom/derpbob.gif"},
+    { "char": null, "name": "Derp Dog", "url": "/emojis/custom/derp-dog.gif"},
+    { "char": null, "name": "Derp South Park", "url": "/emojis/custom/derp-sp.gif"},
+    { "char": null, "name": "Derp Pepe", "url": "/emojis/custom/derp-pepe.gif"},
+    { "char": null, "name": "Derpiplier", "url": "/emojis/custom/derpiplier.gif"},
+    { "char": null, "name": "Derp Woody", "url": "/emojis/custom/woody-derp.gif"}
+  ],
+  "Shrooms": [
   { "char": null, "name": "Shroom 1", "url": "/emojis/custom/mushroom1.gif"},
   { "char": null, "name": "Shroom 2", "url": "/emojis/custom/mushroom2.gif"},
   { "char": null, "name": "Shroom 3", "url": "/emojis/custom/mushroom3.gif"},
@@ -30,11 +47,12 @@
   { "char": null, "name": "Shroom 11", "url": "/emojis/custom/mushroom11.gif"},
   { "char": null, "name": "Shroom 12", "url": "/emojis/custom/mushroom12.gif"}
   ],  
-      "Cats": [
+  "Cats": [
   { "char": null, "name": "Acid 1", "url": "/emojis/custom/cat-acid.gif"},
   { "char": null, "name": "Acid 2", "url": "/emojis/custom/cat-acid2.gif"},
   { "char": null, "name": "Acid 3", "url": "/emojis/custom/cat-acid3.gif"},
   { "char": null, "name": "Blep Boing", "url": "/emojis/custom/cat-boing.gif"},
+  { "char": null, "name": "Thirsty", "url": "/emojis/custom/cat-thirsty.gif"},
   { "char": null, "name": "Cuckoo", "url": "/emojis/custom/cat-cuckoo.gif"},
   { "char": null, "name": "Cute", "url": "/emojis/custom/cat-cute.gif"},
   { "char": null, "name": "Derp", "url": "/emojis/custom/cat-derp1.gif"},
@@ -50,16 +68,22 @@
   { "char": null, "name": "Raver 1", "url": "/emojis/custom/cat-raver.gif"},
   { "char": null, "name": "Raver 2", "url": "/emojis/custom/cat-raver2.gif"},
   { "char": null, "name": "Shaq Wiggle", "url": "/emojis/custom/cat-shaq-wiggle.gif"},
+  { "char": null, "name": "Cat Sabbath", "url": "/emojis/custom/cat-sabbath.gif"},
   { "char": null, "name": "Stare", "url": "/emojis/custom/cat-stare.gif"}
 
   ],  
-      "Cannibal Fruit": [
+  "Cannibal Fruit": [
   { "char": null, "name": "Cannibal Banana", "url": "/emojis/custom/cannibal-banana.gif"},
   { "char": null, "name": "Cannibal Orange", "url": "/emojis/custom/cannibal-orange.gif"},
   { "char": null, "name": "Cannibal Peach", "url": "/emojis/custom/cannibal-peach.gif"},
   { "char": null, "name": "Cannibal Pineapple", "url": "/emojis/custom/cannibal-pineapple.gif"}
   ],  
-    "Trippy": [
+  "Alex Jones": [
+  { "char": null, "name": "Alex 1", "url": "/emojis/custom/alex1.gif"},
+  { "char": null, "name": "Alex 2", "url": "/emojis/custom/alex2.gif"},
+  { "char": null, "name": "Alex 3", "url": "/emojis/custom/alex3.gif"}
+  ],  
+  "Trippy": [
   { "char": null, "name": "Trippy 1", "url": "/emojis/custom/trippy1.gif"},
   { "char": null, "name": "Trippy 2", "url": "/emojis/custom/trippy2.gif"},
   { "char": null, "name": "Trippy 3", "url": "/emojis/custom/trippy3.gif"},
@@ -94,7 +118,7 @@
   { "char": null, "name": "Trippy 32", "url": "/emojis/custom/trippy32.gif"},
   { "char": null, "name": "Trippy 33", "url": "/emojis/custom/trippy33.gif"}
   ],
-      "Geometric": [
+  "Geometric": [
   { "char": null, "name": "Geometric 1", "url": "/emojis/custom/geometric1.gif"},
   { "char": null, "name": "Geometric 2", "url": "/emojis/custom/geometric2.gif"},
   { "char": null, "name": "Geometric 3", "url": "/emojis/custom/geometric3.gif"},
@@ -119,6 +143,10 @@
   { "char": null, "name": "Geometric 23", "url": "/emojis/custom/geometric23.gif"},
   { "char": null, "name": "Geometric 24", "url": "/emojis/custom/geometric24.gif"},
   { "char": null, "name": "Geometric 25", "url": "/emojis/custom/geometric25.gif"}
+  ],
+  "Images": [
+  { "char": null, "name": "Dizy Cat", "url": "/emojis/custom/dizycat.png"},
+  { "char": null, "name": "DERP Sign", "url": "/emojis/custom/derp-sign.png"}
   ],
   "Faces": [
     { "char": "😀", "name": "grinning" },
