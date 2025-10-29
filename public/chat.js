@@ -113,7 +113,7 @@ const scrollLockState = {
 };
 
 const PSYBIN_RADIO_ROOM = "Psybin Radio";
-const PSYBIN_RADIO_STREAM_URL = "https://www.psyb.in:8000/;";
+const PSYBIN_RADIO_STREAM_URL = "https://www.psyb.in:8000/";
 const PSYBIN_RADIO_ROOM_CANONICAL = PSYBIN_RADIO_ROOM.toLowerCase();
 const psybinPlayerState = {
   initialised: false,
