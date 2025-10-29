@@ -50,6 +50,7 @@ const passwordInput = document.getElementById("room-password");
 const adminPasswordInput = document.getElementById("admin-password");
 const roomName = document.getElementById("room-name");
 const themeToggle = document.getElementById("toggle-theme");
+const soundToggleBtn = document.getElementById("toggle-sounds");
 const emojiPicker = document.getElementById("emoji-picker");
 let emojiPickerController = null;
 const leaveBtn = document.getElementById("leave-btn");
@@ -79,6 +80,13 @@ const chromeToolbarState = {
   joinTimeout: null,
   tintedIcons: new Map(),
   messageCountIcons: new Map(),
+};
+
+const SOUND_NOTIFICATION_STORAGE_KEY = "dizychat.soundNotifications";
+const NOTIFICATION_SOUND_SRC = "/newmessage.wav";
+const soundNotificationState = {
+  enabled: false,
+  audio: null,
 };
 
 const appState = {
@@ -481,6 +489,114 @@ function flashToolbar(type) {
   }, duration);
 
   triggerChromeToolbarAttention(type);
+}
+
+function ensureNotificationAudio() {
+  if (soundNotificationState.audio) return soundNotificationState.audio;
+  try {
+    const audio = new Audio(NOTIFICATION_SOUND_SRC);
+    audio.preload = "auto";
+    soundNotificationState.audio = audio;
+  } catch (error) {
+    console.warn("[Sound] Unable to initialise notification audio", error);
+    soundNotificationState.audio = null;
+  }
+  return soundNotificationState.audio;
+}
+
+function updateSoundToggleButton() {
+  if (!soundToggleBtn) return;
+  const enabled = Boolean(soundNotificationState.enabled);
+  const label = enabled ? "Disable sound notifications" : "Enable sound notifications";
+
+  soundToggleBtn.setAttribute("aria-pressed", String(enabled));
+  soundToggleBtn.setAttribute("aria-label", label);
+  soundToggleBtn.title = label;
+
+  const icon = soundToggleBtn.querySelector(".icon");
+  if (icon) {
+    icon.textContent = enabled ? "🔊" : "🔈";
+  }
+
+  const srOnly = soundToggleBtn.querySelector(".sr-only");
+  if (srOnly) {
+    srOnly.textContent = label;
+  }
+}
+
+function persistSoundPreference(enabled) {
+  try {
+    localStorage.setItem(
+      SOUND_NOTIFICATION_STORAGE_KEY,
+      enabled ? "on" : "off"
+    );
+  } catch {
+    /* ignore persistence failures */
+  }
+}
+
+function playNotificationSound({ force = false } = {}) {
+  if (!force && !soundNotificationState.enabled) return;
+  const audio = ensureNotificationAudio();
+  if (!audio) return;
+
+  try {
+    audio.currentTime = 0;
+  } catch {
+    /* ignore reset errors */
+  }
+
+  audio
+    .play()
+    .catch((err) => {
+      if (!force) {
+        console.warn("[Sound] Unable to play notification", err);
+      }
+    });
+}
+
+function shouldPlayNotificationSound(msg) {
+  if (!msg || typeof msg !== "object") return true;
+  const sender = typeof msg.user === "string" ? msg.user.trim() : "";
+  if (!sender) return true;
+  const currentUser = typeof window.currentUser === "string" ? window.currentUser.trim() : "";
+  if (!currentUser) return true;
+  return sender.toLowerCase() !== currentUser.toLowerCase();
+}
+
+function maybePlayNotificationSound(msg) {
+  if (!soundNotificationState.enabled) return;
+  if (!shouldPlayNotificationSound(msg)) return;
+  playNotificationSound();
+}
+
+function initSoundNotifications() {
+  try {
+    const stored = localStorage.getItem(SOUND_NOTIFICATION_STORAGE_KEY);
+    soundNotificationState.enabled = stored === "on";
+  } catch {
+    soundNotificationState.enabled = false;
+  }
+
+  if (!soundToggleBtn) {
+    if (soundNotificationState.enabled) {
+      ensureNotificationAudio();
+    }
+    return;
+  }
+
+  ensureNotificationAudio();
+  updateSoundToggleButton();
+
+  soundToggleBtn.addEventListener("click", () => {
+    soundNotificationState.enabled = !soundNotificationState.enabled;
+    persistSoundPreference(soundNotificationState.enabled);
+    updateSoundToggleButton();
+
+    if (soundNotificationState.enabled) {
+      playNotificationSound({ force: true });
+    }
+  });
 }
 
 function resetMessageReadObserver() {
@@ -2912,6 +3028,9 @@ if (copyJoinLinkBtn) {
   });
 }
 
+// ------------------- Sound Notifications -------------------
+initSoundNotifications();
+
 // Listen for successful room join
 socket.on("join room success", () => {
   clearReplyTarget();
@@ -3870,6 +3989,7 @@ socket.on("previous messages", (arr) => {
 socket.on("chat message", (msg) => {
   if (!isViewingChat) return;
   renderMessage(msg, { scrollBehavior: "smooth", respectScrollLock: true });
+  maybePlayNotificationSound(msg);
   flashToolbar("message");
 });
 
