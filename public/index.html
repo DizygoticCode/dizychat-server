@@ -20,7 +20,14 @@
       <input id="username-input" placeholder="Choose your username" />
       <input id="room-input" placeholder="Enter room name" />
       <input id="room-password" type="password" placeholder="Room password (optional)" />
-      <input id="admin-password" type="password" placeholder="Admin Password" style="display:none;" autocomplete="current-password" />
+      <input
+        id="admin-password"
+        type="password"
+        placeholder="Admin Password"
+        hidden
+        aria-hidden="true"
+        autocomplete="current-password"
+      />
       <button id="join-btn">Join Chat</button>
     </div>
 

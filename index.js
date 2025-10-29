@@ -24,8 +24,65 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 10000;
 
 // ---------------- Admin ----------------
-const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'Dizygotic';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+const normaliseAdminUsername = (value) =>
+  typeof value === 'string' ? value.trim().toLowerCase() : '';
+
+const buildAdminCredentials = () => {
+  const entries = new Map();
+
+  const addCredential = (username, password) => {
+    if (typeof username !== 'string' || typeof password !== 'string') return;
+    const trimmedUsername = username.trim();
+    const trimmedPassword = password.trim();
+    if (!trimmedUsername || !trimmedPassword) return;
+    const key = normaliseAdminUsername(trimmedUsername);
+    if (!key) return;
+    entries.set(key, {
+      username: trimmedUsername,
+      password: trimmedPassword,
+    });
+  };
+
+  // ADMIN_CREDENTIALS format: "username:password,OtherUser:otherPassword"
+  const rawList = process.env.ADMIN_CREDENTIALS;
+  if (typeof rawList === 'string' && rawList.trim()) {
+    rawList
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .forEach((entry) => {
+        const [rawUsername, ...rest] = entry.split(':');
+        if (!rawUsername || rest.length === 0) return;
+        const candidatePassword = rest.join(':');
+        addCredential(rawUsername, candidatePassword);
+      });
+  }
+
+  const envAdminUsername = process.env.ADMIN_USERNAME;
+  const envAdminPassword = process.env.ADMIN_PASSWORD;
+  if (envAdminUsername && envAdminPassword) {
+    addCredential(envAdminUsername, envAdminPassword);
+  }
+
+  if (!entries.size && envAdminPassword) {
+    addCredential(envAdminUsername || 'Dizygotic', envAdminPassword);
+  }
+
+  return entries;
+};
+
+const adminCredentials = buildAdminCredentials();
+
+const resolveAdminCredential = (username, password) => {
+  if (typeof password !== 'string' || !password.trim()) return null;
+  const key = normaliseAdminUsername(username);
+  if (!key) return null;
+  const entry = adminCredentials.get(key);
+  if (entry && entry.password === password.trim()) {
+    return entry;
+  }
+  return null;
+};
 
 // ---------------- MongoDB ----------------
 const mongoUri = process.env.MONGO_URI;
@@ -687,11 +744,12 @@ io.on('connection', socket => {
   // ----- Admin Auth (post-join) -----
   socket.on('admin auth', ({ room, username, adminPassword }) => {
     try {
-      const _user = username || socket.username;
-      if (_user === ADMIN_USERNAME && adminPassword && adminPassword === ADMIN_PASSWORD) {
+      const candidateUser = username || socket.username;
+      const resolvedAdmin = resolveAdminCredential(candidateUser, adminPassword);
+      if (resolvedAdmin) {
         socket.isAdmin = true;
         socket.emit('admin status', { isAdmin: true });
-        console.log('[Admin] Authenticated', _user);
+        console.log('[Admin] Authenticated', resolvedAdmin.username);
       } else {
         socket.isAdmin = false;
         socket.emit('admin status', { isAdmin: false });
