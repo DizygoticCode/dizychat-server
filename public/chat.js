@@ -75,6 +75,8 @@ const infowarsModal = document.getElementById("infowars-stream-modal");
 const infowarsModalHeader = infowarsModal?.querySelector?.(".stream-modal-header") || null;
 const infowarsCollapseBtn = document.getElementById("infowars-stream-collapse");
 const infowarsResizeHandle = infowarsModal?.querySelector?.(".stream-resize-handle") || null;
+const infowarsStreamFrame = document.getElementById("infowars-stream-frame");
+let infowarsStreamObserver = null;
 
 const chromeToolbarState = {
   originalTitle: document.title || "DizyChat",
@@ -147,6 +149,35 @@ const infowarsModalState = {
   left: null,
   top: null,
 };
+
+function syncInfowarsStreamEmbedSize() {
+  if (!infowarsStreamFrame) return;
+
+  const rumbleContainer = infowarsStreamFrame.querySelector?.(".rumble") || null;
+  const iframe =
+    rumbleContainer?.querySelector?.("iframe") ||
+    infowarsStreamFrame.querySelector?.("iframe") ||
+    null;
+
+  if (rumbleContainer) {
+    rumbleContainer.style.width = "100%";
+    rumbleContainer.style.height = "100%";
+    rumbleContainer.style.maxWidth = "none";
+    rumbleContainer.style.maxHeight = "none";
+    rumbleContainer.style.padding = "0";
+    rumbleContainer.style.position = "relative";
+  }
+
+  if (iframe) {
+    iframe.removeAttribute?.("width");
+    iframe.removeAttribute?.("height");
+    iframe.style.width = "100%";
+    iframe.style.height = "100%";
+    iframe.style.maxWidth = "none";
+    iframe.style.maxHeight = "none";
+    iframe.style.display = "block";
+  }
+}
 
 const MESSAGE_STATUS_VALUES = new Set(["sent", "delivered", "read"]);
 let messageReadObserver = null;
@@ -2896,6 +2927,8 @@ function applyInfowarsModalLayout({ clampPosition = true } = {}) {
   infowarsModal.classList.toggle("collapsed", Boolean(infowarsModalState.collapsed));
   infowarsModal.classList.toggle("dragging", Boolean(infowarsModalState.dragging));
   infowarsModal.classList.toggle("resizing", Boolean(infowarsModalState.resizing));
+
+  syncInfowarsStreamEmbedSize();
 }
 
 function updateInfowarsCollapseButton() {
@@ -2916,6 +2949,7 @@ function toggleInfowarsCollapse(force) {
   infowarsModalState.collapsed = nextState;
   updateInfowarsCollapseButton();
   applyInfowarsModalLayout();
+  syncInfowarsStreamEmbedSize();
 }
 
 function resetInfowarsPointerState() {
@@ -2960,6 +2994,7 @@ function setInfowarsStreamRoom(roomName) {
   updateInfowarsCollapseButton();
   infowarsModal.hidden = false;
   infowarsModal.setAttribute("aria-hidden", "false");
+  syncInfowarsStreamEmbedSize();
 }
 
 function handleInfowarsPointerMove(event) {
@@ -3016,6 +3051,8 @@ function handleInfowarsPointerMove(event) {
     if (!infowarsModalState.collapsed) {
       infowarsModal.style.height = `${height}px`;
     }
+
+    syncInfowarsStreamEmbedSize();
   }
 }
 
@@ -3098,6 +3135,19 @@ if (infowarsCollapseBtn) {
     event.stopPropagation();
     toggleInfowarsCollapse();
   });
+}
+
+if (infowarsStreamFrame && typeof MutationObserver === "function") {
+  infowarsStreamObserver = new MutationObserver(() => {
+    syncInfowarsStreamEmbedSize();
+  });
+
+  infowarsStreamObserver.observe(infowarsStreamFrame, {
+    childList: true,
+    subtree: true,
+  });
+
+  syncInfowarsStreamEmbedSize();
 }
 
 if (infowarsResizeHandle && infowarsModal) {
