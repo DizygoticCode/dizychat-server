@@ -148,8 +148,8 @@ const infowarsModalState = {
   height: 360,
   left: null,
   top: null,
-  naturalWidth: 640,
-  naturalHeight: 360,
+  naturalWidth: null,
+  naturalHeight: null,
   hasCustomSize: false,
 };
 
@@ -159,147 +159,25 @@ function parsePositiveNumber(value) {
   return Number.isFinite(number) && number > 0 ? number : null;
 }
 
-function parsePixelSize(value) {
-  if (value === null || value === undefined) return null;
-  let source = value;
-  if (typeof source === "string") {
-    const trimmed = source.trim();
-    if (!trimmed) return null;
-    const lower = trimmed.toLowerCase();
-    if (
-      lower.includes("%") ||
-      lower.includes("calc(") ||
-      lower.endsWith("vw") ||
-      lower.endsWith("vh")
-    ) {
-      return null;
-    }
-    source = trimmed;
-  }
-  const parsed = parsePositiveNumber(source);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function extractElementDimension(element, dimension) {
-  if (!element) return null;
-  const lowerDimension = String(dimension || "").toLowerCase();
-  if (!lowerDimension) return null;
-
-  const candidates = [];
-
-  if (typeof element.getAttribute === "function") {
-    const direct = element.getAttribute(dimension);
-    if (direct !== null) {
-      candidates.push(direct);
-    }
-
-    if (typeof element.getAttributeNames === "function") {
-      try {
-        const attributeNames = element.getAttributeNames();
-        if (Array.isArray(attributeNames)) {
-          attributeNames.forEach((name) => {
-            if (!name) return;
-            if (name === dimension) return;
-            if (!name.toLowerCase().includes(lowerDimension)) return;
-            const value = element.getAttribute(name);
-            if (value !== null) {
-              candidates.push(value);
-            }
-          });
-        }
-      } catch {
-        /* ignore */
-      }
-    }
-  }
-
-  const dataset = element.dataset || null;
-  if (dataset) {
-    try {
-      Object.entries(dataset).forEach(([key, value]) => {
-        if (!key || !value) return;
-        if (!key.toLowerCase().includes(lowerDimension)) return;
-        candidates.push(value);
-      });
-    } catch {
-      /* ignore */
-    }
-  }
-
-  if (element.style) {
-    const styleValue = element.style[dimension];
-    if (styleValue) {
-      candidates.push(styleValue);
-    }
-    const cssValue = element.style.getPropertyValue?.(dimension);
-    if (cssValue && cssValue !== styleValue) {
-      candidates.push(cssValue);
-    }
-  }
-
-  for (const candidate of candidates) {
-    const parsed = parsePixelSize(candidate);
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
-  }
-
-  return null;
-}
-
 function updateInfowarsModalNaturalSize(width, height) {
   if (!infowarsModal) return;
 
-  const parsedWidth = parsePixelSize(width);
-  const parsedHeight = parsePixelSize(height);
+  const parsedWidth = parsePositiveNumber(width);
+  const parsedHeight = parsePositiveNumber(height);
 
-  let resolvedWidth = Number.isFinite(parsedWidth)
-    ? parsedWidth
-    : infowarsModalState.naturalWidth;
-  let resolvedHeight = Number.isFinite(parsedHeight)
-    ? parsedHeight
-    : infowarsModalState.naturalHeight;
-
-  if (!Number.isFinite(resolvedWidth) && Number.isFinite(resolvedHeight)) {
-    const ratio =
-      Number.isFinite(infowarsModalState.naturalWidth) &&
-      Number.isFinite(infowarsModalState.naturalHeight)
-        ? infowarsModalState.naturalWidth / infowarsModalState.naturalHeight
-        : null;
-    if (Number.isFinite(ratio) && ratio > 0) {
-      resolvedWidth = resolvedHeight * ratio;
-    }
-  } else if (!Number.isFinite(resolvedHeight) && Number.isFinite(resolvedWidth)) {
-    const ratio =
-      Number.isFinite(infowarsModalState.naturalWidth) &&
-      Number.isFinite(infowarsModalState.naturalHeight)
-        ? infowarsModalState.naturalHeight / infowarsModalState.naturalWidth
-        : null;
-    if (Number.isFinite(ratio) && ratio > 0) {
-      resolvedHeight = resolvedWidth * ratio;
-    }
-  }
-
-  if (!Number.isFinite(resolvedWidth) || !Number.isFinite(resolvedHeight)) {
+  if (!Number.isFinite(parsedWidth) || !Number.isFinite(parsedHeight)) {
     return;
   }
 
-  const naturalWidthChanged = resolvedWidth !== infowarsModalState.naturalWidth;
-  const naturalHeightChanged = resolvedHeight !== infowarsModalState.naturalHeight;
-
-  if (naturalWidthChanged) {
-    infowarsModalState.naturalWidth = resolvedWidth;
-  }
-  if (naturalHeightChanged) {
-    infowarsModalState.naturalHeight = resolvedHeight;
-  }
+  infowarsModalState.naturalWidth = parsedWidth;
+  infowarsModalState.naturalHeight = parsedHeight;
 
   if (infowarsModalState.hasCustomSize) {
     return;
   }
 
-  const nextWidth = Math.max(resolvedWidth, INFOWARS_MODAL_MIN_WIDTH);
-  const nextHeight = Math.max(resolvedHeight, INFOWARS_MODAL_MIN_HEIGHT);
+  const nextWidth = Math.max(parsedWidth, INFOWARS_MODAL_MIN_WIDTH);
+  const nextHeight = Math.max(parsedHeight, INFOWARS_MODAL_MIN_HEIGHT);
   const widthChanged = nextWidth !== infowarsModalState.width;
   const heightChanged = nextHeight !== infowarsModalState.height;
 
@@ -321,33 +199,12 @@ function syncInfowarsStreamEmbedSize() {
     infowarsStreamFrame.querySelector?.("iframe") ||
     null;
 
-  const candidateElements = [
-    rumbleContainer,
-    rumbleContainer?.firstElementChild || null,
-    iframe,
-    iframe?.parentElement || null,
-  ].filter(Boolean);
-
-  let naturalWidth = null;
-  let naturalHeight = null;
-
-  candidateElements.forEach((element) => {
-    if (!Number.isFinite(naturalWidth)) {
-      const widthValue = extractElementDimension(element, "width");
-      if (Number.isFinite(widthValue)) {
-        naturalWidth = widthValue;
-      }
+  if (iframe) {
+    const originalWidth = iframe.getAttribute?.("width");
+    const originalHeight = iframe.getAttribute?.("height");
+    if (originalWidth || originalHeight) {
+      updateInfowarsModalNaturalSize(originalWidth, originalHeight);
     }
-    if (!Number.isFinite(naturalHeight)) {
-      const heightValue = extractElementDimension(element, "height");
-      if (Number.isFinite(heightValue)) {
-        naturalHeight = heightValue;
-      }
-    }
-  });
-
-  if (Number.isFinite(naturalWidth) || Number.isFinite(naturalHeight)) {
-    updateInfowarsModalNaturalSize(naturalWidth, naturalHeight);
   }
 
   if (rumbleContainer) {
