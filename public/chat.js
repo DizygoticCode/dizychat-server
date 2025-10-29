@@ -1135,6 +1135,10 @@ function toggleMenu(menu, toggle) {
   closeActiveMenu();
   if (!isOpen) {
     menu.classList.add("open");
+    const messageNode = menu.closest(".message");
+    if (messageNode) {
+      messageNode.classList.add("menu-open");
+    }
     if (toggle) toggle.setAttribute("aria-expanded", "true");
     appState.activeMenu = menu;
   }
@@ -1145,6 +1149,10 @@ function closeActiveMenu(options = {}) {
   const { restoreFocus = false } = options;
   const menu = appState.activeMenu;
   menu.classList.remove("open");
+  const messageNode = menu.closest(".message");
+  if (messageNode) {
+    messageNode.classList.remove("menu-open");
+  }
 
   if (menu === userContextMenu) {
     userContextMenu.setAttribute("hidden", "");
