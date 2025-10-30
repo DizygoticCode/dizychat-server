@@ -1759,8 +1759,7 @@ function renderUserSidebar(users = []) {
       if (active) hasActiveMuteCountdowns = true;
     }
 
-    const canInteract =
-      !isSelf && (appState.isAdmin || (!isAdmin && !isSelf));
+    const canInteract = appState.isAdmin && !isSelf && !isAdmin;
 
     if (canInteract) {
       item.classList.add("actionable");
@@ -1834,7 +1833,7 @@ function openUserContextMenu(trigger, user) {
   const isBlocked = Boolean(user.isBlocked);
 
   const options = [];
-  const canMute = !isSelf && (appState.isAdmin || (!isTargetAdmin && !isSelf));
+  const canMute = appState.isAdmin && !isSelf && !isTargetAdmin;
 
   if (canMute) {
     if (isMuted) {
@@ -1846,7 +1845,7 @@ function openUserContextMenu(trigger, user) {
     }
   }
 
-  if (appState.isAdmin && !isSelf) {
+  if (appState.isAdmin && !isSelf && !isTargetAdmin) {
     if (isBlocked) {
       options.push({ action: "unblock", label: "Unblock" });
     } else {
