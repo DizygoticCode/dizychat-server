@@ -5374,11 +5374,39 @@ function autoEmbed(node) {
 
   if (hasTenorLink && textEl) {
     const tenorRegex = /https?:\/\/(?:media\.)?tenor\.com\/\S+/i;
-    const parts = textEl.textContent.split(/(\s+)/);
-    const filtered = parts.filter((segment) => !tenorRegex.test(segment.trim()));
-    const cleaned = filtered.join("").trim();
-    textEl.textContent = cleaned;
-    if (!cleaned) {
+    const tenorRegexGlobal = /https?:\/\/(?:media\.)?tenor\.com\/\S+/gi;
+
+    const anchors = textEl.querySelectorAll("a");
+    anchors.forEach((anchor) => {
+      const href = anchor.getAttribute("href") || "";
+      const anchorText = anchor.textContent || "";
+      if (tenorRegex.test(href) || tenorRegex.test(anchorText.trim())) {
+        anchor.remove();
+      }
+    });
+
+    const childNodes = Array.from(textEl.childNodes);
+    childNodes.forEach((node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const original = node.textContent || "";
+        const replaced = original.replace(tenorRegexGlobal, " ");
+        if (replaced !== original) {
+          const normalized = replaced.replace(/\s{2,}/g, " ").trim();
+          if (normalized) {
+            node.textContent = normalized;
+          } else if (node.parentNode) {
+            node.parentNode.removeChild(node);
+          }
+        }
+      }
+    });
+
+    textEl.normalize();
+
+    const hasTextContent = (textEl.textContent || "").trim().length > 0;
+    const hasNonBrChild = Array.from(textEl.children).some((child) => child.tagName !== "BR");
+
+    if (!hasTextContent && !hasNonBrChild) {
       textEl.style.display = "none";
     } else {
       textEl.style.removeProperty("display");
