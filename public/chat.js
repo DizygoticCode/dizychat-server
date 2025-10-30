@@ -71,7 +71,6 @@ const psybinVolumeInput = document.getElementById("psybin-volume");
 const scrollToLatestBtn = document.getElementById("scroll-to-latest");
 const scrollToLatestCount = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-count") || null;
 const scrollToLatestSrText = scrollToLatestBtn?.querySelector?.(".sr-only") || null;
-const chatContent = document.getElementById("chat-content");
 const infowarsModal = document.getElementById("infowars-stream-modal");
 const infowarsModalHeader = infowarsModal?.querySelector?.(".stream-modal-header") || null;
 const infowarsCollapseBtn = document.getElementById("infowars-stream-collapse");
@@ -233,8 +232,7 @@ let searchDebounceTimer = null;
 let soundCloudApiPromise = null;
 
 const SCROLL_LOCK_THRESHOLD_PX = 8;
-const SCROLL_LOCK_INDICATOR_THRESHOLD_PX = 24;
-const DEFAULT_SCROLL_INDICATOR_OFFSET_PX = 88;
+const SCROLL_LOCK_INDICATOR_THRESHOLD_PX = 2;
 const MAX_MISSED_MESSAGE_COUNT = 999;
 const scrollLockState = {
   locked: false,
@@ -3021,40 +3019,6 @@ function getMessagesBottomPadding() {
   const styles = window.getComputedStyle(messages);
   const padding = styles?.paddingBottom ? Number.parseFloat(styles.paddingBottom) : 0;
   return Number.isFinite(padding) ? padding : 0;
-}
-
-function getComposerVerticalSpace() {
-  if (!form) return 0;
-  const baseHeight = form.offsetHeight || 0;
-  if (baseHeight <= 0 || typeof window?.getComputedStyle !== "function") {
-    return baseHeight;
-  }
-
-  const styles = window.getComputedStyle(form);
-  const marginTop = Number.parseFloat(styles?.marginTop || "0");
-  const marginBottom = Number.parseFloat(styles?.marginBottom || "0");
-  const top = Number.isFinite(marginTop) ? marginTop : 0;
-  const bottom = Number.isFinite(marginBottom) ? marginBottom : 0;
-  return Math.max(0, baseHeight + top + bottom);
-}
-
-function getReplyPreviewHeight() {
-  if (!replyPreviewBar || replyPreviewBar.hasAttribute("hidden")) return 0;
-  return replyPreviewBar.offsetHeight || 0;
-}
-
-function updateScrollIndicatorOffset() {
-  if (!chatContent || !scrollToLatestBtn) return;
-
-  const composerSpace = getComposerVerticalSpace();
-  const replySpace = getReplyPreviewHeight();
-  const baseGap = 24;
-  const computed = Math.max(
-    DEFAULT_SCROLL_INDICATOR_OFFSET_PX,
-    Math.round(composerSpace + replySpace + baseGap)
-  );
-
-  chatContent.style.setProperty("--scroll-indicator-offset", `${computed}px`);
 }
 
 function getMessagesDistanceFromBottom() {
