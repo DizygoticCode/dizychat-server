@@ -721,9 +721,9 @@ body:not(.dark) .header-right button#copy-join-link:hover {
 
 .scroll-to-latest {
   position: absolute;
-  right: 24px;
-  bottom: calc(env(safe-area-inset-bottom) + 84px);
-  transform: none;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
   width: 48px;
   height: 48px;
   border-radius: 50%;
@@ -749,12 +749,12 @@ body:not(.dark) .header-right button#copy-join-link:hover {
 }
 
 .scroll-to-latest:hover {
-  transform: translateY(-2px);
+  transform: translate(-50%, -2px);
   box-shadow: 0 16px 28px rgba(7, 50, 20, 0.4);
 }
 
 .scroll-to-latest:active {
-  transform: translateY(0);
+  transform: translate(-50%, 0);
   box-shadow: 0 10px 20px rgba(7, 50, 20, 0.3);
 }
 
@@ -791,8 +791,7 @@ body.dark .scroll-to-latest {
   .scroll-to-latest {
     width: 42px;
     height: 42px;
-    right: 16px;
-    bottom: calc(env(safe-area-inset-bottom) + 72px);
+    bottom: 8px;
     font-size: 0.9rem;
   }
 }

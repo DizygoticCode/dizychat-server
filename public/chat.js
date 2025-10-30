@@ -232,7 +232,7 @@ let searchDebounceTimer = null;
 let soundCloudApiPromise = null;
 
 const SCROLL_LOCK_THRESHOLD_PX = 8;
-const SCROLL_LOCK_INDICATOR_THRESHOLD_PX = 12;
+const SCROLL_LOCK_INDICATOR_THRESHOLD_PX = 2;
 const MAX_MISSED_MESSAGE_COUNT = 999;
 const scrollLockState = {
   locked: false,
