@@ -69,8 +69,8 @@ const psybinPlayBtn = document.getElementById("psybin-play");
 const psybinMuteBtn = document.getElementById("psybin-mute");
 const psybinVolumeInput = document.getElementById("psybin-volume");
 const scrollToLatestBtn = document.getElementById("scroll-to-latest");
-const scrollToLatestLabel = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-label") || null;
 const scrollToLatestCount = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-count") || null;
+const scrollToLatestSrText = scrollToLatestBtn?.querySelector?.(".sr-only") || null;
 const infowarsModal = document.getElementById("infowars-stream-modal");
 const infowarsModalHeader = infowarsModal?.querySelector?.(".stream-modal-header") || null;
 const infowarsCollapseBtn = document.getElementById("infowars-stream-collapse");
@@ -232,6 +232,7 @@ let searchDebounceTimer = null;
 let soundCloudApiPromise = null;
 
 const SCROLL_LOCK_THRESHOLD_PX = 8;
+const SCROLL_LOCK_INDICATOR_THRESHOLD_PX = 12;
 const MAX_MISSED_MESSAGE_COUNT = 999;
 const scrollLockState = {
   locked: false,
@@ -3004,9 +3005,18 @@ async function copyTextToClipboard(text) {
   return copied;
 }
 
+function getMessagesBottomPadding() {
+  if (!messages || typeof window?.getComputedStyle !== "function") return 0;
+  const styles = window.getComputedStyle(messages);
+  const padding = styles?.paddingBottom ? Number.parseFloat(styles.paddingBottom) : 0;
+  return Number.isFinite(padding) ? padding : 0;
+}
+
 function getMessagesDistanceFromBottom() {
   if (!messages) return 0;
-  return Math.max(0, messages.scrollHeight - messages.scrollTop - messages.clientHeight);
+  const bottomPadding = getMessagesBottomPadding();
+  const distance = messages.scrollHeight - messages.scrollTop - messages.clientHeight - bottomPadding;
+  return Math.max(0, distance);
 }
 
 function isMessagesNearBottom(distance = SCROLL_LOCK_THRESHOLD_PX) {
@@ -3015,23 +3025,25 @@ function isMessagesNearBottom(distance = SCROLL_LOCK_THRESHOLD_PX) {
 }
 
 function formatMissedMessageCount(count) {
-  if (count >= 100) return "99+";
+  if (count >= 100) return "+99";
   return String(count);
 }
 
 function updateScrollLockIndicator() {
   if (!scrollToLatestBtn) return;
 
-  const isAtBottom = isMessagesNearBottom(0);
+  const isAtBottom = isMessagesNearBottom(SCROLL_LOCK_INDICATOR_THRESHOLD_PX);
 
   if (!scrollLockState.locked || isAtBottom) {
     scrollToLatestBtn.hidden = true;
     scrollToLatestBtn.setAttribute("aria-hidden", "true");
     scrollToLatestBtn.classList.remove("has-new");
-    if (scrollToLatestLabel) scrollToLatestLabel.textContent = "Jump to present";
     if (scrollToLatestCount) {
       scrollToLatestCount.textContent = "";
       scrollToLatestCount.setAttribute("aria-hidden", "true");
+    }
+    if (scrollToLatestSrText) {
+      scrollToLatestSrText.textContent = "Jump to latest messages";
     }
     return;
   }
@@ -3044,19 +3056,23 @@ function updateScrollLockIndicator() {
 
   if (hasNew) {
     const countLabel = formatMissedMessageCount(scrollLockState.missed);
-    if (scrollToLatestLabel) scrollToLatestLabel.textContent = "New messages";
     if (scrollToLatestCount) {
       scrollToLatestCount.textContent = countLabel;
       scrollToLatestCount.setAttribute("aria-hidden", "false");
     }
     scrollToLatestBtn.setAttribute("aria-label", `${countLabel} new messages. Jump to latest.`);
+    if (scrollToLatestSrText) {
+      scrollToLatestSrText.textContent = `${countLabel} new messages. Jump to latest.`;
+    }
   } else {
-    if (scrollToLatestLabel) scrollToLatestLabel.textContent = "Jump to present";
     if (scrollToLatestCount) {
       scrollToLatestCount.textContent = "";
       scrollToLatestCount.setAttribute("aria-hidden", "true");
     }
     scrollToLatestBtn.setAttribute("aria-label", "Jump to latest messages");
+    if (scrollToLatestSrText) {
+      scrollToLatestSrText.textContent = "Jump to latest messages";
+    }
   }
 }
 
