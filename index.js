@@ -1259,14 +1259,13 @@ io.on('connection', socket => {
     const isTargetAdmin = Boolean(targetInfo.isAdmin);
 
     if (!socket.isAdmin) {
-      if (action !== 'mute') {
-        socket.emit('toast', { type: 'warn', text: 'Only admins can perform that action.' });
-        return;
-      }
-      if (isTargetAdmin) {
-        socket.emit('toast', { type: 'warn', text: 'You cannot mute an admin.' });
-        return;
-      }
+      socket.emit('toast', { type: 'warn', text: 'Only admins can perform that action.' });
+      return;
+    }
+
+    if (isTargetAdmin) {
+      socket.emit('toast', { type: 'warn', text: 'You cannot perform that action on an admin.' });
+      return;
     }
 
     const targets = getSocketsForUser(targetRoom, canonicalTarget);
