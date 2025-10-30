@@ -1477,6 +1477,7 @@ function updateReplyPreviewBar() {
     replyPreviewBar.setAttribute("hidden", "");
     replyPreviewBar.setAttribute("aria-hidden", "true");
     replyPreviewBar.removeAttribute("data-reply-id");
+    updateScrollIndicatorOffset();
     return;
   }
 
@@ -1486,6 +1487,7 @@ function updateReplyPreviewBar() {
   replyPreviewBar.classList.add("show");
   replyPreviewBar.removeAttribute("hidden");
   replyPreviewBar.setAttribute("aria-hidden", "false");
+  updateScrollIndicatorOffset();
 }
 
 function beginReply(target) {
@@ -2957,6 +2959,13 @@ function showLanding({ focusUsername = true } = {}) {
   }
   renderUserSidebar([]);
 
+  if (chatContent) {
+    chatContent.style.setProperty(
+      "--scroll-indicator-offset",
+      `${DEFAULT_SCROLL_INDICATOR_OFFSET_PX}px`
+    );
+  }
+
   window.currentUser = null;
   window.currentRoom = null;
   window.currentPassword = lastRoomPassword || "";
@@ -3646,6 +3655,7 @@ if (typeof window !== "undefined") {
     if (infowarsModalState.visible) {
       applyInfowarsModalLayout();
     }
+    updateScrollIndicatorOffset();
   });
 
   window.addEventListener("beforeunload", () => {
@@ -3669,6 +3679,7 @@ if (scrollToLatestBtn) {
   });
 
   updateScrollLockIndicator();
+  updateScrollIndicatorOffset();
 }
 
 // ===== JOIN ROOM (with corrections for transition) =====
@@ -3712,6 +3723,14 @@ function completeRoomJoin(username, room, password) {
 
   if (infowarsModalState.visible) {
     applyInfowarsModalLayout();
+  }
+
+  if (typeof window?.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(() => {
+      updateScrollIndicatorOffset();
+    });
+  } else {
+    updateScrollIndicatorOffset();
   }
 
   scrollMessagesToBottom({ behavior: "smooth", delay: 200, force: true });

@@ -540,6 +540,7 @@ body:not(.dark) .stream-modal-button:focus-visible {
   min-width: 0;
   position: relative;
   background: var(--bg);
+  --scroll-indicator-offset: 88px;
 }
 
 #chat-container .search-bar {
