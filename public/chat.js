@@ -3005,9 +3005,18 @@ async function copyTextToClipboard(text) {
   return copied;
 }
 
+function getMessagesBottomPadding() {
+  if (!messages || typeof window?.getComputedStyle !== "function") return 0;
+  const styles = window.getComputedStyle(messages);
+  const padding = styles?.paddingBottom ? Number.parseFloat(styles.paddingBottom) : 0;
+  return Number.isFinite(padding) ? padding : 0;
+}
+
 function getMessagesDistanceFromBottom() {
   if (!messages) return 0;
-  return Math.max(0, messages.scrollHeight - messages.scrollTop - messages.clientHeight);
+  const bottomPadding = getMessagesBottomPadding();
+  const distance = messages.scrollHeight - messages.scrollTop - messages.clientHeight - bottomPadding;
+  return Math.max(0, distance);
 }
 
 function isMessagesNearBottom(distance = SCROLL_LOCK_THRESHOLD_PX) {
