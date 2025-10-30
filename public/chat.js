@@ -69,8 +69,9 @@ const psybinPlayBtn = document.getElementById("psybin-play");
 const psybinMuteBtn = document.getElementById("psybin-mute");
 const psybinVolumeInput = document.getElementById("psybin-volume");
 const scrollToLatestBtn = document.getElementById("scroll-to-latest");
-const scrollToLatestLabel = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-label") || null;
 const scrollToLatestCount = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-count") || null;
+const scrollToLatestSrText = scrollToLatestBtn?.querySelector?.(".sr-only") || null;
+const chatContent = document.getElementById("chat-content");
 const infowarsModal = document.getElementById("infowars-stream-modal");
 const infowarsModalHeader = infowarsModal?.querySelector?.(".stream-modal-header") || null;
 const infowarsCollapseBtn = document.getElementById("infowars-stream-collapse");
@@ -232,6 +233,8 @@ let searchDebounceTimer = null;
 let soundCloudApiPromise = null;
 
 const SCROLL_LOCK_THRESHOLD_PX = 8;
+const SCROLL_LOCK_INDICATOR_THRESHOLD_PX = 24;
+const DEFAULT_SCROLL_INDICATOR_OFFSET_PX = 88;
 const MAX_MISSED_MESSAGE_COUNT = 999;
 const scrollLockState = {
   locked: false,
@@ -1476,6 +1479,7 @@ function updateReplyPreviewBar() {
     replyPreviewBar.setAttribute("hidden", "");
     replyPreviewBar.setAttribute("aria-hidden", "true");
     replyPreviewBar.removeAttribute("data-reply-id");
+    updateScrollIndicatorOffset();
     return;
   }
 
@@ -1485,6 +1489,7 @@ function updateReplyPreviewBar() {
   replyPreviewBar.classList.add("show");
   replyPreviewBar.removeAttribute("hidden");
   replyPreviewBar.setAttribute("aria-hidden", "false");
+  updateScrollIndicatorOffset();
 }
 
 function beginReply(target) {
@@ -2956,6 +2961,13 @@ function showLanding({ focusUsername = true } = {}) {
   }
   renderUserSidebar([]);
 
+  if (chatContent) {
+    chatContent.style.setProperty(
+      "--scroll-indicator-offset",
+      `${DEFAULT_SCROLL_INDICATOR_OFFSET_PX}px`
+    );
+  }
+
   window.currentUser = null;
   window.currentRoom = null;
   window.currentPassword = lastRoomPassword || "";
@@ -3004,9 +3016,52 @@ async function copyTextToClipboard(text) {
   return copied;
 }
 
+function getMessagesBottomPadding() {
+  if (!messages || typeof window?.getComputedStyle !== "function") return 0;
+  const styles = window.getComputedStyle(messages);
+  const padding = styles?.paddingBottom ? Number.parseFloat(styles.paddingBottom) : 0;
+  return Number.isFinite(padding) ? padding : 0;
+}
+
+function getComposerVerticalSpace() {
+  if (!form) return 0;
+  const baseHeight = form.offsetHeight || 0;
+  if (baseHeight <= 0 || typeof window?.getComputedStyle !== "function") {
+    return baseHeight;
+  }
+
+  const styles = window.getComputedStyle(form);
+  const marginTop = Number.parseFloat(styles?.marginTop || "0");
+  const marginBottom = Number.parseFloat(styles?.marginBottom || "0");
+  const top = Number.isFinite(marginTop) ? marginTop : 0;
+  const bottom = Number.isFinite(marginBottom) ? marginBottom : 0;
+  return Math.max(0, baseHeight + top + bottom);
+}
+
+function getReplyPreviewHeight() {
+  if (!replyPreviewBar || replyPreviewBar.hasAttribute("hidden")) return 0;
+  return replyPreviewBar.offsetHeight || 0;
+}
+
+function updateScrollIndicatorOffset() {
+  if (!chatContent || !scrollToLatestBtn) return;
+
+  const composerSpace = getComposerVerticalSpace();
+  const replySpace = getReplyPreviewHeight();
+  const baseGap = 24;
+  const computed = Math.max(
+    DEFAULT_SCROLL_INDICATOR_OFFSET_PX,
+    Math.round(composerSpace + replySpace + baseGap)
+  );
+
+  chatContent.style.setProperty("--scroll-indicator-offset", `${computed}px`);
+}
+
 function getMessagesDistanceFromBottom() {
   if (!messages) return 0;
-  return Math.max(0, messages.scrollHeight - messages.scrollTop - messages.clientHeight);
+  const bottomPadding = getMessagesBottomPadding();
+  const distance = messages.scrollHeight - messages.scrollTop - messages.clientHeight - bottomPadding;
+  return Math.max(0, distance);
 }
 
 function isMessagesNearBottom(distance = SCROLL_LOCK_THRESHOLD_PX) {
@@ -3015,23 +3070,25 @@ function isMessagesNearBottom(distance = SCROLL_LOCK_THRESHOLD_PX) {
 }
 
 function formatMissedMessageCount(count) {
-  if (count >= 100) return "99+";
+  if (count >= 100) return "+99";
   return String(count);
 }
 
 function updateScrollLockIndicator() {
   if (!scrollToLatestBtn) return;
 
-  const isAtBottom = isMessagesNearBottom(0);
+  const isAtBottom = isMessagesNearBottom(SCROLL_LOCK_INDICATOR_THRESHOLD_PX);
 
   if (!scrollLockState.locked || isAtBottom) {
     scrollToLatestBtn.hidden = true;
     scrollToLatestBtn.setAttribute("aria-hidden", "true");
     scrollToLatestBtn.classList.remove("has-new");
-    if (scrollToLatestLabel) scrollToLatestLabel.textContent = "Jump to present";
     if (scrollToLatestCount) {
       scrollToLatestCount.textContent = "";
       scrollToLatestCount.setAttribute("aria-hidden", "true");
+    }
+    if (scrollToLatestSrText) {
+      scrollToLatestSrText.textContent = "Jump to latest messages";
     }
     return;
   }
@@ -3044,19 +3101,23 @@ function updateScrollLockIndicator() {
 
   if (hasNew) {
     const countLabel = formatMissedMessageCount(scrollLockState.missed);
-    if (scrollToLatestLabel) scrollToLatestLabel.textContent = "New messages";
     if (scrollToLatestCount) {
       scrollToLatestCount.textContent = countLabel;
       scrollToLatestCount.setAttribute("aria-hidden", "false");
     }
     scrollToLatestBtn.setAttribute("aria-label", `${countLabel} new messages. Jump to latest.`);
+    if (scrollToLatestSrText) {
+      scrollToLatestSrText.textContent = `${countLabel} new messages. Jump to latest.`;
+    }
   } else {
-    if (scrollToLatestLabel) scrollToLatestLabel.textContent = "Jump to present";
     if (scrollToLatestCount) {
       scrollToLatestCount.textContent = "";
       scrollToLatestCount.setAttribute("aria-hidden", "true");
     }
     scrollToLatestBtn.setAttribute("aria-label", "Jump to latest messages");
+    if (scrollToLatestSrText) {
+      scrollToLatestSrText.textContent = "Jump to latest messages";
+    }
   }
 }
 
@@ -3630,6 +3691,7 @@ if (typeof window !== "undefined") {
     if (infowarsModalState.visible) {
       applyInfowarsModalLayout();
     }
+    updateScrollIndicatorOffset();
   });
 
   window.addEventListener("beforeunload", () => {
@@ -3653,6 +3715,7 @@ if (scrollToLatestBtn) {
   });
 
   updateScrollLockIndicator();
+  updateScrollIndicatorOffset();
 }
 
 // ===== JOIN ROOM (with corrections for transition) =====
@@ -3696,6 +3759,14 @@ function completeRoomJoin(username, room, password) {
 
   if (infowarsModalState.visible) {
     applyInfowarsModalLayout();
+  }
+
+  if (typeof window?.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(() => {
+      updateScrollIndicatorOffset();
+    });
+  } else {
+    updateScrollIndicatorOffset();
   }
 
   scrollMessagesToBottom({ behavior: "smooth", delay: 200, force: true });
