@@ -3010,7 +3010,8 @@ function getMessagesDistanceFromBottom() {
 
 function isMessagesNearBottom(distance = SCROLL_LOCK_THRESHOLD_PX) {
   if (!messages) return true;
-  return getMessagesDistanceFromBottom() <= distance;
+  const tolerance = Math.max(1, distance);
+  return getMessagesDistanceFromBottom() <= tolerance;
 }
 
 function formatMissedMessageCount(count) {
