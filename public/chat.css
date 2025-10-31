@@ -719,6 +719,13 @@ body:not(.dark) .header-right button#copy-join-link:hover {
   background: var(--surface-alt);
 }
 
+#messages-end-sentinel {
+  width: 100%;
+  height: 1px;
+  flex: 0 0 auto;
+  pointer-events: none;
+}
+
 .scroll-to-latest {
   position: absolute;
   left: 50%;
