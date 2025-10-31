@@ -71,6 +71,10 @@ const psybinVolumeInput = document.getElementById("psybin-volume");
 const scrollToLatestBtn = document.getElementById("scroll-to-latest");
 const scrollToLatestLabel = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-label") || null;
 const scrollToLatestCount = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-count") || null;
+
+if (scrollToLatestLabel) {
+  scrollToLatestLabel.setAttribute("aria-live", "polite");
+}
 const infowarsModal = document.getElementById("infowars-stream-modal");
 const infowarsModalHeader = infowarsModal?.querySelector?.(".stream-modal-header") || null;
 const infowarsCollapseBtn = document.getElementById("infowars-stream-collapse");
@@ -3171,13 +3175,19 @@ function updateScrollLockIndicator() {
   scrollToLatestBtn.classList.toggle("has-new", hasNew);
 
   if (hasNew) {
-    const countLabel = formatMissedMessageCount(scrollLockState.missed);
-    if (scrollToLatestLabel) scrollToLatestLabel.textContent = "New messages";
+    const missedMessages = scrollLockState.missed;
+    const countLabel = formatMissedMessageCount(missedMessages);
+    const messageLabel = missedMessages === 1 ? "New message" : "New messages";
+    if (scrollToLatestLabel) {
+      scrollToLatestLabel.textContent = messageLabel;
+    }
     if (scrollToLatestCount) {
       scrollToLatestCount.textContent = countLabel;
       scrollToLatestCount.setAttribute("aria-hidden", "false");
     }
-    scrollToLatestBtn.setAttribute("aria-label", `${countLabel} new messages. Jump to latest.`);
+    const announcement = `${countLabel} ${messageLabel.toLowerCase()}. Jump to latest.`;
+    scrollToLatestBtn.setAttribute("aria-label", announcement);
+    scrollToLatestBtn.setAttribute("title", announcement);
   } else {
     if (scrollToLatestLabel) scrollToLatestLabel.textContent = "Jump to present";
     if (scrollToLatestCount) {
@@ -3185,6 +3195,7 @@ function updateScrollLockIndicator() {
       scrollToLatestCount.setAttribute("aria-hidden", "true");
     }
     scrollToLatestBtn.setAttribute("aria-label", "Jump to latest messages");
+    scrollToLatestBtn.removeAttribute("title");
   }
 }
 
