@@ -199,11 +199,24 @@
   </script>
 
   <script>
+    const ADMIN_USERNAMES = new Set(["dizygotic", "psybin"]);
     const u = document.getElementById("username-input");
     const ap = document.getElementById("admin-password");
+
+    function normaliseUsername(value) {
+      return typeof value === "string" ? value.trim().toLowerCase() : "";
+    }
+
+    function shouldShowAdminField(value) {
+      return ADMIN_USERNAMES.has(normaliseUsername(value));
+    }
+
     function toggleAdminField() {
       if (!u || !ap) return;
-      ap.style.display = (u.value.trim() === "Dizygotic") ? "block" : "none";
+      const show = shouldShowAdminField(u.value);
+      ap.style.display = show ? "block" : "none";
+      ap.toggleAttribute("hidden", !show);
+      ap.setAttribute("aria-hidden", String(!show));
     }
     if (u) {
       u.addEventListener("input", toggleAdminField);
