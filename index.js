@@ -110,6 +110,65 @@ const uploadDir = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 const fsPromises = fs.promises;
 
+const parseHistoryChunkSize = () => {
+  const rawValue = process.env.MESSAGE_HISTORY_CHUNK_SIZE;
+  if (!rawValue) return 150;
+
+  const numeric = Number.parseInt(String(rawValue).trim(), 10);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 150;
+
+  const minSize = 25;
+  const maxSize = 500;
+  return Math.min(Math.max(numeric, minSize), maxSize);
+};
+
+const HISTORY_CHUNK_SIZE = parseHistoryChunkSize();
+
+const toPlainMessage = (doc) => (doc?.toJSON ? doc.toJSON() : doc);
+
+const normaliseObjectId = (value) => {
+  if (!value) return null;
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  try {
+    if (mongoose.Types.ObjectId.isValid(value)) {
+      return new mongoose.Types.ObjectId(value);
+    }
+  } catch (_err) {
+    return null;
+  }
+  return null;
+};
+
+const fetchMessageHistoryChunk = async (roomName, { beforeId } = {}) => {
+  if (!roomName) {
+    return { messages: [], hasMore: false, cursor: null };
+  }
+
+  const query = { room: roomName };
+  if (beforeId) {
+    const cursorId = normaliseObjectId(beforeId);
+    if (!cursorId) {
+      return { messages: [], hasMore: false, cursor: null };
+    }
+    query._id = { $lt: cursorId };
+  }
+
+  const docs = await Message.find(query)
+    .sort({ timestamp: -1, _id: -1 })
+    .limit(HISTORY_CHUNK_SIZE + 1);
+
+  const hasMore = docs.length > HISTORY_CHUNK_SIZE;
+  const trimmed = hasMore ? docs.slice(0, HISTORY_CHUNK_SIZE) : docs;
+  const oldestDoc = trimmed.length ? trimmed[trimmed.length - 1] : null;
+  const messages = trimmed.slice().reverse().map(toPlainMessage);
+
+  return {
+    messages,
+    hasMore,
+    cursor: hasMore && oldestDoc ? String(oldestDoc._id) : null,
+  };
+};
+
 const scanFileWithClamAV = (filePath) =>
   new Promise((resolve, reject) => {
     const args = ['--stdout', '--no-summary', filePath];
@@ -143,6 +202,51 @@ const removeFileSilently = async (filePath) => {
     await fsPromises.unlink(filePath);
   } catch (_err) {
     // Ignore unlink errors to avoid masking the original failure.
+  }
+};
+
+const resolveUploadPathFromUrl = (fileUrl) => {
+  if (typeof fileUrl !== 'string') return null;
+  const trimmed = fileUrl.trim();
+  if (!trimmed) return null;
+
+  let candidatePath = trimmed;
+  try {
+    const parsed = new URL(trimmed, 'http://dizychat.local');
+    if (parsed.origin !== 'http://dizychat.local') {
+      candidatePath = parsed.pathname || '';
+    } else {
+      candidatePath = parsed.href.replace(parsed.origin, '') || '';
+    }
+  } catch (_err) {
+    // Ignore URL parse errors and fall back to raw path handling.
+  }
+
+  if (!candidatePath) return null;
+
+  const normalised = path.posix.normalize(candidatePath);
+  if (!normalised.startsWith('/uploads/')) return null;
+
+  const relativePath = normalised.replace(/^\/+/, '');
+  const absolutePath = path.join(__dirname, 'public', relativePath);
+  if (!absolutePath.startsWith(uploadDir)) return null;
+
+  return absolutePath;
+};
+
+const removeUploadedFileByUrl = async (fileUrl) => {
+  const targetPath = resolveUploadPathFromUrl(fileUrl);
+  if (!targetPath) return false;
+
+  try {
+    await fsPromises.unlink(targetPath);
+    console.log(`[Upload] Removed file ${path.basename(targetPath)}`);
+    return true;
+  } catch (err) {
+    if (err?.code !== 'ENOENT') {
+      console.error('[Upload] Failed to remove file:', err);
+    }
+    return false;
   }
 };
 
@@ -827,11 +931,13 @@ io.on('connection', socket => {
 
     // Load history and pinned messages
     try {
-      const history = await Message.find({ room: roomName }).sort({ timestamp: 1 });
-      console.log(`[History] Loaded ${history.length} messages from ${roomName}`);
-      const plain = history.map(m => (m.toJSON ? m.toJSON() : m));
-      socket.emit('load messages', plain);     // new clients
-      socket.emit('previous messages', plain); // legacy clients
+      const historyChunk = await fetchMessageHistoryChunk(roomName);
+      console.log(
+        `[History] Loaded ${historyChunk.messages.length} messages from ${roomName}` +
+        (historyChunk.hasMore ? ' (more available)' : '')
+      );
+      socket.emit('load messages', historyChunk);     // new clients
+      socket.emit('previous messages', historyChunk.messages); // legacy clients
     } catch (err) {
       console.error("Error fetching history:", err);
     }
@@ -841,6 +947,24 @@ io.on('connection', socket => {
       const pinned = await Message.find({ room: roomName, pinned: true, deleted: { $ne: true } }).sort({ timestamp: -1 }).limit(50);
       socket.emit('pinned messages', pinned);
     } catch (err) { console.error("[Pinned] Error:", err); }
+  });
+
+  socket.on('request older messages', async ({ room, cursor } = {}) => {
+    try {
+      const roomName = normaliseRoomName(room) || socket.currentRoom;
+      if (!roomName || socket.currentRoom !== roomName) return;
+
+      if (!cursor) {
+        socket.emit('older messages', { messages: [], hasMore: false, cursor: null });
+        return;
+      }
+
+      const historyChunk = await fetchMessageHistoryChunk(roomName, { beforeId: cursor });
+      socket.emit('older messages', historyChunk);
+    } catch (err) {
+      console.error('[History] Failed to load older messages:', err);
+      socket.emit('older messages', { messages: [], hasMore: false, cursor: null });
+    }
   });
 
   socket.on('leave room', ({ room } = {}) => {
@@ -1016,6 +1140,8 @@ io.on('connection', socket => {
         return;
       }
 
+      const originalFileUrl = msg.fileUrl;
+
       msg.deleted = true;
       msg.deletedAt = new Date();
       msg.deletedBy = username;
@@ -1028,6 +1154,10 @@ io.on('connection', socket => {
       msg.pinned = false;
       msg.pinnedBy = '';
       await msg.save();
+
+      if (originalFileUrl) {
+        await removeUploadedFileByUrl(originalFileUrl);
+      }
 
       const payload = msg.toJSON ? msg.toJSON() : msg;
       io.to(targetRoom).emit('delete message', { id: payload._id || payload.id, deleted: true, deletedBy: username });

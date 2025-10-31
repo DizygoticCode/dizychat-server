@@ -230,6 +230,11 @@ const appState = {
   moderationNotices: new Map(),
   contextMenuTrigger: null,
   toolbarFlashTimer: null,
+  history: {
+    cursor: null,
+    hasMore: false,
+    loading: false,
+  },
 };
 
 let searchDebounceTimer = null;
@@ -1082,6 +1087,13 @@ function getDateKey(date) {
   return Number.isNaN(time) ? "" : date.toDateString();
 }
 
+function getDayStartValue(date) {
+  if (!(date instanceof Date)) return Number.NaN;
+  const normalized = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const value = normalized.getTime();
+  return Number.isNaN(value) ? Number.NaN : value;
+}
+
 function formatDayLabel(date) {
   if (!(date instanceof Date)) return "";
   const time = date.getTime();
@@ -1107,24 +1119,100 @@ function formatDayLabel(date) {
   return date.toLocaleDateString(undefined, options);
 }
 
-function ensureDaySeparator(date) {
+function ensureDaySeparator(date, { position = "end", anchor = null } = {}) {
   if (!messages) return;
   const key = getDateKey(date);
   if (!key) return;
-  if (messages.dataset.lastDateKey === key) return;
 
-  const label = formatDayLabel(date) || key;
+  const dayValue = getDayStartValue(date);
+  const hasDayValue = Number.isFinite(dayValue);
+
+  if (position === "start") {
+    const existingFirstKey = messages.dataset.firstDateKey || "";
+    if (existingFirstKey === key) {
+      if (hasDayValue) {
+        const existingValue = Number(messages.dataset.firstDateValue);
+        if (!Number.isFinite(existingValue) || dayValue < existingValue) {
+          messages.dataset.firstDateValue = String(dayValue);
+        }
+      }
+      return;
+    }
+
+    const separator = document.createElement("div");
+    separator.className = "day-separator";
+    separator.dataset.dateKey = key;
+    separator.textContent = formatDayLabel(date) || key;
+
+    if (anchor) {
+      messages.insertBefore(separator, anchor);
+    } else if (messages.firstChild) {
+      messages.insertBefore(separator, messages.firstChild);
+    } else {
+      messages.appendChild(separator);
+    }
+
+    const existingFirstValue = Number(messages.dataset.firstDateValue);
+    if (!Number.isFinite(existingFirstValue) || (hasDayValue && dayValue < existingFirstValue)) {
+      messages.dataset.firstDateKey = key;
+      if (hasDayValue) {
+        messages.dataset.firstDateValue = String(dayValue);
+      } else {
+        delete messages.dataset.firstDateValue;
+      }
+    } else if (!messages.dataset.firstDateKey) {
+      messages.dataset.firstDateKey = key;
+      if (hasDayValue) messages.dataset.firstDateValue = String(dayValue);
+    }
+
+    if (!messages.dataset.lastDateKey) {
+      messages.dataset.lastDateKey = key;
+      if (hasDayValue) messages.dataset.lastDateValue = String(dayValue);
+    }
+    return;
+  }
+
+  const existingLastKey = messages.dataset.lastDateKey || "";
+  if (existingLastKey === key) {
+    if (hasDayValue) {
+      const existingValue = Number(messages.dataset.lastDateValue);
+      if (!Number.isFinite(existingValue) || dayValue > existingValue) {
+        messages.dataset.lastDateValue = String(dayValue);
+      }
+    }
+    return;
+  }
+
   const separator = document.createElement("div");
   separator.className = "day-separator";
   separator.dataset.dateKey = key;
-  separator.textContent = label;
-  const sentinel = ensureMessagesEndSentinel();
-  if (sentinel) {
-    messages.insertBefore(separator, sentinel);
+  separator.textContent = formatDayLabel(date) || key;
+
+  const reference = anchor || ensureMessagesEndSentinel();
+  if (reference) {
+    messages.insertBefore(separator, reference);
   } else {
     messages.appendChild(separator);
   }
-  messages.dataset.lastDateKey = key;
+
+  if (hasDayValue) {
+    const existingValue = Number(messages.dataset.lastDateValue);
+    if (!Number.isFinite(existingValue) || dayValue >= existingValue) {
+      messages.dataset.lastDateValue = String(dayValue);
+      messages.dataset.lastDateKey = key;
+    }
+
+    const existingFirstValue = Number(messages.dataset.firstDateValue);
+    if (!messages.dataset.firstDateKey || dayValue <= existingFirstValue) {
+      messages.dataset.firstDateValue = String(dayValue);
+      messages.dataset.firstDateKey = key;
+    }
+  } else {
+    messages.dataset.lastDateKey = key;
+    if (!messages.dataset.firstDateKey) {
+      messages.dataset.firstDateKey = key;
+    }
+  }
 }
 
 // Autofocus username for smoother entry
@@ -3735,6 +3823,10 @@ if (messages) {
     () => {
       if (isProgrammaticScrollActive()) return;
 
+      if (messages.scrollTop <= 48) {
+        requestOlderMessages();
+      }
+
       if (messagesEndSentinel && scrollSentinelState.observer) {
         if (isMessagesAtBottom()) {
           setScrollLockState(false);
@@ -4927,9 +5019,26 @@ function appendAttachmentFromMessage(node, msg) {
 }
 
 // ------------------- History & Messages -------------------
+function findFirstMessageNode() {
+  if (!messages) return null;
+  let node = messages.firstElementChild;
+  while (node) {
+    if (node.classList?.contains?.("message")) return node;
+    node = node.nextElementSibling;
+  }
+  return messagesEndSentinel || null;
+}
+
 function renderMessage(
   msg,
-  { skipScroll = false, scrollBehavior = "auto", delay = 0, respectScrollLock = false } = {}
+  {
+    skipScroll = false,
+    scrollBehavior = "auto",
+    delay = 0,
+    respectScrollLock = false,
+    position = "end",
+    anchor = null,
+  } = {}
 ) {
   if (!isViewingChat || !messages) return;
   const data = storeMessageData(msg);
@@ -4941,9 +5050,21 @@ function renderMessage(
   }
 
   const wasNearBottom = isMessagesNearBottom();
+  const isPrepend = position === "start";
 
   const timestamp = new Date(data.timestamp || Date.now());
-  ensureDaySeparator(timestamp);
+  const sentinel = ensureMessagesEndSentinel();
+  const referenceNode = isPrepend
+    ? anchor || findFirstMessageNode()
+    : sentinel;
+  const separatorAnchor = isPrepend
+    ? referenceNode || messages.firstChild || null
+    : referenceNode;
+
+  ensureDaySeparator(timestamp, {
+    position: isPrepend ? "start" : "end",
+    anchor: separatorAnchor,
+  });
   const timeLabel = Number.isNaN(timestamp.getTime())
     ? new Date().toLocaleTimeString()
     : timestamp.toLocaleTimeString();
@@ -4995,8 +5116,13 @@ function renderMessage(
 
   applyReplyContext(wrap, data);
 
-  const sentinel = ensureMessagesEndSentinel();
-  if (sentinel) {
+  if (isPrepend) {
+    if (referenceNode) {
+      messages.insertBefore(wrap, referenceNode);
+    } else {
+      messages.appendChild(wrap);
+    }
+  } else if (sentinel) {
     messages.insertBefore(wrap, sentinel);
   } else {
     messages.appendChild(wrap);
@@ -5030,34 +5156,112 @@ function renderMessage(
   updatePinnedBanner();
 }
 
-socket.on("load messages", (arr) => {
+function requestOlderMessages() {
+  if (!socket || typeof socket.emit !== "function") return;
+  if (!window.currentRoom) return;
+  const historyState = appState.history;
+  if (!historyState) return;
+  if (!historyState.hasMore || historyState.loading) return;
+  if (!historyState.cursor) return;
+
+  historyState.loading = true;
+  socket.emit("request older messages", {
+    room: window.currentRoom,
+    cursor: historyState.cursor,
+  });
+}
+
+socket.on("load messages", (payload) => {
   if (!isViewingChat || !messages) return;
+  const entries = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.messages)
+    ? payload.messages
+    : [];
+  const cursor = !Array.isArray(payload) && payload?.cursor ? String(payload.cursor) : null;
+  const hasMore = !Array.isArray(payload) && Boolean(cursor && payload?.hasMore);
+
   clearReplyTarget();
   appState.messages.clear();
   appState.pinned.clear();
+  if (appState.history) {
+    appState.history.cursor = cursor;
+    appState.history.hasMore = hasMore;
+    appState.history.loading = false;
+  }
   messages.innerHTML = "";
   delete messages.dataset.lastDateKey;
+  delete messages.dataset.firstDateKey;
+  delete messages.dataset.lastDateValue;
+  delete messages.dataset.firstDateValue;
   ensureMessagesEndSentinel();
   initScrollSentinelObserver();
   setScrollLockState(false);
   resetMissedMessages();
-  (arr || []).forEach((entry) => renderMessage(entry, { skipScroll: true }));
+  entries.forEach((entry) => renderMessage(entry, { skipScroll: true }));
   updatePinnedBanner();
   ensureMessagesAtBottom();
   showToast(`✅ Joined room: ${window.currentRoom}`, "success");
 });
 
-socket.on("previous messages", (arr) => {
+socket.on("previous messages", (payload) => {
   if (!isViewingChat || !messages) return;
+  const entries = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.messages)
+    ? payload.messages
+    : [];
   const childCount = messages.childElementCount;
   const sentinelPresent =
     messagesEndSentinel && messagesEndSentinel.parentNode === messages;
   const hasVisibleChildren = sentinelPresent ? childCount > 1 : childCount > 0;
   if (!hasVisibleChildren) {
-    (arr || []).forEach((entry) => renderMessage(entry, { skipScroll: true }));
+    entries.forEach((entry) => renderMessage(entry, { skipScroll: true }));
     updatePinnedBanner();
     ensureMessagesAtBottom({ attempts: 3 });
   }
+});
+
+socket.on("older messages", (payload = {}) => {
+  if (!isViewingChat || !messages) return;
+
+  const entries = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.messages)
+    ? payload.messages
+    : [];
+
+  const cursor = !Array.isArray(payload) && payload?.cursor ? String(payload.cursor) : null;
+  const hasMore = !Array.isArray(payload) && Boolean(cursor && payload?.hasMore);
+
+  if (appState.history) {
+    if (cursor || cursor === null) {
+      appState.history.cursor = cursor;
+    }
+    appState.history.hasMore = hasMore;
+    appState.history.loading = false;
+  }
+
+  if (!entries.length) return;
+
+  const anchor = findFirstMessageNode();
+  const previousHeight = messages.scrollHeight;
+  const previousScrollTop = messages.scrollTop;
+
+  entries.forEach((entry) => {
+    renderMessage(entry, {
+      skipScroll: true,
+      position: "start",
+      anchor,
+    });
+  });
+
+  const heightDiff = messages.scrollHeight - previousHeight;
+  if (heightDiff > 0) {
+    messages.scrollTop = previousScrollTop + heightDiff;
+  }
+
+  updatePinnedBanner();
 });
 
 socket.on("chat message", (msg) => {
