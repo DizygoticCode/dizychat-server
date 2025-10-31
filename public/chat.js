@@ -3069,12 +3069,15 @@ function handleScrollSentinelEntries(entries) {
 
   const ratio = Number.isFinite(entry.intersectionRatio) ? entry.intersectionRatio : 0;
   const isIntersecting = entry.isIntersecting || ratio > 0;
-  const isAtBottom = isIntersecting && ratio >= SCROLL_SENTINEL_VISIBLE_RATIO;
+  const distanceFromBottom = getMessagesDistanceFromBottom();
+  const nearBottom = distanceFromBottom <= SCROLL_LOCK_THRESHOLD_PX;
+  const ratioAtBottom = isIntersecting && ratio >= SCROLL_SENTINEL_VISIBLE_RATIO;
+  const effectivelyAtBottom = ratioAtBottom || nearBottom;
 
   scrollSentinelState.visibleRatio = ratio;
-  scrollSentinelState.atBottom = isAtBottom;
+  scrollSentinelState.atBottom = effectivelyAtBottom;
 
-  if (isAtBottom) {
+  if (effectivelyAtBottom) {
     scrollSentinelState.programmaticUnlockUntil = 0;
     if (scrollLockState.locked) {
       setScrollLockState(false);
@@ -3082,7 +3085,7 @@ function handleScrollSentinelEntries(entries) {
       updateScrollLockIndicator();
     }
     resetMissedMessages();
-  } else if (!isProgrammaticScrollActive()) {
+  } else if (!isProgrammaticScrollActive() && !nearBottom) {
     if (!scrollLockState.locked) {
       setScrollLockState(true);
     }
