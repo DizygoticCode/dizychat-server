@@ -238,6 +238,8 @@ const scrollLockState = {
   missed: 0,
 };
 
+let ensureBottomTimer = null;
+
 let muteCountdownInterval = null;
 
 const PSYBIN_RADIO_ROOM = "Psybin Radio";
@@ -2939,6 +2941,7 @@ function showLanding({ focusUsername = true } = {}) {
   resetChromeToolbarAttention();
   appState.isAdmin = false;
   clearReplyTarget();
+  cancelEnsureMessagesAtBottom();
   if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = true;
   if (chatContainer) chatContainer.style.display = "none";
   if (usernamePrompt) usernamePrompt.style.display = "flex";
@@ -3077,6 +3080,50 @@ function resetMissedMessages() {
     scrollLockState.missed = 0;
   }
   updateScrollLockIndicator();
+}
+
+function cancelEnsureMessagesAtBottom() {
+  if (ensureBottomTimer) {
+    clearTimeout(ensureBottomTimer);
+    ensureBottomTimer = null;
+  }
+}
+
+function ensureMessagesAtBottom({ attempts = 5, interval = 140 } = {}) {
+  if (!messages) return;
+
+  const totalAttempts = Math.max(1, attempts);
+  let remaining = totalAttempts;
+
+  cancelEnsureMessagesAtBottom();
+
+  const attemptScroll = () => {
+    ensureBottomTimer = null;
+    if (!messages) return;
+
+    if (scrollLockState.locked && !isMessagesNearBottom(0)) {
+      return;
+    }
+
+    scrollMessagesToBottom({ behavior: "auto", delay: 0, force: true });
+    remaining -= 1;
+    if (remaining <= 0) {
+      return;
+    }
+
+    ensureBottomTimer = setTimeout(() => {
+      ensureBottomTimer = null;
+      if (!messages) return;
+      if (scrollLockState.locked && !isMessagesNearBottom(0)) {
+        return;
+      }
+      if (!isMessagesNearBottom(0)) {
+        attemptScroll();
+      }
+    }, Math.max(16, interval));
+  };
+
+  attemptScroll();
 }
 
 function incrementMissedMessages() {
@@ -3543,7 +3590,9 @@ if (messages) {
     () => {
       const locked = !isMessagesNearBottom();
       setScrollLockState(locked);
-      if (!locked) {
+      if (locked) {
+        cancelEnsureMessagesAtBottom();
+      } else {
         resetMissedMessages();
       }
     },
@@ -4827,7 +4876,7 @@ socket.on("load messages", (arr) => {
   resetMissedMessages();
   (arr || []).forEach((entry) => renderMessage(entry, { skipScroll: true }));
   updatePinnedBanner();
-  scrollMessagesToBottom({ behavior: "auto", delay: 120, force: true });
+  ensureMessagesAtBottom();
   showToast(`✅ Joined room: ${window.currentRoom}`, "success");
 });
 
@@ -4836,7 +4885,7 @@ socket.on("previous messages", (arr) => {
   if (!messages.childElementCount) {
     (arr || []).forEach((entry) => renderMessage(entry, { skipScroll: true }));
     updatePinnedBanner();
-    scrollMessagesToBottom({ behavior: "auto", delay: 80, force: true });
+    ensureMessagesAtBottom({ attempts: 3 });
   }
 });
 
