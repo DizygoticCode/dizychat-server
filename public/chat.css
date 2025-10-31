@@ -726,6 +726,10 @@ body:not(.dark) .header-right button#copy-join-link:hover {
   pointer-events: none;
 }
 
+.scroll-to-latest[hidden] {
+  display: none !important;
+}
+
 .scroll-to-latest {
   position: absolute;
   left: 50%;
