@@ -233,9 +233,18 @@ let soundCloudApiPromise = null;
 
 const SCROLL_LOCK_THRESHOLD_PX = 8;
 const MAX_MISSED_MESSAGE_COUNT = 999;
+const SCROLL_SENTINEL_VISIBLE_RATIO = 0.8;
+const SCROLL_PROGRAMMATIC_GRACE_MS = 400;
 const scrollLockState = {
   locked: false,
   missed: 0,
+};
+let messagesEndSentinel = null;
+const scrollSentinelState = {
+  observer: null,
+  atBottom: true,
+  visibleRatio: 1,
+  programmaticUnlockUntil: 0,
 };
 
 let ensureBottomTimer = null;
@@ -1105,7 +1114,12 @@ function ensureDaySeparator(date) {
   separator.className = "day-separator";
   separator.dataset.dateKey = key;
   separator.textContent = label;
-  messages.appendChild(separator);
+  const sentinel = ensureMessagesEndSentinel();
+  if (sentinel) {
+    messages.insertBefore(separator, sentinel);
+  } else {
+    messages.appendChild(separator);
+  }
   messages.dataset.lastDateKey = key;
 }
 
@@ -2955,6 +2969,8 @@ function showLanding({ focusUsername = true } = {}) {
   if (messages) {
     messages.innerHTML = "";
     delete messages.dataset.lastDateKey;
+    ensureMessagesEndSentinel();
+    initScrollSentinelObserver();
   }
   renderUserSidebar([]);
 
@@ -3011,8 +3027,114 @@ function getMessagesDistanceFromBottom() {
   return Math.max(0, messages.scrollHeight - messages.scrollTop - messages.clientHeight);
 }
 
+function beginProgrammaticScrollWindow() {
+  scrollSentinelState.programmaticUnlockUntil = Date.now() + SCROLL_PROGRAMMATIC_GRACE_MS;
+}
+
+function isProgrammaticScrollActive() {
+  return Date.now() < scrollSentinelState.programmaticUnlockUntil;
+}
+
+function ensureMessagesEndSentinel() {
+  if (!messages) return null;
+
+  if (!messagesEndSentinel) {
+    messagesEndSentinel = document.createElement("div");
+    messagesEndSentinel.id = "messages-end-sentinel";
+    messagesEndSentinel.className = "messages-end-sentinel";
+    messagesEndSentinel.setAttribute("aria-hidden", "true");
+  }
+
+  if (messagesEndSentinel.parentNode !== messages) {
+    messages.appendChild(messagesEndSentinel);
+  } else if (messages.lastElementChild !== messagesEndSentinel) {
+    messages.appendChild(messagesEndSentinel);
+  }
+
+  if (scrollSentinelState.observer) {
+    try {
+      scrollSentinelState.observer.observe(messagesEndSentinel);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return messagesEndSentinel;
+}
+
+function handleScrollSentinelEntries(entries) {
+  if (!Array.isArray(entries) || !entries.length) return;
+  const entry = entries[entries.length - 1];
+  if (!entry) return;
+
+  const ratio = Number.isFinite(entry.intersectionRatio) ? entry.intersectionRatio : 0;
+  const isIntersecting = entry.isIntersecting || ratio > 0;
+  const isAtBottom = isIntersecting && ratio >= SCROLL_SENTINEL_VISIBLE_RATIO;
+
+  scrollSentinelState.visibleRatio = ratio;
+  scrollSentinelState.atBottom = isAtBottom;
+
+  if (isAtBottom) {
+    scrollSentinelState.programmaticUnlockUntil = 0;
+    if (scrollLockState.locked) {
+      setScrollLockState(false);
+    } else {
+      updateScrollLockIndicator();
+    }
+    resetMissedMessages();
+  } else if (!isProgrammaticScrollActive()) {
+    if (!scrollLockState.locked) {
+      setScrollLockState(true);
+    }
+    cancelEnsureMessagesAtBottom();
+  }
+}
+
+function initScrollSentinelObserver() {
+  if (!messages) return;
+
+  const sentinel = ensureMessagesEndSentinel();
+  if (!sentinel) return;
+
+  if (typeof IntersectionObserver !== "function") {
+    scrollSentinelState.observer?.disconnect?.();
+    scrollSentinelState.observer = null;
+    scrollSentinelState.atBottom = getMessagesDistanceFromBottom() <= 1;
+    scrollSentinelState.visibleRatio = scrollSentinelState.atBottom ? 1 : 0;
+    updateScrollLockIndicator();
+    return;
+  }
+
+  if (scrollSentinelState.observer) {
+    scrollSentinelState.observer.disconnect();
+  }
+
+  const thresholds = [0, 0.1, 0.25, 0.5, SCROLL_SENTINEL_VISIBLE_RATIO, 1];
+  const observer = new IntersectionObserver(handleScrollSentinelEntries, {
+    root: messages,
+    threshold: thresholds,
+  });
+
+  observer.observe(sentinel);
+  scrollSentinelState.observer = observer;
+}
+
+function isMessagesAtBottom() {
+  if (messagesEndSentinel && scrollSentinelState.observer) {
+    return scrollSentinelState.atBottom;
+  }
+  if (!messages) return true;
+  return getMessagesDistanceFromBottom() <= 1;
+}
+
 function isMessagesNearBottom(distance = SCROLL_LOCK_THRESHOLD_PX) {
   if (!messages) return true;
+
+  if (messagesEndSentinel && scrollSentinelState.observer) {
+    if (scrollSentinelState.atBottom) return true;
+    if (scrollSentinelState.visibleRatio > 0) return true;
+  }
+
   const tolerance = Math.max(1, distance);
   return getMessagesDistanceFromBottom() <= tolerance;
 }
@@ -3025,7 +3147,7 @@ function formatMissedMessageCount(count) {
 function updateScrollLockIndicator() {
   if (!scrollToLatestBtn) return;
 
-  const isAtBottom = isMessagesNearBottom(0);
+  const isAtBottom = isMessagesAtBottom();
 
   if (!scrollLockState.locked || isAtBottom) {
     scrollToLatestBtn.hidden = true;
@@ -3101,7 +3223,7 @@ function ensureMessagesAtBottom({ attempts = 5, interval = 140 } = {}) {
     ensureBottomTimer = null;
     if (!messages) return;
 
-    if (scrollLockState.locked && !isMessagesNearBottom(0)) {
+    if (scrollLockState.locked && !isMessagesAtBottom()) {
       return;
     }
 
@@ -3114,10 +3236,10 @@ function ensureMessagesAtBottom({ attempts = 5, interval = 140 } = {}) {
     ensureBottomTimer = setTimeout(() => {
       ensureBottomTimer = null;
       if (!messages) return;
-      if (scrollLockState.locked && !isMessagesNearBottom(0)) {
+      if (scrollLockState.locked && !isMessagesAtBottom()) {
         return;
       }
-      if (!isMessagesNearBottom(0)) {
+      if (!isMessagesAtBottom()) {
         attemptScroll();
       }
     }, Math.max(16, interval));
@@ -3135,8 +3257,12 @@ function incrementMissedMessages() {
 function scrollMessagesToBottom({ behavior = "auto", delay = 0, force = false } = {}) {
   if (!messages) return;
 
+  ensureMessagesEndSentinel();
+
   const performScroll = () => {
     if (!force && scrollLockState.locked) return;
+
+    beginProgrammaticScrollWindow();
 
     try {
       messages.scrollTo({ top: messages.scrollHeight, behavior });
@@ -3144,6 +3270,8 @@ function scrollMessagesToBottom({ behavior = "auto", delay = 0, force = false } 
       messages.scrollTop = messages.scrollHeight;
     }
 
+    scrollSentinelState.atBottom = true;
+    scrollSentinelState.visibleRatio = 1;
     setScrollLockState(false);
     resetMissedMessages();
   };
@@ -3585,9 +3713,25 @@ function observeMediaForScroll(node) {
 }
 
 if (messages) {
+  ensureMessagesEndSentinel();
+  initScrollSentinelObserver();
+
   messages.addEventListener(
     "scroll",
     () => {
+      if (isProgrammaticScrollActive()) return;
+
+      if (messagesEndSentinel && scrollSentinelState.observer) {
+        if (isMessagesAtBottom()) {
+          setScrollLockState(false);
+          resetMissedMessages();
+        } else {
+          setScrollLockState(true);
+          cancelEnsureMessagesAtBottom();
+        }
+        return;
+      }
+
       const locked = !isMessagesNearBottom();
       setScrollLockState(locked);
       if (locked) {
@@ -3728,6 +3872,8 @@ function completeRoomJoin(username, room, password) {
   if (messages) {
     messages.innerHTML = "";
     delete messages.dataset.lastDateKey;
+    ensureMessagesEndSentinel();
+    initScrollSentinelObserver();
   }
   setScrollLockState(false);
   resetMissedMessages();
@@ -4835,7 +4981,12 @@ function renderMessage(
 
   applyReplyContext(wrap, data);
 
-  messages.appendChild(wrap);
+  const sentinel = ensureMessagesEndSentinel();
+  if (sentinel) {
+    messages.insertBefore(wrap, sentinel);
+  } else {
+    messages.appendChild(wrap);
+  }
   applyMessageStatus(wrap, data);
   setupMessageActions(wrap, data);
   updateMessageFlags(wrap, data);
@@ -4872,6 +5023,8 @@ socket.on("load messages", (arr) => {
   appState.pinned.clear();
   messages.innerHTML = "";
   delete messages.dataset.lastDateKey;
+  ensureMessagesEndSentinel();
+  initScrollSentinelObserver();
   setScrollLockState(false);
   resetMissedMessages();
   (arr || []).forEach((entry) => renderMessage(entry, { skipScroll: true }));
@@ -4882,7 +5035,11 @@ socket.on("load messages", (arr) => {
 
 socket.on("previous messages", (arr) => {
   if (!isViewingChat || !messages) return;
-  if (!messages.childElementCount) {
+  const childCount = messages.childElementCount;
+  const sentinelPresent =
+    messagesEndSentinel && messagesEndSentinel.parentNode === messages;
+  const hasVisibleChildren = sentinelPresent ? childCount > 1 : childCount > 0;
+  if (!hasVisibleChildren) {
     (arr || []).forEach((entry) => renderMessage(entry, { skipScroll: true }));
     updatePinnedBanner();
     ensureMessagesAtBottom({ attempts: 3 });
