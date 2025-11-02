@@ -95,6 +95,23 @@ npm start
 
 The server will log the active port, build/version information, and upload limit during boot.
 
+## Automated UI smoke tests
+
+The `tests/` folder contains Playwright- and Puppeteer-based smoke tests that hit the deployed Render instance and capture screenshots/video artifacts. They are optional and require installing the browsers locally:
+
+```bash
+npm install --save-dev playwright puppeteer
+```
+
+Run the CommonJS harness (which includes retries and artifact generation) with Node.js:
+
+```bash
+node tests/ui-test.cjs             # Playwright only
+node tests/ui-test.cjs --puppeteer # Playwright + Puppeteer snapshot
+```
+
+Artifacts are written to `ui-test-artifacts/` and include timestamped screenshots, videos, and an `index.html` viewer. Set the `TIMESTAMP` environment variable to control the artifact prefix if you need deterministic names.
+
 ## API reference
 
 ### `GET /version`
