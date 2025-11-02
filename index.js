@@ -740,32 +740,15 @@ app.get('/pixabay-audio', async (req, res) => {
     params.set('page', page.trim());
   }
 
-  const endpoint = `https://pixabay.com/api/music/?${params.toString()}`;
+  const endpoint = `https://pixabay.com/api/sounds/?${params.toString()}`;
 
   const normaliseString = (value) =>
     typeof value === 'string' ? value : '';
 
-  const collectCandidateStrings = (value) => {
-    if (!value) return [];
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      return trimmed ? [trimmed] : [];
-    }
-    if (Array.isArray(value)) {
-      return value.flatMap((item) => collectCandidateStrings(item));
-    }
-    if (typeof value === 'object') {
-      return Object.values(value).flatMap((item) => collectCandidateStrings(item));
-    }
-    return [];
-  };
-
   const pickUrl = (...candidates) => {
     for (const candidate of candidates) {
-      const strings = collectCandidateStrings(candidate);
-      const url = strings.find((entry) => /^https?:\/\//i.test(entry));
-      if (url) {
-        return url;
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return candidate.trim();
       }
     }
     return '';
@@ -787,22 +770,16 @@ app.get('/pixabay-audio', async (req, res) => {
     const mappedHits = hits
       .map((hit) => {
         if (!hit || typeof hit !== 'object') return null;
-        const previews = hit.previews || hit.assets || {};
+        const previews = hit.previews || {};
         const audioUrl = pickUrl(
-          hit.audio,
-          hit.audioUrl,
-          hit.audioURL,
           previews.full,
           previews.preview_hq,
           previews.preview,
-          previews.high,
-          previews.low,
+          hit.audio,
         );
         if (!audioUrl) return null;
 
         const previewUrl = pickUrl(
-          hit.previewURL,
-          hit.previewURLHQ,
           previews.preview_hq,
           previews.preview,
           previews.full,
@@ -816,7 +793,7 @@ app.get('/pixabay-audio', async (req, res) => {
           duration: toNumber(hit.duration),
           audioUrl,
           previewUrl,
-          waveform: pickUrl(hit.waveform, hit.waveformUrl, hit.waveformURL),
+          waveform: pickUrl(hit.waveform),
           pageURL: pickUrl(hit.pageURL),
           user: normaliseString(hit.user),
           type: normaliseString(hit.type),
