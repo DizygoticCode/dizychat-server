@@ -5783,17 +5783,17 @@ if (attachBtn && fileInput) {
   const TENOR_API_KEY = "LIVDSRZULELA"; // test key (can move to .env later)
   if (!emojiBtn || !form) return;
 
-  const gifBtn = (() => {
-    const existing = document.getElementById("gif-btn");
-    if (existing) return existing;
-    const created = document.createElement("button");
-    created.id = "gif-btn";
-    created.type = "button";
-    created.textContent = "GIF";
-    created.style.marginLeft = "6px";
-    emojiBtn.insertAdjacentElement("afterend", created);
-    return created;
-  })();
+    const gifBtn = (() => {
+      const existing = document.getElementById("gif-btn");
+      if (existing) return existing;
+      const created = document.createElement("button");
+      created.id = "gif-btn";
+      created.type = "button";
+      created.textContent = "GIF";
+      created.style.marginLeft = "5px";
+      emojiBtn.insertAdjacentElement("afterend", created);
+      return created;
+    })();
 
   const panel = document.createElement("div");
   panel.id = "gif-picker";
@@ -5873,6 +5873,10 @@ if (attachBtn && fileInput) {
       return;
     }
     positionPanel();
+    const soundboardPanel = document.getElementById("soundboard-picker");
+    if (soundboardPanel) {
+      soundboardPanel.style.display = "none";
+    }
     if (!panel.dataset.loaded) {
       loadTenor(`https://g.tenor.com/v1/trending?key=${TENOR_API_KEY}&limit=24`);
       panel.dataset.loaded = "1";
@@ -5893,6 +5897,271 @@ if (attachBtn && fileInput) {
 
   window.addEventListener("resize", () => {
     if (panel.style.display === "block") positionPanel();
+  });
+})();
+
+// ------------------- Pixabay Soundboard Picker -------------------
+(() => {
+  if (!form) return;
+
+  const existing = document.getElementById("soundboard-btn");
+  const soundboardBtn = existing || document.createElement("button");
+  if (!existing) {
+    soundboardBtn.id = "soundboard-btn";
+    soundboardBtn.type = "button";
+    soundboardBtn.title = "Pixabay audio soundboard";
+    soundboardBtn.setAttribute("aria-label", "Pixabay audio soundboard");
+    soundboardBtn.innerHTML =
+      '<span class="soundboard-icon" aria-hidden="true">🔊</span>';
+
+    const gifBtn = document.getElementById("gif-btn");
+    if (gifBtn?.insertAdjacentElement) {
+      gifBtn.insertAdjacentElement("afterend", soundboardBtn);
+    } else if (emojiBtn?.insertAdjacentElement) {
+      emojiBtn.insertAdjacentElement("afterend", soundboardBtn);
+    } else if (attachBtn?.insertAdjacentElement) {
+      attachBtn.insertAdjacentElement("afterend", soundboardBtn);
+    } else {
+      form.appendChild(soundboardBtn);
+    }
+  }
+
+  if (!soundboardBtn) return;
+
+  const panel = document.createElement("div");
+  panel.id = "soundboard-picker";
+  panel.innerHTML = `
+    <div class="soundboard-search">
+      <input id="soundboard-search-input" type="search" placeholder="Search audio clips…" autocomplete="off" />
+    </div>
+    <div id="soundboard-results" class="soundboard-results"></div>
+  `;
+  document.body.appendChild(panel);
+
+  const resultsEl = panel.querySelector("#soundboard-results");
+  const searchInput = panel.querySelector("#soundboard-search-input");
+
+  const closePanel = () => {
+    panel.style.display = "none";
+  };
+
+  const positionPanel = () => {
+    const rect = form.getBoundingClientRect();
+    panel.style.position = "fixed";
+    panel.style.left = rect.left + 8 + "px";
+    panel.style.bottom = window.innerHeight - rect.top + 10 + "px";
+    panel.style.display = "block";
+  };
+
+  const guessExtension = (url) => {
+    if (typeof url !== "string" || !url) return "mp3";
+    const clean = url.split("?")[0] || "";
+    const match = clean.match(/\.([a-z0-9]+)$/i);
+    const ext = match ? match[1].toLowerCase() : "";
+    if (["mp3", "wav", "ogg", "oga", "m4a", "aac"].includes(ext)) {
+      return ext;
+    }
+    return "mp3";
+  };
+
+  const guessMime = (ext) => {
+    switch (ext) {
+      case "wav":
+        return "audio/wav";
+      case "ogg":
+      case "oga":
+        return "audio/ogg";
+      case "m4a":
+      case "aac":
+        return "audio/mp4";
+      default:
+        return "audio/mpeg";
+    }
+  };
+
+  const sanitiseFilename = (value, fallback = "pixabay-audio") => {
+    if (typeof value !== "string") return `${fallback}`;
+    const stripped = value.replace(/[\\/:*?"<>|]/g, "").trim();
+    return stripped || `${fallback}`;
+  };
+
+  const formatDuration = (seconds) => {
+    const numeric = Number(seconds);
+    if (!Number.isFinite(numeric) || numeric <= 0) return "";
+    const totalSeconds = Math.round(numeric);
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${mins}:${String(secs).padStart(2, "0")}`;
+  };
+
+  const renderStatus = (message, tone = "info") => {
+    if (!resultsEl) return;
+    resultsEl.innerHTML = "";
+    const status = document.createElement("div");
+    status.className = `soundboard-status soundboard-status--${tone}`;
+    status.textContent = message;
+    resultsEl.appendChild(status);
+  };
+
+  let lastQuery = "";
+  let isLoading = false;
+
+  const loadClips = async (query = "") => {
+    if (!resultsEl || isLoading) return;
+    isLoading = true;
+    renderStatus("Loading audio clips…", "loading");
+
+    const endpoint = query
+      ? `/pixabay-audio?q=${encodeURIComponent(query)}`
+      : "/pixabay-audio";
+
+    try {
+      const response = await fetch(endpoint);
+      if (response.status === 503) {
+        await response.json().catch(() => ({}));
+        renderStatus(
+          "Add a PIXABAY_API_KEY to enable the soundboard.",
+          "warn",
+        );
+        isLoading = false;
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Pixabay request failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const hits = Array.isArray(data?.hits) ? data.hits : [];
+      lastQuery = query;
+
+      if (!hits.length) {
+        renderStatus(
+          query ? "No clips matched your search." : "No audio clips available yet.",
+          "info",
+        );
+        isLoading = false;
+        return;
+      }
+
+      resultsEl.innerHTML = "";
+
+      hits.forEach((hit) => {
+        if (!hit || typeof hit !== "object") return;
+        const audioUrl = typeof hit.audioUrl === "string" ? hit.audioUrl : "";
+        if (!audioUrl) return;
+        const clipTitle = (hit.title || hit.tags || "Audio Clip").trim();
+        const duration = formatDuration(hit.duration);
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "soundboard-item";
+
+        const icon = document.createElement("span");
+        icon.className = "soundboard-item-icon";
+        icon.setAttribute("aria-hidden", "true");
+        icon.textContent = "▶";
+
+        const content = document.createElement("div");
+        content.className = "soundboard-item-content";
+
+        const titleEl = document.createElement("div");
+        titleEl.className = "soundboard-item-title";
+        titleEl.textContent = clipTitle || "Pixabay Audio";
+
+        const metaEl = document.createElement("div");
+        metaEl.className = "soundboard-item-meta";
+        const tags = (hit.tags || "").split(",").map((tag) => tag.trim()).filter(Boolean);
+        const tagSnippet = tags.length ? tags.slice(0, 2).join(" • ") : "";
+        metaEl.textContent = [duration, tagSnippet].filter(Boolean).join(" • ");
+
+        content.appendChild(titleEl);
+        content.appendChild(metaEl);
+
+        button.appendChild(icon);
+        button.appendChild(content);
+
+        button.addEventListener("click", () => {
+          if (!window.currentRoom || !window.currentUser) {
+            showToast("Join a room to share audio clips.", "warn");
+            return;
+          }
+
+          const ext = guessExtension(audioUrl);
+          const mime = guessMime(ext);
+          const safeName = sanitiseFilename(clipTitle || "Pixabay Audio");
+          const fileName = `${safeName}.${ext}`;
+
+          socket.emit("chat message", {
+            room: window.currentRoom,
+            user: window.currentUser,
+            text: audioUrl,
+            timestamp: Date.now(),
+            fileUrl: audioUrl,
+            fileType: mime,
+            fileName,
+          });
+          showToast("Audio clip added", "success");
+          closePanel();
+          input?.focus();
+        });
+
+        resultsEl.appendChild(button);
+      });
+    } catch (err) {
+      console.error("[Soundboard] Pixabay error:", err);
+      renderStatus("Could not load audio clips.", "error");
+    } finally {
+      isLoading = false;
+    }
+  };
+
+  soundboardBtn.addEventListener("click", () => {
+    if (panel.style.display === "block") {
+      closePanel();
+      return;
+    }
+    const gifPanel = document.getElementById("gif-picker");
+    if (gifPanel) {
+      gifPanel.style.display = "none";
+    }
+    positionPanel();
+    if (!panel.dataset.loaded) {
+      loadClips();
+      panel.dataset.loaded = "1";
+    } else if (!lastQuery) {
+      loadClips("");
+    }
+    searchInput?.focus();
+  });
+
+  searchInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const query = searchInput.value.trim();
+      loadClips(query);
+    } else if (event.key === "Escape") {
+      closePanel();
+      soundboardBtn.focus();
+    }
+  });
+
+  searchInput?.addEventListener("search", () => {
+    const query = searchInput.value.trim();
+    if (!query && lastQuery) {
+      loadClips("");
+    }
+  });
+
+  window.addEventListener("resize", () => {
+    if (panel.style.display === "block") positionPanel();
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && panel.style.display === "block") {
+      closePanel();
+      soundboardBtn.focus();
+    }
   });
 })();
 
