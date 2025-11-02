@@ -740,7 +740,7 @@ app.get('/pixabay-audio', async (req, res) => {
     params.set('page', page.trim());
   }
 
-  const endpoint = `https://pixabay.com/api/audio/?${params.toString()}`;
+  const endpoint = `https://pixabay.com/api/sounds/?${params.toString()}`;
 
   const normaliseString = (value) =>
     typeof value === 'string' ? value : '';
