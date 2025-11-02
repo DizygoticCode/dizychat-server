@@ -204,6 +204,29 @@ const trackEmojiUsageFromText = (text) => {
   glyphs.forEach((emoji) => trackEmojiUsage(emoji));
 };
 
+const sendPlainTextMessage = (rawText, { replyTo } = {}) => {
+  const text = typeof rawText === "string" ? rawText : "";
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (!window.currentRoom || !window.currentUser) return false;
+
+  trackEmojiUsageFromText(trimmed);
+
+  const payload = {
+    room: window.currentRoom,
+    user: window.currentUser,
+    text: trimmed,
+    timestamp: Date.now(),
+  };
+
+  if (replyTo !== undefined && replyTo !== null && replyTo !== "") {
+    payload.replyTo = replyTo;
+  }
+
+  socket.emit("chat message", payload);
+  return true;
+};
+
 const insertEmojiIntoInput = (emojiValue) => {
   if (!input || typeof emojiValue !== "string" || !emojiValue) return;
   const current = input.value || "";
@@ -225,7 +248,23 @@ quickEmojiPanel?.addEventListener("click", (event) => {
   event.stopPropagation();
   const emoji = target.dataset.emoji || target.textContent || "";
   if (!emoji) return;
-  insertEmojiIntoInput(emoji);
+  const replyTo = normalizeMessageId(replyState.targetId) || undefined;
+  const sent = sendPlainTextMessage(emoji, { replyTo });
+  if (!sent) {
+    window.showToast?.("Join a room to send emoji.", "warn");
+    return;
+  }
+  clearReplyTarget();
+  if (isTyping) {
+    socket.emit("stop typing");
+    isTyping = false;
+    clearTimeout(typingTimeout);
+  }
+  try {
+    input?.focus({ preventScroll: true });
+  } catch {
+    input?.focus();
+  }
 });
 
 if (scrollToLatestLabel) {
@@ -4719,17 +4758,10 @@ if (emojiPicker) {
 if (form) {
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    const text = (input?.value || "").trim();
-    if (!text) return;
+    const rawText = input?.value || "";
     const replyTo = normalizeMessageId(replyState.targetId) || undefined;
-    trackEmojiUsageFromText(text);
-    socket.emit("chat message", {
-      room: window.currentRoom,
-      user: window.currentUser,
-      text,
-      timestamp: Date.now(),
-      replyTo,
-    });
+    const sent = sendPlainTextMessage(rawText, { replyTo });
+    if (!sent) return;
     input.value = "";
     clearReplyTarget();
     socket.emit("stop typing");
