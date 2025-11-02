@@ -174,8 +174,8 @@ const renderQuickEmojiPanel = () => {
       button.dataset.usage = String(usageCount);
     }
     const labelCount = usageCount ? ` (used ${usageCount} time${usageCount === 1 ? "" : "s"})` : "";
-    button.setAttribute("aria-label", `Send ${emoji}${labelCount}`);
-    button.title = usageCount ? `${emoji} · used ${usageCount} time${usageCount === 1 ? "" : "s"}` : `Send ${emoji}`;
+    button.setAttribute("aria-label", `Insert ${emoji}${labelCount}`);
+    button.title = usageCount ? `${emoji} · used ${usageCount} time${usageCount === 1 ? "" : "s"}` : `Insert ${emoji}`;
     button.dataset.source = usageSet.has(emoji) ? "usage" : "default";
     button.textContent = emoji;
     quickEmojiPanel.appendChild(button);
@@ -204,29 +204,6 @@ const trackEmojiUsageFromText = (text) => {
   glyphs.forEach((emoji) => trackEmojiUsage(emoji));
 };
 
-const sendChatMessage = (rawText, { replyTo: replyOverride } = {}) => {
-  const value = typeof rawText === "string" ? rawText : "";
-  const trimmed = value.trim();
-  if (!trimmed) return false;
-
-  const replyTo =
-    replyOverride !== undefined
-      ? replyOverride
-      : normalizeMessageId(replyState.targetId) || undefined;
-
-  trackEmojiUsageFromText(value);
-
-  socket.emit("chat message", {
-    room: window.currentRoom,
-    user: window.currentUser,
-    text: trimmed,
-    timestamp: Date.now(),
-    replyTo,
-  });
-
-  return true;
-};
-
 const insertEmojiIntoInput = (emojiValue) => {
   if (!input || typeof emojiValue !== "string" || !emojiValue) return;
   const current = input.value || "";
@@ -248,10 +225,7 @@ quickEmojiPanel?.addEventListener("click", (event) => {
   event.stopPropagation();
   const emoji = target.dataset.emoji || target.textContent || "";
   if (!emoji) return;
-  if (sendChatMessage(emoji)) {
-    clearReplyTarget();
-    socket.emit("stop typing");
-  }
+  insertEmojiIntoInput(emoji);
 });
 
 if (scrollToLatestLabel) {
@@ -4745,8 +4719,17 @@ if (emojiPicker) {
 if (form) {
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    const value = input?.value || "";
-    if (!sendChatMessage(value)) return;
+    const text = (input?.value || "").trim();
+    if (!text) return;
+    const replyTo = normalizeMessageId(replyState.targetId) || undefined;
+    trackEmojiUsageFromText(text);
+    socket.emit("chat message", {
+      room: window.currentRoom,
+      user: window.currentUser,
+      text,
+      timestamp: Date.now(),
+      replyTo,
+    });
     input.value = "";
     clearReplyTarget();
     socket.emit("stop typing");
