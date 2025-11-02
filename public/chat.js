@@ -40,6 +40,7 @@ const replyPreviewContent = replyPreviewBar?.querySelector?.(".reply-preview-con
 const replyPreviewAuthor = document.getElementById("reply-preview-author");
 const replyPreviewText = document.getElementById("reply-preview-text");
 const replyPreviewCancel = document.getElementById("reply-preview-cancel");
+const quickEmojiPanel = document.getElementById("quick-emoji-panel");
 
 const usernamePrompt = document.getElementById("username-prompt");
 const chatContainer = document.getElementById("chat-container");
@@ -71,6 +72,187 @@ const psybinVolumeInput = document.getElementById("psybin-volume");
 const scrollToLatestBtn = document.getElementById("scroll-to-latest");
 const scrollToLatestLabel = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-label") || null;
 const scrollToLatestCount = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-count") || null;
+
+// ------------------- Emoji Usage Tracking -------------------
+const EMOJI_USAGE_STORAGE_KEY = "dizychat-emoji-usage";
+const DEFAULT_QUICK_EMOJIS = ["😀", "😂", "😍"];
+const MAX_TRACKED_EMOJIS = 75;
+const emojiSequenceRegex = /(?:\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?)*|\p{Regional_Indicator}{2})/gu;
+
+const extractEmojiGlyphs = (text) => {
+  if (typeof text !== "string" || !text) return [];
+  if (typeof text.matchAll === "function") {
+    try {
+      const matches = text.matchAll(emojiSequenceRegex);
+      const glyphs = [];
+      for (const match of matches) {
+        const value = match?.[0];
+        if (value) glyphs.push(value);
+      }
+      if (glyphs.length) return glyphs;
+    } catch {
+      /* fall through to basic matcher */
+    }
+  }
+  const fallback = text.match(emojiSequenceRegex);
+  return fallback ? Array.from(fallback) : [];
+};
+
+const normaliseEmojiKey = (value) => {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  return trimmed;
+};
+
+const loadEmojiUsageStore = () => {
+  try {
+    const raw = localStorage.getItem(EMOJI_USAGE_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    return Object.entries(parsed).reduce((acc, [emoji, count]) => {
+      const key = normaliseEmojiKey(emoji);
+      const numericCount = Number.parseInt(count, 10);
+      if (key && Number.isFinite(numericCount) && numericCount > 0) {
+        acc[key] = numericCount;
+      }
+      return acc;
+    }, {});
+  } catch {
+    return {};
+  }
+};
+
+let emojiUsageStore = loadEmojiUsageStore();
+
+const persistEmojiUsageStore = () => {
+  try {
+    localStorage.setItem(EMOJI_USAGE_STORAGE_KEY, JSON.stringify(emojiUsageStore));
+  } catch {
+    /* ignore persistence errors */
+  }
+};
+
+const getSortedEmojiEntries = () => {
+  return Object.entries(emojiUsageStore)
+    .filter(([emoji, count]) => normaliseEmojiKey(emoji) && Number.isFinite(Number(count)))
+    .sort((a, b) => {
+      const diff = Number(b[1]) - Number(a[1]);
+      if (diff !== 0) return diff;
+      return a[0].localeCompare(b[0]);
+    });
+};
+
+const buildQuickEmojiList = (limit = 3) => {
+  const sorted = getSortedEmojiEntries();
+  const usageTop = sorted.slice(0, limit).map(([emoji]) => emoji);
+  const seen = new Set();
+  const result = [];
+  [...usageTop, ...DEFAULT_QUICK_EMOJIS].forEach((emoji) => {
+    const key = normaliseEmojiKey(emoji);
+    if (!key || seen.has(key) || result.length >= limit) return;
+    seen.add(key);
+    result.push(key);
+  });
+  return result;
+};
+
+const renderQuickEmojiPanel = () => {
+  if (!quickEmojiPanel) return;
+  quickEmojiPanel.innerHTML = "";
+  const emojis = buildQuickEmojiList(3);
+  const usageEntries = new Map(getSortedEmojiEntries());
+  const usageSet = new Set(emojis.filter((emoji) => usageEntries.has(emoji)));
+
+  emojis.forEach((emoji) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "quick-emoji-button";
+    button.dataset.emoji = emoji;
+    const usageCount = usageEntries.get(emoji);
+    if (usageCount) {
+      button.dataset.usage = String(usageCount);
+    }
+    const labelCount = usageCount ? ` (used ${usageCount} time${usageCount === 1 ? "" : "s"})` : "";
+    button.setAttribute("aria-label", `Send ${emoji}${labelCount}`);
+    button.title = usageCount ? `${emoji} · used ${usageCount} time${usageCount === 1 ? "" : "s"}` : `Send ${emoji}`;
+    button.dataset.source = usageSet.has(emoji) ? "usage" : "default";
+    button.textContent = emoji;
+    quickEmojiPanel.appendChild(button);
+  });
+};
+
+const trackEmojiUsage = (emojiValue) => {
+  const key = normaliseEmojiKey(emojiValue);
+  if (!key) return;
+  const current = Number(emojiUsageStore[key]) || 0;
+  emojiUsageStore[key] = current + 1;
+  const sorted = getSortedEmojiEntries();
+  if (sorted.length > MAX_TRACKED_EMOJIS) {
+    emojiUsageStore = sorted.slice(0, MAX_TRACKED_EMOJIS).reduce((acc, [emoji, count]) => {
+      acc[emoji] = Number(count);
+      return acc;
+    }, {});
+  }
+  persistEmojiUsageStore();
+  renderQuickEmojiPanel();
+};
+
+const trackEmojiUsageFromText = (text) => {
+  const glyphs = extractEmojiGlyphs(text);
+  if (!glyphs.length) return;
+  glyphs.forEach((emoji) => trackEmojiUsage(emoji));
+};
+
+const sendChatMessage = (rawText, { replyTo: replyOverride } = {}) => {
+  const value = typeof rawText === "string" ? rawText : "";
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+
+  const replyTo =
+    replyOverride !== undefined
+      ? replyOverride
+      : normalizeMessageId(replyState.targetId) || undefined;
+
+  trackEmojiUsageFromText(value);
+
+  socket.emit("chat message", {
+    room: window.currentRoom,
+    user: window.currentUser,
+    text: trimmed,
+    timestamp: Date.now(),
+    replyTo,
+  });
+
+  return true;
+};
+
+const insertEmojiIntoInput = (emojiValue) => {
+  if (!input || typeof emojiValue !== "string" || !emojiValue) return;
+  const current = input.value || "";
+  input.value = `${current}${emojiValue}`;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  try {
+    input.focus({ preventScroll: true });
+  } catch {
+    input.focus();
+  }
+};
+
+renderQuickEmojiPanel();
+
+quickEmojiPanel?.addEventListener("click", (event) => {
+  const target = event.target?.closest?.(".quick-emoji-button");
+  if (!target || !quickEmojiPanel.contains(target)) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const emoji = target.dataset.emoji || target.textContent || "";
+  if (!emoji) return;
+  if (sendChatMessage(emoji)) {
+    clearReplyTarget();
+    socket.emit("stop typing");
+  }
+});
 
 if (scrollToLatestLabel) {
   scrollToLatestLabel.setAttribute("aria-live", "polite");
@@ -4485,11 +4667,7 @@ if (emojiPicker) {
         return;
       }
 
-      if (input) {
-        input.value = `${input.value || ""}${emojiValue}`;
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-        input.focus();
-      }
+      insertEmojiIntoInput(emojiValue);
       hide();
     };
 
@@ -4567,16 +4745,8 @@ if (emojiPicker) {
 if (form) {
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    const text = (input?.value || "").trim();
-    if (!text) return;
-    const replyTo = normalizeMessageId(replyState.targetId) || undefined;
-    socket.emit("chat message", {
-      room: window.currentRoom,
-      user: window.currentUser,
-      text,
-      timestamp: Date.now(),
-      replyTo,
-    });
+    const value = input?.value || "";
+    if (!sendChatMessage(value)) return;
     input.value = "";
     clearReplyTarget();
     socket.emit("stop typing");
