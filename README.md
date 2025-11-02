@@ -11,7 +11,7 @@ DizyChat is a Socket.IO and Express-powered real-time chat backend designed for 
 
 ### Media uploads with antivirus scanning
 - Accepts any file type via `/upload`, stores assets under `public/uploads`, and advertises the configured size limit in logs.
-- Runs each upload through ClamAV; rejects infected files and cleans up temporary artifacts automatically.
+- Streams uploads to OPSWAT MetaDefender Cloud; rejects infected files and cleans up temporary artifacts automatically.
 - Supports configurable size caps (including "unlimited") through `MAX_UPLOAD_SIZE_MB`.
 
 ### Rich content previews
@@ -49,7 +49,7 @@ tests/                # Automated tests (if/when added)
 
 - **Node.js 22+** (matching the `engines` field).
 - **MongoDB** instance accessible via connection string.
-- **ClamAV** (`clamscan`) installed and available in `PATH` for malware scanning.
+- **MetaDefender Cloud API key** (set `METADEFENDER_API_KEY`) for inline antivirus scanning.
 
 ## Installation
 
@@ -59,7 +59,7 @@ tests/                # Automated tests (if/when added)
    cd dizychat-server
    npm install
    ```
-2. Ensure MongoDB and ClamAV are running/available.
+2. Ensure MongoDB is running/available and obtain a MetaDefender Cloud API key.
 3. Create a `.env` file (see below) or configure environment variables in your host.
 
 ## Environment variables
@@ -74,6 +74,10 @@ Create a `.env` file in the project root with the following keys:
 | `ADMIN_CREDENTIALS` | Comma-separated list of `username:password` pairs for multiple admins. |
 | `MESSAGE_HISTORY_CHUNK_SIZE` | Page size (25-500) for history fetches; defaults to 150. |
 | `MAX_UPLOAD_SIZE_MB` | File upload cap; accepts values like `50`, `50mb`, or `2gb`. Use `unlimited` to disable the limit. |
+| `METADEFENDER_API_KEY` | **Required for uploads.** OPSWAT MetaDefender Cloud API key used to scan files. |
+| `METADEFENDER_BASE_URL` | (Optional) Override the MetaDefender API origin. Defaults to `https://api.metadefender.com/v4`. |
+| `METADEFENDER_POLL_INTERVAL_MS` | (Optional) Milliseconds between status polls; defaults to 1500 (bounded between 250-15000). |
+| `METADEFENDER_MAX_POLL_ATTEMPTS` | (Optional) Maximum polling attempts before timing out; defaults to 10 (bounded between 1-40). |
 
 ## Running locally
 

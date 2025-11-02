@@ -9,12 +9,13 @@ const mongoose = require('mongoose');
 const path = require('path');
 const cheerio = require('cheerio');
 const fs = require('fs');
-const { execFile } = require('child_process');
 const multer = require('multer');
 const sanitizeHtml = require('sanitize-html');
 const Message = require('./src/models/message');
 
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+const nodeFetchModulePromise = import('node-fetch');
+const fetch = (...args) =>
+  nodeFetchModulePromise.then(({ default: fetch }) => fetch(...args));
 
 // ---------------- App Setup ----------------
 const app = express();
@@ -169,33 +170,171 @@ const fetchMessageHistoryChunk = async (roomName, { beforeId } = {}) => {
   };
 };
 
-const scanFileWithClamAV = (filePath) =>
-  new Promise((resolve, reject) => {
-    const args = ['--stdout', '--no-summary', filePath];
-    execFile('clamscan', args, (error, stdout = '', stderr = '') => {
-      if (!error) {
-        return resolve({ clean: true });
-      }
+const METADEFENDER_API_KEY = process.env.METADEFENDER_API_KEY;
+const METADEFENDER_BASE_URL =
+  process.env.METADEFENDER_BASE_URL || 'https://api.metadefender.com/v4';
 
-      if (error.code === 1) {
-        const message = (stdout || stderr || 'Virus detected').trim();
-        return resolve({ clean: false, details: message });
-      }
+const parsePositiveInteger = (value, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) => {
+  const numeric = Number.parseInt(String(value ?? '').trim(), 10);
+  if (!Number.isFinite(numeric) || numeric < min) return fallback;
+  return Math.min(numeric, max);
+};
 
-      if (error.code === 'ENOENT') {
-        const notFoundError = new Error('ClamAV (clamscan) not found');
-        notFoundError.code = 'CLAMAV_NOT_FOUND';
-        return reject(notFoundError);
-      }
+const METADEFENDER_POLL_INTERVAL_MS = parsePositiveInteger(
+  process.env.METADEFENDER_POLL_INTERVAL_MS,
+  1500,
+  { min: 250, max: 15000 },
+);
 
-      const errMsg = (stderr || stdout || error.message || '').trim();
-      const scanError = new Error(
-        errMsg ? `ClamAV scan failed: ${errMsg}` : 'ClamAV scan failed',
-      );
-      scanError.code = 'CLAMAV_SCAN_ERROR';
-      return reject(scanError);
+const METADEFENDER_MAX_POLL_ATTEMPTS = parsePositiveInteger(
+  process.env.METADEFENDER_MAX_POLL_ATTEMPTS,
+  10,
+  { min: 1, max: 40 },
+);
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const readMetaDefenderJson = async (response) => {
+  try {
+    return await response.json();
+  } catch (_err) {
+    return null;
+  }
+};
+
+const extractDetectionDetails = (scanResults = {}) => {
+  const details = scanResults.scan_details;
+  if (details && typeof details === 'object') {
+    for (const detail of Object.values(details)) {
+      if (detail && detail.threat_found && detail.threat_found !== 'Clean') {
+        return detail.threat_found;
+      }
+    }
+  }
+  return scanResults.scan_all_result_a || 'Threat detected';
+};
+
+const scanFileWithMetaDefender = async (filePath) => {
+  if (!METADEFENDER_API_KEY) {
+    const error = new Error('MetaDefender API key not configured');
+    error.code = 'SCANNER_NOT_CONFIGURED';
+    throw error;
+  }
+
+  let uploadResponse;
+  try {
+    uploadResponse = await fetch(`${METADEFENDER_BASE_URL}/file`, {
+      method: 'POST',
+      headers: {
+        apikey: METADEFENDER_API_KEY,
+        filename: path.basename(filePath),
+        'content-type': 'application/octet-stream',
+      },
+      body: fs.createReadStream(filePath),
     });
-  });
+  } catch (err) {
+    const networkError = new Error(`MetaDefender upload failed: ${err.message}`);
+    networkError.code = 'SCANNER_UNAVAILABLE';
+    throw networkError;
+  }
+
+  if (uploadResponse.status === 401 || uploadResponse.status === 403) {
+    const authError = new Error('MetaDefender API key rejected');
+    authError.code = 'SCANNER_NOT_CONFIGURED';
+    throw authError;
+  }
+
+  if (!uploadResponse.ok) {
+    const bodyText = await uploadResponse.text().catch(() => '');
+    const error = new Error(
+      bodyText
+        ? `MetaDefender upload error (${uploadResponse.status}): ${bodyText}`
+        : `MetaDefender upload error (${uploadResponse.status})`,
+    );
+    error.code = uploadResponse.status === 429 ? 'SCANNER_UNAVAILABLE' : 'SCANNER_ERROR';
+    throw error;
+  }
+
+  const uploadPayload = await readMetaDefenderJson(uploadResponse);
+  const dataId = uploadPayload?.data_id;
+  if (!dataId) {
+    const error = new Error('MetaDefender upload response missing data_id');
+    error.code = 'SCANNER_ERROR';
+    throw error;
+  }
+
+  let attempts = 0;
+  while (attempts < METADEFENDER_MAX_POLL_ATTEMPTS) {
+    if (attempts > 0) {
+      await wait(METADEFENDER_POLL_INTERVAL_MS);
+    }
+    attempts += 1;
+
+    let statusResponse;
+    try {
+      statusResponse = await fetch(`${METADEFENDER_BASE_URL}/file/${encodeURIComponent(dataId)}`, {
+        method: 'GET',
+        headers: { apikey: METADEFENDER_API_KEY },
+      });
+    } catch (err) {
+      if (attempts < METADEFENDER_MAX_POLL_ATTEMPTS) {
+        continue;
+      }
+      const networkError = new Error(`MetaDefender status check failed: ${err.message}`);
+      networkError.code = 'SCANNER_UNAVAILABLE';
+      throw networkError;
+    }
+
+    if (statusResponse.status === 429) {
+      if (attempts >= METADEFENDER_MAX_POLL_ATTEMPTS) {
+        const rateLimitError = new Error('MetaDefender rate limited status polling');
+        rateLimitError.code = 'SCANNER_UNAVAILABLE';
+        throw rateLimitError;
+      }
+      continue;
+    }
+
+    if (!statusResponse.ok) {
+      if (statusResponse.status === 401 || statusResponse.status === 403) {
+        const authError = new Error('MetaDefender API key rejected during status check');
+        authError.code = 'SCANNER_NOT_CONFIGURED';
+        throw authError;
+      }
+
+      const bodyText = await statusResponse.text().catch(() => '');
+      const error = new Error(
+        bodyText
+          ? `MetaDefender status error (${statusResponse.status}): ${bodyText}`
+          : `MetaDefender status error (${statusResponse.status})`,
+      );
+      error.code = 'SCANNER_ERROR';
+      throw error;
+    }
+
+    const statusPayload = await readMetaDefenderJson(statusResponse);
+    const scanResults = statusPayload?.scan_results;
+    if (!scanResults) {
+      continue;
+    }
+
+    const progress = Number.parseInt(scanResults.progress_percentage, 10);
+    if (Number.isFinite(progress) && progress < 100) {
+      continue;
+    }
+
+    const overallResult = (scanResults.scan_all_result_a || '').toLowerCase();
+    if (overallResult === 'no threat detected') {
+      return { clean: true };
+    }
+
+    const details = extractDetectionDetails(scanResults);
+    return { clean: false, details };
+  }
+
+  const timeoutError = new Error('MetaDefender scan timed out');
+  timeoutError.code = 'SCANNER_TIMEOUT';
+  throw timeoutError;
+};
 
 const removeFileSilently = async (filePath) => {
   try {
@@ -346,7 +485,7 @@ app.post('/upload', uploadSingleMiddleware, async (req, res) => {
   const filePath = path.join(uploadDir, req.file.filename);
 
   try {
-    const scanResult = await scanFileWithClamAV(filePath);
+    const scanResult = await scanFileWithMetaDefender(filePath);
     if (!scanResult.clean) {
       await removeFileSilently(filePath);
       return res.status(400).json({
@@ -357,9 +496,14 @@ app.post('/upload', uploadSingleMiddleware, async (req, res) => {
   } catch (err) {
     await removeFileSilently(filePath);
 
-    if (err && err.code === 'CLAMAV_NOT_FOUND') {
-      console.error('[Upload] ClamAV not installed:', err);
+    if (err && ['SCANNER_NOT_CONFIGURED', 'SCANNER_UNAVAILABLE'].includes(err.code)) {
+      console.error('[Upload] Antivirus scanner unavailable:', err);
       return res.status(500).json({ error: 'Antivirus scanner unavailable' });
+    }
+
+    if (err && err.code === 'SCANNER_TIMEOUT') {
+      console.error('[Upload] Antivirus scan timed out:', err);
+      return res.status(504).json({ error: 'Antivirus scan timed out' });
     }
 
     console.error('[Upload] Antivirus scan error:', err);
