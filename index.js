@@ -173,6 +173,7 @@ const fetchMessageHistoryChunk = async (roomName, { beforeId } = {}) => {
 const METADEFENDER_API_KEY = process.env.METADEFENDER_API_KEY;
 const METADEFENDER_BASE_URL =
   process.env.METADEFENDER_BASE_URL || 'https://api.metadefender.com/v4';
+const PIXABAY_API_KEY = process.env.PIXABAY_API_KEY || '';
 
 const parsePositiveInteger = (value, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) => {
   const numeric = Number.parseInt(String(value ?? '').trim(), 10);
@@ -713,6 +714,125 @@ app.get('/tenor-proxy', async (req, res) => {
   } catch (err) {
     console.error('[Tenor] Error:', err.message);
     res.json({ gif: '', tinyGif: '' });
+  }
+});
+
+app.get('/pixabay-audio', async (req, res) => {
+  if (!PIXABAY_API_KEY) {
+    return res.status(503).json({
+      error: 'PIXABAY_API_KEY missing',
+      hits: [],
+      total: 0,
+      totalHits: 0,
+    });
+  }
+
+  const params = new URLSearchParams();
+  params.set('key', PIXABAY_API_KEY);
+  params.set('per_page', '24');
+  params.set('order', 'popular');
+
+  const { q, page } = req.query;
+  if (typeof q === 'string' && q.trim()) {
+    params.set('q', q.trim());
+  }
+  if (typeof page === 'string' && /^\d+$/.test(page.trim())) {
+    params.set('page', page.trim());
+  }
+
+  const endpoint = `https://pixabay.com/api/music/?${params.toString()}`;
+
+  const normaliseString = (value) =>
+    typeof value === 'string' ? value : '';
+
+  const collectCandidateStrings = (value) => {
+    if (!value) return [];
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      return trimmed ? [trimmed] : [];
+    }
+    if (Array.isArray(value)) {
+      return value.flatMap((item) => collectCandidateStrings(item));
+    }
+    if (typeof value === 'object') {
+      return Object.values(value).flatMap((item) => collectCandidateStrings(item));
+    }
+    return [];
+  };
+
+  const pickUrl = (...candidates) => {
+    for (const candidate of candidates) {
+      const strings = collectCandidateStrings(candidate);
+      const url = strings.find((entry) => /^https?:\/\//i.test(entry));
+      if (url) {
+        return url;
+      }
+    }
+    return '';
+  };
+
+  const toNumber = (value) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : 0;
+  };
+
+  try {
+    const response = await fetch(endpoint);
+    if (!response.ok) {
+      throw new Error(`Pixabay HTTP ${response.status}`);
+    }
+
+    const payload = await response.json();
+    const hits = Array.isArray(payload?.hits) ? payload.hits : [];
+    const mappedHits = hits
+      .map((hit) => {
+        if (!hit || typeof hit !== 'object') return null;
+        const previews = hit.previews || hit.assets || {};
+        const audioUrl = pickUrl(
+          hit.audio,
+          hit.audioUrl,
+          hit.audioURL,
+          previews.full,
+          previews.preview_hq,
+          previews.preview,
+          previews.high,
+          previews.low,
+        );
+        if (!audioUrl) return null;
+
+        const previewUrl = pickUrl(
+          hit.previewURL,
+          hit.previewURLHQ,
+          previews.preview_hq,
+          previews.preview,
+          previews.full,
+          hit.audio,
+        );
+
+        return {
+          id: hit.id,
+          title: normaliseString(hit.title || hit.tags),
+          tags: normaliseString(hit.tags),
+          duration: toNumber(hit.duration),
+          audioUrl,
+          previewUrl,
+          waveform: pickUrl(hit.waveform, hit.waveformUrl, hit.waveformURL),
+          pageURL: pickUrl(hit.pageURL),
+          user: normaliseString(hit.user),
+          type: normaliseString(hit.type),
+        };
+      })
+      .filter(Boolean);
+
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.json({
+      hits: mappedHits,
+      total: Number(payload?.total) || mappedHits.length,
+      totalHits: Number(payload?.totalHits) || mappedHits.length,
+    });
+  } catch (err) {
+    console.error('[Pixabay] Error:', err.message);
+    res.status(500).json({ hits: [], total: 0, totalHits: 0 });
   }
 });
 
