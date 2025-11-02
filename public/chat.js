@@ -4843,15 +4843,7 @@ function createInlinePreview(link, type, labelText) {
     label.className = "preview-label";
 
     const linkText = labelText || type.toUpperCase();
-    if (linkText && link && type !== "placeholder") {
-      const anchor = document.createElement("a");
-      anchor.href = link;
-      anchor.target = "_blank";
-      anchor.rel = "noopener noreferrer";
-      anchor.textContent = linkText;
-      anchor.className = "preview-link";
-      label.appendChild(anchor);
-    } else {
+    if (linkText) {
       label.textContent = linkText;
     }
 
@@ -5022,6 +5014,14 @@ function attachPreviewActions(preview, { link, label, type } = {}) {
       MediaLightbox.open(type, link, label);
     });
     actions.appendChild(expand);
+  } else if (type !== "audio") {
+    const view = document.createElement("a");
+    view.href = link;
+    view.target = "_blank";
+    view.rel = "noopener noreferrer";
+    view.className = "preview-view";
+    view.textContent = "View";
+    actions.appendChild(view);
   }
 
   const download = document.createElement("a");
@@ -5151,7 +5151,20 @@ function appendAttachmentFromMessage(node, msg) {
     return;
   }
 
-  const label = isTenor ? "" : (msg.fileName || "").trim();
+  const label = (() => {
+    if (isTenor) return "";
+    if (msg.fileName && msg.fileName.trim()) return msg.fileName.trim();
+    try {
+      const urlObj = new URL(url, window.location.origin);
+      const fileName = urlObj.pathname.split("/").pop() || "";
+      if (fileName) {
+        return decodeURIComponent(fileName);
+      }
+    } catch {
+      /* noop */
+    }
+    return "";
+  })();
   const preview = createInlinePreview(url, previewType, label);
   if (!preview) return;
   if (isTenor) {
