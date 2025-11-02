@@ -110,17 +110,57 @@ const loadEmojiUsageStore = () => {
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return {};
-    return Object.entries(parsed).reduce((acc, [emoji, count]) => {
+    return Object.entries(parsed).reduce((acc, [emoji, entry]) => {
       const key = normaliseEmojiKey(emoji);
-      const numericCount = Number.parseInt(count, 10);
-      if (key && Number.isFinite(numericCount) && numericCount > 0) {
-        acc[key] = numericCount;
+      if (!key) return acc;
+
+      const normalised = normaliseUsageEntry(key, entry);
+      if (normalised) {
+        acc[key] = {
+          value: normalised.value,
+          kind: normalised.kind,
+          name: normalised.name,
+          preview: normalised.preview,
+          count: normalised.count,
+        };
       }
       return acc;
     }, {});
   } catch {
     return {};
   }
+};
+
+const normaliseUsageEntry = (key, rawEntry) => {
+  const baseKey = normaliseEmojiKey(key);
+  if (!baseKey) return null;
+
+  if (rawEntry && typeof rawEntry === "object" && !Array.isArray(rawEntry)) {
+    const value = normaliseEmojiKey(
+      typeof rawEntry.value === "string" ? rawEntry.value : baseKey
+    );
+    const count = Number.parseInt(rawEntry.count, 10);
+    if (!value || !Number.isFinite(count) || count <= 0) return null;
+    const kind = rawEntry.kind === "url" ? "url" : "char";
+    const name = typeof rawEntry.name === "string" ? rawEntry.name : "";
+    const preview = kind === "url"
+      ? typeof rawEntry.preview === "string" && rawEntry.preview
+        ? rawEntry.preview
+        : value
+      : "";
+    return { key: baseKey, value, kind, name, preview, count };
+  }
+
+  const numericCount = Number.parseInt(rawEntry, 10);
+  if (!Number.isFinite(numericCount) || numericCount <= 0) return null;
+  return {
+    key: baseKey,
+    value: baseKey,
+    kind: "char",
+    name: "",
+    preview: "",
+    count: numericCount,
+  };
 };
 
 let emojiUsageStore = loadEmojiUsageStore();
@@ -135,25 +175,42 @@ const persistEmojiUsageStore = () => {
 
 const getSortedEmojiEntries = () => {
   return Object.entries(emojiUsageStore)
-    .filter(([emoji, count]) => normaliseEmojiKey(emoji) && Number.isFinite(Number(count)))
+    .map(([key, rawEntry]) => normaliseUsageEntry(key, rawEntry))
+    .filter(Boolean)
     .sort((a, b) => {
-      const diff = Number(b[1]) - Number(a[1]);
+      const diff = Number(b.count) - Number(a.count);
       if (diff !== 0) return diff;
-      return a[0].localeCompare(b[0]);
+      return a.value.localeCompare(b.value);
     });
 };
 
 const buildQuickEmojiList = (limit = 3) => {
   const sorted = getSortedEmojiEntries();
-  const usageTop = sorted.slice(0, limit).map(([emoji]) => emoji);
   const seen = new Set();
   const result = [];
-  [...usageTop, ...DEFAULT_QUICK_EMOJIS].forEach((emoji) => {
+
+  for (const entry of sorted) {
+    if (seen.has(entry.key)) continue;
+    seen.add(entry.key);
+    result.push(entry);
+    if (result.length >= limit) return result;
+  }
+
+  for (const emoji of DEFAULT_QUICK_EMOJIS) {
     const key = normaliseEmojiKey(emoji);
-    if (!key || seen.has(key) || result.length >= limit) return;
+    if (!key || seen.has(key)) continue;
+    result.push({
+      key,
+      value: key,
+      kind: "char",
+      name: "",
+      preview: "",
+      count: 0,
+    });
     seen.add(key);
-    result.push(key);
-  });
+    if (result.length >= limit) break;
+  }
+
   return result;
 };
 
@@ -161,39 +218,103 @@ const renderQuickEmojiPanel = () => {
   if (!quickEmojiPanel) return;
   quickEmojiPanel.innerHTML = "";
   const emojis = buildQuickEmojiList(3);
-  const usageEntries = new Map(getSortedEmojiEntries());
-  const usageSet = new Set(emojis.filter((emoji) => usageEntries.has(emoji)));
+  const usageEntries = new Map(
+    getSortedEmojiEntries().map((entry) => [entry.key, entry])
+  );
+  const usageSet = new Set(
+    emojis.filter((entry) => usageEntries.has(entry.key)).map((entry) => entry.key)
+  );
 
-  emojis.forEach((emoji) => {
+  emojis.forEach((entry) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "quick-emoji-button";
-    button.dataset.emoji = emoji;
-    const usageCount = usageEntries.get(emoji);
+    button.dataset.key = entry.key;
+    button.dataset.kind = entry.kind;
+    button.dataset.value = entry.value;
+    button.dataset.emoji = entry.value;
+    if (entry.name) {
+      button.dataset.name = entry.name;
+    }
+    if (entry.preview && entry.kind === "url") {
+      button.dataset.preview = entry.preview;
+    }
+
+    const usageEntry = usageEntries.get(entry.key);
+    const usageCount = usageEntry?.count;
     if (usageCount) {
       button.dataset.usage = String(usageCount);
     }
-    const labelCount = usageCount ? ` (used ${usageCount} time${usageCount === 1 ? "" : "s"})` : "";
-    button.setAttribute("aria-label", `Insert ${emoji}${labelCount}`);
-    button.title = usageCount ? `${emoji} · used ${usageCount} time${usageCount === 1 ? "" : "s"}` : `Insert ${emoji}`;
-    button.dataset.source = usageSet.has(emoji) ? "usage" : "default";
-    button.textContent = emoji;
+
+    const labelBase = entry.kind === "url"
+      ? entry.name || "Send emoji"
+      : `Insert ${entry.value}`;
+    const labelCount = usageCount
+      ? ` (used ${usageCount} time${usageCount === 1 ? "" : "s"})`
+      : "";
+    button.setAttribute("aria-label", `${labelBase}${labelCount}`.trim());
+    button.title = usageCount
+      ? `${labelBase} · used ${usageCount} time${usageCount === 1 ? "" : "s"}`
+      : labelBase;
+    button.dataset.source = usageSet.has(entry.key) ? "usage" : "default";
+
+    if (entry.kind === "url") {
+      button.classList.add("quick-emoji-button-image");
+      const img = document.createElement("img");
+      img.src = entry.preview || entry.value;
+      img.alt = entry.name || "Emoji";
+      img.draggable = false;
+      button.appendChild(img);
+    } else {
+      button.textContent = entry.value;
+    }
+
     quickEmojiPanel.appendChild(button);
   });
 };
 
-const trackEmojiUsage = (emojiValue) => {
+const trackEmojiUsage = (emojiValue, meta = {}) => {
   const key = normaliseEmojiKey(emojiValue);
   if (!key) return;
-  const current = Number(emojiUsageStore[key]) || 0;
-  emojiUsageStore[key] = current + 1;
+
+  const existing = emojiUsageStore[key];
+  const existingCount = Number(
+    existing && typeof existing === "object" ? existing.count : existing
+  );
+  const nextCount = Number.isFinite(existingCount) ? existingCount + 1 : 1;
+
+  const kind = meta.kind === "url" || existing?.kind === "url" ? "url" : "char";
+  const name =
+    typeof meta.name === "string" && meta.name ? meta.name : existing?.name || "";
+  const preview =
+    kind === "url"
+      ? typeof meta.preview === "string" && meta.preview
+        ? meta.preview
+        : existing?.preview || key
+      : "";
+
+  emojiUsageStore[key] = {
+    value: key,
+    kind,
+    name,
+    preview,
+    count: nextCount,
+  };
+
   const sorted = getSortedEmojiEntries();
   if (sorted.length > MAX_TRACKED_EMOJIS) {
-    emojiUsageStore = sorted.slice(0, MAX_TRACKED_EMOJIS).reduce((acc, [emoji, count]) => {
-      acc[emoji] = Number(count);
+    emojiUsageStore = sorted.slice(0, MAX_TRACKED_EMOJIS).reduce((acc, entry) => {
+      acc[entry.key] = {
+        value: entry.value,
+        kind: entry.kind,
+        name: entry.name,
+        preview: entry.preview,
+        count: entry.count,
+      };
       return acc;
     }, {});
   }
+
   persistEmojiUsageStore();
   renderQuickEmojiPanel();
 };
@@ -201,7 +322,7 @@ const trackEmojiUsage = (emojiValue) => {
 const trackEmojiUsageFromText = (text) => {
   const glyphs = extractEmojiGlyphs(text);
   if (!glyphs.length) return;
-  glyphs.forEach((emoji) => trackEmojiUsage(emoji));
+  glyphs.forEach((emoji) => trackEmojiUsage(emoji, { kind: "char" }));
 };
 
 const sendPlainTextMessage = (rawText, { replyTo } = {}) => {
@@ -246,10 +367,39 @@ quickEmojiPanel?.addEventListener("click", (event) => {
   if (!target || !quickEmojiPanel.contains(target)) return;
   event.preventDefault();
   event.stopPropagation();
-  const emoji = target.dataset.emoji || target.textContent || "";
-  if (!emoji) return;
+
+  const kind = target.dataset.kind === "url" ? "url" : "char";
+  const value = target.dataset.value || target.dataset.emoji || target.textContent || "";
+  if (!value) return;
+
+  if (kind === "url") {
+    if (window.currentRoom && window.currentUser) {
+      socket.emit("chat message", {
+        room: window.currentRoom,
+        user: window.currentUser,
+        text: value,
+        timestamp: Date.now(),
+      });
+      const name = target.dataset.name || "Emoji";
+      window.showToast?.(`${name} sent`, "success");
+      trackEmojiUsage(value, {
+        kind: "url",
+        name: target.dataset.name || "",
+        preview: target.dataset.preview || value,
+      });
+      try {
+        input?.focus({ preventScroll: true });
+      } catch {
+        input?.focus();
+      }
+    } else {
+      window.showToast?.("Join a room to send emoji.", "warn");
+    }
+    return;
+  }
+
   const replyTo = normalizeMessageId(replyState.targetId) || undefined;
-  const sent = sendPlainTextMessage(emoji, { replyTo });
+  const sent = sendPlainTextMessage(value, { replyTo });
   if (!sent) {
     window.showToast?.("Join a room to send emoji.", "warn");
     return;
@@ -4657,6 +4807,15 @@ if (emojiPicker) {
     const handleValueSelection = (value, meta = {}) => {
       const emojiValue = typeof value === "string" ? value : "";
       if (!emojiValue) return;
+
+      const usageMeta = {
+        kind: meta.kind === "url" ? "url" : "char",
+        name: meta.item?.name || meta.name || "",
+      };
+      if (usageMeta.kind === "url") {
+        usageMeta.preview = meta.item?.url || meta.preview || emojiValue;
+      }
+      trackEmojiUsage(emojiValue, usageMeta);
 
       if (state.mode === "reaction" && typeof state.onSelect === "function") {
         state.onSelect(emojiValue, meta);
