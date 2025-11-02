@@ -30,6 +30,7 @@ DizyChat is a Socket.IO and Express-powered real-time chat backend designed for 
 ### Message enrichment tools
 - Allows message editing, deletion (with file cleanup), pinning, starring, emoji reactions, threaded replies, and full-text search.
 - Sanitizes all user-provided text and filenames to avoid HTML/script injection.
+- Packs a Tenor GIF browser and a Pixabay-powered audio soundboard directly into the message composer.
 
 ### Client experience helpers
 - Broadcasts typing status with rate limiting to prevent spam.
@@ -78,6 +79,7 @@ Create a `.env` file in the project root with the following keys:
 | `METADEFENDER_BASE_URL` | (Optional) Override the MetaDefender API origin. Defaults to `https://api.metadefender.com/v4`. |
 | `METADEFENDER_POLL_INTERVAL_MS` | (Optional) Milliseconds between status polls; defaults to 1500 (bounded between 250-15000). |
 | `METADEFENDER_MAX_POLL_ATTEMPTS` | (Optional) Maximum polling attempts before timing out; defaults to 10 (bounded between 1-40). |
+| `PIXABAY_API_KEY` | Pixabay API key for the inline audio soundboard. Required to surface clips in the composer picker. |
 
 ## Running locally
 
@@ -125,6 +127,9 @@ Fetches metadata for an absolute URL and responds with normalized preview attrib
 
 ### `GET /tenor-proxy?url=...`
 Resolves a Tenor share URL to embeddable GIF URLs via Tenor oEmbed.
+
+### `GET /pixabay-audio`
+Proxies Pixabay audio search results. Accepts optional `q` and `page` query parameters and responds with normalized clip metadata for the soundboard picker.
 
 All other paths serve the front-end single-page app from `public/index.html`.
 
