@@ -5432,17 +5432,10 @@ function attachPreviewActions(preview, { link, label, type } = {}) {
   download.rel = "noopener noreferrer";
   download.className = "preview-download";
   download.setAttribute("download", "");
-  download.textContent = label ? `Download` : "Download";
+  download.textContent = "Download";
   actions.appendChild(download);
 
   preview.appendChild(actions);
-
-  if (label) {
-    const caption = document.createElement("div");
-    caption.className = "preview-caption";
-    caption.textContent = label;
-    preview.appendChild(caption);
-  }
 }
 
 const tenorPreviewCache = new Map();

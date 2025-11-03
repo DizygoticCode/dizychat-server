@@ -2466,12 +2466,6 @@ body:not(.dark) #soundboard-btn {
   background: rgba(37, 211, 102, 0.28);
 }
 
-.preview-caption {
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  word-break: break-word;
-}
-
 .embed-wrap {
   display: flex;
   flex-direction: column;
