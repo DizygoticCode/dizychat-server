@@ -174,6 +174,183 @@ const METADEFENDER_API_KEY = process.env.METADEFENDER_API_KEY;
 const METADEFENDER_BASE_URL =
   process.env.METADEFENDER_BASE_URL || 'https://api.metadefender.com/v4';
 const PIXABAY_API_KEY = process.env.PIXABAY_API_KEY || '';
+const PSYBIN_STATUS_URL =
+  process.env.PSYBIN_STATUS_URL || 'https://www.psyb.in/radio/status-json.xsl';
+const PSYBIN_STATUS_TIMEOUT_RAW = Number.parseInt(
+  String(process.env.PSYBIN_STATUS_TIMEOUT_MS ?? '').trim(),
+  10,
+);
+const PSYBIN_STATUS_TIMEOUT_MS = Number.isFinite(PSYBIN_STATUS_TIMEOUT_RAW)
+  ? Math.min(Math.max(PSYBIN_STATUS_TIMEOUT_RAW, 1000), 20000)
+  : 7000;
+const normalisePsybinString = (value) =>
+  typeof value === 'string' ? value.trim() : '';
+
+const pickFirstPsybinString = (...values) => {
+  for (const value of values) {
+    const candidate = normalisePsybinString(value);
+    if (candidate) return candidate;
+  }
+  return '';
+};
+
+const splitPsybinArtistTitle = (value) => {
+  const trimmed = normalisePsybinString(value);
+  if (!trimmed) return null;
+
+  const separators = [' - ', ' – ', ' — '];
+  for (const separator of separators) {
+    const index = trimmed.indexOf(separator);
+    if (index > 0 && index < trimmed.length - separator.length) {
+      const artist = trimmed.slice(0, index).trim();
+      const title = trimmed.slice(index + separator.length).trim();
+      if (artist && title) {
+        return { artist, title };
+      }
+    }
+  }
+
+  return null;
+};
+
+const selectPsybinSource = (payload) => {
+  if (!payload || typeof payload !== 'object') return null;
+  const { icestats } = payload;
+  if (!icestats || typeof icestats !== 'object') return null;
+  const { source } = icestats;
+  if (!source) return null;
+
+  const pickObject = (entry) => (entry && typeof entry === 'object' ? entry : null);
+
+  if (Array.isArray(source)) {
+    if (source.length === 1) return pickObject(source[0]);
+
+    const byListenUrl = source.find((entry) => {
+      const listenUrl = normalisePsybinString(entry?.listenurl);
+      return listenUrl.includes('/radio');
+    });
+    if (byListenUrl) return pickObject(byListenUrl);
+
+    const byName = source.find((entry) => {
+      const serverName = normalisePsybinString(entry?.server_name).toLowerCase();
+      return serverName.includes('psybin');
+    });
+    if (byName) return pickObject(byName);
+
+    return source.map(pickObject).find(Boolean) || null;
+  }
+
+  return pickObject(source);
+};
+
+const mapPsybinNowPlaying = (payload) => {
+  const source = selectPsybinSource(payload);
+  if (!source) {
+    return { title: '', artist: '', text: '' };
+  }
+
+  let artist = pickFirstPsybinString(
+    source.artist,
+    source.icy_artist,
+    source.stream_artist,
+    source.source_artist,
+  );
+  let title = pickFirstPsybinString(
+    source.title,
+    source.stream_title,
+    source.song,
+    source.current_song,
+    source.track,
+  );
+  const combined = pickFirstPsybinString(
+    source.now_playing,
+    source.nowplaying,
+    source.icy_title,
+    source['now-playing'],
+  );
+
+  if ((!artist || !title) && combined) {
+    const split = splitPsybinArtistTitle(combined);
+    if (split) {
+      if (!artist) artist = split.artist;
+      if (!title) title = split.title;
+    } else if (!title) {
+      title = combined;
+    }
+  }
+
+  const serverName = pickFirstPsybinString(
+    source.server_name,
+    source.server_description,
+    payload?.icestats?.server_name,
+  );
+
+  const parts = [];
+  if (artist) parts.push(artist);
+  if (title) parts.push(title);
+
+  let text = parts.length ? parts.join(' — ') : '';
+  if (!text) {
+    text = combined || serverName || '';
+  }
+
+  return { title, artist, text };
+};
+
+app.get('/api/psybin/now-playing', async (req, res) => {
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timeoutId = controller
+    ? setTimeout(() => {
+        try {
+          controller.abort();
+        } catch (_err) {
+          /* ignore */
+        }
+      }, PSYBIN_STATUS_TIMEOUT_MS)
+    : null;
+
+  try {
+    const response = await fetch(PSYBIN_STATUS_URL, {
+      method: 'GET',
+      headers: {
+        'user-agent': 'DizyChat/1.0 (+https://dizy.chat)',
+        accept: 'application/json',
+      },
+      signal: controller?.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    let payload;
+    try {
+      payload = await response.json();
+    } catch (err) {
+      throw new Error(`Invalid Psybin metadata payload: ${err.message}`);
+    }
+
+    const metadata = mapPsybinNowPlaying(payload);
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      title: metadata.title,
+      artist: metadata.artist,
+      text: metadata.text,
+      fetchedAt: Date.now(),
+    });
+  } catch (err) {
+    console.warn('[Psybin] Metadata proxy failed:', err.message);
+    res.status(502).json({
+      title: '',
+      artist: '',
+      text: '',
+      fetchedAt: Date.now(),
+      error: 'UNAVAILABLE',
+    });
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+});
 
 const parsePositiveInteger = (value, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) => {
   const numeric = Number.parseInt(String(value ?? '').trim(), 10);
