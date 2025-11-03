@@ -79,7 +79,7 @@ Create a `.env` file in the project root with the following keys:
 | `METADEFENDER_BASE_URL` | (Optional) Override the MetaDefender API origin. Defaults to `https://api.metadefender.com/v4`. |
 | `METADEFENDER_POLL_INTERVAL_MS` | (Optional) Milliseconds between status polls; defaults to 1500 (bounded between 250-15000). |
 | `METADEFENDER_MAX_POLL_ATTEMPTS` | (Optional) Maximum polling attempts before timing out; defaults to 10 (bounded between 1-40). |
-| `PIXABAY_API_KEY` | Pixabay API key for the inline audio soundboard. Required to surface clips in the composer picker. |
+| `PIXABAY_API_KEY` | Legacy Pixabay proxy key (no longer used now that soundboards are stored locally). Safe to omit. |
 
 ## Running locally
 
@@ -128,8 +128,18 @@ Fetches metadata for an absolute URL and responds with normalized preview attrib
 ### `GET /tenor-proxy?url=...`
 Resolves a Tenor share URL to embeddable GIF URLs via Tenor oEmbed.
 
-### `GET /pixabay-audio`
-Proxies Pixabay audio search results. Accepts optional `q` and `page` query parameters and responds with normalized clip metadata for the soundboard picker.
+### `GET /soundboard-clips`
+Returns locally curated soundboard clips aggregated from JSON definitions in `data/soundboards`. Accepts optional `q` and `board` query parameters for search filtering and responds with normalized clip metadata for the soundboard picker.
+
+### Importing meme boards from 101Soundboards
+
+The repository now stores soundboard metadata locally instead of proxying Pixabay. To pull curated boards from [101soundboards.com](https://www.101soundboards.com/):
+
+```bash
+node scripts/download-101-soundboard.js --board https://www.101soundboards.com/boards/<board-slug>
+```
+
+The script downloads every clip from the target board into `public/soundboards/<board-slug>/` and updates the JSON catalog in `data/soundboards`. The `public/soundboards` directory is intentionally gitignored so the repo stays binary-free—commit only the JSON definitions. If you need to distribute the audio assets, publish them through your own storage or an artifact bundle instead of checking the binaries into source control.
 
 All other paths serve the front-end single-page app from `public/index.html`.
 

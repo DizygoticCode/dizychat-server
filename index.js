@@ -13,6 +13,7 @@ const fs = require('fs');
 const multer = require('multer');
 const sanitizeHtml = require('sanitize-html');
 const Message = require('./src/models/message');
+const soundboardStore = require('./src/utils/soundboard');
 
 const nodeFetchModulePromise = import('node-fetch');
 const fetch = (...args) =>
@@ -174,7 +175,6 @@ const fetchMessageHistoryChunk = async (roomName, { beforeId } = {}) => {
 const METADEFENDER_API_KEY = process.env.METADEFENDER_API_KEY;
 const METADEFENDER_BASE_URL =
   process.env.METADEFENDER_BASE_URL || 'https://api.metadefender.com/v4';
-const PIXABAY_API_KEY = process.env.PIXABAY_API_KEY || '';
 const PSYBIN_STATUS_URL =
   process.env.PSYBIN_STATUS_URL || 'https://www.psyb.in/radio/status-json.xsl';
 const PSYBIN_STATUS_TIMEOUT_RAW = Number.parseInt(
@@ -895,98 +895,22 @@ app.get('/tenor-proxy', async (req, res) => {
   }
 });
 
-app.get('/pixabay-audio', async (req, res) => {
-  if (!PIXABAY_API_KEY) {
-    return res.status(503).json({
-      error: 'PIXABAY_API_KEY missing',
-      hits: [],
-      total: 0,
-      totalHits: 0,
-    });
-  }
-
-  const params = new URLSearchParams();
-  params.set('key', PIXABAY_API_KEY);
-  params.set('per_page', '24');
-  params.set('order', 'popular');
-
-  const { q, page } = req.query;
-  if (typeof q === 'string' && q.trim()) {
-    params.set('q', q.trim());
-  }
-  if (typeof page === 'string' && /^\d+$/.test(page.trim())) {
-    params.set('page', page.trim());
-  }
-
-  const endpoint = `https://pixabay.com/api/sounds/?${params.toString()}`;
-
-  const normaliseString = (value) =>
-    typeof value === 'string' ? value : '';
-
-  const pickUrl = (...candidates) => {
-    for (const candidate of candidates) {
-      if (typeof candidate === 'string' && candidate.trim()) {
-        return candidate.trim();
-      }
-    }
-    return '';
-  };
-
-  const toNumber = (value) => {
-    const num = Number(value);
-    return Number.isFinite(num) ? num : 0;
-  };
-
+app.get('/soundboard-clips', (req, res) => {
   try {
-    const response = await fetch(endpoint);
-    if (!response.ok) {
-      throw new Error(`Pixabay HTTP ${response.status}`);
-    }
+    const { q, board } = req.query;
+    const { hits, total } = soundboardStore.searchClips({
+      query: typeof q === 'string' ? q : '',
+      boardId: typeof board === 'string' ? board : '',
+    });
 
-    const payload = await response.json();
-    const hits = Array.isArray(payload?.hits) ? payload.hits : [];
-    const mappedHits = hits
-      .map((hit) => {
-        if (!hit || typeof hit !== 'object') return null;
-        const previews = hit.previews || {};
-        const audioUrl = pickUrl(
-          previews.full,
-          previews.preview_hq,
-          previews.preview,
-          hit.audio,
-        );
-        if (!audioUrl) return null;
-
-        const previewUrl = pickUrl(
-          previews.preview_hq,
-          previews.preview,
-          previews.full,
-          hit.audio,
-        );
-
-        return {
-          id: hit.id,
-          title: normaliseString(hit.title || hit.tags),
-          tags: normaliseString(hit.tags),
-          duration: toNumber(hit.duration),
-          audioUrl,
-          previewUrl,
-          waveform: pickUrl(hit.waveform),
-          pageURL: pickUrl(hit.pageURL),
-          user: normaliseString(hit.user),
-          type: normaliseString(hit.type),
-        };
-      })
-      .filter(Boolean);
-
-    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.setHeader('Cache-Control', 'public, max-age=60');
     res.json({
-      hits: mappedHits,
-      total: Number(payload?.total) || mappedHits.length,
-      totalHits: Number(payload?.totalHits) || mappedHits.length,
+      hits,
+      total,
+      totalHits: total,
     });
   } catch (err) {
-    console.error('[Pixabay] Error:', err.message);
+    console.error('[Soundboard] Error:', err.message);
     res.status(500).json({ hits: [], total: 0, totalHits: 0 });
   }
 });

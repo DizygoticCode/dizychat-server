@@ -6430,7 +6430,7 @@ if (voiceBtn) {
   });
 })();
 
-// ------------------- Pixabay Soundboard Picker -------------------
+// ------------------- Local Soundboard Picker -------------------
 (() => {
   if (!form) return;
 
@@ -6439,8 +6439,8 @@ if (voiceBtn) {
   if (!existing) {
     soundboardBtn.id = "soundboard-btn";
     soundboardBtn.type = "button";
-    soundboardBtn.title = "Pixabay audio soundboard";
-    soundboardBtn.setAttribute("aria-label", "Pixabay audio soundboard");
+    soundboardBtn.title = "Soundboard audio clips";
+    soundboardBtn.setAttribute("aria-label", "Soundboard audio clips");
     soundboardBtn.innerHTML =
       '<span class="soundboard-icon" aria-hidden="true">🔊</span>';
 
@@ -6509,7 +6509,7 @@ if (voiceBtn) {
     }
   };
 
-  const sanitiseFilename = (value, fallback = "pixabay-audio") => {
+  const sanitiseFilename = (value, fallback = "soundboard-audio") => {
     if (typeof value !== "string") return `${fallback}`;
     const stripped = value.replace(/[\\/:*?"<>|]/g, "").trim();
     return stripped || `${fallback}`;
@@ -6542,23 +6542,13 @@ if (voiceBtn) {
     renderStatus("Loading audio clips…", "loading");
 
     const endpoint = query
-      ? `/pixabay-audio?q=${encodeURIComponent(query)}`
-      : "/pixabay-audio";
+      ? `/soundboard-clips?q=${encodeURIComponent(query)}`
+      : "/soundboard-clips";
 
     try {
       const response = await fetch(endpoint);
-      if (response.status === 503) {
-        await response.json().catch(() => ({}));
-        renderStatus(
-          "Add a PIXABAY_API_KEY to enable the soundboard.",
-          "warn",
-        );
-        isLoading = false;
-        return;
-      }
-
       if (!response.ok) {
-        throw new Error(`Pixabay request failed: ${response.status}`);
+        throw new Error(`Soundboard request failed: ${response.status}`);
       }
 
       const data = await response.json();
@@ -6567,7 +6557,7 @@ if (voiceBtn) {
 
       if (!hits.length) {
         renderStatus(
-          query ? "No clips matched your search." : "No audio clips available yet.",
+          query ? "No clips matched your search." : "No soundboard clips available yet.",
           "info",
         );
         isLoading = false;
@@ -6597,13 +6587,19 @@ if (voiceBtn) {
 
         const titleEl = document.createElement("div");
         titleEl.className = "soundboard-item-title";
-        titleEl.textContent = clipTitle || "Pixabay Audio";
+        titleEl.textContent = clipTitle || "Soundboard Clip";
 
         const metaEl = document.createElement("div");
         metaEl.className = "soundboard-item-meta";
         const tags = (hit.tags || "").split(",").map((tag) => tag.trim()).filter(Boolean);
-        const tagSnippet = tags.length ? tags.slice(0, 2).join(" • ") : "";
-        metaEl.textContent = [duration, tagSnippet].filter(Boolean).join(" • ");
+        const boardLabel = typeof hit.boardTitle === "string" && hit.boardTitle.trim()
+          ? hit.boardTitle.trim()
+          : "";
+        const tagSnippetParts = [
+          boardLabel,
+          tags.length ? tags.slice(0, 2).join(" • ") : "",
+        ].filter(Boolean);
+        metaEl.textContent = [duration, ...tagSnippetParts].filter(Boolean).join(" • ");
 
         content.appendChild(titleEl);
         content.appendChild(metaEl);
@@ -6619,7 +6615,7 @@ if (voiceBtn) {
 
           const ext = guessExtension(audioUrl);
           const mime = guessMime(ext);
-          const safeName = sanitiseFilename(clipTitle || "Pixabay Audio");
+          const safeName = sanitiseFilename(clipTitle || "Soundboard Clip");
           const fileName = `${safeName}.${ext}`;
 
           socket.emit("chat message", {
@@ -6639,7 +6635,7 @@ if (voiceBtn) {
         resultsEl.appendChild(button);
       });
     } catch (err) {
-      console.error("[Soundboard] Pixabay error:", err);
+      console.error("[Soundboard] Clip load error:", err);
       renderStatus("Could not load audio clips.", "error");
     } finally {
       isLoading = false;
