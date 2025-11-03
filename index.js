@@ -4,6 +4,7 @@ require('dotenv').config();
 // ---------------- Imports ----------------
 const express = require('express');
 const http = require('http');
+const https = require('https');
 const { Server } = require('socket.io');
 const mongoose = require('mongoose');
 const path = require('path');
