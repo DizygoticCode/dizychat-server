@@ -79,7 +79,7 @@ Create a `.env` file in the project root with the following keys:
 | `METADEFENDER_BASE_URL` | (Optional) Override the MetaDefender API origin. Defaults to `https://api.metadefender.com/v4`. |
 | `METADEFENDER_POLL_INTERVAL_MS` | (Optional) Milliseconds between status polls; defaults to 1500 (bounded between 250-15000). |
 | `METADEFENDER_MAX_POLL_ATTEMPTS` | (Optional) Maximum polling attempts before timing out; defaults to 10 (bounded between 1-40). |
-| `PIXABAY_API_KEY` | Pixabay API key for the inline audio soundboard. Required to surface clips in the composer picker. |
+| `PIXABAY_API_KEY` | Legacy Pixabay proxy key (no longer used now that soundboards are stored locally). Safe to omit. |
 
 ## Running locally
 
@@ -128,8 +128,34 @@ Fetches metadata for an absolute URL and responds with normalized preview attrib
 ### `GET /tenor-proxy?url=...`
 Resolves a Tenor share URL to embeddable GIF URLs via Tenor oEmbed.
 
-### `GET /pixabay-audio`
-Proxies Pixabay audio search results. Accepts optional `q` and `page` query parameters and responds with normalized clip metadata for the soundboard picker.
+### `GET /soundboard-clips`
+Returns locally curated soundboard clips aggregated from JSON definitions in `data/soundboards`. Accepts optional `q` and `board` query parameters for search filtering and responds with normalized clip metadata for the soundboard picker.
+
+### Importing meme boards from 101Soundboards
+
+The repository now stores soundboard metadata locally instead of proxying Pixabay. Use `scripts/download-101-soundboard.js` to mirror boards from [101soundboards.com](https://www.101soundboards.com/):
+
+```bash
+# Import a single board by slug or URL
+node scripts/download-101-soundboard.js --board https://www.101soundboards.com/boards/<board-slug>
+
+# Import several boards listed in a text file (one slug/URL per line, optional "| Custom Title")
+node scripts/download-101-soundboard.js --list data/soundboards/boards.sample.txt
+
+# When no flags are passed the script will look for data/soundboards/board.txt (or boards.txt)
+node scripts/download-101-soundboard.js
+
+# Capture only metadata and reference remote audio without downloading binaries
+node scripts/download-101-soundboard.js --board <slug> --skip-audio
+```
+
+> **Note:** run the importer from a machine with unrestricted internet access. Hosted dev containers (including this project’s automated test environment) block outbound requests to 101Soundboards and will fail with `ENETUNREACH`. When that happens, switch to your local workstation, run the download there, and then commit the generated JSON files.
+
+Each successful import rewrites `data/soundboards/<board>.json` with the clip metadata, records the upstream board URL, and ensures `data/soundboards/index.json` references the board. Duplicate or commented lines in the list file are ignored. By default the script downloads every clip into `public/soundboards/<board>/`; pass `--skip-audio` (or `--remote-only`) if you prefer to keep the repo binary-free and stream directly from 101Soundboards at runtime.
+
+See `data/soundboards/boards.sample.txt` for a commented template you can copy and customise for batch imports. The repository now also includes `data/soundboards/board.txt` pre-populated with a meme-heavy starter list—update it with the boards you care about and run the importer with no extra flags to refresh everything in one go. For a step-by-step walkthrough (including tips on verifying downloads and what to commit), refer to [`docs/soundboard-import.md`](docs/soundboard-import.md).
+
+The `public/soundboards` directory remains gitignored so audio payloads never end up in commits. Commit only the JSON definitions; if you need to distribute the audio assets, publish them through your own storage or ship them as a separate artifact bundle. The cheat sheet above also explains how to package binaries outside of git if you need offline sharing.
 
 All other paths serve the front-end single-page app from `public/index.html`.
 
