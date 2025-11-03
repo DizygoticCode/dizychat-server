@@ -319,8 +319,9 @@ header .logo { width: 40px; height: auto; }
 
 .psybin-player {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
   background: var(--surface-alt);
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
@@ -332,6 +333,44 @@ header .logo { width: 40px; height: auto; }
 
 .psybin-player[hidden] {
   display: none !important;
+}
+
+.psybin-player-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78em;
+  line-height: 1.4;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.72));
+  min-height: 1.2em;
+}
+
+.psybin-player-meta[data-state="loading"] .psybin-player-meta-status {
+  display: inline-block;
+}
+
+.psybin-player-meta-status {
+  width: 0.75em;
+  height: 0.75em;
+  border-radius: 50%;
+  border: 2px solid var(--accent, #b266ff);
+  border-top-color: transparent;
+  display: none;
+  animation: psybin-player-spin 0.75s linear infinite;
+}
+
+.psybin-player-meta-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.psybin-player-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .psybin-player-label {
@@ -364,8 +403,19 @@ header .logo { width: 40px; height: auto; }
 }
 
 .psybin-player-volume {
-  width: 110px;
+  flex: 1 1 110px;
+  min-width: 90px;
+  max-width: 180px;
   accent-color: var(--accent, #b266ff);
+}
+
+@keyframes psybin-player-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .stream-modal {

@@ -69,6 +69,8 @@ const psybinAudio = document.getElementById("psybin-audio");
 const psybinPlayBtn = document.getElementById("psybin-play");
 const psybinMuteBtn = document.getElementById("psybin-mute");
 const psybinVolumeInput = document.getElementById("psybin-volume");
+const psybinMetadata = document.getElementById("psybin-meta");
+const psybinMetadataText = document.getElementById("psybin-meta-text");
 const scrollToLatestBtn = document.getElementById("scroll-to-latest");
 const scrollToLatestLabel = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-label") || null;
 const scrollToLatestCount = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-count") || null;
@@ -608,9 +610,18 @@ let muteCountdownInterval = null;
 const PSYBIN_RADIO_ROOM = "Psybin Radio";
 const PSYBIN_RADIO_STREAM_URL = "https://www.psyb.in/radio/";
 const PSYBIN_RADIO_ROOM_CANONICAL = PSYBIN_RADIO_ROOM.toLowerCase();
+const PSYBIN_METADATA_URL = "/api/psybin/now-playing";
+const PSYBIN_METADATA_REFRESH_MS = 45000;
+const PSYBIN_METADATA_RETRY_MS = 15000;
+const PSYBIN_METADATA_IDLE_TEXT = "Live Psybin Radio stream";
 const psybinPlayerState = {
   initialised: false,
   lastVolume: 1,
+  metadata: null,
+  metadataTimer: null,
+  metadataAbortController: null,
+  metadataRequestInFlight: false,
+  isStreamLoading: false,
 };
 
 const INFOWARS_ROOM_KEYWORD = "infowars";
@@ -3760,9 +3771,169 @@ function updatePsybinPlayerControls() {
   }
 }
 
+function normalisePsybinMetadata(payload) {
+  if (!payload || typeof payload !== "object") {
+    return {
+      title: "",
+      artist: "",
+      text: "",
+      fetchedAt: Date.now(),
+    };
+  }
+
+  const normaliseString = (value) => (typeof value === "string" ? value.trim() : "");
+  const normaliseNumber = (value) => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : Date.now();
+  };
+
+  const title = normaliseString(payload.title);
+  const artist = normaliseString(payload.artist);
+  const text = normaliseString(payload.text);
+  const fetchedAt = normaliseNumber(payload.fetchedAt);
+
+  return { title, artist, text, fetchedAt };
+}
+
+function updatePsybinMetadataDisplay() {
+  if (!psybinMetadataText || !psybinMetadata) return;
+
+  const { metadata, isStreamLoading } = psybinPlayerState;
+
+  let displayText = PSYBIN_METADATA_IDLE_TEXT;
+  let state = "idle";
+
+  if (isStreamLoading) {
+    displayText = "Connecting to Psybin Radio…";
+    state = "loading";
+  } else if (metadata) {
+    const title = typeof metadata.title === "string" ? metadata.title.trim() : "";
+    const artist = typeof metadata.artist === "string" ? metadata.artist.trim() : "";
+    const text = typeof metadata.text === "string" ? metadata.text.trim() : "";
+
+    if (text) {
+      displayText = text;
+      state = "ready";
+    } else if (title || artist) {
+      const parts = [];
+      if (artist) parts.push(artist);
+      if (title) parts.push(title);
+      displayText = parts.length ? parts.join(" — ") : PSYBIN_METADATA_IDLE_TEXT;
+      state = parts.length ? "ready" : "idle";
+    }
+  }
+
+  if (psybinMetadataText.textContent !== displayText) {
+    psybinMetadataText.textContent = displayText;
+  }
+
+  psybinMetadata.dataset.state = state;
+}
+
+function setPsybinStreamLoading(loading) {
+  const next = Boolean(loading);
+  if (psybinPlayerState.isStreamLoading === next) return;
+  psybinPlayerState.isStreamLoading = next;
+  updatePsybinMetadataDisplay();
+}
+
+function clearPsybinMetadataTimer() {
+  if (psybinPlayerState.metadataTimer) {
+    clearTimeout(psybinPlayerState.metadataTimer);
+    psybinPlayerState.metadataTimer = null;
+  }
+}
+
+function schedulePsybinMetadataRefresh(delayMs) {
+  clearPsybinMetadataTimer();
+  if (!psybinPlayer || psybinPlayer.hidden) return;
+
+  const delay = Math.max(0, Number(delayMs) || 0);
+  psybinPlayerState.metadataTimer = setTimeout(() => {
+    psybinPlayerState.metadataTimer = null;
+    fetchPsybinMetadata();
+  }, delay);
+}
+
+async function fetchPsybinMetadata() {
+  if (!psybinPlayer || psybinPlayer.hidden) return;
+  if (psybinPlayerState.metadataRequestInFlight) return;
+  if (typeof window === "undefined" || typeof window.fetch !== "function") return;
+
+  psybinPlayerState.metadataRequestInFlight = true;
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  if (controller) {
+    psybinPlayerState.metadataAbortController = controller;
+  }
+
+  let nextDelay = PSYBIN_METADATA_RETRY_MS;
+
+  try {
+    const response = await window.fetch(PSYBIN_METADATA_URL, {
+      method: "GET",
+      credentials: "same-origin",
+      cache: "no-store",
+      signal: controller?.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const payload = await response
+      .json()
+      .catch(() => ({ title: "", artist: "", text: "" }));
+
+    psybinPlayerState.metadata = normalisePsybinMetadata(payload);
+    nextDelay = PSYBIN_METADATA_REFRESH_MS;
+  } catch (err) {
+    if (err?.name !== "AbortError") {
+      console.warn("[Psybin] Metadata fetch failed", err);
+    }
+  } finally {
+    if (psybinPlayerState.metadataAbortController === controller) {
+      psybinPlayerState.metadataAbortController = null;
+    }
+    psybinPlayerState.metadataRequestInFlight = false;
+    updatePsybinMetadataDisplay();
+    schedulePsybinMetadataRefresh(nextDelay);
+  }
+}
+
+function ensurePsybinMetadataPolling({ immediate = false } = {}) {
+  if (!psybinPlayer || psybinPlayer.hidden) return;
+  if (immediate) {
+    if (psybinPlayerState.metadataRequestInFlight) return;
+    clearPsybinMetadataTimer();
+    fetchPsybinMetadata();
+    return;
+  }
+
+  schedulePsybinMetadataRefresh(PSYBIN_METADATA_REFRESH_MS);
+}
+
+function stopPsybinMetadataUpdates({ resetMetadata = false } = {}) {
+  clearPsybinMetadataTimer();
+  const controller = psybinPlayerState.metadataAbortController;
+  if (controller) {
+    try {
+      controller.abort();
+    } catch (_err) {
+      /* ignore */
+    }
+    psybinPlayerState.metadataAbortController = null;
+  }
+  psybinPlayerState.metadataRequestInFlight = false;
+  if (resetMetadata) {
+    psybinPlayerState.metadata = null;
+  }
+  updatePsybinMetadataDisplay();
+}
+
 function initPsybinPlayer() {
   if (psybinPlayerState.initialised || !psybinAudio || !psybinPlayer) return;
   psybinPlayerState.initialised = true;
+  updatePsybinMetadataDisplay();
 
   if (psybinPlayBtn) {
     psybinPlayBtn.addEventListener("click", async () => {
@@ -3771,13 +3942,17 @@ function initPsybinPlayer() {
         if (!psybinAudio.src) {
           psybinAudio.src = PSYBIN_RADIO_STREAM_URL;
         }
+        setPsybinStreamLoading(true);
+        ensurePsybinMetadataPolling({ immediate: true });
         try {
           await psybinAudio.play();
         } catch (err) {
           console.warn("[Psybin] Unable to start playback", err);
+          setPsybinStreamLoading(false);
         }
       } else {
         psybinAudio.pause();
+        setPsybinStreamLoading(false);
       }
       updatePsybinPlayerControls();
     });
@@ -3823,6 +3998,35 @@ function initPsybinPlayer() {
     }
     updatePsybinPlayerControls();
   });
+
+  psybinAudio.addEventListener("play", () => {
+    setPsybinStreamLoading(false);
+    ensurePsybinMetadataPolling({ immediate: true });
+  });
+  psybinAudio.addEventListener("playing", () => {
+    setPsybinStreamLoading(false);
+  });
+  psybinAudio.addEventListener("loadstart", () => {
+    if (!psybinAudio.paused) {
+      setPsybinStreamLoading(true);
+    }
+  });
+  psybinAudio.addEventListener("waiting", () => {
+    if (!psybinAudio.paused) {
+      setPsybinStreamLoading(true);
+    }
+  });
+  psybinAudio.addEventListener("stalled", () => {
+    if (!psybinAudio.paused) {
+      setPsybinStreamLoading(true);
+    }
+  });
+  psybinAudio.addEventListener("pause", () => {
+    setPsybinStreamLoading(false);
+  });
+  psybinAudio.addEventListener("error", () => {
+    setPsybinStreamLoading(false);
+  });
 }
 
 function setPsybinPlayerRoom(roomName) {
@@ -3847,6 +4051,10 @@ function setPsybinPlayerRoom(roomName) {
     psybinPlayBtn?.removeAttribute("disabled");
     psybinMuteBtn?.removeAttribute("disabled");
     psybinVolumeInput?.removeAttribute("disabled");
+    const isBuffering = !psybinAudio.paused && psybinAudio.readyState < 2;
+    setPsybinStreamLoading(isBuffering);
+    ensurePsybinMetadataPolling({ immediate: true });
+    updatePsybinMetadataDisplay();
     updatePsybinPlayerControls();
   } else {
     if (!psybinAudio.paused) {
@@ -3865,6 +4073,8 @@ function setPsybinPlayerRoom(roomName) {
     if (psybinVolumeInput) {
       psybinVolumeInput.value = "1";
     }
+    setPsybinStreamLoading(false);
+    stopPsybinMetadataUpdates({ resetMetadata: true });
     updatePsybinPlayerControls();
   }
 }
