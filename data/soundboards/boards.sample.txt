@@ -1,0 +1,4 @@
+# Example board list for scripts/download-101-soundboard.js --list
+# Lines support "<slug or URL>|Optional Custom Title"
+# https://www.101soundboards.com/boards/2-the-memes-soundboard|Meme Classics
+# https://www.101soundboards.com/boards/14133-vine-boom|Vine Boom Variations
