@@ -1,0 +1,7 @@
+# Primary board list for batch imports. Lines accept "<slug or URL>|Optional Custom Title".
+# Replace or extend this list with the boards you want mirrored locally.
+https://www.101soundboards.com/boards/2-the-memes-soundboard|Meme Classics
+https://www.101soundboards.com/boards/14133-vine-boom|Vine Boom Variations
+https://www.101soundboards.com/boards/37531-anime-wow-soundboard|Anime WOW & Reactions
+https://www.101soundboards.com/boards/21561-sad-violin|Sad Reactions
+https://www.101soundboards.com/boards/32648-celebration-soundboard|Celebration Stingers
