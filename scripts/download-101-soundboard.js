@@ -10,37 +10,8 @@ const cheerio = require('cheerio');
 
 const SOUND_DATA_DIR = path.join(__dirname, '..', 'data', 'soundboards');
 const SOUND_PUBLIC_DIR = path.join(__dirname, '..', 'public', 'soundboards');
-const DEFAULT_LIST_CANDIDATES = [
-  'board.txt',
-  'boards.txt',
-  'boards.list',
-  'boards.sample.txt',
-];
 
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36';
-const DEFAULT_HEADERS = {
-  'User-Agent': USER_AGENT,
-  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-  'Accept-Language': 'en-US,en;q=0.9',
-  'Accept-Encoding': 'identity',
-  Connection: 'keep-alive',
-};
-
-const describeNetworkError = (error, url) => {
-  if (!error) return new Error(`Unknown error while requesting ${url}`);
-  const networkCodes = new Set([
-    'ECONNREFUSED',
-    'ECONNRESET',
-    'ENOTFOUND',
-    'EAI_AGAIN',
-    'ETIMEDOUT',
-    'EHOSTUNREACH',
-  ]);
-  if (error.code && networkCodes.has(error.code)) {
-    return new Error(`Network error (${error.code}) while requesting ${url}. Check your connection or VPN settings.`);
-  }
-  return error;
-};
+const USER_AGENT = 'Mozilla/5.0 (compatible; DizychAtSoundboardBot/1.0)';
 
 const normaliseString = (value) =>
   typeof value === 'string' ? value.trim() : '';
@@ -49,13 +20,9 @@ const ensureDir = async (targetPath) => {
   await fsPromises.mkdir(targetPath, { recursive: true });
 };
 
-const withHeaders = (customHeaders = {}) => ({
-  headers: { ...DEFAULT_HEADERS, ...customHeaders },
-});
-
-const fetchText = (url, options = {}) => new Promise((resolve, reject) => {
+const fetchText = (url) => new Promise((resolve, reject) => {
   const requestUrl = typeof url === 'string' ? url : url.toString();
-  https.get(requestUrl, withHeaders(options.headers), (res) => {
+  https.get(requestUrl, { headers: { 'User-Agent': USER_AGENT } }, (res) => {
     if (res.statusCode && res.statusCode >= 400) {
       reject(new Error(`Request failed with status ${res.statusCode}`));
       res.resume();
@@ -67,12 +34,12 @@ const fetchText = (url, options = {}) => new Promise((resolve, reject) => {
     res.on('end', () => {
       resolve(Buffer.concat(chunks).toString('utf8'));
     });
-  }).on('error', (err) => reject(describeNetworkError(err, requestUrl)));
+  }).on('error', reject);
 });
 
-const fetchBinary = (url, options = {}) => new Promise((resolve, reject) => {
+const fetchBinary = (url) => new Promise((resolve, reject) => {
   const requestUrl = typeof url === 'string' ? url : url.toString();
-  https.get(requestUrl, withHeaders(options.headers), (res) => {
+  https.get(requestUrl, { headers: { 'User-Agent': USER_AGENT } }, (res) => {
     if (res.statusCode && res.statusCode >= 400) {
       reject(new Error(`Request failed with status ${res.statusCode}`));
       res.resume();
@@ -84,7 +51,7 @@ const fetchBinary = (url, options = {}) => new Promise((resolve, reject) => {
     res.on('end', () => {
       resolve(Buffer.concat(chunks));
     });
-  }).on('error', (err) => reject(describeNetworkError(err, requestUrl)));
+  }).on('error', reject);
 });
 
 const parseNuxtState = (html) => {
@@ -152,21 +119,19 @@ const extractClips = (state) => {
   return clips;
 };
 
-const writeBoardIndex = async (boardId, boardTitle, clips, boardUrl = '') => {
+const writeBoardIndex = async (boardId, boardTitle, clips) => {
   const boardFilePath = path.join(SOUND_DATA_DIR, `${boardId}.json`);
   await ensureDir(SOUND_DATA_DIR);
   await fsPromises.writeFile(boardFilePath, JSON.stringify({
     id: boardId,
     title: boardTitle,
     source: '101soundboards',
-    sourceUrl: boardUrl || undefined,
     items: clips.map((clip, index) => ({
       id: `${boardId}-${index}`,
       title: clip.title,
       tags: clip.tags,
       duration: clip.duration,
-      file: clip.filename ? `${boardId}/${clip.filename}` : undefined,
-      url: clip.url,
+      file: `${boardId}/${clip.filename}`,
     })),
   }, null, 2));
 
@@ -187,7 +152,7 @@ const writeBoardIndex = async (boardId, boardTitle, clips, boardUrl = '') => {
   await fsPromises.writeFile(indexFilePath, `${JSON.stringify(indexData, null, 2)}\n`);
 };
 
-const downloadClips = async (boardId, clips, { skipAudio = false } = {}) => {
+const downloadClips = async (boardId, clips) => {
   const targetDir = path.join(SOUND_PUBLIC_DIR, boardId);
   await ensureDir(targetDir);
   const enriched = [];
@@ -197,15 +162,11 @@ const downloadClips = async (boardId, clips, { skipAudio = false } = {}) => {
     const extension = extensionMatch ? extensionMatch[1].toLowerCase() : 'mp3';
     const safeSlug = normaliseString(clip.title).replace(/[^a-z0-9_-]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'clip';
     const filename = `${safeSlug}.${extension}`;
-    if (!skipAudio) {
-      const filePath = path.join(targetDir, filename);
-      console.log(`Downloading ${clip.title} → ${filename}`);
-      const data = await fetchBinary(clipUrl.toString());
-      await fsPromises.writeFile(filePath, data);
-    } else {
-      console.log(`Skipping download for ${clip.title}; referencing remote audio.`);
-    }
-    enriched.push({ ...clip, filename: skipAudio ? null : filename, url: clipUrl.toString() });
+    const filePath = path.join(targetDir, filename);
+    console.log(`Downloading ${clip.title} → ${filename}`);
+    const data = await fetchBinary(clipUrl.toString());
+    await fsPromises.writeFile(filePath, data);
+    enriched.push({ ...clip, filename });
   }
   return enriched;
 };
@@ -224,11 +185,6 @@ const parseArgs = () => {
     } else if (arg === '--title') {
       result.title = args[i + 1];
       i += 1;
-    } else if (arg === '--list' || arg === '-l') {
-      result.list = args[i + 1];
-      i += 1;
-    } else if (arg === '--skip-audio' || arg === '--remote-only') {
-      result.skipAudio = true;
     }
   }
   return result;
@@ -248,95 +204,27 @@ const deriveBoardId = (boardArg, explicitId) => {
   return clean;
 };
 
-const importBoard = async ({ board, id, title, skipAudio = false }) => {
-  const boardId = deriveBoardId(board, id);
-  const boardUrl = board && board.startsWith('http')
-    ? board
-    : `https://www.101soundboards.com/boards/${boardId}`;
-  console.log(`Fetching board ${boardUrl}`);
-  const html = await fetchText(boardUrl);
-  const state = parseNuxtState(html);
-  if (!state) {
-    throw new Error('Could not locate board data in page payload');
-  }
-  const clips = extractClips(state);
-  if (!clips.length) {
-    throw new Error('No downloadable clips discovered in board data');
-  }
-  const enriched = await downloadClips(boardId, clips, { skipAudio });
-  const boardTitle = title
-    || normaliseString(state?.data?.[0]?.board?.title || state?.data?.[0]?.soundboard?.title)
-    || boardId;
-  await writeBoardIndex(boardId, boardTitle, enriched, boardUrl);
-  console.log(`Imported ${enriched.length} clips into board '${boardId}'.`);
-};
-
-const parseBoardListFile = async (filePath) => {
-  const absolutePath = path.isAbsolute(filePath)
-    ? filePath
-    : path.join(process.cwd(), filePath);
-  const raw = await fsPromises.readFile(absolutePath, 'utf8');
-  return raw
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith('#'));
-};
-
-const resolveDefaultList = () => {
-  for (const candidate of DEFAULT_LIST_CANDIDATES) {
-    const absolute = path.join(SOUND_DATA_DIR, candidate);
-    if (fs.existsSync(absolute)) {
-      return absolute;
-    }
-  }
-  return null;
-};
-
 (async () => {
   try {
-    const { list, skipAudio, ...singleArgs } = parseArgs();
-    let effectiveList = list;
-    const targets = [];
-
-    if (!effectiveList && !singleArgs.board && !singleArgs.id) {
-      const autoList = resolveDefaultList();
-      if (autoList) {
-        effectiveList = autoList;
-        const displayPath = path.relative(process.cwd(), autoList);
-        console.log(`No explicit board provided; using list file ${displayPath}`);
-      }
+    const { board, id, title } = parseArgs();
+    const boardId = deriveBoardId(board, id);
+    const boardUrl = board && board.startsWith('http')
+      ? board
+      : `https://www.101soundboards.com/boards/${boardId}`;
+    console.log(`Fetching board ${boardUrl}`);
+    const html = await fetchText(boardUrl);
+    const state = parseNuxtState(html);
+    if (!state) {
+      throw new Error('Could not locate board data in page payload');
     }
-
-    if (effectiveList) {
-      const boardEntries = await parseBoardListFile(effectiveList);
-      boardEntries.forEach((entry) => {
-        const [boardRef, explicitTitle] = entry.split('|').map((part) => part.trim());
-        if (boardRef) {
-          targets.push({ board: boardRef, title: explicitTitle, skipAudio });
-        }
-      });
+    const clips = extractClips(state);
+    if (!clips.length) {
+      throw new Error('No downloadable clips discovered in board data');
     }
-
-    if (!effectiveList) {
-      if (!singleArgs.board && !singleArgs.id) {
-        throw new Error('Provide a board slug/URL with --board or a list file via --list');
-      }
-      targets.push({ ...singleArgs, skipAudio });
-    }
-
-    if (!targets.length) {
-      throw new Error('No boards to import after parsing arguments.');
-    }
-
-    for (const target of targets) {
-      try {
-        await importBoard(target);
-      } catch (err) {
-        const detail = err && err.message ? err.message : err;
-        console.error(`[download-101-soundboard] Failed to import ${target.board || target.id}:`, detail);
-        process.exitCode = 1;
-      }
-    }
+    const enriched = await downloadClips(boardId, clips);
+    const boardTitle = title || normaliseString(state?.data?.[0]?.board?.title || state?.data?.[0]?.soundboard?.title) || boardId;
+    await writeBoardIndex(boardId, boardTitle, enriched);
+    console.log(`Imported ${enriched.length} clips into board '${boardId}'.`);
   } catch (err) {
     console.error('[download-101-soundboard] Error:', err.message);
     process.exitCode = 1;
