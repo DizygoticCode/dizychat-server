@@ -30,6 +30,7 @@ const input = document.getElementById("input");
 const messages = document.getElementById("messages");
 const fileInput = document.getElementById("file-input");
 const attachBtn = document.getElementById("file-attach");
+const voiceBtn = document.getElementById("voice-btn");
 const emojiBtn = document.getElementById("emoji-btn");
 const pinnedContainer = document.getElementById("pinned-messages");
 const searchInput = document.getElementById("message-search");
@@ -5926,6 +5927,83 @@ socket.on("admin status", ({ isAdmin }) => {
   }
 });
 
+// ------------------- File Upload Helpers -------------------
+const createUploadOverlay = () => {
+  const progress = document.createElement("div");
+  progress.className = "upload-progress";
+  progress.innerHTML = `<div class="bar" style="width:0%"></div><span style="display:none"></span>`;
+  document.body.appendChild(progress);
+  const bar = progress.querySelector(".bar");
+  return { progress, bar };
+};
+
+const uploadFileAndSend = async (fileOrBlob, options = {}) => {
+  if (!fileOrBlob) return false;
+
+  const { fileName: overrideName, displayName, mimeType } = options;
+  const intrinsicName =
+    typeof fileOrBlob?.name === "string" && fileOrBlob.name
+      ? fileOrBlob.name
+      : "";
+  const uploadName = overrideName || intrinsicName || "attachment";
+  const label = displayName || uploadName;
+
+  showToast(`Uploading ${label}…`, "info");
+
+  const { progress, bar } = createUploadOverlay();
+  let fake = 0;
+  const formData = new FormData();
+
+  const appendName = overrideName || !intrinsicName;
+  if (appendName) {
+    formData.append("file", fileOrBlob, uploadName);
+  } else {
+    formData.append("file", fileOrBlob);
+  }
+
+  const fakeTimer = setInterval(() => {
+    fake = Math.min(fake + 7, 90);
+    if (bar) bar.style.width = fake + "%";
+    if (fake >= 90) clearInterval(fakeTimer);
+  }, 120);
+
+  try {
+    const response = await fetch("/upload", { method: "POST", body: formData });
+    const data = await response.json();
+
+    if (!response.ok || data.error) {
+      throw new Error(data.error || "Upload failed");
+    }
+
+    if (bar) bar.style.width = "100%";
+    setTimeout(() => progress.remove(), 800);
+
+    showToast(`Uploaded: ${label}`, "success");
+
+    const replyTo = normalizeMessageId(replyState.targetId) || undefined;
+    socket.emit("chat message", {
+      room: window.currentRoom,
+      user: window.currentUser,
+      text: data.url,
+      timestamp: Date.now(),
+      fileUrl: data.url,
+      fileType: data.type || mimeType || fileOrBlob.type || "",
+      fileName: data.name || uploadName || "",
+      replyTo,
+    });
+
+    clearReplyTarget();
+    return true;
+  } catch (err) {
+    console.error("[Upload Error]", err);
+    showToast(`Upload failed: ${label}`, "error");
+    progress.remove();
+    throw err;
+  } finally {
+    clearInterval(fakeTimer);
+  }
+};
+
 // ------------------- File Uploads (paperclip) -------------------
 if (attachBtn && fileInput) {
   fileInput.accept = "*/*";
@@ -5935,57 +6013,306 @@ if (attachBtn && fileInput) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    showToast(`Uploading ${file.name}…`, "info");
-
-    // Visual progress overlay (purple)
-    const progress = document.createElement("div");
-    progress.className = "upload-progress";
-    progress.innerHTML = `<div class="bar" style="width:0%"></div><span style="display:none"></span>`;
-    document.body.appendChild(progress);
-    const bar = progress.querySelector(".bar");
-
-    const formData = new FormData();
-    formData.append("file", file);
-
     try {
-      // Simple fetch (Render may not support chunk progress). Simulate bar fill:
-      let fake = 0;
-      const fakeTimer = setInterval(() => {
-        fake = Math.min(fake + 7, 90);
-        if (bar) bar.style.width = fake + "%";
-        if (fake >= 90) clearInterval(fakeTimer);
-      }, 120);
-
-      const response = await fetch("/upload", { method: "POST", body: formData });
-      const data = await response.json();
-
-      if (!response.ok || data.error) throw new Error(data.error || "Upload failed");
-
-      if (bar) bar.style.width = "100%";
-      setTimeout(() => progress.remove(), 800);
-
-      showToast(`Uploaded: ${file.name}`, "success");
-
-      const replyTo = normalizeMessageId(replyState.targetId) || undefined;
-      socket.emit("chat message", {
-        room: window.currentRoom,
-        user: window.currentUser,
-        text: data.url,
-        timestamp: Date.now(),
-        fileUrl: data.url,
-        fileType: data.type || file.type || "",
-        fileName: data.name || file.name || "",
-        replyTo,
-      });
-
+      await uploadFileAndSend(file);
       fileInput.value = "";
-      clearReplyTarget();
-    } catch (err) {
-      console.error("[Upload Error]", err);
-      showToast(`Upload failed: ${file.name}`, "error");
-      progress.remove();
+    } catch {
+      /* handled in uploadFileAndSend */
     }
   });
+}
+
+// ------------------- Voice Messages (push-to-talk) -------------------
+if (voiceBtn) {
+  const supportsMediaRecording =
+    typeof window !== "undefined" &&
+    typeof window.MediaRecorder !== "undefined" &&
+    typeof navigator !== "undefined" &&
+    navigator?.mediaDevices?.getUserMedia;
+
+  if (!supportsMediaRecording) {
+    voiceBtn.remove();
+  } else {
+    voiceBtn.hidden = false;
+    voiceBtn.removeAttribute("aria-hidden");
+    voiceBtn.setAttribute("aria-pressed", "false");
+
+    const defaultLabel = voiceBtn.innerHTML;
+    const defaultTitle =
+      voiceBtn.getAttribute("title") || "Hold to record voice message";
+
+    const pickMimeType = () => {
+      const candidates = [
+        "audio/webm;codecs=opus",
+        "audio/ogg;codecs=opus",
+        "audio/webm",
+        "audio/ogg",
+      ];
+      if (typeof window.MediaRecorder?.isTypeSupported === "function") {
+        for (const type of candidates) {
+          if (window.MediaRecorder.isTypeSupported(type)) return type;
+        }
+      }
+      return undefined;
+    };
+
+    const guessExtension = (type) => {
+      if (!type) return "webm";
+      if (type.includes("ogg")) return "ogg";
+      if (type.includes("mp3")) return "mp3";
+      if (type.includes("wav")) return "wav";
+      if (type.includes("m4a")) return "m4a";
+      return "webm";
+    };
+
+    const setRecordingUI = (active) => {
+      voiceBtn.classList.toggle("recording", Boolean(active));
+      voiceBtn.innerHTML = active ? "⏺️" : defaultLabel;
+      voiceBtn.setAttribute("aria-pressed", active ? "true" : "false");
+      voiceBtn.setAttribute(
+        "title",
+        active ? "Release to send • press Esc to cancel" : defaultTitle
+      );
+    };
+
+    let recorder = null;
+    let startPromise = null;
+    let pendingStop = null;
+    let recordedChunks = [];
+    let pointerId = null;
+    let stopTimer = null;
+    let stopping = false;
+
+    const MAX_RECORDING_DURATION_MS = 60000;
+    const recorderOptions = (() => {
+      const type = pickMimeType();
+      return type ? { mimeType: type } : undefined;
+    })();
+
+    const releasePointer = () => {
+      if (pointerId != null) {
+        try {
+          voiceBtn.releasePointerCapture(pointerId);
+        } catch {}
+        pointerId = null;
+      }
+    };
+
+    const cleanupStream = (stream) => {
+      if (!stream) return;
+      stream.getTracks?.().forEach((track) => {
+        try {
+          track.stop();
+        } catch {}
+      });
+    };
+
+    const resetRecordingState = () => {
+      if (stopTimer) {
+        clearTimeout(stopTimer);
+        stopTimer = null;
+      }
+      stopping = false;
+      recordedChunks = [];
+      recorder = null;
+      startPromise = null;
+      pendingStop = null;
+      setRecordingUI(false);
+      releasePointer();
+    };
+
+    const finalizeRecording = async (shouldSend, reason = "complete") => {
+      if ((!recorder && !startPromise) || stopping) {
+        if (!recorder && startPromise) {
+          pendingStop = { shouldSend, reason };
+        }
+        return;
+      }
+
+      stopping = true;
+      if (stopTimer) {
+        clearTimeout(stopTimer);
+        stopTimer = null;
+      }
+
+      const currentRecorder = recorder;
+      const stopPromise = new Promise((resolve) => {
+        if (!currentRecorder) {
+          resolve();
+          return;
+        }
+        currentRecorder.addEventListener("stop", resolve, { once: true });
+      });
+
+      try {
+        if (currentRecorder && currentRecorder.state !== "inactive") {
+          currentRecorder.stop();
+        }
+      } catch (err) {
+        console.error("[Voice] Failed to stop recorder", err);
+      }
+
+      await stopPromise;
+
+      const mimeType =
+        recordedChunks?.[0]?.type || currentRecorder?.mimeType || "audio/webm";
+      const blob =
+        recordedChunks && recordedChunks.length
+          ? new Blob(recordedChunks, { type: mimeType })
+          : null;
+
+      cleanupStream(currentRecorder?.stream);
+      resetRecordingState();
+
+      if (!shouldSend) {
+        if (reason === "cancel") {
+          showToast("Recording canceled", "info");
+        }
+        return;
+      }
+
+      if (!blob || !blob.size) {
+        showToast("Recording was empty", "warn");
+        return;
+      }
+
+      const extension = guessExtension(mimeType);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const filename = `voice-${timestamp}.${extension}`;
+
+      try {
+        await uploadFileAndSend(blob, {
+          fileName: filename,
+          displayName: filename,
+          mimeType,
+        });
+      } catch {
+        /* errors handled in uploadFileAndSend */
+      }
+    };
+
+    const startRecording = async () => {
+      if (recorder || startPromise) return startPromise;
+
+      if (!window.currentRoom || !window.currentUser) {
+        showToast("Join the chat to send voice messages.", "warn");
+        releasePointer();
+        return null;
+      }
+
+      startPromise = (async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+          });
+
+          recordedChunks = [];
+          recorder = new MediaRecorder(stream, recorderOptions);
+
+          recorder.addEventListener("dataavailable", (event) => {
+            if (event?.data && event.data.size) {
+              recordedChunks.push(event.data);
+            }
+          });
+
+          recorder.addEventListener("error", (event) => {
+            console.error("[Voice] Recorder error", event?.error || event);
+            showToast("Recording failed. Please try again.", "error");
+            finalizeRecording(false, "cancel");
+          });
+
+          recorder.start();
+          setRecordingUI(true);
+
+          stopTimer = setTimeout(() => {
+            finalizeRecording(true, "timeout");
+          }, MAX_RECORDING_DURATION_MS);
+        } catch (err) {
+          console.error("[Voice] Microphone error", err);
+          if (err?.name === "NotAllowedError" || err?.name === "SecurityError") {
+            showToast("Microphone access was blocked.", "error");
+          } else if (err?.name === "NotFoundError") {
+            showToast("No microphone detected.", "error");
+          } else {
+            showToast("Could not access the microphone.", "error");
+          }
+          releasePointer();
+          setRecordingUI(false);
+          recorder = null;
+        } finally {
+          const queued = pendingStop;
+          startPromise = null;
+          if (queued) {
+            pendingStop = null;
+            finalizeRecording(queued.shouldSend, queued.reason);
+          }
+        }
+      })();
+
+      return startPromise;
+    };
+
+    const queueStop = (shouldSend, reason) => {
+      if (recorder) {
+        finalizeRecording(shouldSend, reason);
+      } else if (startPromise) {
+        pendingStop = { shouldSend, reason };
+      }
+    };
+
+    voiceBtn.addEventListener("pointerdown", (event) => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      event.preventDefault();
+      pointerId = event.pointerId;
+      try {
+        voiceBtn.setPointerCapture(pointerId);
+      } catch {}
+      startRecording();
+    });
+
+    voiceBtn.addEventListener("pointerup", (event) => {
+      if (pointerId != null && event.pointerId !== pointerId) return;
+      event.preventDefault();
+      queueStop(true, "complete");
+    });
+
+    voiceBtn.addEventListener("pointercancel", (event) => {
+      if (pointerId != null && event.pointerId !== pointerId) return;
+      event.preventDefault();
+      queueStop(false, "cancel");
+    });
+
+    voiceBtn.addEventListener("lostpointercapture", () => {
+      if (recorder || startPromise) {
+        queueStop(false, "cancel");
+      }
+    });
+
+    voiceBtn.addEventListener("keydown", (event) => {
+      if (event.key === " " || event.key === "Enter") {
+        if (event.repeat) {
+          event.preventDefault();
+          return;
+        }
+        event.preventDefault();
+        startRecording();
+      }
+    });
+
+    voiceBtn.addEventListener("keyup", (event) => {
+      if (event.key === " " || event.key === "Enter") {
+        event.preventDefault();
+        queueStop(true, "complete");
+      }
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && (recorder || startPromise)) {
+        event.preventDefault();
+        queueStop(false, "cancel");
+      }
+    });
+  }
 }
 
 // ------------------- Tenor GIF Picker (beside emoji) -------------------
