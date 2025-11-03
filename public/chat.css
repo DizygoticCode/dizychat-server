@@ -1125,8 +1125,8 @@ body:not(.dark) .scroll-to-latest.has-new {
 
   .header-right button {
     margin-left: 0;
-    flex: 1 1 calc(50% - 8px);
-    min-width: 44px;
+    flex: 0 0 auto;
+    min-width: 0;
   }
 
   .header-right button#toggle-sounds {
@@ -1165,28 +1165,44 @@ body:not(.dark) .scroll-to-latest.has-new {
 @media (max-width: 768px) {
   header {
     padding: 10px 12px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
   }
 
   header .logo {
     width: 36px;
   }
 
+  header .header-left {
+    width: 100%;
+    justify-content: space-between;
+  }
+
   #chat-container header .header-right {
-    align-items: stretch;
+    align-items: center;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
   }
 
   #chat-container .search-bar {
+    order: -1;
+    width: 100%;
     gap: 4px;
+    margin-left: 0;
   }
 
+  #chat-container .search-bar input,
   #chat-container .search-bar select {
     flex: 1 1 100%;
     min-width: 0;
   }
 
   .header-right button {
-    flex: 1 1 calc(50% - 6px);
-    min-height: 40px;
+    flex: 0 0 auto;
+    min-height: 36px;
   }
 
   #chat-main {
@@ -2588,6 +2604,7 @@ body:not(.dark) #soundboard-btn {
   #chat-container .search-bar {
     flex-direction: column;
     align-items: stretch;
+    display: none;
   }
 
   #chat-container .search-bar input,
@@ -2607,21 +2624,23 @@ body:not(.dark) #soundboard-btn {
   #input { font-size: 0.95em; }
   .header-right button {
     font-size: 0.85em;
-    padding: 5px 10px;
-    flex: 1 1 100%;
+    padding: 6px 12px;
+    flex: 0 0 auto;
   }
   .header-right button#toggle-sounds {
     flex: 0 0 36px;
     align-self: center;
   }
   #form {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    align-items: center;
     gap: 8px;
     padding: 12px;
     padding-bottom: calc(12px + env(safe-area-inset-bottom));
   }
   #form button {
     margin-left: 0;
+    flex: 0 0 auto;
   }
   #file-attach,
   #gif-btn,
@@ -2630,13 +2649,13 @@ body:not(.dark) #soundboard-btn {
     order: 0;
   }
   #input {
-    order: 1;
-    flex: 1 1 100%;
+    order: 0;
+    flex: 1 1 auto;
     min-width: 0;
   }
   #form button[type="submit"] {
-    order: 2;
-    margin-left: auto;
+    order: 0;
+    margin-left: 0;
   }
   .inline-preview { width: min(200px, 100%); }
 }
