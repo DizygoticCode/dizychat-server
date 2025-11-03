@@ -7,7 +7,6 @@ This guide walks through downloading entire boards from [101soundboards.com](htt
 - Node.js 16+ installed locally.
 - Network access to `www.101soundboards.com` (some corporate VPNs block media domains—disable them if the script reports `ENOTFOUND` or `ECONNRESET`).
 - A populated board list under `data/soundboards/board.txt` or another list file you plan to pass to the importer.
-- **Run the importer from an environment with unrestricted outbound HTTPS**. Sandboxed CI agents (including GitHub’s Codespaces / Codesandbox “no-internet” modes) block requests to 101Soundboards, which produces `ENETUNREACH` errors. When that happens, switch to your local workstation or any machine with regular internet access.
 
 ## 1. Review or curate your board list
 
