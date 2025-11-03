@@ -133,27 +133,13 @@ Returns locally curated soundboard clips aggregated from JSON definitions in `da
 
 ### Importing meme boards from 101Soundboards
 
-The repository now stores soundboard metadata locally instead of proxying Pixabay. Use `scripts/download-101-soundboard.js` to mirror boards from [101soundboards.com](https://www.101soundboards.com/):
+The repository now stores soundboard metadata locally instead of proxying Pixabay. To pull curated boards from [101soundboards.com](https://www.101soundboards.com/):
 
 ```bash
-# Import a single board by slug or URL
 node scripts/download-101-soundboard.js --board https://www.101soundboards.com/boards/<board-slug>
-
-# Import several boards listed in a text file (one slug/URL per line, optional "| Custom Title")
-node scripts/download-101-soundboard.js --list data/soundboards/boards.sample.txt
-
-# When no flags are passed the script will look for data/soundboards/board.txt (or boards.txt)
-node scripts/download-101-soundboard.js
-
-# Capture only metadata and reference remote audio without downloading binaries
-node scripts/download-101-soundboard.js --board <slug> --skip-audio
 ```
 
-Each successful import rewrites `data/soundboards/<board>.json` with the clip metadata, records the upstream board URL, and ensures `data/soundboards/index.json` references the board. Duplicate or commented lines in the list file are ignored. By default the script downloads every clip into `public/soundboards/<board>/`; pass `--skip-audio` (or `--remote-only`) if you prefer to keep the repo binary-free and stream directly from 101Soundboards at runtime.
-
-See `data/soundboards/boards.sample.txt` for a commented template you can copy and customise for batch imports. The repository now also includes `data/soundboards/board.txt` pre-populated with a meme-heavy starter list—update it with the boards you care about and run the importer with no extra flags to refresh everything in one go.
-
-The `public/soundboards` directory remains gitignored so audio payloads never end up in commits. Commit only the JSON definitions; if you need to distribute the audio assets, publish them through your own storage or ship them as a separate artifact bundle.
+The script downloads every clip from the target board into `public/soundboards/<board-slug>/` and updates the JSON catalog in `data/soundboards`. The `public/soundboards` directory is intentionally gitignored so the repo stays binary-free—commit only the JSON definitions. If you need to distribute the audio assets, publish them through your own storage or an artifact bundle instead of checking the binaries into source control.
 
 All other paths serve the front-end single-page app from `public/index.html`.
 

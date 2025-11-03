@@ -1,0 +1,9 @@
+# Example board list for scripts/download-101-soundboard.js --list
+# Lines support "<slug or URL>|Optional Custom Title"
+# https://www.101soundboards.com/boards/2-the-memes-soundboard|Meme Classics
+# https://www.101soundboards.com/boards/14133-vine-boom|Vine Boom Variations
+https://www.101soundboards.com/boards/10716-arnold-schwarzenegger-soundboard
+https://www.101soundboards.com/boards/21176-sylvester-stallone-sounds-2-sounds
+https://www.101soundboards.com/boards/116034-demolition-man-1993
+
+
