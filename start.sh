@@ -29,11 +29,12 @@ ln -s "$UPLOADS_DIR" public/uploads
 echo "[disk] Linked public/uploads -> $UPLOADS_DIR"
 
 # -------------------------------
-# ✅ Background Downloader
+# ✅ Background Downloader (guarded)
 # -------------------------------
 SB_CONCURRENCY="${SB_CONCURRENCY:-4}"
 SB_DELAY_MS="${SB_DELAY_MS:-100}"
 
+if [ -z "${DISABLE_SB_FETCH:-}" ]; then
 (
   echo "[dl] Starting soundboard import in background"
   echo "[dl] Concurrency=$SB_CONCURRENCY Delay=${SB_DELAY_MS}ms"
@@ -49,10 +50,7 @@ SB_DELAY_MS="${SB_DELAY_MS:-100}"
     [ -z "$line" ] && continue
     case "$line" in \#*) continue;; esac
 
-    url="${line%%|*}"
-    title="${line#*|}"
-    [ "$title" = "$url" ] && title=""
-
+    url="${line%%|*}"; title="${line#*|}"; [ "$title" = "$url" ] && title=""
     echo "[dl] Fetching: $url ${title:+($title)}"
 
     if [ -n "$title" ]; then
@@ -64,6 +62,10 @@ SB_DELAY_MS="${SB_DELAY_MS:-100}"
 
   echo "[dl] ✅ Finished board.txt processing"
 ) &
+else
+  echo "[dl] Skipping 101SB fetch (DISABLE_SB_FETCH=1)"
+fi
+
 
 # -------------------------------
 # ✅ Start Server
