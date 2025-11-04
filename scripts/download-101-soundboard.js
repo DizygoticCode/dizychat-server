@@ -6,6 +6,7 @@ const path = require('path');
 const https = require('https');
 const { URL } = require('url');
 const zlib = require('zlib');
+const { setTimeout: sleep } = require('timers/promises');
 const cheerio = require('cheerio');
 
 const SOUND_DATA_DIR = path.join(__dirname, '..', 'data', 'soundboards');
@@ -244,25 +245,55 @@ const writeBoardIndex = async (boardId, boardTitle, clips) => {
   await fsPromises.writeFile(indexFilePath, `${JSON.stringify(indexData, null, 2)}\n`);
 };
 
-const downloadClips = async (boardId, clips) => {
+// === New: parallel downloads + resume/skip ==================================
+async function downloadClips(boardId, clips, opts = {}) {
+  const {
+    concurrency = 4,
+    delayMs = 0,
+    resume = true, // skip existing files
+  } = opts;
+
   const targetDir = path.join(SOUND_PUBLIC_DIR, boardId);
   await ensureDir(targetDir);
+
+  let i = 0;
   const enriched = [];
-  for (const clip of clips) {
-    const clipUrl = new URL(clip.url, 'https://www.101soundboards.com');
-    const extensionMatch = clipUrl.pathname.match(/\.([a-z0-9]+)$/i);
-    const extension = extensionMatch ? extensionMatch[1].toLowerCase() : 'mp3';
-    const safeSlug =
-      normaliseString(clip.title).replace(/[^a-z0-9_-]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'clip';
-    const filename = `${safeSlug}.${extension}`;
-    const filePath = path.join(targetDir, filename);
-    console.log(`Downloading ${clip.title} → ${filename}`);
-    const data = await fetchBinary(clipUrl.toString());
-    await fsPromises.writeFile(filePath, data);
-    enriched.push({ ...clip, filename });
+
+  async function worker() {
+    while (i < clips.length) {
+      const idx = i++;
+      const clip = clips[idx];
+
+      // derive filename (same logic as before)
+      const clipUrl = new URL(clip.url, 'https://www.101soundboards.com');
+      const extensionMatch = clipUrl.pathname.match(/\.([a-z0-9]+)$/i);
+      const extension = (extensionMatch ? extensionMatch[1] : 'mp3').toLowerCase();
+      const safeSlug = normaliseString(clip.title).replace(/[^a-z0-9_-]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'clip';
+      const filename = `${safeSlug}.${extension}`;
+      const filePath = path.join(targetDir, filename);
+
+      // skip if exists (resume)
+      if (resume && fs.existsSync(filePath)) {
+        console.log(`Skip (exists): ${filename}`);
+        enriched.push({ ...clip, filename });
+        if (delayMs) await sleep(delayMs);
+        continue;
+      }
+
+      console.log(`Downloading ${clip.title} → ${filename}`);
+      const data = await fetchBinary(clipUrl.toString());
+      await fsPromises.writeFile(filePath, data);
+      enriched.push({ ...clip, filename });
+
+      if (delayMs) await sleep(delayMs);
+    }
   }
+
+  const workers = Array.from({ length: Math.max(1, Number(concurrency) || 1) }, () => worker());
+  await Promise.all(workers);
+
   return enriched;
-};
+}
 
 // === CLI args, board id/URL derivation ======================================
 const parseArgs = () => {
@@ -273,6 +304,9 @@ const parseArgs = () => {
     if (arg === '--board' || arg === '-b') { result.board = args[i + 1]; i += 1; }
     else if (arg === '--id') { result.id = args[i + 1]; i += 1; }
     else if (arg === '--title') { result.title = args[i + 1]; i += 1; }
+    else if (arg === '--concurrency') { result.concurrency = parseInt(args[i+1]||'4',10); i+=1; }
+    else if (arg === '--delayMs') { result.delayMs = parseInt(args[i+1]||'0',10); i+=1; }
+    else if (arg === '--resume') { result.resume = true; }
   }
   return result;
 };
@@ -294,7 +328,7 @@ const deriveBoardId = (boardArg, explicitId) => {
 // === Main ===================================================================
 (async () => {
   try {
-    const { board, id, title } = parseArgs();
+    const { board, id, title, concurrency, delayMs, resume } = parseArgs();
     const boardId = deriveBoardId(board, id);
     const boardUrl = board && board.startsWith('http')
       ? board
@@ -324,7 +358,11 @@ const deriveBoardId = (boardArg, explicitId) => {
       throw new Error('Could not locate board data in page payload');
     }
 
-    const enriched = await downloadClips(boardId, clips);
+    const enriched = await downloadClips(boardId, clips, {
+      concurrency: concurrency ?? 4,
+      delayMs: delayMs ?? 0,
+      resume: !!resume
+    });
 
     // Derive a title from the page if not provided
     let boardTitle = title;
