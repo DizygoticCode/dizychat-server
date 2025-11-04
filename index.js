@@ -171,6 +171,43 @@ const fetchMessageHistoryChunk = async (roomName, { beforeId } = {}) => {
     cursor: hasMore && oldestDoc ? String(oldestDoc._id) : null,
   };
 };
+app.use(
+  "/uploads",
+  express.static(path.resolve("public/uploads"), {
+    maxAge: "30d",
+    immutable: true,
+  })
+);
+import multer from "multer";
+import path from "path";
+import crypto from "crypto";
+
+const uploadDir = path.resolve("public/uploads");
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadDir),
+  filename: (_req, file, cb) => {
+    const id = crypto.randomBytes(8).toString("hex");
+    const ext = path.extname(file.originalname || "");
+    cb(null, `${id}${ext}`);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (_req, file, cb) => {
+    // allow common audio/images; adjust as needed
+    const ok = /^(audio|image)\//.test(file.mimetype);
+    cb(ok ? null : new Error("Unsupported file type"), ok);
+  },
+});
+
+// Route
+app.post("/api/upload", upload.single("file"), (req, res) => {
+  // Public URL will be /uploads/<filename>
+  res.json({ ok: true, filename: req.file.filename, url: `/uploads/${req.file.filename}` });
+});
 
 const METADEFENDER_API_KEY = process.env.METADEFENDER_API_KEY;
 const METADEFENDER_BASE_URL =

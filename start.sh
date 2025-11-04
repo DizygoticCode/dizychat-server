@@ -70,6 +70,14 @@ SB_DELAY_MS="${SB_DELAY_MS:-100}"
 
   echo "[dl] ✅ Finished board.txt processing"
 ) &
+# ----- Persistent uploads directory -----
+UPLOADS_DISK="/var/uploads"
+UPLOADS_PUB="public/uploads"
+
+mkdir -p "$UPLOADS_DISK"
+rm -rf "$UPLOADS_PUB" 2>/dev/null || true
+ln -s "$UPLOADS_DISK" "$UPLOADS_PUB"
+echo "[disk] Linked $UPLOADS_PUB -> $UPLOADS_DISK"
 
 # -------------------------------
 # ✅ Start Server
