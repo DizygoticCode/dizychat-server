@@ -10,11 +10,11 @@ echo "[start] Node version: $(node -v)"
 # -------------------------------
 # ✅ Persistent Disk Setup (reuse the same disk)
 # -------------------------------
-DISK_ROOT="/var/soundboards"        # this is your existing mounted disk
-SB_DIR="$DISK_ROOT"                  # soundboards live at the disk root
-UPLOADS_DIR="$DISK_ROOT/uploads"     # uploads live in a subfolder on the same disk
+DISK_ROOT="/var/soundboards"        # mounted disk
+SB_DIR="$DISK_ROOT"                  # soundboards at disk root
+UPLOADS_DIR="$DISK_ROOT/uploads"     # uploads subfolder on the same disk
 
-# Ensure disk root exists (it will if mounted)
+# Ensure disk root exists
 mkdir -p "$DISK_ROOT"
 
 # Link public/soundboards -> /var/soundboards
@@ -28,7 +28,6 @@ rm -rf public/uploads 2>/dev/null || true
 ln -s "$UPLOADS_DIR" public/uploads
 echo "[disk] Linked public/uploads -> $UPLOADS_DIR"
 
-
 # -------------------------------
 # ✅ Background Downloader
 # -------------------------------
@@ -40,17 +39,13 @@ SB_DELAY_MS="${SB_DELAY_MS:-100}"
   echo "[dl] Concurrency=$SB_CONCURRENCY Delay=${SB_DELAY_MS}ms"
 
   BOARD_FILE="data/soundboards/board.txt"
-
   if [ ! -f "$BOARD_FILE" ]; then
     echo "[dl] WARNING: $BOARD_FILE not found — skipping download"
     exit 0
   fi
 
   while IFS= read -r line; do
-    # Trim whitespace
     line="$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-
-    # Skip blank or comment lines
     [ -z "$line" ] && continue
     case "$line" in \#*) continue;; esac
 
@@ -61,32 +56,14 @@ SB_DELAY_MS="${SB_DELAY_MS:-100}"
     echo "[dl] Fetching: $url ${title:+($title)}"
 
     if [ -n "$title" ]; then
-      node scripts/download-101-soundboard.js \
-        --board "$url" \
-        --title "$title" \
-        --resume \
-        --concurrency "$SB_CONCURRENCY" \
-        --delayMs "$SB_DELAY_MS"
+      node scripts/download-101-soundboard.js --board "$url" --title "$title" --resume --concurrency "$SB_CONCURRENCY" --delayMs "$SB_DELAY_MS"
     else
-      node scripts/download-101-soundboard.js \
-        --board "$url" \
-        --resume \
-        --concurrency "$SB_CONCURRENCY" \
-        --delayMs "$SB_DELAY_MS"
+      node scripts/download-101-soundboard.js --board "$url" --resume --concurrency "$SB_CONCURRENCY" --delayMs "$SB_DELAY_MS"
     fi
-
   done < "$BOARD_FILE"
 
   echo "[dl] ✅ Finished board.txt processing"
 ) &
-# ----- Persistent uploads directory -----
-UPLOADS_DISK="/var/uploads"
-UPLOADS_PUB="public/uploads"
-
-mkdir -p "$UPLOADS_DISK"
-rm -rf "$UPLOADS_PUB" 2>/dev/null || true
-ln -s "$UPLOADS_DISK" "$UPLOADS_PUB"
-echo "[disk] Linked $UPLOADS_PUB -> $UPLOADS_DISK"
 
 # -------------------------------
 # ✅ Start Server
