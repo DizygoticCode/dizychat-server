@@ -8,17 +8,26 @@ echo "[start] Starting Dizy server + persistent soundboard loader"
 echo "[start] Node version: $(node -v)"
 
 # -------------------------------
-# ✅ Persistent Disk Setup
+# ✅ Persistent Disk Setup (reuse the same disk)
 # -------------------------------
-DISK_DIR="/var/soundboards"
-APP_DIR="public/soundboards"
+DISK_ROOT="/var/soundboards"        # this is your existing mounted disk
+SB_DIR="$DISK_ROOT"                  # soundboards live at the disk root
+UPLOADS_DIR="$DISK_ROOT/uploads"     # uploads live in a subfolder on the same disk
 
-echo "[disk] Ensuring persistent disk is mounted at $DISK_DIR…"
-mkdir -p "$DISK_DIR"
+# Ensure disk root exists (it will if mounted)
+mkdir -p "$DISK_ROOT"
 
-echo "[disk] Linking $APP_DIR -> $DISK_DIR"
-rm -rf "$APP_DIR" 2>/dev/null || true
-ln -s "$DISK_DIR" "$APP_DIR"
+# Link public/soundboards -> /var/soundboards
+rm -rf public/soundboards 2>/dev/null || true
+ln -s "$SB_DIR" public/soundboards
+echo "[disk] Linked public/soundboards -> $SB_DIR"
+
+# Link public/uploads -> /var/soundboards/uploads
+mkdir -p "$UPLOADS_DIR"
+rm -rf public/uploads 2>/dev/null || true
+ln -s "$UPLOADS_DIR" public/uploads
+echo "[disk] Linked public/uploads -> $UPLOADS_DIR"
+
 
 # -------------------------------
 # ✅ Background Downloader
