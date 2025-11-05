@@ -12,10 +12,29 @@ const normaliseString = (value) =>
 const normaliseArray = (value) =>
   Array.isArray(value) ? value : [];
 
+const sanitisePath = (value) => {
+  if (typeof value !== 'string') return '';
+  const normalised = path.posix
+    .normalize(value.replace(/\\+/g, '/').trim())
+    .replace(/^\/+/, '')
+    .replace(/^\.\/(?!$)/, '')
+    .replace(/^(?:\.\.(?:\/|$))+/, '');
+  return normalised;
+};
+
 const safeFilePath = (boardId, filePath) => {
-  if (typeof filePath !== 'string' || !filePath.trim()) return '';
-  const clean = filePath.replace(/\\+/g, '/').replace(/\.\.+/g, '.');
-  const resolved = path.posix.join(boardId, clean);
+  const cleanFile = sanitisePath(filePath);
+  if (!cleanFile) return '';
+
+  const cleanBoard = sanitisePath(boardId);
+  if (cleanBoard && (cleanFile === cleanBoard || cleanFile.startsWith(`${cleanBoard}/`))) {
+    return `${PUBLIC_PREFIX}${cleanFile}`;
+  }
+
+  const segments = cleanFile.split('/').filter(Boolean);
+  if (!segments.length) return '';
+
+  const resolved = [cleanBoard, ...segments].filter(Boolean).join('/');
   return `${PUBLIC_PREFIX}${resolved}`;
 };
 
