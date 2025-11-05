@@ -6621,7 +6621,7 @@ if (voiceBtn) {
           socket.emit("chat message", {
             room: window.currentRoom,
             user: window.currentUser,
-            text: audioUrl,
+            text: clipTitle || "",
             timestamp: Date.now(),
             fileUrl: audioUrl,
             fileType: mime,
