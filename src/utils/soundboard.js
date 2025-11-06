@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const DATA_ROOT = path.join(__dirname, '..', '..', 'data', 'soundboards');
+const PUBLIC_ROOT = path.join(__dirname, '..', '..', 'public', 'soundboards');
 const PUBLIC_PREFIX = '/soundboards/';
 
 let cache = null;
