@@ -5610,6 +5610,13 @@ function appendAttachmentFromMessage(node, msg) {
   const url = msg.fileUrl;
   const typeHint = (msg.fileType || "").toLowerCase();
   const isTenor = /tenor\.com/i.test(url);
+  if (
+    isTenor &&
+    typeof msg.text === "string" &&
+    /tenor\.com/i.test(msg.text)
+  ) {
+    return;
+  }
 
   let previewType = "";
   const imagePattern = /\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?.*)?$/i;
