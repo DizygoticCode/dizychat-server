@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const DATA_ROOT = path.join(__dirname, '..', '..', 'data', 'soundboards');
+const PUBLIC_ROOT = path.join(__dirname, '..', '..', 'public', 'soundboards');
 const PUBLIC_PREFIX = '/soundboards/';
 
 let cache = null;
@@ -12,11 +13,31 @@ const normaliseString = (value) =>
 const normaliseArray = (value) =>
   Array.isArray(value) ? value : [];
 
-const safeFilePath = (boardId, filePath) => {
-  if (typeof filePath !== 'string' || !filePath.trim()) return '';
-  const clean = filePath.replace(/\\+/g, '/').replace(/\.\.+/g, '.');
-  const resolved = path.posix.join(boardId, clean);
-  return `${PUBLIC_PREFIX}${resolved}`;
+const resolveLocalAudioUrl = (boardId, filePath) => {
+  const trimmedBoardId = normaliseString(boardId);
+  if (!trimmedBoardId || typeof filePath !== 'string') return '';
+
+  const cleanSegments = filePath
+    .replace(/\\+/g, '/')
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+
+  if (!cleanSegments.length) return '';
+
+  const hasBoardPrefix = cleanSegments[0] === trimmedBoardId;
+  const segments = hasBoardPrefix ? cleanSegments : [trimmedBoardId, ...cleanSegments];
+
+  if (segments.some((segment) => segment === '.' || segment === '..')) {
+    return '';
+  }
+
+  const absolutePath = path.join(PUBLIC_ROOT, ...segments);
+  if (!fs.existsSync(absolutePath)) {
+    return '';
+  }
+
+  return `${PUBLIC_PREFIX}${segments.join('/')}`;
 };
 
 const normaliseUrl = (value) => {
@@ -48,8 +69,9 @@ const loadBoardFile = (boardId) => {
           const title = normaliseString(item.title) || 'Sound Clip';
           const tags = normaliseArray(item.tags).map((tag) => normaliseString(tag)).filter(Boolean);
           const file = normaliseString(item.file);
+          const localAudioUrl = file ? resolveLocalAudioUrl(boardId, file) : '';
           const explicitUrl = normaliseUrl(item.url || item.audioUrl || item.previewUrl);
-          const audioUrl = explicitUrl || (file ? safeFilePath(boardId, file) : '');
+          const audioUrl = localAudioUrl || explicitUrl;
           if (!audioUrl) return null;
           const duration = Number(item.duration) || 0;
           return {
