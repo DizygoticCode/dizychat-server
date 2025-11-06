@@ -52,6 +52,7 @@ const passwordInput = document.getElementById("room-password");
 const adminPasswordInput = document.getElementById("admin-password");
 const roomName = document.getElementById("room-name");
 const themeToggle = document.getElementById("toggle-theme");
+const compactToggle = document.getElementById("toggle-density");
 const soundToggleBtn = document.getElementById("toggle-sounds");
 const emojiPicker = document.getElementById("emoji-picker");
 let emojiPickerController = null;
@@ -4776,6 +4777,71 @@ if (window.currentRoom && window.currentUser) {
     room: window.currentRoom,
     username: window.currentUser,
     password: window.currentPassword || "",
+  });
+}
+
+// ------------------- Layout Density Toggle -------------------
+const COMPACT_MODE_STORAGE_KEY = "dizychat-compact-mode";
+
+const readStoredCompactPreference = () => {
+  try {
+    const raw = localStorage.getItem(COMPACT_MODE_STORAGE_KEY);
+    if (raw === null) return null;
+    if (raw === "1" || raw === "true") return true;
+    if (raw === "0" || raw === "false") return false;
+  } catch {
+    return null;
+  }
+  return null;
+};
+
+const getDefaultCompactPreference = () => {
+  if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+    try {
+      return window.matchMedia("(max-width: 1400px)").matches;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+};
+
+const updateCompactToggleUi = (enabled) => {
+  if (!compactToggle) return;
+  const isEnabled = Boolean(enabled);
+  const icon = compactToggle.querySelector?.(".icon");
+  const srOnly = compactToggle.querySelector?.(".sr-only");
+  const label = isEnabled ? "Switch to comfy layout" : "Switch to compact layout";
+
+  compactToggle.setAttribute("aria-pressed", String(isEnabled));
+  compactToggle.setAttribute("aria-label", label);
+  compactToggle.title = label;
+  if (srOnly) srOnly.textContent = label;
+  if (icon) icon.textContent = isEnabled ? "🛋️" : "🗜️";
+  compactToggle.classList.toggle("is-active", isEnabled);
+};
+
+const applyCompactMode = (enabled, { persist = true } = {}) => {
+  const isEnabled = Boolean(enabled);
+  document.body.classList.toggle("compact-mode", isEnabled);
+  updateCompactToggleUi(isEnabled);
+  if (persist) {
+    try {
+      localStorage.setItem(COMPACT_MODE_STORAGE_KEY, isEnabled ? "1" : "0");
+    } catch {
+      /* ignore persistence errors */
+    }
+  }
+};
+
+const storedCompactPreference = readStoredCompactPreference();
+const initialCompactMode = storedCompactPreference ?? getDefaultCompactPreference();
+applyCompactMode(initialCompactMode, { persist: storedCompactPreference !== null });
+
+if (compactToggle) {
+  compactToggle.addEventListener("click", () => {
+    const next = !document.body.classList.contains("compact-mode");
+    applyCompactMode(next);
   });
 }
 
