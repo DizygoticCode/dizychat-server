@@ -2640,7 +2640,7 @@ body:not(.dark) #soundboard-btn {
   }
   #form button {
     margin-left: 0;
-    flex: 0 0 auto;
+    flex: 0 1 auto;
   }
   #file-attach,
   #gif-btn,
