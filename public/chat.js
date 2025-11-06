@@ -3134,16 +3134,38 @@ function linkifyTextContent(container) {
 
   replacements.forEach(({ node, parts }) => {
     const fragment = document.createDocumentFragment();
-    parts.forEach((part) => {
+    parts.forEach((part, index) => {
       if (!part) return;
       if (/^https?:\/\//i.test(part)) {
+        const trimmedLink = part.trim();
+        if (!trimmedLink) return;
+
+        links.push(trimmedLink);
+
+        if (/^https?:\/\/(?:www\.)?(?:media\.)?tenor\.com\//i.test(trimmedLink)) {
+          const prevNode = fragment.lastChild;
+          const nextPart = parts[index + 1] || "";
+          const needsLeadingSpace =
+            prevNode &&
+            prevNode.nodeType === Node.TEXT_NODE &&
+            prevNode.textContent &&
+            !/\s$/.test(prevNode.textContent);
+          const needsTrailingSpace = nextPart && typeof nextPart === "string" && !/^\s/.test(nextPart);
+          if (needsLeadingSpace || needsTrailingSpace) {
+            const spaces = `${needsLeadingSpace ? " " : ""}${needsTrailingSpace ? " " : ""}`;
+            if (spaces) {
+              fragment.appendChild(document.createTextNode(spaces));
+            }
+          }
+          return;
+        }
+
         const anchor = document.createElement("a");
-        anchor.href = part;
+        anchor.href = trimmedLink;
         anchor.target = "_blank";
         anchor.rel = "noopener noreferrer";
-        anchor.textContent = part;
+        anchor.textContent = trimmedLink;
         fragment.appendChild(anchor);
-        links.push(part);
       } else {
         fragment.appendChild(document.createTextNode(part));
       }
@@ -5720,6 +5742,7 @@ function renderMessage(
   `;
 
   const textEl = wrap.querySelector(".text");
+  let messageLinks = [];
   if (textEl) {
     if (data.deleted) {
       textEl.classList.add("hidden");
@@ -5737,7 +5760,7 @@ function renderMessage(
           wrap.classList.add("emoji-gif-only");
         }
       }
-      linkifyTextContent(textEl);
+      messageLinks = linkifyTextContent(textEl) || [];
     }
   }
 
@@ -5761,7 +5784,7 @@ function renderMessage(
 
   if (!data.deleted) {
     appendAttachmentFromMessage(wrap, data);
-    autoEmbed(wrap);
+    autoEmbed(wrap, messageLinks);
     observeMediaForScroll(wrap);
   }
 
@@ -6758,12 +6781,14 @@ if (voiceBtn) {
 })();
 
 // ------------------- Embeds & Link Cards -------------------
-function autoEmbed(node) {
+function autoEmbed(node, providedLinks = null) {
   const textEl = node.querySelector(".text") || node;
   const txt = textEl ? textEl.textContent : "";
-  if (!txt) return;
 
-  const links = (txt.match(/https?:\/\/\S+/g) || []).slice(0, 3);
+  const sourceLinks = Array.isArray(providedLinks) && providedLinks.length
+    ? providedLinks
+    : (txt.match(/https?:\/\/\S+/g) || []);
+  const links = sourceLinks.slice(0, 3);
   if (!links.length) return;
 
   const wrap = document.createElement("div");
