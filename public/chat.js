@@ -5627,6 +5627,10 @@ function appendAttachmentFromMessage(node, msg) {
 
   if (!previewType || hasInlinePreview(node, url)) return;
 
+  if (isTenor && node.querySelector(".inline-preview.tenor-inline")) {
+    return;
+  }
+
   if (previewType === "image" && !imagePattern.test(url)) {
     if (/tenor\.com/i.test(url)) {
       fetchTenorPreview(url, node);
