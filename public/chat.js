@@ -52,6 +52,7 @@ const passwordInput = document.getElementById("room-password");
 const adminPasswordInput = document.getElementById("admin-password");
 const roomName = document.getElementById("room-name");
 const themeToggle = document.getElementById("toggle-theme");
+const compactToggle = document.getElementById("toggle-density");
 const soundToggleBtn = document.getElementById("toggle-sounds");
 const emojiPicker = document.getElementById("emoji-picker");
 let emojiPickerController = null;
@@ -3133,16 +3134,38 @@ function linkifyTextContent(container) {
 
   replacements.forEach(({ node, parts }) => {
     const fragment = document.createDocumentFragment();
-    parts.forEach((part) => {
+    parts.forEach((part, index) => {
       if (!part) return;
       if (/^https?:\/\//i.test(part)) {
+        const trimmedLink = part.trim();
+        if (!trimmedLink) return;
+
+        links.push(trimmedLink);
+
+        if (/^https?:\/\/(?:www\.)?(?:media\.)?tenor\.com\//i.test(trimmedLink)) {
+          const prevNode = fragment.lastChild;
+          const nextPart = parts[index + 1] || "";
+          const needsLeadingSpace =
+            prevNode &&
+            prevNode.nodeType === Node.TEXT_NODE &&
+            prevNode.textContent &&
+            !/\s$/.test(prevNode.textContent);
+          const needsTrailingSpace = nextPart && typeof nextPart === "string" && !/^\s/.test(nextPart);
+          if (needsLeadingSpace || needsTrailingSpace) {
+            const spaces = `${needsLeadingSpace ? " " : ""}${needsTrailingSpace ? " " : ""}`;
+            if (spaces) {
+              fragment.appendChild(document.createTextNode(spaces));
+            }
+          }
+          return;
+        }
+
         const anchor = document.createElement("a");
-        anchor.href = part;
+        anchor.href = trimmedLink;
         anchor.target = "_blank";
         anchor.rel = "noopener noreferrer";
-        anchor.textContent = part;
+        anchor.textContent = trimmedLink;
         fragment.appendChild(anchor);
-        links.push(part);
       } else {
         fragment.appendChild(document.createTextNode(part));
       }
@@ -4779,6 +4802,71 @@ if (window.currentRoom && window.currentUser) {
   });
 }
 
+// ------------------- Layout Density Toggle -------------------
+const COMPACT_MODE_STORAGE_KEY = "dizychat-compact-mode";
+
+const readStoredCompactPreference = () => {
+  try {
+    const raw = localStorage.getItem(COMPACT_MODE_STORAGE_KEY);
+    if (raw === null) return null;
+    if (raw === "1" || raw === "true") return true;
+    if (raw === "0" || raw === "false") return false;
+  } catch {
+    return null;
+  }
+  return null;
+};
+
+const getDefaultCompactPreference = () => {
+  if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+    try {
+      return window.matchMedia("(max-width: 1400px)").matches;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+};
+
+const updateCompactToggleUi = (enabled) => {
+  if (!compactToggle) return;
+  const isEnabled = Boolean(enabled);
+  const icon = compactToggle.querySelector?.(".icon");
+  const srOnly = compactToggle.querySelector?.(".sr-only");
+  const label = isEnabled ? "Switch to comfy layout" : "Switch to compact layout";
+
+  compactToggle.setAttribute("aria-pressed", String(isEnabled));
+  compactToggle.setAttribute("aria-label", label);
+  compactToggle.title = label;
+  if (srOnly) srOnly.textContent = label;
+  if (icon) icon.textContent = isEnabled ? "🛋️" : "🗜️";
+  compactToggle.classList.toggle("is-active", isEnabled);
+};
+
+const applyCompactMode = (enabled, { persist = true } = {}) => {
+  const isEnabled = Boolean(enabled);
+  document.body.classList.toggle("compact-mode", isEnabled);
+  updateCompactToggleUi(isEnabled);
+  if (persist) {
+    try {
+      localStorage.setItem(COMPACT_MODE_STORAGE_KEY, isEnabled ? "1" : "0");
+    } catch {
+      /* ignore persistence errors */
+    }
+  }
+};
+
+const storedCompactPreference = readStoredCompactPreference();
+const initialCompactMode = storedCompactPreference ?? getDefaultCompactPreference();
+applyCompactMode(initialCompactMode, { persist: storedCompactPreference !== null });
+
+if (compactToggle) {
+  compactToggle.addEventListener("click", () => {
+    const next = !document.body.classList.contains("compact-mode");
+    applyCompactMode(next);
+  });
+}
+
 // ------------------- Theme Toggle -------------------
 const storedTheme = (() => {
   try {
@@ -5654,6 +5742,7 @@ function renderMessage(
   `;
 
   const textEl = wrap.querySelector(".text");
+  let messageLinks = [];
   if (textEl) {
     if (data.deleted) {
       textEl.classList.add("hidden");
@@ -5671,7 +5760,7 @@ function renderMessage(
           wrap.classList.add("emoji-gif-only");
         }
       }
-      linkifyTextContent(textEl);
+      messageLinks = linkifyTextContent(textEl) || [];
     }
   }
 
@@ -5695,7 +5784,7 @@ function renderMessage(
 
   if (!data.deleted) {
     appendAttachmentFromMessage(wrap, data);
-    autoEmbed(wrap);
+    autoEmbed(wrap, messageLinks);
     observeMediaForScroll(wrap);
   }
 
@@ -6621,7 +6710,7 @@ if (voiceBtn) {
           socket.emit("chat message", {
             room: window.currentRoom,
             user: window.currentUser,
-            text: audioUrl,
+            text: clipTitle || "",
             timestamp: Date.now(),
             fileUrl: audioUrl,
             fileType: mime,
@@ -6692,12 +6781,14 @@ if (voiceBtn) {
 })();
 
 // ------------------- Embeds & Link Cards -------------------
-function autoEmbed(node) {
+function autoEmbed(node, providedLinks = null) {
   const textEl = node.querySelector(".text") || node;
   const txt = textEl ? textEl.textContent : "";
-  if (!txt) return;
 
-  const links = (txt.match(/https?:\/\/\S+/g) || []).slice(0, 3);
+  const sourceLinks = Array.isArray(providedLinks) && providedLinks.length
+    ? providedLinks
+    : (txt.match(/https?:\/\/\S+/g) || []);
+  const links = sourceLinks.slice(0, 3);
   if (!links.length) return;
 
   const wrap = document.createElement("div");

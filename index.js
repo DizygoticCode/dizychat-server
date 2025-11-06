@@ -171,6 +171,13 @@ const fetchMessageHistoryChunk = async (roomName, { beforeId } = {}) => {
     cursor: hasMore && oldestDoc ? String(oldestDoc._id) : null,
   };
 };
+app.use(
+  "/uploads",
+  express.static(path.resolve("public/uploads"), {
+    maxAge: "30d",
+    immutable: true,
+  })
+);
 
 const METADEFENDER_API_KEY = process.env.METADEFENDER_API_KEY;
 const METADEFENDER_BASE_URL =
@@ -184,8 +191,21 @@ const PSYBIN_STATUS_TIMEOUT_RAW = Number.parseInt(
 const PSYBIN_STATUS_TIMEOUT_MS = Number.isFinite(PSYBIN_STATUS_TIMEOUT_RAW)
   ? Math.min(Math.max(PSYBIN_STATUS_TIMEOUT_RAW, 1000), 20000)
   : 7000;
-const normalisePsybinString = (value) =>
-  typeof value === 'string' ? value.trim() : '';
+const normalisePsybinString = (value) => {
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+  if (typeof value === 'number' || typeof value === 'bigint') {
+    return String(value).trim();
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const candidate = normalisePsybinString(entry);
+      if (candidate) return candidate;
+    }
+  }
+  return '';
+};
 
 const pickFirstPsybinString = (...values) => {
   for (const value of values) {
@@ -193,6 +213,111 @@ const pickFirstPsybinString = (...values) => {
     if (candidate) return candidate;
   }
   return '';
+};
+
+const extractPsybinNowPlaying = (source) => {
+  if (!source || typeof source !== 'object') {
+    return { combined: '', artist: '', title: '' };
+  }
+
+  const rawNowPlaying =
+    source.now_playing ??
+    source.nowplaying ??
+    source['now-playing'] ??
+    source.nowPlaying ??
+    null;
+
+  if (!rawNowPlaying) {
+    return { combined: '', artist: '', title: '' };
+  }
+
+  if (typeof rawNowPlaying === 'string' || Array.isArray(rawNowPlaying)) {
+    return {
+      combined: pickFirstPsybinString(rawNowPlaying),
+      artist: '',
+      title: '',
+    };
+  }
+
+  if (typeof rawNowPlaying !== 'object') {
+    return { combined: '', artist: '', title: '' };
+  }
+
+  const song =
+    rawNowPlaying.song && typeof rawNowPlaying.song === 'object'
+      ? rawNowPlaying.song
+      : null;
+  const track =
+    rawNowPlaying.track && typeof rawNowPlaying.track === 'object'
+      ? rawNowPlaying.track
+      : null;
+  const current =
+    rawNowPlaying.current && typeof rawNowPlaying.current === 'object'
+      ? rawNowPlaying.current
+      : null;
+  const metadata =
+    rawNowPlaying.metadata && typeof rawNowPlaying.metadata === 'object'
+      ? rawNowPlaying.metadata
+      : null;
+
+  const combined = pickFirstPsybinString(
+    rawNowPlaying.text,
+    rawNowPlaying.value,
+    rawNowPlaying.display,
+    song?.text,
+    song?.value,
+    song?.display,
+    song?.title && song?.artist
+      ? `${normalisePsybinString(song.artist)} — ${normalisePsybinString(song.title)}`
+      : '',
+    track?.text,
+    track?.value,
+    track?.display,
+    track?.title && track?.artist
+      ? `${normalisePsybinString(track.artist)} — ${normalisePsybinString(track.title)}`
+      : '',
+    current?.text,
+    current?.value,
+    current?.display,
+    metadata?.text,
+    metadata?.value,
+  );
+
+  const artist = pickFirstPsybinString(
+    rawNowPlaying.artist,
+    rawNowPlaying.performer,
+    rawNowPlaying.creator,
+    song?.artist,
+    song?.performer,
+    song?.creator,
+    track?.artist,
+    track?.performer,
+    track?.creator,
+    current?.artist,
+    current?.performer,
+    current?.creator,
+    metadata?.artist,
+    metadata?.performer,
+  );
+
+  const title = pickFirstPsybinString(
+    rawNowPlaying.title,
+    rawNowPlaying.name,
+    rawNowPlaying.track,
+    song?.title,
+    song?.name,
+    song?.track,
+    track?.title,
+    track?.name,
+    track?.track,
+    current?.title,
+    current?.name,
+    current?.track,
+    metadata?.title,
+    metadata?.name,
+  );
+
+  return { combined, artist, title };
 };
 
 const splitPsybinArtistTitle = (value) => {
@@ -250,11 +375,14 @@ const mapPsybinNowPlaying = (payload) => {
     return { title: '', artist: '', text: '' };
   }
 
+  const nowPlaying = extractPsybinNowPlaying(source);
+
   let artist = pickFirstPsybinString(
     source.artist,
     source.icy_artist,
     source.stream_artist,
     source.source_artist,
+    nowPlaying.artist,
   );
   let title = pickFirstPsybinString(
     source.title,
@@ -262,8 +390,10 @@ const mapPsybinNowPlaying = (payload) => {
     source.song,
     source.current_song,
     source.track,
+    nowPlaying.title,
   );
   const combined = pickFirstPsybinString(
+    nowPlaying.combined,
     source.now_playing,
     source.nowplaying,
     source.icy_title,
@@ -280,6 +410,13 @@ const mapPsybinNowPlaying = (payload) => {
     }
   }
 
+  if (!artist) {
+    artist = nowPlaying.artist;
+  }
+  if (!title) {
+    title = nowPlaying.title;
+  }
+
   const serverName = pickFirstPsybinString(
     source.server_name,
     source.server_description,
@@ -292,7 +429,7 @@ const mapPsybinNowPlaying = (payload) => {
 
   let text = parts.length ? parts.join(' — ') : '';
   if (!text) {
-    text = combined || serverName || '';
+    text = combined || nowPlaying.combined || serverName || '';
   }
 
   return { title, artist, text };
@@ -328,6 +465,9 @@ app.get('/api/psybin/now-playing', async (req, res) => {
     try {
       payload = await response.json();
     } catch (err) {
+      if (err?.name === 'AbortError' || err?.code === 'ABORT_ERR') {
+        throw err;
+      }
       throw new Error(`Invalid Psybin metadata payload: ${err.message}`);
     }
 
@@ -340,13 +480,20 @@ app.get('/api/psybin/now-playing', async (req, res) => {
       fetchedAt: Date.now(),
     });
   } catch (err) {
-    console.warn('[Psybin] Metadata proxy failed:', err.message);
+    const message =
+      err?.name === 'AbortError' || err?.code === 'ABORT_ERR'
+        ? 'Psybin metadata request timed out'
+        : err?.message;
+    console.warn('[Psybin] Metadata proxy failed:', message);
     res.status(502).json({
       title: '',
       artist: '',
       text: '',
       fetchedAt: Date.now(),
-      error: 'UNAVAILABLE',
+      error:
+        err?.name === 'AbortError' || err?.code === 'ABORT_ERR'
+          ? 'TIMEOUT'
+          : 'UNAVAILABLE',
     });
   } finally {
     if (timeoutId) clearTimeout(timeoutId);

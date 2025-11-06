@@ -13,31 +13,30 @@ const normaliseString = (value) =>
 const normaliseArray = (value) =>
   Array.isArray(value) ? value : [];
 
-const resolveLocalAudioUrl = (boardId, filePath) => {
-  const trimmedBoardId = normaliseString(boardId);
-  if (!trimmedBoardId || typeof filePath !== 'string') return '';
+const sanitisePath = (value) => {
+  if (typeof value !== 'string') return '';
+  const normalised = path.posix
+    .normalize(value.replace(/\\+/g, '/').trim())
+    .replace(/^\/+/, '')
+    .replace(/^\.\/(?!$)/, '')
+    .replace(/^(?:\.\.(?:\/|$))+/, '');
+  return normalised;
+};
 
-  const cleanSegments = filePath
-    .replace(/\\+/g, '/')
-    .split('/')
-    .map((segment) => segment.trim())
-    .filter(Boolean);
+const safeFilePath = (boardId, filePath) => {
+  const cleanFile = sanitisePath(filePath);
+  if (!cleanFile) return '';
 
-  if (!cleanSegments.length) return '';
-
-  const hasBoardPrefix = cleanSegments[0] === trimmedBoardId;
-  const segments = hasBoardPrefix ? cleanSegments : [trimmedBoardId, ...cleanSegments];
-
-  if (segments.some((segment) => segment === '.' || segment === '..')) {
-    return '';
+  const cleanBoard = sanitisePath(boardId);
+  if (cleanBoard && (cleanFile === cleanBoard || cleanFile.startsWith(`${cleanBoard}/`))) {
+    return `${PUBLIC_PREFIX}${cleanFile}`;
   }
 
-  const absolutePath = path.join(PUBLIC_ROOT, ...segments);
-  if (!fs.existsSync(absolutePath)) {
-    return '';
-  }
+  const segments = cleanFile.split('/').filter(Boolean);
+  if (!segments.length) return '';
 
-  return `${PUBLIC_PREFIX}${segments.join('/')}`;
+  const resolved = [cleanBoard, ...segments].filter(Boolean).join('/');
+  return `${PUBLIC_PREFIX}${resolved}`;
 };
 
 const normaliseUrl = (value) => {
@@ -69,9 +68,9 @@ const loadBoardFile = (boardId) => {
           const title = normaliseString(item.title) || 'Sound Clip';
           const tags = normaliseArray(item.tags).map((tag) => normaliseString(tag)).filter(Boolean);
           const file = normaliseString(item.file);
-          const localAudioUrl = file ? resolveLocalAudioUrl(boardId, file) : '';
+          const localUrl = file ? safeFilePath(boardId, file) : '';
           const explicitUrl = normaliseUrl(item.url || item.audioUrl || item.previewUrl);
-          const audioUrl = localAudioUrl || explicitUrl;
+          const audioUrl = localUrl || explicitUrl;
           if (!audioUrl) return null;
           const duration = Number(item.duration) || 0;
           return {

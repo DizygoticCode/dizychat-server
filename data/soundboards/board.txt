@@ -1,7 +1,10 @@
 # Primary board list for batch imports. Lines accept "<slug or URL>|Optional Custom Title".
 # Replace or extend this list with the boards you want mirrored locally.
-https://www.101soundboards.com/boards/2-the-memes-soundboard|Meme Classics
-https://www.101soundboards.com/boards/14133-vine-boom|Vine Boom Variations
-https://www.101soundboards.com/boards/37531-anime-wow-soundboard|Anime WOW & Reactions
-https://www.101soundboards.com/boards/21561-sad-violin|Sad Reactions
-https://www.101soundboards.com/boards/32648-celebration-soundboard|Celebration Stingers
+https://www.101soundboards.com/boards/21701-memes-soundboard|Meme Classics
+https://www.101soundboards.com/boards/198489-vine-boom-soundboard|Vine Boom Variations
+https://www.101soundboards.com/boards/78855-the-anime-soundboard|Anime WOW & Reactions
+https://www.101soundboards.com/boards/22294-sad-soundboard|Sad Reactions
+https://www.101soundboards.com/boards/26660-dance-soundboard|Celebration Stingers
+https://www.101soundboards.com/boards/10716-arnold-schwarzenegger-soundboard|Arnie Board
+https://www.101soundboards.com/boards/21176-sylvester-stallone-sounds-2-sounds|Stallone Board
+https://www.101soundboards.com/boards/116034-demolition-man-1993|Demolition Man Board
