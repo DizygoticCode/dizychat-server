@@ -7017,7 +7017,15 @@ function autoEmbed(node, providedLinks = null) {
       /tenor\.com/i.test(link) &&
       !/media\.tenor\.com/i.test(link)
     ) {
-      fetchTenorPreview(link, wrap);
+      const messageEl = node.classList?.contains?.("message")
+        ? node
+        : node.closest?.(".message") || node;
+      const alreadyHasTenor = messageEl?.querySelector?.(
+        ".inline-preview.tenor-inline"
+      );
+      if (!alreadyHasTenor) {
+        fetchTenorPreview(link, wrap);
+      }
     }
 
     if (el) {
