@@ -67,8 +67,9 @@ const loadBoardFile = (boardId) => {
           const title = normaliseString(item.title) || 'Sound Clip';
           const tags = normaliseArray(item.tags).map((tag) => normaliseString(tag)).filter(Boolean);
           const file = normaliseString(item.file);
+          const localUrl = file ? safeFilePath(boardId, file) : '';
           const explicitUrl = normaliseUrl(item.url || item.audioUrl || item.previewUrl);
-          const audioUrl = explicitUrl || (file ? safeFilePath(boardId, file) : '');
+          const audioUrl = localUrl || explicitUrl;
           if (!audioUrl) return null;
           const duration = Number(item.duration) || 0;
           return {
