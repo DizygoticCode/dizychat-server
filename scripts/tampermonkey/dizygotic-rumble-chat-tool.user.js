@@ -156,26 +156,6 @@
     /***********************
      * UI helpers
      ***********************/
-    function getOriginalUsername(usernameEl) {
-        if (!usernameEl) return null;
-        if (usernameEl.dataset && usernameEl.dataset.originalUsername) {
-            return usernameEl.dataset.originalUsername;
-        }
-
-        const clone = usernameEl.cloneNode(true);
-        if (clone.querySelectorAll) {
-            clone.querySelectorAll(".rumble-blocker-ts").forEach((ts) => ts.remove());
-        }
-
-        const text = clone.textContent ? clone.textContent.trim() : "";
-
-        if (usernameEl.dataset) {
-            usernameEl.dataset.originalUsername = text;
-        }
-
-        return text;
-    }
-
     function applyThemeToPanel(panel) {
         panel.style.background = settings.darkMode ? "#131313" : "#fff";
         panel.style.color = settings.darkMode ? "#eaeaea" : "#000";
@@ -569,13 +549,8 @@
                 if (el._autoBlocked === undefined) el._autoBlocked = false;
                 if (el._collapsed === undefined) el._collapsed = false;
 
-                const displayNameRaw = getOriginalUsername(usernameEl);
-                const username = displayNameRaw ? displayNameRaw.toLowerCase() : null;
-                const displayName = displayNameRaw || "user";
-
-                if (usernameEl && usernameEl.dataset && !usernameEl.dataset.originalUsername) {
-                    usernameEl.dataset.originalUsername = displayName;
-                }
+                const username = usernameEl ? usernameEl.innerText.trim().toLowerCase() : null;
+                const displayName = usernameEl ? usernameEl.innerText.trim() : "user";
 
                 const isSystem =
                     !usernameEl ||
@@ -666,9 +641,6 @@
                         timeNode.style.verticalAlign = "middle";
                         timeNode.style.userSelect = "none";
                         timeNode.textContent = formatTime(new Date());
-                        if (usernameEl.dataset && !usernameEl.dataset.originalUsername) {
-                            usernameEl.dataset.originalUsername = displayName;
-                        }
                         usernameEl.style.position = "relative";
                         usernameEl.appendChild(timeNode);
                         el._timestampNode = timeNode;
@@ -959,8 +931,8 @@
 
         usernameEl.addEventListener("contextmenu", (e) => {
             e.preventDefault();
-            const displayName = getOriginalUsername(usernameEl) || "";
-            const username = displayName.toLowerCase();
+            const username = usernameEl.innerText.trim().toLowerCase();
+            const displayName = usernameEl.innerText.trim();
 
             const oldMenu = document.getElementById("customUserContextMenu");
             if (oldMenu) oldMenu.remove();
