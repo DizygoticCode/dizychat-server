@@ -1632,8 +1632,16 @@ if (userContextMenu) {
 }
 
 const urlParams = new URLSearchParams(window.location.search);
+const prefillUsername = urlParams.get("username") || urlParams.get("user") || "";
 const prefillRoom = urlParams.get("room") || "";
 const prefillPassword = urlParams.get("password") || "";
+
+if (prefillUsername && usernameInput) {
+  usernameInput.value = prefillUsername;
+  if (typeof updateAdminPasswordVisibility === "function") {
+    updateAdminPasswordVisibility();
+  }
+}
 
 if (prefillRoom) {
   lastRoomName = prefillRoom;
