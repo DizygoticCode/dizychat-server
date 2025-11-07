@@ -156,39 +156,6 @@
     /***********************
      * UI helpers
      ***********************/
-    function getOriginalUsername(usernameEl) {
-        if (!usernameEl) return null;
-
-        const dataset = usernameEl.dataset || {};
-        const attributeSources = [
-            dataset.username,
-            usernameEl.getAttribute("data-username"),
-            usernameEl.getAttribute("data-name"),
-            usernameEl.getAttribute("aria-label")
-        ].filter(Boolean);
-
-        let rawText = attributeSources.length ? attributeSources[0] : "";
-
-        if (!rawText) {
-            const clone = usernameEl.cloneNode(true);
-            if (clone.querySelectorAll) {
-                clone.querySelectorAll(".rumble-blocker-ts").forEach((ts) => ts.remove());
-            }
-            rawText = clone.textContent || "";
-        }
-
-        const sanitized = rawText
-            .replace(/\s+/g, " ")
-            .replace(/\s*[\-–—]?\s*\d{1,2}:\d{2}(?:\s?[AP]M)?$/i, "")
-            .trim();
-
-        if (dataset.originalUsername !== sanitized) {
-            dataset.originalUsername = sanitized;
-        }
-
-        return dataset.originalUsername || sanitized;
-    }
-
     function applyThemeToPanel(panel) {
         panel.style.background = settings.darkMode ? "#131313" : "#fff";
         panel.style.color = settings.darkMode ? "#eaeaea" : "#000";
@@ -577,22 +544,13 @@
                 if (!msgEl) return;
 
                 if (!el._originalMessage) el._originalMessage = msgEl.innerHTML;
-                if (el._originalPlainText === undefined) {
-                    const textContent = msgEl.textContent || msgEl.innerText || "";
-                    el._originalPlainText = textContent;
-                }
                 if (el._revealed === undefined) el._revealed = false;
                 if (el._initialized === undefined) el._initialized = false;
                 if (el._autoBlocked === undefined) el._autoBlocked = false;
                 if (el._collapsed === undefined) el._collapsed = false;
 
-                const displayNameRaw = getOriginalUsername(usernameEl);
-                const username = displayNameRaw ? displayNameRaw.toLowerCase() : null;
-                const displayName = displayNameRaw || "user";
-
-                if (usernameEl && usernameEl.dataset) {
-                    usernameEl.dataset.originalUsername = displayName;
-                }
+                const username = usernameEl ? usernameEl.innerText.trim().toLowerCase() : null;
+                const displayName = usernameEl ? usernameEl.innerText.trim() : "user";
 
                 const isSystem =
                     !usernameEl ||
@@ -683,9 +641,6 @@
                         timeNode.style.verticalAlign = "middle";
                         timeNode.style.userSelect = "none";
                         timeNode.textContent = formatTime(new Date());
-                        if (usernameEl.dataset && !usernameEl.dataset.originalUsername) {
-                            usernameEl.dataset.originalUsername = displayName;
-                        }
                         usernameEl.style.position = "relative";
                         usernameEl.appendChild(timeNode);
                         el._timestampNode = timeNode;
@@ -697,7 +652,7 @@
                     delete el._timestampNode;
                 }
 
-                const lowerText = (el._originalPlainText || "").toLowerCase();
+                const lowerText = msgEl.innerText.toLowerCase();
                 let keywordMatched = null;
                 if (settings.blockedKeywords && settings.blockedKeywords.length > 0) {
                     for (const kw of settings.blockedKeywords) {
@@ -711,12 +666,9 @@
 
                 const userIsBlocked = username && blockedUsers.includes(username);
                 const shouldAutoBlock = !!keywordMatched;
-                const shouldMask = shouldAutoBlock && settings.keywordAction === "mask" && !userIsBlocked;
-                const shouldHide = userIsBlocked || (shouldAutoBlock && settings.keywordAction === "hide");
-                const wasRecentlyAdded = !!el._recentlyAdded;
                 el._autoBlocked = shouldAutoBlock;
 
-                if (!shouldHide && !shouldMask) {
+                if (!userIsBlocked && !shouldAutoBlock) {
                     if (msgEl.innerHTML !== el._originalMessage) {
                         msgEl.innerHTML = el._originalMessage;
                     }
@@ -724,7 +676,6 @@
                     msgEl.style.color = settings.darkMode ? "#e0e0e0" : "#000";
                     msgEl.style.cursor = "default";
                     msgEl.title = "";
-                    el._collapsed = false;
                     return;
                 }
 
@@ -735,71 +686,76 @@
                     : msgEl.innerText.slice(0, previewLength);
                 const blockedPreview = `🚫 Blocked message from ${displayName} (click to reveal)`;
 
-                const maskedHTML = shouldMask
-                    ? settings.blockedKeywords.reduce((html, kw) => {
-                          if (!kw) return html;
-                          const re = new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "ig");
-                          return html.replace(re, (match) => "•".repeat(match.length));
-                      }, el._originalMessage)
-                    : null;
+                let maskedHTML = null;
+                if (shouldAutoBlock && settings.keywordAction === "mask") {
+                    maskedHTML = el._originalMessage;
+                    settings.blockedKeywords.forEach((kw) => {
+                        if (!kw) return;
+                        const re = new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "ig");
+                        maskedHTML = maskedHTML.replace(re, "•••");
+                    });
+                }
 
                 if (!el._initialized) {
                     el._initialized = true;
-                    if (!shouldHide && shouldMask) {
-                        el._revealed = false;
-                    }
-                }
-
-                if (shouldMask && !shouldHide) {
                     if (el._revealed) {
-                        if (msgEl.innerHTML !== el._originalMessage) {
-                            msgEl.innerHTML = el._originalMessage;
-                        }
+                        if (msgEl.innerHTML !== el._originalMessage) msgEl.innerHTML = el._originalMessage;
+                        msgEl.style.opacity = "1";
+                        msgEl.style.color = settings.darkMode ? "#eee" : "#555";
+                        msgEl.style.cursor = "pointer";
+                        msgEl.title = "";
+                    } else if (settings.keywordAction === "mask" && shouldAutoBlock) {
+                        if (msgEl.innerHTML !== maskedHTML) msgEl.innerHTML = maskedHTML;
+                        msgEl.style.opacity = "0.9";
+                        msgEl.style.cursor = "pointer";
+                        msgEl.title = snippet;
+                    } else {
+                        if (msgEl.innerText !== blockedPreview) msgEl.innerText = blockedPreview;
+                        msgEl.style.opacity = "0.5";
+                        msgEl.style.cursor = "pointer";
+                        msgEl.title = snippet;
+                    }
+                } else if (el._revealed) {
+                    if (msgEl.innerHTML !== el._originalMessage) {
+                        msgEl.style.transition = "";
+                        msgEl.innerHTML = el._originalMessage;
                         msgEl.style.opacity = "1";
                         msgEl.style.color = settings.darkMode ? "#eee" : "#555";
                         msgEl.title = "";
-                    } else if (msgEl.innerHTML !== maskedHTML) {
-                        if (wasRecentlyAdded) {
+                    }
+                } else if (settings.keywordAction === "mask" && shouldAutoBlock) {
+                    if (msgEl.innerHTML !== maskedHTML) {
+                        if (!el._recentlyAdded) {
+                            msgEl.innerHTML = maskedHTML;
+                            msgEl.style.opacity = "0.9";
+                        } else {
                             msgEl.style.opacity = "0";
                             setTimeout(() => {
                                 msgEl.innerHTML = maskedHTML;
-                                msgEl.style.opacity = "0.95";
+                                msgEl.style.opacity = "0.9";
                             }, 50);
-                        } else {
-                            msgEl.innerHTML = maskedHTML;
-                            msgEl.style.opacity = "0.95";
-                        }
-                        msgEl.style.color = settings.darkMode ? "#e0e0e0" : "#222";
-                        msgEl.title = snippet;
-                    }
-                    msgEl.style.cursor = "pointer";
-                    el._collapsed = false;
-                } else {
-                    if (el._revealed) {
-                        if (msgEl.innerHTML !== el._originalMessage) {
-                            msgEl.style.transition = "";
-                            msgEl.innerHTML = el._originalMessage;
-                            msgEl.style.opacity = "1";
-                            msgEl.style.color = settings.darkMode ? "#eee" : "#555";
-                            msgEl.title = "";
-                        }
-                    } else if (msgEl.innerText !== blockedPreview) {
-                        if (wasRecentlyAdded) {
-                            msgEl.style.opacity = "0";
-                            setTimeout(() => {
-                                msgEl.innerText = blockedPreview;
-                                msgEl.style.opacity = "0.5";
-                            }, 50);
-                        } else {
-                            msgEl.innerText = blockedPreview;
-                            msgEl.style.opacity = "0.5";
+                            delete el._recentlyAdded;
                         }
                         msgEl.style.cursor = "pointer";
                         msgEl.title = snippet;
                     }
+                } else if (msgEl.innerText !== blockedPreview) {
+                    if (!el._recentlyAdded) {
+                        msgEl.innerText = blockedPreview;
+                        msgEl.style.opacity = "0.5";
+                    } else {
+                        msgEl.style.opacity = "0";
+                        setTimeout(() => {
+                            msgEl.innerText = blockedPreview;
+                            msgEl.style.opacity = "0.5";
+                        }, 50);
+                        delete el._recentlyAdded;
+                    }
+                    msgEl.style.cursor = "pointer";
+                    msgEl.title = snippet;
                 }
 
-                if (shouldHide && !shouldMask && !el._revealed && settings.collapseLength > 0) {
+                if (!el._revealed && settings.collapseLength > 0) {
                     if (plainOriginal.length > settings.collapseLength) {
                         if (!el._collapsed) {
                             const snippetShort =
@@ -824,44 +780,33 @@
                         return;
                     }
 
-                    if (shouldMask && !shouldHide) {
-                        el._revealed = !el._revealed;
+                    el._revealed = !el._revealed;
+
+                    if (el._revealed) {
                         msgEl.style.opacity = "0";
                         setTimeout(() => {
-                            if (el._revealed) {
-                                msgEl.innerHTML = el._originalMessage;
-                                msgEl.style.color = settings.darkMode ? "#eee" : "#555";
-                                msgEl.style.opacity = "1";
-                                msgEl.title = "";
-                            } else {
-                                msgEl.innerHTML = maskedHTML;
-                                msgEl.style.opacity = "0.95";
-                                msgEl.style.color = settings.darkMode ? "#e0e0e0" : "#222";
-                                msgEl.title = snippet;
-                            }
-                        }, 170);
-                        return;
-                    }
-
-                    if (!shouldHide) return;
-
-                    el._revealed = !el._revealed;
-                    msgEl.style.opacity = "0";
-                    setTimeout(() => {
-                        if (el._revealed) {
                             msgEl.innerHTML = el._originalMessage;
                             msgEl.style.color = settings.darkMode ? "#eee" : "#555";
                             msgEl.style.opacity = "1";
                             msgEl.title = "";
-                        } else {
-                            msgEl.innerText = blockedPreview;
-                            msgEl.style.opacity = "0.5";
-                            msgEl.title = snippet;
-                        }
-                    }, 170);
+                        }, 170);
+                    } else {
+                        msgEl.style.opacity = "0";
+                        setTimeout(() => {
+                            if (settings.keywordAction === "mask" && shouldAutoBlock) {
+                                msgEl.innerHTML = maskedHTML;
+                                msgEl.style.opacity = "0.9";
+                                msgEl.title = snippet;
+                            } else {
+                                msgEl.innerText = blockedPreview;
+                                msgEl.style.opacity = "0.5";
+                                msgEl.title = snippet;
+                            }
+                        }, 170);
+                    }
                 };
 
-                if (wasRecentlyAdded) {
+                if (el._recentlyAdded) {
                     if (isHighlighted) {
                         maybeNotify("highlight", displayName, snippet);
                         if (audio && settings.highlightNotificationSoundEnabled && audio.src) {
@@ -909,16 +854,8 @@
     /***********************
      * Context menu helpers
      ***********************/
-    function detectMyNickname(forceRefresh = false) {
-        if (!forceRefresh && settings.myNickname) return settings.myNickname;
-
-        const runtimeUser = window?.Rumble?.currentUser?.username;
-        if (runtimeUser) {
-            settings.myNickname = runtimeUser.trim();
-            saveSettings();
-            return settings.myNickname;
-        }
-
+    function detectMyNickname() {
+        if (settings.myNickname) return settings.myNickname;
         const candidate =
             document.querySelector(".user-info .username") ||
             document.querySelector(".header-username") ||
@@ -928,28 +865,64 @@
             saveSettings();
             return settings.myNickname;
         }
-        return settings.myNickname || "Guest";
+        return "Guest";
     }
 
     function openDirectMessage(targetDisplayName) {
-        const myNickname = (detectMyNickname(true) || "Guest").trim() || "Guest";
-        const normalizedTarget = (targetDisplayName || "").trim();
-        const target =
-            normalizedTarget || prompt("Enter the username you want to direct message:", "")?.trim() || "";
+        const myNickname =
+            window?.Rumble?.currentUser?.username || settings.myNickname || detectMyNickname() || "Guest";
+        const target = targetDisplayName || prompt("Enter the username to DM:", "general") || "general";
 
-        if (!target) {
-            alert("No username provided for the direct message.");
-            return;
+        const roomPath = window.location.pathname;
+        const currentRoom = roomPath.split("/room/")[1] || null;
+        const defaultRoomName = currentRoom
+            ? decodeURIComponent(currentRoom)
+            : [myNickname, target].sort().join("-dizychat-");
+
+        const roomName =
+            prompt("Enter a room name (share this link to join the same room):", defaultRoomName) ||
+            defaultRoomName;
+
+        const serverURL = "https://dizychat-server.onrender.com/room/";
+        const chatURL = `${serverURL}${encodeURIComponent(roomName)}?nickname=${encodeURIComponent(
+            myNickname
+        )}&target=${encodeURIComponent(target)}`;
+
+        try {
+            navigator.clipboard.writeText(chatURL).then(() => {
+                alert("Room link copied to clipboard! Share it to join the same room.");
+            });
+        } catch (err) {
+            console.warn("Clipboard copy failed, fallback alert:", err);
+            alert(`Room link: ${chatURL}`);
         }
 
-        const params = new URLSearchParams({
-            user: myNickname,
-            target,
-            source: "rumble-userscript"
-        });
+        const chatWindow = window.open(
+            chatURL,
+            "_blank",
+            "width=520,height=700,resizable=yes,scrollbars=yes"
+        );
 
-        const chatURL = `https://dizychat.com/?${params.toString()}`;
-        window.open(chatURL, "_blank", "noopener,noreferrer");
+        const interval = setInterval(() => {
+            try {
+                if (!chatWindow || chatWindow.closed) {
+                    clearInterval(interval);
+                    return;
+                }
+                const nicknameInput = chatWindow.document.querySelector("#username-input");
+                const roomInput = chatWindow.document.querySelector("#room-input");
+                if (nicknameInput) {
+                    nicknameInput.value = myNickname;
+                    nicknameInput.focus();
+                }
+                if (roomInput) {
+                    roomInput.value = target;
+                }
+                if (nicknameInput && roomInput) clearInterval(interval);
+            } catch (err) {
+                // ignore cross-origin until loaded
+            }
+        }, 200);
     }
 
     function attachContextMenuToUser(usernameEl) {
@@ -958,8 +931,8 @@
 
         usernameEl.addEventListener("contextmenu", (e) => {
             e.preventDefault();
-            const displayName = getOriginalUsername(usernameEl) || "";
-            const username = displayName.toLowerCase();
+            const username = usernameEl.innerText.trim().toLowerCase();
+            const displayName = usernameEl.innerText.trim();
 
             const oldMenu = document.getElementById("customUserContextMenu");
             if (oldMenu) oldMenu.remove();
