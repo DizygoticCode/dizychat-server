@@ -640,9 +640,10 @@
                         timeNode.style.opacity = "0.6";
                         timeNode.style.verticalAlign = "middle";
                         timeNode.style.userSelect = "none";
+                        timeNode.style.pointerEvents = "none";
+                        timeNode.setAttribute("aria-hidden", "true");
                         timeNode.textContent = formatTime(new Date());
-                        usernameEl.style.position = "relative";
-                        usernameEl.appendChild(timeNode);
+                        usernameEl.insertAdjacentElement("afterend", timeNode);
                         el._timestampNode = timeNode;
                         el._timestampApplied = true;
                     }
@@ -652,7 +653,11 @@
                     delete el._timestampNode;
                 }
 
-                const lowerText = msgEl.innerText.toLowerCase();
+                const rawOriginal = el._originalMessage || msgEl.innerHTML || "";
+                const plainOriginal = rawOriginal
+                    ? rawOriginal.replace(/<\/?[^>]+(>|$)/g, "")
+                    : msgEl.innerText || "";
+                const lowerText = plainOriginal.toLowerCase();
                 let keywordMatched = null;
                 if (settings.blockedKeywords && settings.blockedKeywords.length > 0) {
                     for (const kw of settings.blockedKeywords) {
@@ -679,7 +684,6 @@
                     return;
                 }
 
-                const plainOriginal = (el._originalMessage || "").replace(/<\/?[^>]+(>|$)/g, "");
                 const previewLength = settings.previewLength || 50;
                 const snippet = plainOriginal
                     ? plainOriginal.slice(0, previewLength) + (plainOriginal.length > previewLength ? "…" : "")
@@ -869,60 +873,36 @@
     }
 
     function openDirectMessage(targetDisplayName) {
-        const myNickname =
+        const detectedNickname =
             window?.Rumble?.currentUser?.username || settings.myNickname || detectMyNickname() || "Guest";
-        const target = targetDisplayName || prompt("Enter the username to DM:", "general") || "general";
+        const myNickname = (detectedNickname || "")
+            .toString()
+            .replace(/\s+/g, " ")
+            .trim() || "Guest";
 
-        const roomPath = window.location.pathname;
-        const currentRoom = roomPath.split("/room/")[1] || null;
-        const defaultRoomName = currentRoom
-            ? decodeURIComponent(currentRoom)
-            : [myNickname, target].sort().join("-dizychat-");
-
-        const roomName =
-            prompt("Enter a room name (share this link to join the same room):", defaultRoomName) ||
-            defaultRoomName;
-
-        const serverURL = "https://dizychat-server.onrender.com/room/";
-        const chatURL = `${serverURL}${encodeURIComponent(roomName)}?nickname=${encodeURIComponent(
-            myNickname
-        )}&target=${encodeURIComponent(target)}`;
-
-        try {
-            navigator.clipboard.writeText(chatURL).then(() => {
-                alert("Room link copied to clipboard! Share it to join the same room.");
-            });
-        } catch (err) {
-            console.warn("Clipboard copy failed, fallback alert:", err);
-            alert(`Room link: ${chatURL}`);
+        if (settings.myNickname !== myNickname) {
+            settings.myNickname = myNickname;
+            saveSettings();
         }
 
-        const chatWindow = window.open(
-            chatURL,
-            "_blank",
-            "width=520,height=700,resizable=yes,scrollbars=yes"
-        );
+        const providedTarget = (targetDisplayName || "").toString().replace(/\s+/g, " ").trim();
+        const target = providedTarget ||
+            prompt("Enter the username to DM:", "general")?.toString().replace(/\s+/g, " ").trim() ||
+            "general";
 
-        const interval = setInterval(() => {
-            try {
-                if (!chatWindow || chatWindow.closed) {
-                    clearInterval(interval);
-                    return;
-                }
-                const nicknameInput = chatWindow.document.querySelector("#username-input");
-                const roomInput = chatWindow.document.querySelector("#room-input");
-                if (nicknameInput) {
-                    nicknameInput.value = myNickname;
-                    nicknameInput.focus();
-                }
-                if (roomInput) {
-                    roomInput.value = target;
-                }
-                if (nicknameInput && roomInput) clearInterval(interval);
-            } catch (err) {
-                // ignore cross-origin until loaded
-            }
-        }, 200);
+        const possessiveSuffix = /s$/i.test(target) ? "'" : "'s";
+        const defaultRoomName = `${target}${possessiveSuffix} Room`;
+
+        const landingBaseURL = "https://dizychat-server.onrender.com/";
+        const params = new URLSearchParams();
+        params.set("username", myNickname);
+        params.set("room", defaultRoomName);
+        const landingURL = `${landingBaseURL}?${params.toString()}`;
+
+        const dmWindow = window.open(landingURL, "_blank", "noopener,noreferrer");
+        if (!dmWindow) {
+            window.location.href = landingURL;
+        }
     }
 
     function attachContextMenuToUser(usernameEl) {
