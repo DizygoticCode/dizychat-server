@@ -565,6 +565,7 @@
                 if (el._initialized === undefined) el._initialized = false;
                 if (el._autoBlocked === undefined) el._autoBlocked = false;
                 if (el._collapsed === undefined) el._collapsed = false;
+                if (el._collapseExpanded === undefined) el._collapseExpanded = false;
 
                 const username = usernameEl ? usernameEl.innerText.trim().toLowerCase() : null;
                 const displayName = usernameEl ? usernameEl.innerText.trim() : "user";
@@ -688,18 +689,8 @@
 
                 const userIsBlocked = username && blockedUsers.includes(username);
                 const shouldAutoBlock = !!keywordMatched;
+                const isBlocked = userIsBlocked || shouldAutoBlock;
                 el._autoBlocked = shouldAutoBlock;
-
-                if (!userIsBlocked && !shouldAutoBlock) {
-                    if (msgEl.innerHTML !== el._originalMessage) {
-                        msgEl.innerHTML = el._originalMessage;
-                    }
-                    msgEl.style.opacity = "1";
-                    msgEl.style.color = settings.darkMode ? "#e0e0e0" : "#000";
-                    msgEl.style.cursor = "default";
-                    msgEl.title = "";
-                    return;
-                }
 
                 const previewLength = settings.previewLength || 50;
                 const snippet = plainOriginal
@@ -717,115 +708,160 @@
                     });
                 }
 
-                if (!el._initialized) {
-                    el._initialized = true;
-                    if (el._revealed) {
-                        if (msgEl.innerHTML !== el._originalMessage) msgEl.innerHTML = el._originalMessage;
-                        msgEl.style.opacity = "1";
-                        msgEl.style.color = settings.darkMode ? "#eee" : "#555";
-                        msgEl.style.cursor = "pointer";
-                        msgEl.title = "";
-                    } else if (settings.keywordAction === "mask" && shouldAutoBlock) {
-                        if (msgEl.innerHTML !== maskedHTML) msgEl.innerHTML = maskedHTML;
-                        msgEl.style.opacity = "0.9";
-                        msgEl.style.cursor = "pointer";
-                        msgEl.title = snippet;
-                    } else {
-                        if (msgEl.innerText !== blockedPreview) msgEl.innerText = blockedPreview;
-                        msgEl.style.opacity = "0.5";
-                        msgEl.style.cursor = "pointer";
-                        msgEl.title = snippet;
-                    }
-                } else if (el._revealed) {
-                    if (msgEl.innerHTML !== el._originalMessage) {
-                        msgEl.style.transition = "";
-                        msgEl.innerHTML = el._originalMessage;
-                        msgEl.style.opacity = "1";
-                        msgEl.style.color = settings.darkMode ? "#eee" : "#555";
-                        msgEl.title = "";
-                    }
-                } else if (settings.keywordAction === "mask" && shouldAutoBlock) {
-                    if (msgEl.innerHTML !== maskedHTML) {
-                        if (!el._recentlyAdded) {
-                            msgEl.innerHTML = maskedHTML;
+                if (isBlocked) {
+                    el._collapseExpanded = false;
+                    if (!el._initialized) {
+                        el._initialized = true;
+                        if (el._revealed) {
+                            if (msgEl.innerHTML !== el._originalMessage) msgEl.innerHTML = el._originalMessage;
+                            msgEl.style.opacity = "1";
+                            msgEl.style.color = settings.darkMode ? "#eee" : "#555";
+                            msgEl.style.cursor = "pointer";
+                            msgEl.title = "";
+                        } else if (settings.keywordAction === "mask" && shouldAutoBlock) {
+                            if (msgEl.innerHTML !== maskedHTML) msgEl.innerHTML = maskedHTML;
                             msgEl.style.opacity = "0.9";
+                            msgEl.style.cursor = "pointer";
+                            msgEl.title = snippet;
+                        } else {
+                            if (msgEl.innerText !== blockedPreview) msgEl.innerText = blockedPreview;
+                            msgEl.style.opacity = "0.5";
+                            msgEl.style.cursor = "pointer";
+                            msgEl.title = snippet;
+                        }
+                    } else if (el._revealed) {
+                        if (msgEl.innerHTML !== el._originalMessage) {
+                            msgEl.style.transition = "";
+                            msgEl.innerHTML = el._originalMessage;
+                            msgEl.style.opacity = "1";
+                            msgEl.style.color = settings.darkMode ? "#eee" : "#555";
+                            msgEl.title = "";
+                        }
+                    } else if (settings.keywordAction === "mask" && shouldAutoBlock) {
+                        if (msgEl.innerHTML !== maskedHTML) {
+                            if (!el._recentlyAdded) {
+                                msgEl.innerHTML = maskedHTML;
+                                msgEl.style.opacity = "0.9";
+                            } else {
+                                msgEl.style.opacity = "0";
+                                setTimeout(() => {
+                                    msgEl.innerHTML = maskedHTML;
+                                    msgEl.style.opacity = "0.9";
+                                }, 50);
+                                delete el._recentlyAdded;
+                            }
+                            msgEl.style.cursor = "pointer";
+                            msgEl.title = snippet;
+                        }
+                    } else if (msgEl.innerText !== blockedPreview) {
+                        if (!el._recentlyAdded) {
+                            msgEl.innerText = blockedPreview;
+                            msgEl.style.opacity = "0.5";
                         } else {
                             msgEl.style.opacity = "0";
                             setTimeout(() => {
-                                msgEl.innerHTML = maskedHTML;
-                                msgEl.style.opacity = "0.9";
+                                msgEl.innerText = blockedPreview;
+                                msgEl.style.opacity = "0.5";
                             }, 50);
                             delete el._recentlyAdded;
                         }
                         msgEl.style.cursor = "pointer";
                         msgEl.title = snippet;
                     }
-                } else if (msgEl.innerText !== blockedPreview) {
-                    if (!el._recentlyAdded) {
-                        msgEl.innerText = blockedPreview;
-                        msgEl.style.opacity = "0.5";
-                    } else {
-                        msgEl.style.opacity = "0";
-                        setTimeout(() => {
-                            msgEl.innerText = blockedPreview;
-                            msgEl.style.opacity = "0.5";
-                        }, 50);
-                        delete el._recentlyAdded;
-                    }
-                    msgEl.style.cursor = "pointer";
-                    msgEl.title = snippet;
-                }
 
-                if (!el._revealed && settings.collapseLength > 0) {
-                    if (plainOriginal.length > settings.collapseLength) {
-                        if (!el._collapsed) {
-                            const snippetShort =
-                                plainOriginal.slice(0, settings.collapseLength) + "… (click to expand)";
-                            msgEl.innerText = snippetShort;
-                            msgEl.title = plainOriginal.slice(0, Math.min(200, plainOriginal.length));
-                            msgEl.style.opacity = "0.6";
-                            el._collapsed = true;
-                        }
-                    } else if (el._collapsed) {
-                        el._collapsed = false;
-                        msgEl.title = snippet;
-                    }
-                }
-
-                msgEl.onclick = () => {
-                    if (el._collapsed) {
-                        el._collapsed = false;
-                        msgEl.innerHTML = el._originalMessage;
-                        msgEl.style.opacity = "1";
-                        msgEl.title = "";
-                        return;
-                    }
-
-                    el._revealed = !el._revealed;
-
-                    if (el._revealed) {
-                        msgEl.style.opacity = "0";
-                        setTimeout(() => {
+                    msgEl.onclick = () => {
+                        if (el._collapsed) {
+                            el._collapsed = false;
                             msgEl.innerHTML = el._originalMessage;
-                            msgEl.style.color = settings.darkMode ? "#eee" : "#555";
                             msgEl.style.opacity = "1";
                             msgEl.title = "";
-                        }, 170);
-                    } else {
-                        msgEl.style.opacity = "0";
-                        setTimeout(() => {
-                            if (settings.keywordAction === "mask" && shouldAutoBlock) {
-                                msgEl.innerHTML = maskedHTML;
-                                msgEl.style.opacity = "0.9";
-                                msgEl.title = snippet;
-                            } else {
-                                msgEl.innerText = blockedPreview;
-                                msgEl.style.opacity = "0.5";
-                                msgEl.title = snippet;
-                            }
-                        }, 170);
+                            return;
+                        }
+
+                        el._revealed = !el._revealed;
+
+                        if (el._revealed) {
+                            msgEl.style.opacity = "0";
+                            setTimeout(() => {
+                                msgEl.innerHTML = el._originalMessage;
+                                msgEl.style.color = settings.darkMode ? "#eee" : "#555";
+                                msgEl.style.opacity = "1";
+                                msgEl.title = "";
+                            }, 170);
+                        } else {
+                            msgEl.style.opacity = "0";
+                            setTimeout(() => {
+                                if (settings.keywordAction === "mask" && shouldAutoBlock) {
+                                    msgEl.innerHTML = maskedHTML;
+                                    msgEl.style.opacity = "0.9";
+                                    msgEl.title = snippet;
+                                } else {
+                                    msgEl.innerText = blockedPreview;
+                                    msgEl.style.opacity = "0.5";
+                                    msgEl.title = snippet;
+                                }
+                            }, 170);
+                        }
+                    };
+                } else {
+                    if (msgEl.innerHTML !== el._originalMessage) {
+                        msgEl.innerHTML = el._originalMessage;
                     }
-                };
+                    msgEl.style.opacity = "1";
+                    msgEl.style.color = settings.darkMode ? "#e0e0e0" : "#000";
+                    msgEl.title = "";
+
+                    const collapseThreshold = settings.collapseLength || 0;
+                    const collapseTitle = plainOriginal.slice(0, Math.min(200, plainOriginal.length));
+                    const collapseSnippet =
+                        collapseThreshold > 0
+                            ? plainOriginal.slice(0, collapseThreshold) + "… (click to expand)"
+                            : "";
+                    const collapseEnabled =
+                        collapseThreshold > 0 && plainOriginal.length > collapseThreshold;
+
+                    if (collapseEnabled && !el._collapseExpanded) {
+                        if (!el._collapsed || msgEl.innerText !== collapseSnippet) {
+                            msgEl.innerText = collapseSnippet;
+                            msgEl.style.opacity = "0.6";
+                            msgEl.title = collapseTitle;
+                            el._collapsed = true;
+                        }
+                    } else if (!collapseEnabled || el._collapseExpanded) {
+                        if (el._collapsed) {
+                            el._collapsed = false;
+                            msgEl.innerHTML = el._originalMessage;
+                            msgEl.style.opacity = "1";
+                            msgEl.title = collapseEnabled ? collapseTitle : "";
+                        }
+                        if (!collapseEnabled) {
+                            el._collapseExpanded = false;
+                            msgEl.title = "";
+                        }
+                    }
+
+                    if (collapseEnabled) {
+                        msgEl.style.cursor = "pointer";
+                        msgEl.onclick = () => {
+                            if (el._collapsed) {
+                                el._collapsed = false;
+                                el._collapseExpanded = true;
+                                msgEl.innerHTML = el._originalMessage;
+                                msgEl.style.opacity = "1";
+                                msgEl.title = "";
+                            } else {
+                                el._collapseExpanded = false;
+                                msgEl.innerText = collapseSnippet;
+                                msgEl.style.opacity = "0.6";
+                                msgEl.title = collapseTitle;
+                                el._collapsed = true;
+                            }
+                        };
+                    } else {
+                        msgEl.style.cursor = "";
+                        msgEl.onclick = null;
+                    }
+                }
 
                 if (el._recentlyAdded) {
                     if (isHighlighted) {
