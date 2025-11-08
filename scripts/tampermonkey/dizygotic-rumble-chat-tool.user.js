@@ -39,6 +39,7 @@
         notifyOnHighlight: false,
         notifyOnKeyword: false,
         notificationSound: "",
+        notificationVolume: 1,
         highlightNotificationSoundEnabled: false,
         myNickname: ""
     };
@@ -56,7 +57,7 @@
     /***********************
      * Export / Import / Backup
      ***********************/
-    function exportData(filename = "rumble-blocklist.json") {
+    function exportData(filename = "dizygotic-rumble-chat-tool-settings.json") {
         const data = { blockedUsers, settings };
         localStorage.setItem(BACKUP_KEY, JSON.stringify(data));
         const blob = new Blob([JSON.stringify(data, null, 2)], {
@@ -82,6 +83,10 @@
                     settings = Object.assign({}, defaultSettings, data.settings);
                     saveBlocklist();
                     saveSettings();
+                    if (audio) {
+                        audio.src = settings.notificationSound || "";
+                        audio.volume = typeof settings.notificationVolume === "number" ? settings.notificationVolume : 1;
+                    }
                     alert("✅ Import successful! Blocklist & settings restored.");
                     refreshBlockedMessages();
                     if (callback) callback(true);
@@ -104,7 +109,7 @@
         if (settings.autoBackupMinutes > 0) {
             backupIntervalId = setInterval(() => {
                 const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-                exportData(`rumble-blocklist-backup-${timestamp}.json`);
+                exportData(`dizygotic-rumble-chat-tool-settings-backup-${timestamp}.json`);
                 console.log("💾 Auto-backup created");
             }, settings.autoBackupMinutes * 60 * 1000);
         }
@@ -126,6 +131,7 @@
         if (settings.notificationSound) {
             audio.src = settings.notificationSound;
         }
+        audio.volume = typeof settings.notificationVolume === "number" ? settings.notificationVolume : 1;
     }
 
     function triggerNotification(title, body) {
@@ -257,6 +263,11 @@
                 <label><input type="checkbox" id="notifyOnKeywordInput"${settings.notifyOnKeyword ? " checked" : ""}> Notify on keyword match</label>
                 <label style="margin-left:auto">Sound: <input type="file" id="notificationSoundInput" accept="audio/*"></label>
             </div>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
+                <label for="notificationVolumeInput" style="font-size:12px;color:gray">Volume</label>
+                <input type="range" id="notificationVolumeInput" min="0" max="100" value="${Math.round((settings.notificationVolume ?? 1) * 100)}" style="flex:1">
+                <span id="notificationVolumeValue" style="min-width:32px;text-align:right;font-size:12px;color:gray">${Math.round((settings.notificationVolume ?? 1) * 100)}%</span>
+            </div>
 
             <div style="height:14px"></div>
 
@@ -331,12 +342,23 @@
             settings.notifyOnKeyword = !!panel.querySelector("#notifyOnKeywordInput").checked;
             settings.notifyOnHighlight = !!panel.querySelector("#notifyOnHighlightInput").checked;
             settings.highlightNotificationSoundEnabled = !!panel.querySelector("#highlightSoundInput").checked;
+            const volumeSlider = panel.querySelector("#notificationVolumeInput");
+            const parsedVolume = volumeSlider ? parseInt(volumeSlider.value, 10) : NaN;
+            const normalizedVolume = Number.isFinite(parsedVolume)
+                ? Math.min(100, Math.max(0, parsedVolume)) / 100
+                : typeof settings.notificationVolume === "number"
+                ? settings.notificationVolume
+                : 1;
+            settings.notificationVolume = normalizedVolume;
             settings.autoBackupMinutes = parseInt(panel.querySelector("#autoBackupInput").value, 10) || 0;
             settings.darkMode = !!panel.querySelector("#darkModeInput").checked;
 
             saveBlocklist();
             saveSettings();
             setupAutoBackup();
+            if (audio) {
+                audio.volume = settings.notificationVolume;
+            }
 
             const soundFileInput = panel.querySelector("#notificationSoundInput");
             if (soundFileInput && soundFileInput.files && soundFileInput.files[0]) {
@@ -346,6 +368,7 @@
                     settings.notificationSound = ev.target.result;
                     initAudio();
                     audio.src = settings.notificationSound;
+                    audio.volume = settings.notificationVolume;
                     saveSettings();
                     alert("✅ Settings saved (and sound saved).");
                     refreshBlockedMessages();
@@ -412,6 +435,21 @@
         );
 
         panel.appendChild(buttonRow);
+
+        const volumeSliderEl = panel.querySelector("#notificationVolumeInput");
+        const volumeValueEl = panel.querySelector("#notificationVolumeValue");
+        if (volumeSliderEl && volumeValueEl) {
+            const syncVolumeDisplay = () => {
+                const sliderValue = Math.min(100, Math.max(0, parseInt(volumeSliderEl.value, 10) || 0));
+                volumeSliderEl.value = sliderValue;
+                volumeValueEl.textContent = `${sliderValue}%`;
+                if (audio) {
+                    audio.volume = sliderValue / 100;
+                }
+            };
+            volumeSliderEl.addEventListener("input", syncVolumeDisplay);
+            syncVolumeDisplay();
+        }
 
         const stats = panel.querySelector("#statsSummary");
         stats.innerText = `Blocked users: ${blockedUsers.length} · Keywords: ${settings.blockedKeywords.length} · Highlighted: ${settings.highlightedUsers.length}`;
@@ -565,6 +603,7 @@
                 if (el._initialized === undefined) el._initialized = false;
                 if (el._autoBlocked === undefined) el._autoBlocked = false;
                 if (el._collapsed === undefined) el._collapsed = false;
+                if (el._collapseExpanded === undefined) el._collapseExpanded = false;
 
                 const username = usernameEl ? usernameEl.innerText.trim().toLowerCase() : null;
                 const displayName = usernameEl ? usernameEl.innerText.trim() : "user";
@@ -688,18 +727,8 @@
 
                 const userIsBlocked = username && blockedUsers.includes(username);
                 const shouldAutoBlock = !!keywordMatched;
+                const isBlocked = userIsBlocked || shouldAutoBlock;
                 el._autoBlocked = shouldAutoBlock;
-
-                if (!userIsBlocked && !shouldAutoBlock) {
-                    if (msgEl.innerHTML !== el._originalMessage) {
-                        msgEl.innerHTML = el._originalMessage;
-                    }
-                    msgEl.style.opacity = "1";
-                    msgEl.style.color = settings.darkMode ? "#e0e0e0" : "#000";
-                    msgEl.style.cursor = "default";
-                    msgEl.title = "";
-                    return;
-                }
 
                 const previewLength = settings.previewLength || 50;
                 const snippet = plainOriginal
@@ -717,115 +746,160 @@
                     });
                 }
 
-                if (!el._initialized) {
-                    el._initialized = true;
-                    if (el._revealed) {
-                        if (msgEl.innerHTML !== el._originalMessage) msgEl.innerHTML = el._originalMessage;
-                        msgEl.style.opacity = "1";
-                        msgEl.style.color = settings.darkMode ? "#eee" : "#555";
-                        msgEl.style.cursor = "pointer";
-                        msgEl.title = "";
-                    } else if (settings.keywordAction === "mask" && shouldAutoBlock) {
-                        if (msgEl.innerHTML !== maskedHTML) msgEl.innerHTML = maskedHTML;
-                        msgEl.style.opacity = "0.9";
-                        msgEl.style.cursor = "pointer";
-                        msgEl.title = snippet;
-                    } else {
-                        if (msgEl.innerText !== blockedPreview) msgEl.innerText = blockedPreview;
-                        msgEl.style.opacity = "0.5";
-                        msgEl.style.cursor = "pointer";
-                        msgEl.title = snippet;
-                    }
-                } else if (el._revealed) {
-                    if (msgEl.innerHTML !== el._originalMessage) {
-                        msgEl.style.transition = "";
-                        msgEl.innerHTML = el._originalMessage;
-                        msgEl.style.opacity = "1";
-                        msgEl.style.color = settings.darkMode ? "#eee" : "#555";
-                        msgEl.title = "";
-                    }
-                } else if (settings.keywordAction === "mask" && shouldAutoBlock) {
-                    if (msgEl.innerHTML !== maskedHTML) {
-                        if (!el._recentlyAdded) {
-                            msgEl.innerHTML = maskedHTML;
+                if (isBlocked) {
+                    el._collapseExpanded = false;
+                    if (!el._initialized) {
+                        el._initialized = true;
+                        if (el._revealed) {
+                            if (msgEl.innerHTML !== el._originalMessage) msgEl.innerHTML = el._originalMessage;
+                            msgEl.style.opacity = "1";
+                            msgEl.style.color = settings.darkMode ? "#eee" : "#555";
+                            msgEl.style.cursor = "pointer";
+                            msgEl.title = "";
+                        } else if (settings.keywordAction === "mask" && shouldAutoBlock) {
+                            if (msgEl.innerHTML !== maskedHTML) msgEl.innerHTML = maskedHTML;
                             msgEl.style.opacity = "0.9";
+                            msgEl.style.cursor = "pointer";
+                            msgEl.title = snippet;
+                        } else {
+                            if (msgEl.innerText !== blockedPreview) msgEl.innerText = blockedPreview;
+                            msgEl.style.opacity = "0.5";
+                            msgEl.style.cursor = "pointer";
+                            msgEl.title = snippet;
+                        }
+                    } else if (el._revealed) {
+                        if (msgEl.innerHTML !== el._originalMessage) {
+                            msgEl.style.transition = "";
+                            msgEl.innerHTML = el._originalMessage;
+                            msgEl.style.opacity = "1";
+                            msgEl.style.color = settings.darkMode ? "#eee" : "#555";
+                            msgEl.title = "";
+                        }
+                    } else if (settings.keywordAction === "mask" && shouldAutoBlock) {
+                        if (msgEl.innerHTML !== maskedHTML) {
+                            if (!el._recentlyAdded) {
+                                msgEl.innerHTML = maskedHTML;
+                                msgEl.style.opacity = "0.9";
+                            } else {
+                                msgEl.style.opacity = "0";
+                                setTimeout(() => {
+                                    msgEl.innerHTML = maskedHTML;
+                                    msgEl.style.opacity = "0.9";
+                                }, 50);
+                                delete el._recentlyAdded;
+                            }
+                            msgEl.style.cursor = "pointer";
+                            msgEl.title = snippet;
+                        }
+                    } else if (msgEl.innerText !== blockedPreview) {
+                        if (!el._recentlyAdded) {
+                            msgEl.innerText = blockedPreview;
+                            msgEl.style.opacity = "0.5";
                         } else {
                             msgEl.style.opacity = "0";
                             setTimeout(() => {
-                                msgEl.innerHTML = maskedHTML;
-                                msgEl.style.opacity = "0.9";
+                                msgEl.innerText = blockedPreview;
+                                msgEl.style.opacity = "0.5";
                             }, 50);
                             delete el._recentlyAdded;
                         }
                         msgEl.style.cursor = "pointer";
                         msgEl.title = snippet;
                     }
-                } else if (msgEl.innerText !== blockedPreview) {
-                    if (!el._recentlyAdded) {
-                        msgEl.innerText = blockedPreview;
-                        msgEl.style.opacity = "0.5";
-                    } else {
-                        msgEl.style.opacity = "0";
-                        setTimeout(() => {
-                            msgEl.innerText = blockedPreview;
-                            msgEl.style.opacity = "0.5";
-                        }, 50);
-                        delete el._recentlyAdded;
-                    }
-                    msgEl.style.cursor = "pointer";
-                    msgEl.title = snippet;
-                }
 
-                if (!el._revealed && settings.collapseLength > 0) {
-                    if (plainOriginal.length > settings.collapseLength) {
-                        if (!el._collapsed) {
-                            const snippetShort =
-                                plainOriginal.slice(0, settings.collapseLength) + "… (click to expand)";
-                            msgEl.innerText = snippetShort;
-                            msgEl.title = plainOriginal.slice(0, Math.min(200, plainOriginal.length));
-                            msgEl.style.opacity = "0.6";
-                            el._collapsed = true;
-                        }
-                    } else if (el._collapsed) {
-                        el._collapsed = false;
-                        msgEl.title = snippet;
-                    }
-                }
-
-                msgEl.onclick = () => {
-                    if (el._collapsed) {
-                        el._collapsed = false;
-                        msgEl.innerHTML = el._originalMessage;
-                        msgEl.style.opacity = "1";
-                        msgEl.title = "";
-                        return;
-                    }
-
-                    el._revealed = !el._revealed;
-
-                    if (el._revealed) {
-                        msgEl.style.opacity = "0";
-                        setTimeout(() => {
+                    msgEl.onclick = () => {
+                        if (el._collapsed) {
+                            el._collapsed = false;
                             msgEl.innerHTML = el._originalMessage;
-                            msgEl.style.color = settings.darkMode ? "#eee" : "#555";
                             msgEl.style.opacity = "1";
                             msgEl.title = "";
-                        }, 170);
-                    } else {
-                        msgEl.style.opacity = "0";
-                        setTimeout(() => {
-                            if (settings.keywordAction === "mask" && shouldAutoBlock) {
-                                msgEl.innerHTML = maskedHTML;
-                                msgEl.style.opacity = "0.9";
-                                msgEl.title = snippet;
-                            } else {
-                                msgEl.innerText = blockedPreview;
-                                msgEl.style.opacity = "0.5";
-                                msgEl.title = snippet;
-                            }
-                        }, 170);
+                            return;
+                        }
+
+                        el._revealed = !el._revealed;
+
+                        if (el._revealed) {
+                            msgEl.style.opacity = "0";
+                            setTimeout(() => {
+                                msgEl.innerHTML = el._originalMessage;
+                                msgEl.style.color = settings.darkMode ? "#eee" : "#555";
+                                msgEl.style.opacity = "1";
+                                msgEl.title = "";
+                            }, 170);
+                        } else {
+                            msgEl.style.opacity = "0";
+                            setTimeout(() => {
+                                if (settings.keywordAction === "mask" && shouldAutoBlock) {
+                                    msgEl.innerHTML = maskedHTML;
+                                    msgEl.style.opacity = "0.9";
+                                    msgEl.title = snippet;
+                                } else {
+                                    msgEl.innerText = blockedPreview;
+                                    msgEl.style.opacity = "0.5";
+                                    msgEl.title = snippet;
+                                }
+                            }, 170);
+                        }
+                    };
+                } else {
+                    if (msgEl.innerHTML !== el._originalMessage) {
+                        msgEl.innerHTML = el._originalMessage;
                     }
-                };
+                    msgEl.style.opacity = "1";
+                    msgEl.style.color = settings.darkMode ? "#e0e0e0" : "#000";
+                    msgEl.title = "";
+
+                    const collapseThreshold = settings.collapseLength || 0;
+                    const collapseTitle = plainOriginal.slice(0, Math.min(200, plainOriginal.length));
+                    const collapseSnippet =
+                        collapseThreshold > 0
+                            ? plainOriginal.slice(0, collapseThreshold) + "… (click to expand)"
+                            : "";
+                    const collapseEnabled =
+                        collapseThreshold > 0 && plainOriginal.length > collapseThreshold;
+
+                    if (collapseEnabled && !el._collapseExpanded) {
+                        if (!el._collapsed || msgEl.innerText !== collapseSnippet) {
+                            msgEl.innerText = collapseSnippet;
+                            msgEl.style.opacity = "0.6";
+                            msgEl.title = collapseTitle;
+                            el._collapsed = true;
+                        }
+                    } else if (!collapseEnabled || el._collapseExpanded) {
+                        if (el._collapsed) {
+                            el._collapsed = false;
+                            msgEl.innerHTML = el._originalMessage;
+                            msgEl.style.opacity = "1";
+                            msgEl.title = collapseEnabled ? collapseTitle : "";
+                        }
+                        if (!collapseEnabled) {
+                            el._collapseExpanded = false;
+                            msgEl.title = "";
+                        }
+                    }
+
+                    if (collapseEnabled) {
+                        msgEl.style.cursor = "pointer";
+                        msgEl.onclick = () => {
+                            if (el._collapsed) {
+                                el._collapsed = false;
+                                el._collapseExpanded = true;
+                                msgEl.innerHTML = el._originalMessage;
+                                msgEl.style.opacity = "1";
+                                msgEl.title = "";
+                            } else {
+                                el._collapseExpanded = false;
+                                msgEl.innerText = collapseSnippet;
+                                msgEl.style.opacity = "0.6";
+                                msgEl.title = collapseTitle;
+                                el._collapsed = true;
+                            }
+                        };
+                    } else {
+                        msgEl.style.cursor = "";
+                        msgEl.onclick = null;
+                    }
+                }
 
                 if (el._recentlyAdded) {
                     if (isHighlighted) {
