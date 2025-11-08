@@ -103,18 +103,22 @@
                     onload: cleanup,
                     ontimeout: cleanup,
                     onerror: (err) => {
-                        console.warn("GM_download failed, falling back to anchor download", err);
                         cleanup();
-                        if (!silent) {
+                        if (silent) {
+                            console.warn("Silent download failed via GM_download", err);
+                        } else {
+                            console.warn("GM_download failed, falling back to anchor download", err);
                             fallbackDownload(filename, blob);
                         }
                     }
                 });
                 return;
             } catch (err) {
-                console.warn("GM_download threw, falling back to anchor download", err);
                 cleanup();
-                if (!silent) {
+                if (silent) {
+                    console.warn("Silent GM_download threw", err);
+                } else {
+                    console.warn("GM_download threw, falling back to anchor download", err);
                     fallbackDownload(filename, blob);
                 }
                 return;
@@ -323,10 +327,15 @@
 
             <div style="height:12px"></div>
 
-            <b>Keyword Notifications</b>
+            <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+                <b>Keyword Notifications</b>
+                <div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin-left:auto">
+                    <span style="font-size:12px;color:gray">Sound Settings</span>
+                    <label>Sound: <input type="file" id="notificationSoundInput" accept="audio/*"></label>
+                </div>
+            </div>
             <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
                 <label><input type="checkbox" id="notifyOnKeywordInput"${settings.notifyOnKeyword ? " checked" : ""}> Notify on keyword match</label>
-                <label style="margin-left:auto">Sound: <input type="file" id="notificationSoundInput" accept="audio/*"></label>
             </div>
             <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
                 <label for="notificationVolumeInput" style="font-size:12px;color:gray">Volume</label>
