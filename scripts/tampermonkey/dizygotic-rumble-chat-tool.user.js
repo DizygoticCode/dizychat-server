@@ -941,6 +941,9 @@
             const displayName = datasetDisplayName || datasetUsername || fallbackText;
             const username = (datasetUsername || displayName).toLowerCase();
 
+            const isBlocked = blockedUsers.includes(username);
+            const isHighlighted = settings.highlightedUsers.includes(username);
+
             const oldMenu = document.getElementById("customUserContextMenu");
             if (oldMenu) oldMenu.remove();
 
@@ -969,29 +972,37 @@
                 menu.appendChild(item);
             }
 
-            if (blockedUsers.includes(username)) {
-                addMenuItem(`✅ Unblock ${displayName}`, () => {
-                    blockedUsers = blockedUsers.filter((u) => u !== username);
-                    saveBlocklist();
-                    refreshBlockedMessages();
-                    alert("User unblocked.");
-                });
-            } else {
-                addMenuItem(`🚫 Block ${displayName}`, () => {
-                    blockedUsers.push(username);
-                    saveBlocklist();
-                    refreshBlockedMessages();
-                    alert("User blocked.");
-                });
-            }
-
-            addMenuItem(`⭐ Highlight ${displayName}`, () => {
-                if (!settings.highlightedUsers.includes(username)) {
-                    settings.highlightedUsers.push(username);
-                    saveSettings();
-                    refreshBlockedMessages();
+            addMenuItem(
+                isBlocked ? `✅ Unblock ${displayName}` : `🚫 Block ${displayName}`,
+                () => {
+                    if (blockedUsers.includes(username)) {
+                        blockedUsers = blockedUsers.filter((u) => u !== username);
+                        saveBlocklist();
+                        refreshBlockedMessages();
+                        alert("User unblocked.");
+                    } else {
+                        blockedUsers.push(username);
+                        saveBlocklist();
+                        refreshBlockedMessages();
+                        alert("User blocked.");
+                    }
                 }
-            });
+            );
+
+            addMenuItem(
+                isHighlighted ? `⭐ Unhighlight ${displayName}` : `⭐ Highlight ${displayName}`,
+                () => {
+                    if (settings.highlightedUsers.includes(username)) {
+                        settings.highlightedUsers = settings.highlightedUsers.filter((u) => u !== username);
+                        saveSettings();
+                        refreshBlockedMessages();
+                    } else {
+                        settings.highlightedUsers.push(username);
+                        saveSettings();
+                        refreshBlockedMessages();
+                    }
+                }
+            );
 
             addMenuItem(`💬 Direct Message ${displayName}`, () => {
                 openDirectMessage(displayName);
