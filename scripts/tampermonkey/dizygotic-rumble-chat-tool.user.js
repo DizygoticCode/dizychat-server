@@ -908,7 +908,7 @@
 
         const landingBaseURL = "https://dizychat-server.onrender.com/";
         const params = new URLSearchParams();
-        params.set("username", myNickname);
+        params.set("username", target);
         params.set("room", defaultRoomName);
         const landingURL = `${landingBaseURL}?${params.toString()}`;
 
@@ -924,8 +924,22 @@
 
         usernameEl.addEventListener("contextmenu", (e) => {
             e.preventDefault();
-            const username = usernameEl.innerText.trim().toLowerCase();
-            const displayName = usernameEl.innerText.trim();
+            const datasetUsername =
+                (usernameEl.dataset?.username || usernameEl.getAttribute("data-username") || "")
+                    .toString()
+                    .replace(/\s+/g, " ")
+                    .trim();
+            const datasetDisplayName =
+                (usernameEl.dataset?.displayName || usernameEl.getAttribute("data-display-name") || "")
+                    .toString()
+                    .replace(/\s+/g, " ")
+                    .trim();
+            const fallbackText = (usernameEl.innerText || usernameEl.textContent || "")
+                .toString()
+                .replace(/\s+/g, " ")
+                .trim();
+            const displayName = datasetDisplayName || datasetUsername || fallbackText;
+            const username = (datasetUsername || displayName).toLowerCase();
 
             const oldMenu = document.getElementById("customUserContextMenu");
             if (oldMenu) oldMenu.remove();
