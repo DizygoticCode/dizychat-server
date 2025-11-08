@@ -93,7 +93,51 @@
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+    }
+
+    function triggerDownload(filename, serialized, options = {}) {
+        const silent = Boolean(options.silent);
+        const prompt = options.prompt !== false;
+        const blob = new Blob([serialized], { type: "application/json" });
+
+        if (typeof GM_download === "function") {
+            const url = URL.createObjectURL(blob);
+            const cleanup = () => {
+                try {
+                    URL.revokeObjectURL(url);
+                } catch (cleanupErr) {
+                    console.warn("Failed to revoke download URL", cleanupErr);
+                }
+            };
+            try {
+                GM_download({
+                    url,
+                    name: filename,
+                    saveAs: silent ? false : prompt,
+                    onload: cleanup,
+                    ontimeout: cleanup,
+                    onerror: (err) => {
+                        console.warn("GM_download failed, falling back to anchor download", err);
+                        cleanup();
+                        fallbackDownload(filename, blob);
+                    }
+                });
+                return;
+            } catch (err) {
+                console.warn("GM_download threw, falling back to anchor download", err);
+                cleanup();
+            }
+        } else if (silent) {
+            console.warn("GM_download unavailable; silent backup will show browser download UI");
+        }
+
+        fallbackDownload(filename, blob);
+    }
+
+    function exportData(filename = "dizygotic-rumble-chat-tool-settings.json", options = {}) {
+        const serialized = serializeData();
+        triggerDownload(filename, serialized, options);
     }
 
     function exportData(filename = "dizygotic-rumble-chat-tool-settings.json", options = {}) {
