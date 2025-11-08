@@ -201,7 +201,7 @@ Bring the DizyChat experience to Rumble livestreams with the companion Tampermon
 1. Install the [Tampermonkey](https://www.tampermonkey.net/) browser extension (Chrome, Edge, Firefox, Brave, etc.).
 2. Open the raw script URL: `https://raw.githubusercontent.com/<your-org>/dizychat-server/main/scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js`.
 3. Tampermonkey will prompt to create a new userscript—review the code, then click **Install**.
-4. Visit any `https://rumble.com/` chat; a floating Dizygotic control button should appear after the page loads. Click it to configure filters, highlights, DMs, notifications, and backups.
+4. Visit any `https://rumble.com/` chat; a floating Chat Settings button should appear after the page loads. Click it to configure filters, highlights, DMs, notifications, and backups.
 
 ### Manual script injection
 If you prefer not to use a userscript manager:
