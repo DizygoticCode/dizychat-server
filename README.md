@@ -37,6 +37,11 @@ DizyChat is a Socket.IO and Express-powered real-time chat backend designed for 
 - Provides `/version` endpoint exposing build metadata for clients to surface release information.
 - Serves the bundled front-end from `public/` with a catch-all route for client-side routing.
 
+### Recently added
+- **Push-to-talk voice notes** – the web client exposes a hold-to-record microphone button that uploads and posts audio clips with automatic cleanup and status toasts so moderators can manage voice memos alongside regular attachments.
+- **Theme & density toggles** – users can flip between dark/light themes and compact/comfortable layouts, both of which persist per browser via local storage to keep the interface feeling familiar across sessions.
+- **Inline Rumble embeds** – links to Rumble videos auto-expand into responsive iframes (including the Infowars stream pane) so shared broadcasts can play without leaving the room.
+
 ## Project structure
 
 ```
@@ -174,6 +179,29 @@ All other paths serve the front-end single-page app from `public/index.html`.
 - Automated tests for moderation workflows and file scanning fallbacks.
 - Redis or MongoDB change streams for cross-instance Socket.IO scaling.
 - Rate-limited public APIs to expose room listings and message statistics.
+
+## Dizygotic Rumble Chat UserScript
+
+Bring the DizyChat experience to Rumble livestreams with the companion Tampermonkey script located at `scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js`.
+
+### Feature highlights
+- **Contextual moderation controls** – right-click usernames to block/unblock viewers, highlight regulars, or jump straight into a DizyChat-powered direct-message room that pre-fills the invitee’s handle.
+- **Smart filtering & alerts** – combine user blocks, keyword filters, collapsible long posts, timestamps, and optional desktop/audio notifications to focus on the messages that matter.
+- **Portable settings** – export/import profiles or schedule auto-backups so your blocklist, highlights, and preferences travel with you across browsers.
+- **Draggable control center** – launch a floating settings palette that remembers its position, supports dark mode, and surfaces quick toggles for compact layout, autoscroll lock, previews, and more.
+
+### Install with Tampermonkey
+1. Install the [Tampermonkey](https://www.tampermonkey.net/) browser extension (Chrome, Edge, Firefox, Brave, etc.).
+2. Open the raw script URL: `https://raw.githubusercontent.com/<your-org>/dizychat-server/main/scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js`.
+3. Tampermonkey will prompt to create a new userscript—review the code, then click **Install**.
+4. Visit any `https://rumble.com/` chat; a floating Dizygotic control button should appear after the page loads. Click it to configure filters, highlights, DMs, notifications, and backups.
+
+### Manual script injection
+If you prefer not to use a userscript manager:
+
+1. Copy the contents of `scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js` to your clipboard.
+2. In a Rumble chat tab, open your browser’s developer tools and run the script from the Console, or save it as a bookmarklet/snippet that executes on demand.
+3. The script stores settings in `localStorage`, so rerunning it will reload your existing blocklist, filters, and UI customizations.
 
 ---
 
