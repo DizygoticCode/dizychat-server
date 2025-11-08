@@ -144,12 +144,29 @@
 
     function maybeNotify(type, username, snippet) {
         initAudio();
-        if (type === "highlight" && settings.notifyOnHighlight) {
-            triggerNotification(`Highlight: ${username}`, snippet);
-            if (settings.notificationSound && audio) audio.play().catch(() => {});
-        } else if (type === "keyword" && settings.notifyOnKeyword) {
-            triggerNotification(`Keyword matched`, snippet);
-            if (settings.notificationSound && audio) audio.play().catch(() => {});
+
+        if (type === "highlight") {
+            if (settings.notifyOnHighlight) {
+                triggerNotification(`Highlight: ${username}`, snippet);
+            }
+
+            if (
+                settings.highlightNotificationSoundEnabled &&
+                settings.notificationSound &&
+                audio &&
+                audio.src
+            ) {
+                try {
+                    audio.currentTime = 0;
+                    audio.play().catch(() => {});
+                } catch (err) {
+                    console.warn("Highlight sound failed:", err);
+                }
+            }
+        } else if (type === "keyword") {
+            if (settings.notifyOnKeyword) {
+                triggerNotification(`Keyword matched`, snippet);
+            }
         }
     }
 
@@ -813,10 +830,6 @@
                 if (el._recentlyAdded) {
                     if (isHighlighted) {
                         maybeNotify("highlight", displayName, snippet);
-                        if (audio && settings.highlightNotificationSoundEnabled && audio.src) {
-                            audio.currentTime = 0;
-                            audio.play().catch((err) => console.warn("Highlight sound failed:", err));
-                        }
                     }
                     if (shouldAutoBlock) {
                         maybeNotify("keyword", displayName, snippet);
