@@ -57,35 +57,14 @@
     /***********************
      * Export / Import / Backup
      ***********************/
-    function exportData(filename = "dizygotic-rumble-chat-tool-settings.json") {
+    function serializeData() {
         const data = { blockedUsers, settings };
         const serialized = JSON.stringify(data, null, 2);
         localStorage.setItem(BACKUP_KEY, JSON.stringify(data));
         return serialized;
     }
 
-    function triggerDownload(filename, serialized, silent) {
-        if (silent && typeof GM_download === "function") {
-            try {
-                const dataUrl = `data:application/json;charset=utf-8,${encodeURIComponent(serialized)}`;
-                GM_download({
-                    url: dataUrl,
-                    name: filename,
-                    saveAs: false,
-                    onerror: (err) => {
-                        console.warn("Silent backup download failed, falling back to prompt", err);
-                        triggerDownload(filename, serialized, false);
-                    }
-                });
-                return;
-            } catch (err) {
-                console.warn("Silent backup download setup failed, falling back to prompt", err);
-            }
-        }
-
-        const blob = new Blob([serialized], {
-            type: "application/json"
-        });
+    function fallbackDownload(filename, blob) {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
@@ -93,7 +72,13 @@
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(url), 0);
+        setTimeout(() => {
+            try {
+                URL.revokeObjectURL(url);
+            } catch (cleanupErr) {
+                console.warn("Failed to revoke download URL", cleanupErr);
+            }
+        }, 0);
     }
 
     function triggerDownload(filename, serialized, options = {}) {
@@ -120,16 +105,25 @@
                     onerror: (err) => {
                         console.warn("GM_download failed, falling back to anchor download", err);
                         cleanup();
-                        fallbackDownload(filename, blob);
+                        if (!silent) {
+                            fallbackDownload(filename, blob);
+                        }
                     }
                 });
                 return;
             } catch (err) {
                 console.warn("GM_download threw, falling back to anchor download", err);
                 cleanup();
+                if (!silent) {
+                    fallbackDownload(filename, blob);
+                }
+                return;
             }
-        } else if (silent) {
-            console.warn("GM_download unavailable; silent backup will show browser download UI");
+        }
+
+        if (silent) {
+            console.warn("Silent export requested but GM_download is unavailable; skipping download UI");
+            return;
         }
 
         fallbackDownload(filename, blob);
@@ -138,12 +132,7 @@
     function exportData(filename = "dizygotic-rumble-chat-tool-settings.json", options = {}) {
         const serialized = serializeData();
         triggerDownload(filename, serialized, options);
-    }
-
-    function exportData(filename = "dizygotic-rumble-chat-tool-settings.json", options = {}) {
-        const serialized = serializeData();
-        const silent = Boolean(options.silent);
-        triggerDownload(filename, serialized, silent);
+        return serialized;
     }
 
     function importData(file, callback) {
@@ -182,7 +171,10 @@
         if (settings.autoBackupMinutes > 0) {
             backupIntervalId = setInterval(() => {
                 const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-                exportData(`dizygotic-rumble-chat-tool-settings-backup-${timestamp}.json`);
+                exportData(`dizygotic-rumble-chat-tool-settings-backup-${timestamp}.json`, {
+                    silent: true,
+                    prompt: false
+                });
                 console.log("💾 Auto-backup created");
             }, settings.autoBackupMinutes * 60 * 1000);
         }
