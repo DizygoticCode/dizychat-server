@@ -39,6 +39,7 @@
         notifyOnHighlight: false,
         notifyOnKeyword: false,
         notificationSound: "",
+        notificationVolume: 1,
         highlightNotificationSoundEnabled: false,
         myNickname: ""
     };
@@ -82,6 +83,10 @@
                     settings = Object.assign({}, defaultSettings, data.settings);
                     saveBlocklist();
                     saveSettings();
+                    if (audio) {
+                        audio.src = settings.notificationSound || "";
+                        audio.volume = typeof settings.notificationVolume === "number" ? settings.notificationVolume : 1;
+                    }
                     alert("✅ Import successful! Blocklist & settings restored.");
                     refreshBlockedMessages();
                     if (callback) callback(true);
@@ -126,6 +131,7 @@
         if (settings.notificationSound) {
             audio.src = settings.notificationSound;
         }
+        audio.volume = typeof settings.notificationVolume === "number" ? settings.notificationVolume : 1;
     }
 
     function triggerNotification(title, body) {
@@ -257,6 +263,11 @@
                 <label><input type="checkbox" id="notifyOnKeywordInput"${settings.notifyOnKeyword ? " checked" : ""}> Notify on keyword match</label>
                 <label style="margin-left:auto">Sound: <input type="file" id="notificationSoundInput" accept="audio/*"></label>
             </div>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
+                <label for="notificationVolumeInput" style="font-size:12px;color:gray">Volume</label>
+                <input type="range" id="notificationVolumeInput" min="0" max="100" value="${Math.round((settings.notificationVolume ?? 1) * 100)}" style="flex:1">
+                <span id="notificationVolumeValue" style="min-width:32px;text-align:right;font-size:12px;color:gray">${Math.round((settings.notificationVolume ?? 1) * 100)}%</span>
+            </div>
 
             <div style="height:14px"></div>
 
@@ -331,12 +342,23 @@
             settings.notifyOnKeyword = !!panel.querySelector("#notifyOnKeywordInput").checked;
             settings.notifyOnHighlight = !!panel.querySelector("#notifyOnHighlightInput").checked;
             settings.highlightNotificationSoundEnabled = !!panel.querySelector("#highlightSoundInput").checked;
+            const volumeSlider = panel.querySelector("#notificationVolumeInput");
+            const parsedVolume = volumeSlider ? parseInt(volumeSlider.value, 10) : NaN;
+            const normalizedVolume = Number.isFinite(parsedVolume)
+                ? Math.min(100, Math.max(0, parsedVolume)) / 100
+                : typeof settings.notificationVolume === "number"
+                ? settings.notificationVolume
+                : 1;
+            settings.notificationVolume = normalizedVolume;
             settings.autoBackupMinutes = parseInt(panel.querySelector("#autoBackupInput").value, 10) || 0;
             settings.darkMode = !!panel.querySelector("#darkModeInput").checked;
 
             saveBlocklist();
             saveSettings();
             setupAutoBackup();
+            if (audio) {
+                audio.volume = settings.notificationVolume;
+            }
 
             const soundFileInput = panel.querySelector("#notificationSoundInput");
             if (soundFileInput && soundFileInput.files && soundFileInput.files[0]) {
@@ -346,6 +368,7 @@
                     settings.notificationSound = ev.target.result;
                     initAudio();
                     audio.src = settings.notificationSound;
+                    audio.volume = settings.notificationVolume;
                     saveSettings();
                     alert("✅ Settings saved (and sound saved).");
                     refreshBlockedMessages();
@@ -412,6 +435,21 @@
         );
 
         panel.appendChild(buttonRow);
+
+        const volumeSliderEl = panel.querySelector("#notificationVolumeInput");
+        const volumeValueEl = panel.querySelector("#notificationVolumeValue");
+        if (volumeSliderEl && volumeValueEl) {
+            const syncVolumeDisplay = () => {
+                const sliderValue = Math.min(100, Math.max(0, parseInt(volumeSliderEl.value, 10) || 0));
+                volumeSliderEl.value = sliderValue;
+                volumeValueEl.textContent = `${sliderValue}%`;
+                if (audio) {
+                    audio.volume = sliderValue / 100;
+                }
+            };
+            volumeSliderEl.addEventListener("input", syncVolumeDisplay);
+            syncVolumeDisplay();
+        }
 
         const stats = panel.querySelector("#statsSummary");
         stats.innerText = `Blocked users: ${blockedUsers.length} · Keywords: ${settings.blockedKeywords.length} · Highlighted: ${settings.highlightedUsers.length}`;
