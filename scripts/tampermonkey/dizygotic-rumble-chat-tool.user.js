@@ -57,14 +57,35 @@
     /***********************
      * Export / Import / Backup
      ***********************/
-    function serializeData() {
+    function exportData(filename = "dizygotic-rumble-chat-tool-settings.json") {
         const data = { blockedUsers, settings };
         const serialized = JSON.stringify(data, null, 2);
         localStorage.setItem(BACKUP_KEY, JSON.stringify(data));
         return serialized;
     }
 
-    function fallbackDownload(filename, blob) {
+    function triggerDownload(filename, serialized, silent) {
+        if (silent && typeof GM_download === "function") {
+            try {
+                const dataUrl = `data:application/json;charset=utf-8,${encodeURIComponent(serialized)}`;
+                GM_download({
+                    url: dataUrl,
+                    name: filename,
+                    saveAs: false,
+                    onerror: (err) => {
+                        console.warn("Silent backup download failed, falling back to prompt", err);
+                        triggerDownload(filename, serialized, false);
+                    }
+                });
+                return;
+            } catch (err) {
+                console.warn("Silent backup download setup failed, falling back to prompt", err);
+            }
+        }
+
+        const blob = new Blob([serialized], {
+            type: "application/json"
+        });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
@@ -119,6 +140,12 @@
         triggerDownload(filename, serialized, options);
     }
 
+    function exportData(filename = "dizygotic-rumble-chat-tool-settings.json", options = {}) {
+        const serialized = serializeData();
+        const silent = Boolean(options.silent);
+        triggerDownload(filename, serialized, silent);
+    }
+
     function importData(file, callback) {
         const reader = new FileReader();
         reader.onload = function (e) {
@@ -155,7 +182,7 @@
         if (settings.autoBackupMinutes > 0) {
             backupIntervalId = setInterval(() => {
                 const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-                exportData(`dizygotic-rumble-chat-tool-settings-backup-${timestamp}.json`, { silent: true });
+                exportData(`dizygotic-rumble-chat-tool-settings-backup-${timestamp}.json`);
                 console.log("💾 Auto-backup created");
             }, settings.autoBackupMinutes * 60 * 1000);
         }
