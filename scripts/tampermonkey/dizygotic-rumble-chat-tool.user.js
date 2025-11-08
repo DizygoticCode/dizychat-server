@@ -57,7 +57,7 @@
     /***********************
      * Export / Import / Backup
      ***********************/
-    function exportData(filename = "rumble-blocklist.json") {
+    function exportData(filename = "dizygotic-rumble-chat-tool-settings.json") {
         const data = { blockedUsers, settings };
         localStorage.setItem(BACKUP_KEY, JSON.stringify(data));
         const blob = new Blob([JSON.stringify(data, null, 2)], {
@@ -109,7 +109,7 @@
         if (settings.autoBackupMinutes > 0) {
             backupIntervalId = setInterval(() => {
                 const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-                exportData(`rumble-blocklist-backup-${timestamp}.json`);
+                exportData(`dizygotic-rumble-chat-tool-settings-backup-${timestamp}.json`);
                 console.log("💾 Auto-backup created");
             }, settings.autoBackupMinutes * 60 * 1000);
         }
