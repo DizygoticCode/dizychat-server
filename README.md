@@ -30,17 +30,25 @@ DizyChat is a Socket.IO and Express-powered real-time chat backend designed for 
 ### Message enrichment tools
 - Allows message editing, deletion (with file cleanup), pinning, starring, emoji reactions, threaded replies, and full-text search.
 - Sanitizes all user-provided text and filenames to avoid HTML/script injection.
-- Packs a Tenor GIF browser and a Pixabay-powered audio soundboard directly into the message composer.
+- Packs a Tenor GIF browser plus a curated meme soundboard picker backed by `/soundboard-clips`, sourcing JSON catalogs from `data/soundboards` so clips can be hosted entirely offline.
 
 ### Client experience helpers
 - Broadcasts typing status with rate limiting to prevent spam.
 - Provides `/version` endpoint exposing build metadata for clients to surface release information.
 - Serves the bundled front-end from `public/` with a catch-all route for client-side routing.
+- Toolbar toggle lets users persistently enable/disable sound notifications, with gentle chimes and accessibility labels that survive reloads via local storage.
+
+### Live broadcast companions
+- The dedicated Psybin Radio room surfaces a mini audio player that streams the live station, polls `/api/psybin/now-playing` for metadata, and exposes play/pause, mute, and volume controls with resilient reconnect logic.
+- InfoWars and other Rumble live streams pop into a draggable, resizable modal so viewers can park the broadcast alongside chat without losing context.
 
 ### Recently added
 - **Push-to-talk voice notes** – the web client exposes a hold-to-record microphone button that uploads and posts audio clips with automatic cleanup and status toasts so moderators can manage voice memos alongside regular attachments.
 - **Theme & density toggles** – users can flip between dark/light themes and compact/comfortable layouts, both of which persist per browser via local storage to keep the interface feeling familiar across sessions.
 - **Inline Rumble embeds** – links to Rumble videos auto-expand into responsive iframes (including the Infowars stream pane) so shared broadcasts can play without leaving the room.
+- **Psybin Radio tuner** – the Psybin room now auto-reveals a dedicated player with live metadata sourced from `/api/psybin/now-playing`, plus play, pause, mute, and volume controls that reconnect automatically after hiccups.
+- **Searchable meme soundboard** – a composer button opens a searchable clip library powered by `/soundboard-clips`, driven by JSON catalogs under `data/soundboards` (kept fresh via `scripts/download-101-soundboard.js`).
+- **Sound notification toggle** – chat toolbar switch enables lightweight audio alerts for new messages, persisting each visitor’s preference in local storage so the cues stick between sessions.
 
 ## Project structure
 
