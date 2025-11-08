@@ -45,7 +45,7 @@ DizyChat is a Socket.IO and Express-powered real-time chat backend designed for 
 ### Recently added
 - **Push-to-talk voice notes** – the web client exposes a hold-to-record microphone button that uploads and posts audio clips with automatic cleanup and status toasts so moderators can manage voice memos alongside regular attachments.
 - **Theme & density toggles** – users can flip between dark/light themes and compact/comfortable layouts, both of which persist per browser via local storage to keep the interface feeling familiar across sessions.
-- **Inline Rumble embeds** – links to Rumble videos auto-expand into responsive iframes (including the Infowars stream pane) so shared broadcasts can play without leaving the room.
+- **Inline Rumble embeds** – links to Rumble videos auto-expand into responsive iframes so shared broadcasts can play without leaving the room.
 - **Psybin Radio tuner** – the Psybin room now auto-reveals a dedicated player with live metadata sourced from `/api/psybin/now-playing`, plus play, pause, mute, and volume controls that reconnect automatically after hiccups.
 - **Searchable meme soundboard** – a composer button opens a searchable clip library powered by `/soundboard-clips`, driven by JSON catalogs under `data/soundboards` (kept fresh via `scripts/download-101-soundboard.js`).
 - **Sound notification toggle** – chat toolbar switch enables lightweight audio alerts for new messages, persisting each visitor’s preference in local storage so the cues stick between sessions.
@@ -92,7 +92,6 @@ Create a `.env` file in the project root with the following keys:
 | `METADEFENDER_BASE_URL` | (Optional) Override the MetaDefender API origin. Defaults to `https://api.metadefender.com/v4`. |
 | `METADEFENDER_POLL_INTERVAL_MS` | (Optional) Milliseconds between status polls; defaults to 1500 (bounded between 250-15000). |
 | `METADEFENDER_MAX_POLL_ATTEMPTS` | (Optional) Maximum polling attempts before timing out; defaults to 10 (bounded between 1-40). |
-| `PIXABAY_API_KEY` | Legacy Pixabay proxy key (no longer used now that soundboards are stored locally). Safe to omit. |
 
 ## Running locally
 
