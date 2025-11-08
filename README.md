@@ -40,7 +40,7 @@ DizyChat is a Socket.IO and Express-powered real-time chat backend designed for 
 
 ### Live broadcast companions
 - The dedicated Psybin Radio room surfaces a mini audio player that streams the live station, polls `/api/psybin/now-playing` for metadata, and exposes play/pause, mute, and volume controls with resilient reconnect logic.
-- InfoWars and other Rumble live streams pop into a draggable, resizable modal so viewers can park the broadcast alongside chat without losing context.
+- Rumble live streams pop into a draggable, resizable modal so viewers can park the broadcast alongside chat without losing context.
 
 ### Recently added
 - **Push-to-talk voice notes** – the web client exposes a hold-to-record microphone button that uploads and posts audio clips with automatic cleanup and status toasts so moderators can manage voice memos alongside regular attachments.
