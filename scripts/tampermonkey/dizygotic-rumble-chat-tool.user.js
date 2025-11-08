@@ -5,7 +5,7 @@
 // @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.
 // @author       Dizygotic
 // @match        https://rumble.com/*
-// @grant        none
+// @grant        GM_download
 // ==/UserScript==
 
 (function () {
@@ -59,8 +59,31 @@
      ***********************/
     function exportData(filename = "dizygotic-rumble-chat-tool-settings.json") {
         const data = { blockedUsers, settings };
+        const serialized = JSON.stringify(data, null, 2);
         localStorage.setItem(BACKUP_KEY, JSON.stringify(data));
-        const blob = new Blob([JSON.stringify(data, null, 2)], {
+        return serialized;
+    }
+
+    function triggerDownload(filename, serialized, silent) {
+        if (silent && typeof GM_download === "function") {
+            try {
+                const dataUrl = `data:application/json;charset=utf-8,${encodeURIComponent(serialized)}`;
+                GM_download({
+                    url: dataUrl,
+                    name: filename,
+                    saveAs: false,
+                    onerror: (err) => {
+                        console.warn("Silent backup download failed, falling back to prompt", err);
+                        triggerDownload(filename, serialized, false);
+                    }
+                });
+                return;
+            } catch (err) {
+                console.warn("Silent backup download setup failed, falling back to prompt", err);
+            }
+        }
+
+        const blob = new Blob([serialized], {
             type: "application/json"
         });
         const url = URL.createObjectURL(blob);
@@ -71,6 +94,12 @@
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+    }
+
+    function exportData(filename = "dizygotic-rumble-chat-tool-settings.json", options = {}) {
+        const serialized = serializeData();
+        const silent = Boolean(options.silent);
+        triggerDownload(filename, serialized, silent);
     }
 
     function importData(file, callback) {
