@@ -2784,6 +2784,21 @@ body:not(.dark) #soundboard-btn {
    Responsive Adjustments
    ============================== */
 @media (max-width: 640px) {
+  header {
+    --toolbar-logo-size: clamp(26px, 16vw, 32px);
+    align-items: center;
+  }
+
+  header .header-left {
+    gap: 8px;
+    justify-content: flex-start;
+  }
+
+  header .logo {
+    width: var(--toolbar-logo-size);
+    max-height: 32px;
+  }
+
   #chat-container .search-bar {
     flex-direction: column;
     align-items: stretch;
