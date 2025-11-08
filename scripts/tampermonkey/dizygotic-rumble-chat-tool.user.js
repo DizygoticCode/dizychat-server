@@ -57,14 +57,32 @@
     /***********************
      * Export / Import / Backup
      ***********************/
-    function serializeData() {
+    function exportData(filename = "dizygotic-rumble-chat-tool-settings.json") {
         const data = { blockedUsers, settings };
         const serialized = JSON.stringify(data, null, 2);
         localStorage.setItem(BACKUP_KEY, JSON.stringify(data));
         return serialized;
     }
 
-    function fallbackDownload(filename, serialized) {
+    function triggerDownload(filename, serialized, silent) {
+        if (silent && typeof GM_download === "function") {
+            try {
+                const dataUrl = `data:application/json;charset=utf-8,${encodeURIComponent(serialized)}`;
+                GM_download({
+                    url: dataUrl,
+                    name: filename,
+                    saveAs: false,
+                    onerror: (err) => {
+                        console.warn("Silent backup download failed, falling back to prompt", err);
+                        triggerDownload(filename, serialized, false);
+                    }
+                });
+                return;
+            } catch (err) {
+                console.warn("Silent backup download setup failed, falling back to prompt", err);
+            }
+        }
+
         const blob = new Blob([serialized], {
             type: "application/json"
         });
@@ -78,36 +96,10 @@
         URL.revokeObjectURL(url);
     }
 
-    function triggerDownload(filename, serialized, options = {}) {
-        const silent = Boolean(options.silent);
-        const prompt = options.prompt !== false;
-        const dataUrl = `data:application/json;charset=utf-8,${encodeURIComponent(serialized)}`;
-
-        if (typeof GM_download === "function") {
-            try {
-                GM_download({
-                    url: dataUrl,
-                    name: filename,
-                    saveAs: silent ? false : prompt,
-                    onerror: (err) => {
-                        console.warn("GM_download failed, falling back to anchor download", err);
-                        fallbackDownload(filename, serialized);
-                    }
-                });
-                return;
-            } catch (err) {
-                console.warn("GM_download threw, falling back to anchor download", err);
-            }
-        } else if (silent) {
-            console.warn("GM_download unavailable; silent backup will show browser download UI");
-        }
-
-        fallbackDownload(filename, serialized);
-    }
-
     function exportData(filename = "dizygotic-rumble-chat-tool-settings.json", options = {}) {
         const serialized = serializeData();
-        triggerDownload(filename, serialized, options);
+        const silent = Boolean(options.silent);
+        triggerDownload(filename, serialized, silent);
     }
 
     function importData(file, callback) {
@@ -146,7 +138,7 @@
         if (settings.autoBackupMinutes > 0) {
             backupIntervalId = setInterval(() => {
                 const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-                exportData(`dizygotic-rumble-chat-tool-settings-backup-${timestamp}.json`, { silent: true });
+                exportData(`dizygotic-rumble-chat-tool-settings-backup-${timestamp}.json`);
                 console.log("💾 Auto-backup created");
             }, settings.autoBackupMinutes * 60 * 1000);
         }
