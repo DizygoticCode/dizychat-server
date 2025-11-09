@@ -327,20 +327,20 @@
 
             <div style="height:12px"></div>
 
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;align-items:flex-start;margin-top:6px">
-                <div style="display:flex;flex-direction:column;gap:6px">
-                    <label for="notifyOnKeywordInput" style="font-weight:bold">Keyword Notifications</label>
-                    <label><input type="checkbox" id="notifyOnKeywordInput"${settings.notifyOnKeyword ? " checked" : ""}> Notify on keyword match</label>
+            <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+                <b>Keyword Notifications</b>
+                <div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin-left:auto">
+                    <span style="font-size:12px;color:gray">Sound Settings</span>
+                    <label>Sound: <input type="file" id="notificationSoundInput" accept="audio/*"></label>
                 </div>
-                <div style="display:flex;flex-direction:column;gap:6px">
-                    <label for="notificationSoundInput" style="font-weight:bold">Sound Settings</label>
-                    <label for="notificationSoundInput">Sound: <input type="file" id="notificationSoundInput" accept="audio/*"></label>
-                    <div style="display:flex;align-items:center;gap:10px">
-                        <label for="notificationVolumeInput" style="font-size:12px;color:gray">Volume</label>
-                        <input type="range" id="notificationVolumeInput" min="0" max="100" value="${Math.round((settings.notificationVolume ?? 1) * 100)}" style="flex:1">
-                        <span id="notificationVolumeValue" style="min-width:32px;text-align:right;font-size:12px;color:gray">${Math.round((settings.notificationVolume ?? 1) * 100)}%</span>
-                    </div>
-                </div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+                <label><input type="checkbox" id="notifyOnKeywordInput"${settings.notifyOnKeyword ? " checked" : ""}> Notify on keyword match</label>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
+                <label for="notificationVolumeInput" style="font-size:12px;color:gray">Volume</label>
+                <input type="range" id="notificationVolumeInput" min="0" max="100" value="${Math.round((settings.notificationVolume ?? 1) * 100)}" style="flex:1">
+                <span id="notificationVolumeValue" style="min-width:32px;text-align:right;font-size:12px;color:gray">${Math.round((settings.notificationVolume ?? 1) * 100)}%</span>
             </div>
 
             <div style="height:14px"></div>
