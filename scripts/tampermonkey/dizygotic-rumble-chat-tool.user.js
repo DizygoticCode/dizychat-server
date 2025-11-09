@@ -327,11 +327,11 @@
 
             <div style="height:12px"></div>
 
-            <div style="display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap">
+            <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
                 <b>Keyword Notifications</b>
-                <div style="display:flex;flex-direction:column;align-items:flex-start;gap:6px">
-                    <b>Sound Settings</b>
-                    <label for="notificationSoundInput">Sound: <input type="file" id="notificationSoundInput" accept="audio/*"></label>
+                <div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin-left:auto">
+                    <span style="font-size:12px;color:gray">Sound Settings</span>
+                    <label>Sound: <input type="file" id="notificationSoundInput" accept="audio/*"></label>
                 </div>
             </div>
             <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
