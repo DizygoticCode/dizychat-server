@@ -1065,8 +1065,37 @@
         const landingURL = `${landingBaseURL}?${params.toString()}`;
 
         const dmWindow = window.open(landingURL, "_blank", "noopener,noreferrer");
-        if (!dmWindow) {
-            window.location.href = landingURL;
+        if (dmWindow) {
+            try {
+                dmWindow.opener = null;
+            } catch (err) {
+                console.warn("Unable to clear opener on DM window", err);
+            }
+            return;
+        }
+
+        const anchor = document.createElement("a");
+        anchor.href = landingURL;
+        anchor.target = "_blank";
+        anchor.rel = "noopener noreferrer";
+        anchor.style.display = "none";
+        document.body.appendChild(anchor);
+
+        const clickEvent = new MouseEvent("click", {
+            view: window,
+            bubbles: true,
+            cancelable: true
+        });
+
+        const clickSucceeded = anchor.dispatchEvent(clickEvent);
+        requestAnimationFrame(() => {
+            if (anchor.parentNode) {
+                anchor.parentNode.removeChild(anchor);
+            }
+        });
+
+        if (!clickSucceeded) {
+            alert("Please allow popups to open DizyChat direct messages in a new tab.");
         }
     }
 
