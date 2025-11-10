@@ -328,7 +328,6 @@
             <div style="height:12px"></div>
 
             <div style="display:flex;flex-direction:column;gap:6px">
-                <b>Keyword Notifications</b>
                 <div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px">
                     <b>Sound Settings</b>
                     <label>Sound: <input type="file" id="notificationSoundInput" accept="audio/*"></label>
@@ -338,6 +337,7 @@
                         <span id="notificationVolumeValue" style="min-width:32px;text-align:right;font-size:12px;color:gray">${Math.round((settings.notificationVolume ?? 1) * 100)}%</span>
                     </div>
                 </div>
+                <b>Keyword Notifications</b>
                 <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
                     <label><input type="checkbox" id="notifyOnKeywordInput"${settings.notifyOnKeyword ? " checked" : ""}> Notify on keyword match</label>
                 </div>
