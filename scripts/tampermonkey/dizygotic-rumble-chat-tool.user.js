@@ -801,6 +801,7 @@
 
                 const userIsBlocked = username && blockedUsers.includes(username);
                 const shouldAutoBlock = !!keywordMatched;
+                const shouldMask = shouldAutoBlock && settings.keywordAction === "mask" && !userIsBlocked;
                 const isBlocked = userIsBlocked || shouldAutoBlock;
                 el._autoBlocked = shouldAutoBlock;
 
@@ -811,7 +812,7 @@
                 const blockedPreview = `🚫 Blocked message from ${displayName} (click to reveal)`;
 
                 let maskedHTML = null;
-                if (shouldAutoBlock && settings.keywordAction === "mask") {
+                if (shouldMask) {
                     maskedHTML = el._originalMessage;
                     settings.blockedKeywords.forEach((kw) => {
                         if (!kw) return;
@@ -830,7 +831,7 @@
                             msgEl.style.color = settings.darkMode ? "#eee" : "#555";
                             msgEl.style.cursor = "pointer";
                             msgEl.title = "";
-                        } else if (settings.keywordAction === "mask" && shouldAutoBlock) {
+                        } else if (shouldMask) {
                             if (msgEl.innerHTML !== maskedHTML) msgEl.innerHTML = maskedHTML;
                             msgEl.style.opacity = "0.9";
                             msgEl.style.cursor = "pointer";
@@ -849,7 +850,7 @@
                             msgEl.style.color = settings.darkMode ? "#eee" : "#555";
                             msgEl.title = "";
                         }
-                    } else if (settings.keywordAction === "mask" && shouldAutoBlock) {
+                    } else if (shouldMask) {
                         if (msgEl.innerHTML !== maskedHTML) {
                             if (!el._recentlyAdded) {
                                 msgEl.innerHTML = maskedHTML;
@@ -903,7 +904,7 @@
                         } else {
                             msgEl.style.opacity = "0";
                             setTimeout(() => {
-                                if (settings.keywordAction === "mask" && shouldAutoBlock) {
+                                if (shouldMask) {
                                     msgEl.innerHTML = maskedHTML;
                                     msgEl.style.opacity = "0.9";
                                     msgEl.title = snippet;
