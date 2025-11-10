@@ -192,7 +192,7 @@ All other paths serve the front-end single-page app from `public/index.html`.
 Bring the DizyChat experience to Rumble livestreams with the companion Tampermonkey script located at `scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js`.
 
 ### Feature highlights
-- **Contextual moderation controls** – right-click usernames to block/unblock viewers, highlight regulars, or jump straight into a DizyChat-powered direct-message room that pre-fills the invitee’s handle.
+- **Contextual moderation controls** – right-click usernames to block/unblock viewers, highlight regulars, or jump straight into a DizyChat-powered direct-message tab with friendly placeholders ready for your handle and room.
 - **Smart filtering & alerts** – combine user blocks, keyword filters, collapsible long posts, timestamps, and optional desktop/audio notifications to focus on the messages that matter.
 - **Portable settings** – export/import profiles or schedule auto-backups so your blocklist, highlights, and preferences travel with you across browsers.
 - **Draggable control center** – launch a floating settings palette that remembers its position, supports dark mode, and surfaces quick toggles for compact layout, autoscroll lock, previews, and more.
