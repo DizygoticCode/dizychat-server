@@ -1020,31 +1020,94 @@
     /***********************
      * Context menu helpers
      ***********************/
-    function detectMyNickname() {
-        if (settings.myNickname) return settings.myNickname;
-        const candidate =
-            document.querySelector(".user-info .username") ||
-            document.querySelector(".header-username") ||
-            document.querySelector("[data-username]");
-        if (candidate) {
-            settings.myNickname = candidate.innerText.trim();
-            saveSettings();
-            return settings.myNickname;
+    function sanitizeNickname(value) {
+        if (value == null) return "";
+        const normalized = value
+            .toString()
+            .replace(/[\r\n\t]+/g, " ")
+            .replace(/\s{2,}/g, " ")
+            .trim();
+        if (!normalized) return "";
+        if (normalized.length > 40) return "";
+        if (!/^@?[A-Za-z0-9_.-]+$/.test(normalized)) return "";
+        const stripped = normalized.startsWith("@") ? normalized.slice(1) : normalized;
+        return stripped || "";
+    }
+
+    function readNicknameFromElement(element) {
+        if (!element) return "";
+        if (element.closest && element.closest("li.chat-history--row")) {
+            return "";
         }
+        if (element.tagName && element.tagName.toLowerCase() === "meta") {
+            return element.getAttribute("content") || "";
+        }
+        const attrValue =
+            element.dataset?.username ||
+            element.dataset?.user ||
+            (element.getAttribute ? element.getAttribute("data-username") : "") ||
+            (element.getAttribute ? element.getAttribute("data-user") : "");
+        if (attrValue) return attrValue;
+        return element.textContent || element.innerText || "";
+    }
+
+    function storeNicknameIfValid(candidate) {
+        const sanitized = sanitizeNickname(candidate);
+        if (!sanitized) return "";
+        if (sanitized.toLowerCase() === "guest") return sanitized;
+        if (settings.myNickname !== sanitized) {
+            settings.myNickname = sanitized;
+            saveSettings();
+        }
+        return sanitized;
+    }
+
+    function detectMyNickname() {
+        const fromGlobal = storeNicknameIfValid(window?.Rumble?.currentUser?.username);
+        if (fromGlobal) return fromGlobal;
+
+        const stored = sanitizeNickname(settings.myNickname);
+        if (stored && stored.toLowerCase() !== "guest") {
+            if (stored !== settings.myNickname) {
+                settings.myNickname = stored;
+                saveSettings();
+            }
+            return stored;
+        }
+
+        if (settings.myNickname) {
+            settings.myNickname = "";
+            saveSettings();
+        }
+
+        const selectors = [
+            ".user-info .username",
+            ".header-username",
+            ".nav-item--user .username",
+            "[data-profile-username]",
+            "[data-username][data-user-id]",
+            "[data-username][data-self='true']",
+            "[data-username]"
+        ];
+
+        for (const selector of selectors) {
+            const matches = document.querySelectorAll(selector);
+            for (const element of matches) {
+                const resolved = storeNicknameIfValid(readNicknameFromElement(element));
+                if (resolved) return resolved;
+            }
+        }
+
         return "Guest";
     }
 
     function openDirectMessage(targetDisplayName) {
-        const detectedNickname =
-            window?.Rumble?.currentUser?.username || settings.myNickname || detectMyNickname() || "Guest";
-        const myNickname = (detectedNickname || "")
-            .toString()
-            .replace(/\s+/g, " ")
-            .trim() || "Guest";
+        const myNickname = detectMyNickname();
 
-        if (settings.myNickname !== myNickname) {
-            settings.myNickname = myNickname;
-            saveSettings();
+        const resolvedNickname = sanitizeNickname(myNickname) || "Guest";
+        if (resolvedNickname !== settings.myNickname) {
+            settings.myNickname = resolvedNickname === "Guest" ? settings.myNickname : resolvedNickname;
+            if (resolvedNickname !== "Guest") saveSettings();
         }
 
         const providedTarget = (targetDisplayName || "").toString().replace(/\s+/g, " ").trim();
@@ -1061,9 +1124,9 @@
 
         const landingBaseURL = "https://dizychat-server.onrender.com/";
         const params = new URLSearchParams();
-        params.set("username", myNickname);
+        params.set("username", resolvedNickname);
         params.set("room", defaultRoomName);
-        if (target && target !== myNickname) {
+        if (target && target !== resolvedNickname) {
             params.set("invite", target);
         }
         const landingURL = `${landingBaseURL}?${params.toString()}`;
