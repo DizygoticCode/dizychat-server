@@ -1635,6 +1635,8 @@ const urlParams = new URLSearchParams(window.location.search);
 const prefillUsername = urlParams.get("username") || urlParams.get("user") || "";
 const prefillRoom = urlParams.get("room") || "";
 const prefillPassword = urlParams.get("password") || "";
+const usernamePlaceholder = urlParams.get("usernamePlaceholder") || "";
+const roomPlaceholder = urlParams.get("roomPlaceholder") || "";
 
 if (prefillUsername && usernameInput) {
   usernameInput.value = prefillUsername;
@@ -1655,6 +1657,14 @@ if (prefillPassword) {
 
 if (prefillRoom || prefillPassword) {
   updateQueryParams(prefillRoom, prefillPassword);
+}
+
+if (usernamePlaceholder && usernameInput) {
+  usernameInput.placeholder = usernamePlaceholder;
+}
+
+if (roomPlaceholder && roomInput) {
+  roomInput.placeholder = roomPlaceholder;
 }
 
 // ------------------- State Helpers -------------------
