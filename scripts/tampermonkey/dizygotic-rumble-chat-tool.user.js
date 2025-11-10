@@ -1052,8 +1052,12 @@
             prompt("Enter the username to DM:", "general")?.toString().replace(/\s+/g, " ").trim() ||
             "general";
 
-        const hostPossessiveSuffix = /s$/i.test(myNickname) ? "'" : "'s";
-        const defaultRoomName = `${myNickname}${hostPossessiveSuffix} Room`;
+        const roomOwnerName = (target || myNickname || "")
+            .toString()
+            .replace(/\s+/g, " ")
+            .trim() || "general";
+        const roomPossessiveSuffix = /s$/i.test(roomOwnerName) ? "'" : "'s";
+        const defaultRoomName = `${roomOwnerName}${roomPossessiveSuffix} room`;
 
         const landingBaseURL = "https://dizychat-server.onrender.com/";
         const params = new URLSearchParams();
