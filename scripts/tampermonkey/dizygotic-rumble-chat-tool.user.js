@@ -1115,7 +1115,7 @@
             prompt("Enter the username to DM:", "general")?.toString().replace(/\s+/g, " ").trim() ||
             "general";
 
-        const roomOwnerName = resolvedNickname
+        const roomOwnerName = (target || myNickname || "")
             .toString()
             .replace(/\s+/g, " ")
             .trim() || "general";
