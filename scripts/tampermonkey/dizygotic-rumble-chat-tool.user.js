@@ -1115,10 +1115,17 @@
             prompt("Enter the username to DM:", "general")?.toString().replace(/\s+/g, " ").trim() ||
             "general";
 
+        const roomOwnerName = (target || myNickname || "")
+            .toString()
+            .replace(/\s+/g, " ")
+            .trim() || "general";
+        const roomPossessiveSuffix = /s$/i.test(roomOwnerName) ? "'" : "'s";
+        const defaultRoomName = `${roomOwnerName}${roomPossessiveSuffix} room`;
+
         const landingBaseURL = "https://dizychat-server.onrender.com/";
         const params = new URLSearchParams();
-        params.set("usernamePlaceholder", "put your username here");
-        params.set("roomPlaceholder", "put your roomname here");
+        params.set("username", resolvedNickname);
+        params.set("room", defaultRoomName);
         if (target && target !== resolvedNickname) {
             params.set("invite", target);
         }
