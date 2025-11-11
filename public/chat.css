@@ -2964,6 +2964,48 @@ body:not(.dark) #soundboard-btn {
    Responsive Adjustments
    ============================== */
 @media (max-width: 640px) {
+  body {
+    --toolbar-padding-y: 8px;
+    --toolbar-padding-x: 11px;
+    --toolbar-gap: 9px;
+    --toolbar-logo-size: 32px;
+    --toolbar-control-height: 36px;
+    --toolbar-button-padding-y: 4px;
+    --toolbar-button-padding-x: 9px;
+    --toolbar-icon-button-size: 34px;
+    --toolbar-button-font-size: 0.88em;
+    --toolbar-link-padding-y: 6px;
+    --toolbar-link-padding-x: 11px;
+    --toolbar-search-gap: 4px;
+    --toolbar-search-padding-y: 3px;
+    --toolbar-search-padding-x: 4px;
+    --toolbar-search-margin-left: 10px;
+    --toolbar-search-font-size: 0.78em;
+    --room-name-font-size: 0.96em;
+    --messages-padding-y: 7px;
+    --messages-padding-x: 7px;
+    --message-gap: 6px;
+    --message-padding-y: 8px;
+    --message-padding-x: 10px;
+    --message-font-size: 0.92em;
+    --message-meta-font-size: 0.68em;
+    --scroll-to-latest-bottom: 92px;
+    --scroll-to-latest-padding-y: 7px;
+    --scroll-to-latest-padding-x: 12px;
+    --scroll-to-latest-font-size: 0.82rem;
+    --input-padding-y: 7px;
+    --input-padding-x: 9px;
+    --input-field-padding-y: 7px;
+    --input-field-padding-x: 11px;
+    --input-font-size: 0.92em;
+    --input-button-gap: 4px;
+    --input-button-font-size: 1.15em;
+    --input-icon-size: 34px;
+    --quick-emoji-gap: 4px;
+    --quick-emoji-margin-left: 4px;
+    --quick-emoji-size: 30px;
+  }
+
   header {
     align-items: center;
     gap: 10px;
@@ -3004,7 +3046,7 @@ body:not(.dark) #soundboard-btn {
   #emoji-picker { bottom: 60px; width: 90%; right: 5%; }
   #pinned-messages { max-height: 100px; margin: 4px; font-size: 0.85em; }
   #typing-bubble { bottom: 70px; font-size: 0.85em; max-width: 80%; }
-  .message { max-width: 90%; font-size: 0.95em; padding: 10px 12px; }
+  .message { max-width: 88%; font-size: 0.9em; padding: 8px 10px; }
   .message.has-inline-media {
     width: min(100%, 360px);
     max-width: min(100%, 360px);
