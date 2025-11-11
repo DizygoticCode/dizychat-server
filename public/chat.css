@@ -2821,7 +2821,6 @@ body:not(.dark) #soundboard-btn {
    ============================== */
 @media (max-width: 640px) {
   header {
-    --toolbar-logo-size: clamp(26px, 16vw, 32px);
     align-items: center;
     gap: 10px;
   }
