@@ -219,7 +219,13 @@ body.dark { background: var(--bg); color: var(--text-primary); }
   box-sizing: border-box;
 }
 
-#username-prompt .logo { width: 120px; height: auto; margin-bottom: 12px; }
+#username-prompt .logo {
+  width: min(160px, 48vw);
+  height: auto;
+  max-height: 140px;
+  margin-bottom: 12px;
+  object-fit: contain;
+}
 
 #username-prompt h1 { font-size: 2em; margin: 0 0 12px; color: var(--text-primary); }
 
@@ -400,11 +406,13 @@ header .header-left { display: flex; align-items: center; gap: 10px; }
 
 header .logo {
   width: var(--toolbar-logo-size);
-  height: auto;
+  height: var(--toolbar-logo-size);
   max-width: var(--toolbar-logo-size);
   max-height: var(--toolbar-logo-size);
   flex: 0 0 var(--toolbar-logo-size);
   object-fit: contain;
+  border-radius: calc(var(--toolbar-logo-size) / 5);
+  overflow: hidden;
 }
 
 #chat-container header .header-right {
@@ -2826,8 +2834,9 @@ body:not(.dark) #soundboard-btn {
 
   header .logo {
     width: var(--toolbar-logo-size);
+    height: var(--toolbar-logo-size);
     max-width: var(--toolbar-logo-size);
-    max-height: 32px;
+    max-height: var(--toolbar-logo-size);
     flex-basis: var(--toolbar-logo-size);
   }
 
@@ -2912,6 +2921,46 @@ body:not(.dark) #soundboard-btn {
   .inline-preview { width: min(200px, 100%); }
 }
 
+@media (max-width: 480px) {
+  header {
+    --toolbar-logo-size: clamp(22px, 18vw, 26px);
+  }
+
+  header .header-left {
+    gap: 6px;
+  }
+}
+
+@media (max-width: 360px) {
+  header {
+    --toolbar-logo-size: clamp(18px, 22vw, 22px);
+  }
+}
+
+@media (max-width: 320px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 10px);
+    --toolbar-gap: min(var(--toolbar-gap), 6px);
+    --toolbar-logo-size: clamp(16px, 24vw, 20px);
+  }
+
+  header .header-left {
+    gap: 4px;
+  }
+}
+
+@media (max-width: 240px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 8px);
+    --toolbar-gap: min(var(--toolbar-gap), 4px);
+    --toolbar-logo-size: clamp(14px, 28vw, 18px);
+  }
+
+  header .header-left {
+    gap: 2px;
+  }
+}
+
 @media (orientation: landscape) and (max-height: 540px) {
   header {
     padding: 8px 12px;
@@ -2945,7 +2994,10 @@ body:not(.dark) #soundboard-btn {
     padding-right: calc(16px + env(safe-area-inset-right));
     gap: 12px;
   }
-  #username-prompt .logo { width: 100px; }
+  #username-prompt .logo {
+    width: min(120px, 60vw);
+    max-height: min(120px, 60vw);
+  }
   #username-prompt h1 { font-size: 1.4em; }
   .landing-inputs { width: 100%; max-width: 260px; flex-direction: column; gap: 8px; }
   .landing-inputs input { width: 100%; padding: 10px 12px; font-size: 0.95em; }
