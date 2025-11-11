@@ -3046,7 +3046,7 @@ body:not(.dark) #soundboard-btn {
   #emoji-picker { bottom: 60px; width: 90%; right: 5%; }
   #pinned-messages { max-height: 100px; margin: 4px; font-size: 0.85em; }
   #typing-bubble { bottom: 70px; font-size: 0.85em; max-width: 80%; }
-  .message { max-width: 90%; font-size: 0.95em; padding: 10px 12px; }
+  .message { max-width: 88%; font-size: 0.9em; padding: 8px 10px; }
   .message.has-inline-media {
     width: min(100%, 360px);
     max-width: min(100%, 360px);
