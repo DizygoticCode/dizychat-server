@@ -700,6 +700,7 @@ body:not(.dark) .stream-modal-button:focus-visible {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
   position: relative;
   background: var(--bg);
 }
@@ -920,7 +921,9 @@ body:not(.dark) .header-right button#toggle-density.is-active {
   flex: 1;
   overflow-y: auto;
   padding: var(--messages-padding-y) var(--messages-padding-x);
-  padding-bottom: calc(var(--messages-padding-y) + env(safe-area-inset-bottom));
+  padding-bottom: calc(
+    var(--messages-padding-y) + var(--input-icon-size) + env(safe-area-inset-bottom)
+  );
   display: flex;
   flex-direction: column;
   gap: var(--message-gap);
@@ -1296,6 +1299,11 @@ body:not(.dark) .scroll-to-latest.has-new {
 
   #chat-main {
     flex-direction: column;
+    overflow-x: hidden;
+    overflow-y: auto;
+    height: auto;
+    min-height: 0;
+    -webkit-overflow-scrolling: touch;
   }
 
   #user-sidebar {
@@ -1928,6 +1936,9 @@ body.light .message .reactions .reaction-chip.own {
   border-top: 1px solid var(--border-color);
   background: var(--surface);
   backdrop-filter: blur(8px);
+  position: sticky;
+  bottom: 0;
+  z-index: 15;
 }
 
 #quick-emoji-panel {
