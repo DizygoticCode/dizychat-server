@@ -441,7 +441,7 @@ const chromeToolbarState = {
 };
 
 const faviconImage = new Image();
-faviconImage.src = "/logo.png";
+faviconImage.src = "/logo.svg";
 const faviconCanvas = document.createElement("canvas");
 faviconCanvas.width = 32;
 faviconCanvas.height = 32;

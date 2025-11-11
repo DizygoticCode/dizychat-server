@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">DizyChat Logo Light on White</title>
+  <desc id="desc">Chat bubble with subtle outline for white backgrounds</desc>
+  <defs>
+    <linearGradient id="bubbleWhite" x1="9" y1="6" x2="54" y2="52" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#27cc78" />
+      <stop offset="1" stop-color="#149156" />
+    </linearGradient>
+  </defs>
+  <path
+    fill="#d6f7e6"
+    d="M11 9c0-4.971 4.029-9 9-9h24c4.971 0 9 4.029 9 9v19c0 4.971-4.029 9-9 9H30.414L19 48.414V37H20c-4.971 0-9-4.029-9-9Z"
+  />
+  <path
+    fill="url(#bubbleWhite)"
+    d="M13 11c0-3.866 3.134-7 7-7h24c3.866 0 7 3.134 7 7v17c0 3.866-3.134 7-7 7H30.586L20 45.586V35H20c-3.866 0-7-3.134-7-7Z"
+  />
+  <rect x="21" y="19" width="22" height="4" rx="2" fill="#f3fff9" />
+  <rect x="21" y="27" width="14" height="4" rx="2" fill="#f3fff9" />
+</svg>

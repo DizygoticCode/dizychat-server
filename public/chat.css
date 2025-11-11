@@ -219,7 +219,13 @@ body.dark { background: var(--bg); color: var(--text-primary); }
   box-sizing: border-box;
 }
 
-#username-prompt .logo { width: 120px; height: auto; margin-bottom: 12px; }
+#username-prompt .logo {
+  width: min(160px, 48vw);
+  height: auto;
+  max-height: 140px;
+  margin-bottom: 12px;
+  object-fit: contain;
+}
 
 #username-prompt h1 { font-size: 2em; margin: 0 0 12px; color: var(--text-primary); }
 
@@ -399,12 +405,15 @@ header.toolbar-flash-join {
 header .header-left { display: flex; align-items: center; gap: 10px; }
 
 header .logo {
-  width: var(--toolbar-logo-size);
-  height: auto;
-  max-width: var(--toolbar-logo-size);
-  max-height: var(--toolbar-logo-size);
-  flex: 0 0 var(--toolbar-logo-size);
+  --toolbar-logo-render-size: clamp(10px, 12vw, var(--toolbar-logo-size));
+  width: var(--toolbar-logo-render-size);
+  height: var(--toolbar-logo-render-size);
+  max-width: var(--toolbar-logo-render-size);
+  max-height: var(--toolbar-logo-render-size);
+  flex: 0 0 var(--toolbar-logo-render-size);
   object-fit: contain;
+  border-radius: calc(var(--toolbar-logo-render-size) / 5);
+  overflow: hidden;
 }
 
 #chat-container header .header-right {
@@ -1334,7 +1343,6 @@ body:not(.dark) .scroll-to-latest.has-new {
     --toolbar-padding-y: min(var(--toolbar-padding-y), 10px);
     --toolbar-padding-x: min(var(--toolbar-padding-x), 12px);
     --toolbar-gap: min(var(--toolbar-gap), 12px);
-    --toolbar-logo-size: min(var(--toolbar-logo-size), 36px);
     --toolbar-control-height: min(var(--toolbar-control-height), 36px);
     --toolbar-icon-button-size: min(var(--toolbar-icon-button-size), 36px);
     flex-direction: column;
@@ -2813,7 +2821,6 @@ body:not(.dark) #soundboard-btn {
    ============================== */
 @media (max-width: 640px) {
   header {
-    --toolbar-logo-size: clamp(26px, 16vw, 32px);
     align-items: center;
     gap: 10px;
   }
@@ -2822,13 +2829,6 @@ body:not(.dark) #soundboard-btn {
     gap: 8px;
     justify-content: flex-start;
     width: 100%;
-  }
-
-  header .logo {
-    width: var(--toolbar-logo-size);
-    max-width: var(--toolbar-logo-size);
-    max-height: 32px;
-    flex-basis: var(--toolbar-logo-size);
   }
 
   #chat-container .search-bar {
@@ -2912,6 +2912,219 @@ body:not(.dark) #soundboard-btn {
   .inline-preview { width: min(200px, 100%); }
 }
 
+@media (max-width: 600px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 14px);
+    --toolbar-gap: min(var(--toolbar-gap), 12px);
+  }
+
+  header .header-left {
+    gap: 7px;
+  }
+
+  #chat-container header .header-right {
+    gap: min(10px, var(--toolbar-gap));
+  }
+}
+
+@media (max-width: 540px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 12px);
+    --toolbar-gap: min(var(--toolbar-gap), 10px);
+  }
+
+  header .header-left {
+    gap: 6px;
+  }
+
+  #chat-container header .header-right {
+    gap: min(8px, var(--toolbar-gap));
+  }
+}
+
+@media (max-width: 500px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 11px);
+    --toolbar-gap: min(var(--toolbar-gap), 9px);
+  }
+
+  header .header-left {
+    gap: 6px;
+  }
+
+  #chat-container header .header-right button {
+    padding: 6px 10px;
+  }
+}
+
+@media (max-width: 460px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 10px);
+    --toolbar-gap: min(var(--toolbar-gap), 8px);
+  }
+
+  header .header-left {
+    gap: 5px;
+  }
+}
+
+@media (max-width: 430px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 9px);
+    --toolbar-gap: min(var(--toolbar-gap), 7px);
+  }
+
+  header .header-left {
+    gap: 5px;
+  }
+
+  #chat-container header .header-right {
+    gap: min(6px, var(--toolbar-gap));
+  }
+}
+
+@media (max-width: 414px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 8px);
+    --toolbar-gap: min(var(--toolbar-gap), 6px);
+  }
+
+  header .header-left {
+    gap: 4px;
+  }
+}
+
+@media (max-width: 400px) {
+  #chat-container header .header-right button {
+    padding: 5px 8px;
+  }
+}
+
+@media (max-width: 375px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 8px);
+    --toolbar-gap: min(var(--toolbar-gap), 5px);
+  }
+
+  header .header-left {
+    gap: 3px;
+  }
+}
+
+@media (max-width: 344px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 7px);
+    --toolbar-gap: min(var(--toolbar-gap), 5px);
+  }
+
+  header .header-left {
+    gap: 2px;
+  }
+}
+
+@media (max-width: 330px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 6px);
+    --toolbar-gap: min(var(--toolbar-gap), 4px);
+  }
+}
+
+@media (max-width: 320px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 6px);
+    --toolbar-gap: min(var(--toolbar-gap), 4px);
+  }
+
+  header .header-left {
+    gap: 2px;
+  }
+}
+
+@media (max-width: 280px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 5px);
+    --toolbar-padding-y: min(var(--toolbar-padding-y), 6px);
+    --toolbar-gap: min(var(--toolbar-gap), 3px);
+  }
+}
+
+@media (max-width: 240px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 4px);
+    --toolbar-gap: min(var(--toolbar-gap), 3px);
+  }
+
+  header .header-left {
+    gap: 2px;
+  }
+}
+
+@media (max-width: 200px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 4px);
+    --toolbar-padding-y: min(var(--toolbar-padding-y), 5px);
+    --toolbar-gap: min(var(--toolbar-gap), 2px);
+  }
+
+  header .header-left {
+    gap: 2px;
+  }
+
+  #chat-container header .header-right {
+    padding-left: 0;
+    gap: 4px;
+  }
+
+  #chat-container header .header-right button {
+    padding: 4px 8px;
+    font-size: 0.75em;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 160px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 3px);
+    --toolbar-padding-y: min(var(--toolbar-padding-y), 4px);
+    --toolbar-gap: min(var(--toolbar-gap), 2px);
+  }
+
+  header .header-left {
+    gap: 1px;
+  }
+
+  #chat-container header .header-right {
+    gap: 2px;
+  }
+
+  #chat-container header .header-right button {
+    padding: 3px 6px;
+    font-size: 0.7em;
+  }
+}
+
+@media (max-width: 120px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 2px);
+    --toolbar-padding-y: min(var(--toolbar-padding-y), 3px);
+    --toolbar-gap: min(var(--toolbar-gap), 2px);
+  }
+
+  header .header-left {
+    gap: 0.5px;
+  }
+
+  #chat-container header .header-right {
+    gap: 2px;
+    width: 100%;
+  }
+
+  #chat-container header .header-right button {
+    padding: 3px 4px;
+    font-size: 0.68em;
+  }
+}
+
 @media (orientation: landscape) and (max-height: 540px) {
   header {
     padding: 8px 12px;
@@ -2945,7 +3158,10 @@ body:not(.dark) #soundboard-btn {
     padding-right: calc(16px + env(safe-area-inset-right));
     gap: 12px;
   }
-  #username-prompt .logo { width: 100px; }
+  #username-prompt .logo {
+    width: min(120px, 60vw);
+    max-height: min(120px, 60vw);
+  }
   #username-prompt h1 { font-size: 1.4em; }
   .landing-inputs { width: 100%; max-width: 260px; flex-direction: column; gap: 8px; }
   .landing-inputs input { width: 100%; padding: 10px 12px; font-size: 0.95em; }
