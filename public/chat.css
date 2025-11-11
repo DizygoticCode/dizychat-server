@@ -219,7 +219,13 @@ body.dark { background: var(--bg); color: var(--text-primary); }
   box-sizing: border-box;
 }
 
-#username-prompt .logo { width: 120px; height: auto; margin-bottom: 12px; }
+#username-prompt .logo {
+  width: min(160px, 48vw);
+  height: auto;
+  max-height: 140px;
+  margin-bottom: 12px;
+  object-fit: contain;
+}
 
 #username-prompt h1 { font-size: 2em; margin: 0 0 12px; color: var(--text-primary); }
 
@@ -400,11 +406,13 @@ header .header-left { display: flex; align-items: center; gap: 10px; }
 
 header .logo {
   width: var(--toolbar-logo-size);
-  height: auto;
+  height: var(--toolbar-logo-size);
   max-width: var(--toolbar-logo-size);
   max-height: var(--toolbar-logo-size);
   flex: 0 0 var(--toolbar-logo-size);
   object-fit: contain;
+  border-radius: calc(var(--toolbar-logo-size) / 5);
+  overflow: hidden;
 }
 
 #chat-container header .header-right {
@@ -2826,8 +2834,9 @@ body:not(.dark) #soundboard-btn {
 
   header .logo {
     width: var(--toolbar-logo-size);
+    height: var(--toolbar-logo-size);
     max-width: var(--toolbar-logo-size);
-    max-height: 32px;
+    max-height: var(--toolbar-logo-size);
     flex-basis: var(--toolbar-logo-size);
   }
 
@@ -2912,6 +2921,250 @@ body:not(.dark) #soundboard-btn {
   .inline-preview { width: min(200px, 100%); }
 }
 
+@media (max-width: 600px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 14px);
+    --toolbar-gap: min(var(--toolbar-gap), 12px);
+    --toolbar-logo-size: clamp(24px, 15vw, 30px);
+  }
+
+  header .header-left {
+    gap: 7px;
+  }
+
+  #chat-container header .header-right {
+    gap: min(10px, var(--toolbar-gap));
+  }
+}
+
+@media (max-width: 540px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 12px);
+    --toolbar-gap: min(var(--toolbar-gap), 10px);
+    --toolbar-logo-size: clamp(22px, 16vw, 28px);
+  }
+
+  header .header-left {
+    gap: 6px;
+  }
+
+  #chat-container header .header-right {
+    gap: min(8px, var(--toolbar-gap));
+  }
+}
+
+@media (max-width: 500px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 11px);
+    --toolbar-gap: min(var(--toolbar-gap), 9px);
+    --toolbar-logo-size: clamp(21px, 17vw, 26px);
+  }
+
+  header .header-left {
+    gap: 6px;
+  }
+
+  #chat-container header .header-right button {
+    padding: 6px 10px;
+  }
+}
+
+@media (max-width: 460px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 10px);
+    --toolbar-gap: min(var(--toolbar-gap), 8px);
+    --toolbar-logo-size: clamp(20px, 18vw, 25px);
+  }
+
+  header .header-left {
+    gap: 5px;
+  }
+}
+
+@media (max-width: 430px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 9px);
+    --toolbar-gap: min(var(--toolbar-gap), 7px);
+    --toolbar-logo-size: clamp(18px, 19vw, 23px);
+  }
+
+  header .header-left {
+    gap: 5px;
+  }
+
+  #chat-container header .header-right {
+    gap: min(6px, var(--toolbar-gap));
+  }
+}
+
+@media (max-width: 414px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 8px);
+    --toolbar-gap: min(var(--toolbar-gap), 6px);
+    --toolbar-logo-size: clamp(17px, 21vw, 22px);
+  }
+
+  header .header-left {
+    gap: 4px;
+  }
+}
+
+@media (max-width: 400px) {
+  header {
+    --toolbar-logo-size: clamp(16px, 22vw, 21px);
+  }
+
+  #chat-container header .header-right button {
+    padding: 5px 8px;
+  }
+}
+
+@media (max-width: 390px) {
+  header {
+    --toolbar-logo-size: clamp(15px, 23vw, 20px);
+  }
+}
+
+@media (max-width: 375px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 8px);
+    --toolbar-gap: min(var(--toolbar-gap), 5px);
+    --toolbar-logo-size: clamp(14px, 24vw, 19px);
+  }
+
+  header .header-left {
+    gap: 3px;
+  }
+}
+
+@media (max-width: 360px) {
+  header {
+    --toolbar-logo-size: clamp(14px, 26vw, 18px);
+  }
+}
+
+@media (max-width: 344px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 7px);
+    --toolbar-gap: min(var(--toolbar-gap), 5px);
+    --toolbar-logo-size: clamp(13px, 27vw, 18px);
+  }
+
+  header .header-left {
+    gap: 2px;
+  }
+}
+
+@media (max-width: 330px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 6px);
+    --toolbar-gap: min(var(--toolbar-gap), 4px);
+    --toolbar-logo-size: clamp(12px, 28vw, 17px);
+  }
+}
+
+@media (max-width: 320px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 6px);
+    --toolbar-gap: min(var(--toolbar-gap), 4px);
+    --toolbar-logo-size: clamp(12px, 30vw, 16px);
+  }
+
+  header .header-left {
+    gap: 2px;
+  }
+}
+
+@media (max-width: 280px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 5px);
+    --toolbar-padding-y: min(var(--toolbar-padding-y), 6px);
+    --toolbar-gap: min(var(--toolbar-gap), 3px);
+    --toolbar-logo-size: clamp(11px, 34vw, 15px);
+  }
+}
+
+@media (max-width: 240px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 4px);
+    --toolbar-gap: min(var(--toolbar-gap), 3px);
+    --toolbar-logo-size: clamp(10px, 36vw, 14px);
+  }
+
+  header .header-left {
+    gap: 2px;
+  }
+}
+
+@media (max-width: 200px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 4px);
+    --toolbar-padding-y: min(var(--toolbar-padding-y), 5px);
+    --toolbar-gap: min(var(--toolbar-gap), 2px);
+    --toolbar-logo-size: clamp(9px, 40vw, 12px);
+  }
+
+  header .header-left {
+    gap: 2px;
+  }
+
+  #chat-container header .header-right {
+    padding-left: 0;
+    gap: 4px;
+  }
+
+  #chat-container header .header-right button {
+    padding: 4px 8px;
+    font-size: 0.75em;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 160px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 3px);
+    --toolbar-padding-y: min(var(--toolbar-padding-y), 4px);
+    --toolbar-gap: min(var(--toolbar-gap), 2px);
+    --toolbar-logo-size: clamp(8px, 44vw, 11px);
+  }
+
+  header .header-left {
+    gap: 1px;
+  }
+
+  #chat-container header .header-right {
+    gap: 2px;
+  }
+
+  #chat-container header .header-right button {
+    padding: 3px 6px;
+    font-size: 0.7em;
+  }
+}
+
+@media (max-width: 120px) {
+  header {
+    --toolbar-padding-x: min(var(--toolbar-padding-x), 2px);
+    --toolbar-padding-y: min(var(--toolbar-padding-y), 3px);
+    --toolbar-gap: min(var(--toolbar-gap), 2px);
+    --toolbar-logo-size: clamp(7px, 48vw, 10px);
+  }
+
+  header .header-left {
+    gap: 0.5px;
+  }
+
+  #chat-container header .header-right {
+    gap: 2px;
+    width: 100%;
+  }
+
+  #chat-container header .header-right button {
+    padding: 3px 4px;
+    font-size: 0.68em;
+  }
+}
+
 @media (orientation: landscape) and (max-height: 540px) {
   header {
     padding: 8px 12px;
@@ -2945,7 +3198,10 @@ body:not(.dark) #soundboard-btn {
     padding-right: calc(16px + env(safe-area-inset-right));
     gap: 12px;
   }
-  #username-prompt .logo { width: 100px; }
+  #username-prompt .logo {
+    width: min(120px, 60vw);
+    max-height: min(120px, 60vw);
+  }
   #username-prompt h1 { font-size: 1.4em; }
   .landing-inputs { width: 100%; max-width: 260px; flex-direction: column; gap: 8px; }
   .landing-inputs input { width: 100%; padding: 10px 12px; font-size: 0.95em; }
