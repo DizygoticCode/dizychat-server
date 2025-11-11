@@ -398,7 +398,14 @@ header.toolbar-flash-join {
 
 header .header-left { display: flex; align-items: center; gap: 10px; }
 
-header .logo { width: var(--toolbar-logo-size); height: auto; }
+header .logo {
+  width: var(--toolbar-logo-size);
+  height: auto;
+  max-width: var(--toolbar-logo-size);
+  max-height: var(--toolbar-logo-size);
+  flex: 0 0 var(--toolbar-logo-size);
+  object-fit: contain;
+}
 
 #chat-container header .header-right {
   display: flex;
@@ -2819,7 +2826,9 @@ body:not(.dark) #soundboard-btn {
 
   header .logo {
     width: var(--toolbar-logo-size);
+    max-width: var(--toolbar-logo-size);
     max-height: 32px;
+    flex-basis: var(--toolbar-logo-size);
   }
 
   #chat-container .search-bar {
