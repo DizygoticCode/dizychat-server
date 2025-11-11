@@ -2933,31 +2933,7 @@ body:not(.dark) #soundboard-btn {
 
 @media (max-width: 360px) {
   header {
-    --toolbar-logo-size: clamp(18px, 22vw, 22px);
-  }
-}
-
-@media (max-width: 320px) {
-  header {
-    --toolbar-padding-x: min(var(--toolbar-padding-x), 10px);
-    --toolbar-gap: min(var(--toolbar-gap), 6px);
-    --toolbar-logo-size: clamp(16px, 24vw, 20px);
-  }
-
-  header .header-left {
-    gap: 4px;
-  }
-}
-
-@media (max-width: 240px) {
-  header {
-    --toolbar-padding-x: min(var(--toolbar-padding-x), 8px);
-    --toolbar-gap: min(var(--toolbar-gap), 4px);
-    --toolbar-logo-size: clamp(14px, 28vw, 18px);
-  }
-
-  header .header-left {
-    gap: 2px;
+    --toolbar-logo-size: clamp(20px, 22vw, 24px);
   }
 }
 
