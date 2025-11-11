@@ -2864,6 +2864,7 @@ function updateMessageNode(id) {
   if (data.deleted) {
     node.classList.remove("has-inline-preview");
     node.querySelectorAll(".inline-preview, .embed-wrap").forEach((el) => el.remove());
+    updateInlineMediaClasses(node);
   }
 
   applyReplyContext(node, data);
@@ -5468,6 +5469,42 @@ function replaceCustomEmojiLinks(textEl) {
   return { hasEmoji, hasGif, onlyEmoji };
 }
 
+function updateInlineMediaClasses(node) {
+  if (!node) return;
+  const message =
+    node.classList?.contains?.("message")
+      ? node
+      : typeof node.closest === "function"
+      ? node.closest(".message")
+      : null;
+  if (!message) return;
+
+  const hasAudio = Boolean(
+    message.querySelector(".inline-preview.inline-audio")
+  );
+  const hasVideo = Boolean(
+    message.querySelector(".inline-preview.inline-video")
+  );
+
+  if (hasAudio || hasVideo) {
+    message.classList.add("has-inline-media");
+  } else {
+    message.classList.remove("has-inline-media");
+  }
+
+  if (hasAudio) {
+    message.classList.add("has-inline-audio");
+  } else {
+    message.classList.remove("has-inline-audio");
+  }
+
+  if (hasVideo) {
+    message.classList.add("has-inline-video");
+  } else {
+    message.classList.remove("has-inline-video");
+  }
+}
+
 function updateTenorBubbleState(node) {
   if (!node) return;
   const isMessage = node.classList && node.classList.contains("message");
@@ -5478,6 +5515,8 @@ function updateTenorBubbleState(node) {
     message = node.closest(".message");
   }
   if (!message) return;
+
+  updateInlineMediaClasses(message);
 
   const hasAnyPreview = message.querySelector(".inline-preview");
   const hasTenorPreview = message.querySelector(".inline-preview.tenor-inline");
@@ -5686,6 +5725,7 @@ function appendAttachmentFromMessage(node, msg) {
   attachPreviewActions(preview, { link: url, label, type: previewType });
   node.appendChild(preview);
   node.classList.add("has-inline-preview");
+  updateInlineMediaClasses(node);
 
   const textEl = node.querySelector(".text");
   if (textEl && textEl.textContent?.trim() === url.trim()) {
@@ -7287,6 +7327,7 @@ function autoEmbed(node, providedLinks = null) {
       }
       wrap.appendChild(el);
       ensureWrap();
+      updateInlineMediaClasses(node);
       if (el.tagName === "IFRAME" && el.classList.contains("soundcloud")) {
         attachSoundCloudControls(el, wrap);
       }
