@@ -6150,7 +6150,7 @@ if (voiceBtn) {
 
     const defaultLabel = voiceBtn.innerHTML;
     const defaultTitle =
-      voiceBtn.getAttribute("title") || "Hold to record voice message";
+      voiceBtn.getAttribute("title") || "Click to record a voice message";
 
     const pickMimeType = () => {
       const candidates = [
@@ -6182,32 +6182,132 @@ if (voiceBtn) {
       voiceBtn.setAttribute("aria-pressed", active ? "true" : "false");
       voiceBtn.setAttribute(
         "title",
-        active ? "Release to send • press Esc to cancel" : defaultTitle
+        active
+          ? "Recording voice message… use Finish or Cancel in the recorder"
+          : defaultTitle
       );
     };
+
+    const chatContent = document.getElementById("chat-content");
+    const voiceRecordingUI = (() => {
+      const container = document.createElement("div");
+      container.className = "voice-recording-modal";
+      container.hidden = true;
+
+      const status = document.createElement("div");
+      status.className = "voice-recording-status";
+      status.textContent = "Recording voice message…";
+      status.setAttribute("role", "status");
+      status.setAttribute("aria-live", "polite");
+      const defaultStatusText = status.textContent;
+
+      const meterWrapper = document.createElement("div");
+      meterWrapper.className = "voice-meter";
+      meterWrapper.setAttribute("aria-hidden", "true");
+      const meterFill = document.createElement("div");
+      meterFill.className = "voice-meter-fill";
+      meterWrapper.appendChild(meterFill);
+
+      const timer = document.createElement("div");
+      timer.className = "voice-recording-timer";
+      timer.textContent = "00:00";
+
+      const controls = document.createElement("div");
+      controls.className = "voice-recording-controls";
+      const finishBtn = document.createElement("button");
+      finishBtn.type = "button";
+      finishBtn.className = "voice-recording-finish";
+      finishBtn.textContent = "Finish";
+      const cancelBtn = document.createElement("button");
+      cancelBtn.type = "button";
+      cancelBtn.className = "voice-recording-cancel";
+      cancelBtn.textContent = "Cancel";
+      controls.appendChild(finishBtn);
+      controls.appendChild(cancelBtn);
+
+      container.appendChild(status);
+      container.appendChild(meterWrapper);
+      container.appendChild(timer);
+      container.appendChild(controls);
+
+      if (chatContent?.appendChild) {
+        chatContent.appendChild(container);
+      }
+
+      const formatTimer = (ms) => {
+        if (!Number.isFinite(ms) || ms < 0) return "00:00";
+        const totalSeconds = Math.floor(ms / 1000);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+      };
+
+      return {
+        container,
+        finishBtn,
+        cancelBtn,
+        show() {
+          finishBtn.disabled = false;
+          cancelBtn.disabled = false;
+          container.classList.remove("finishing");
+          status.textContent = defaultStatusText;
+          container.hidden = false;
+          container.classList.add("visible");
+        },
+        hide() {
+          container.hidden = true;
+          container.classList.remove("visible");
+        },
+        setLevel(level) {
+          const clamped = Math.max(0, Math.min(1, level));
+          meterFill.style.setProperty("--level", clamped.toFixed(3));
+        },
+        setTime(ms) {
+          timer.textContent = formatTimer(ms);
+        },
+        setDisabled(disabled) {
+          finishBtn.disabled = Boolean(disabled);
+          cancelBtn.disabled = Boolean(disabled);
+          container.classList.toggle("finishing", Boolean(disabled));
+        },
+        setStatus(text) {
+          if (typeof text === "string" && text.trim()) {
+            status.textContent = text;
+          } else {
+            status.textContent = defaultStatusText;
+          }
+        },
+        reset() {
+          finishBtn.disabled = false;
+          cancelBtn.disabled = false;
+          container.classList.remove("finishing");
+          status.textContent = defaultStatusText;
+          this.setLevel(0);
+          this.setTime(0);
+          this.hide();
+        },
+      };
+    })();
 
     let recorder = null;
     let startPromise = null;
     let pendingStop = null;
     let recordedChunks = [];
-    let pointerId = null;
     let stopTimer = null;
     let stopping = false;
+    let audioContext = null;
+    let audioSource = null;
+    let levelAnalyser = null;
+    let levelData = null;
+    let levelRAF = null;
+    let recordingStartTime = null;
+    let meterLevel = 0;
 
     const MAX_RECORDING_DURATION_MS = 60000;
     const recorderOptions = (() => {
       const type = pickMimeType();
       return type ? { mimeType: type } : undefined;
     })();
-
-    const releasePointer = () => {
-      if (pointerId != null) {
-        try {
-          voiceBtn.releasePointerCapture(pointerId);
-        } catch {}
-        pointerId = null;
-      }
-    };
 
     const cleanupStream = (stream) => {
       if (!stream) return;
@@ -6216,6 +6316,145 @@ if (voiceBtn) {
           track.stop();
         } catch {}
       });
+    };
+
+    const stopLevelMonitoring = () => {
+      if (levelRAF) {
+        cancelAnimationFrame(levelRAF);
+        levelRAF = null;
+      }
+      levelAnalyser = null;
+      levelData = null;
+      if (audioSource) {
+        try {
+          audioSource.disconnect();
+        } catch {}
+        audioSource = null;
+      }
+      if (audioContext) {
+        try {
+          audioContext.close();
+        } catch {}
+        audioContext = null;
+      }
+      recordingStartTime = null;
+      meterLevel = 0;
+    };
+
+    const beginLevelMonitoring = async (stream) => {
+      const AudioContextCtor =
+        window.AudioContext || window.webkitAudioContext || null;
+      stopLevelMonitoring();
+      recordingStartTime = Date.now();
+      meterLevel = 0;
+      voiceRecordingUI.setTime(0);
+      voiceRecordingUI.setLevel(0);
+
+      if (!AudioContextCtor || !stream) {
+        if (levelRAF) {
+          cancelAnimationFrame(levelRAF);
+          levelRAF = null;
+        }
+        const updateTimer = () => {
+          if (recordingStartTime == null) return;
+          const elapsed = Date.now() - recordingStartTime;
+          voiceRecordingUI.setTime(elapsed);
+          const pulse = 0.2 + 0.1 * Math.sin(elapsed / 200);
+          meterLevel = Math.max(0.05, Math.min(1, pulse));
+          voiceRecordingUI.setLevel(meterLevel);
+          levelRAF = requestAnimationFrame(updateTimer);
+        };
+        updateTimer();
+        return;
+      }
+
+      try {
+        audioContext = new AudioContextCtor();
+        if (typeof audioContext.resume === "function") {
+          await audioContext.resume();
+        }
+        audioSource = audioContext.createMediaStreamSource(stream);
+        levelAnalyser = audioContext.createAnalyser();
+        levelAnalyser.fftSize = 512;
+        levelData = new Uint8Array(levelAnalyser.fftSize);
+        audioSource.connect(levelAnalyser);
+      } catch (err) {
+        console.error("[Voice] Failed to initialise level meter", err);
+        stopLevelMonitoring();
+        recordingStartTime = Date.now();
+        meterLevel = 0;
+        const fallbackUpdate = () => {
+          if (recordingStartTime == null) return;
+          const elapsed = Date.now() - recordingStartTime;
+          voiceRecordingUI.setTime(elapsed);
+          const pulse = 0.2 + 0.1 * Math.sin(elapsed / 200);
+          meterLevel = Math.max(0.05, Math.min(1, pulse));
+          voiceRecordingUI.setLevel(meterLevel);
+          levelRAF = requestAnimationFrame(fallbackUpdate);
+        };
+        fallbackUpdate();
+        return;
+      }
+
+      const update = () => {
+        if (!levelAnalyser || !levelData) return;
+        try {
+          levelAnalyser.getByteTimeDomainData(levelData);
+          let sumSquares = 0;
+          for (let i = 0; i < levelData.length; i += 1) {
+            const value = (levelData[i] - 128) / 128;
+            sumSquares += value * value;
+          }
+          const rms = Math.sqrt(sumSquares / levelData.length);
+          const targetLevel = Math.min(1, rms * 1.8);
+          meterLevel = meterLevel * 0.6 + targetLevel * 0.4;
+          voiceRecordingUI.setLevel(meterLevel);
+        } catch (err) {
+          console.error("[Voice] Level meter update failed", err);
+          const originalStart = recordingStartTime;
+          stopLevelMonitoring();
+          recordingStartTime = originalStart ?? Date.now();
+          meterLevel = 0;
+          const fallbackUpdate = () => {
+            if (recordingStartTime == null) return;
+            const elapsed = Date.now() - recordingStartTime;
+            voiceRecordingUI.setTime(elapsed);
+            const pulse = 0.2 + 0.1 * Math.sin(elapsed / 200);
+            meterLevel = Math.max(0.05, Math.min(1, pulse));
+            voiceRecordingUI.setLevel(meterLevel);
+            levelRAF = requestAnimationFrame(fallbackUpdate);
+          };
+          fallbackUpdate();
+          return;
+        }
+
+        if (recordingStartTime != null) {
+          voiceRecordingUI.setTime(Date.now() - recordingStartTime);
+        }
+
+        levelRAF = requestAnimationFrame(update);
+      };
+
+      update();
+    };
+
+    const updateRecorderStatus = (shouldSend, reason) => {
+      if (!shouldSend) {
+        if (reason === "cancel") {
+          voiceRecordingUI.setStatus("Canceling recording…");
+        } else {
+          voiceRecordingUI.setStatus("Stopping recording…");
+        }
+        return;
+      }
+
+      if (reason === "timeout") {
+        voiceRecordingUI.setStatus("Time limit reached—sending…");
+      } else if (reason === "complete") {
+        voiceRecordingUI.setStatus("Finishing recording…");
+      } else {
+        voiceRecordingUI.setStatus("Sending voice message…");
+      }
     };
 
     const resetRecordingState = () => {
@@ -6228,8 +6467,9 @@ if (voiceBtn) {
       recorder = null;
       startPromise = null;
       pendingStop = null;
+      stopLevelMonitoring();
+      voiceRecordingUI.reset();
       setRecordingUI(false);
-      releasePointer();
     };
 
     const finalizeRecording = async (shouldSend, reason = "complete") => {
@@ -6245,6 +6485,9 @@ if (voiceBtn) {
         clearTimeout(stopTimer);
         stopTimer = null;
       }
+
+      voiceRecordingUI.setDisabled(true);
+      updateRecorderStatus(shouldSend, reason);
 
       const currentRecorder = recorder;
       const stopPromise = new Promise((resolve) => {
@@ -6307,7 +6550,6 @@ if (voiceBtn) {
 
       if (!window.currentRoom || !window.currentUser) {
         showToast("Join the chat to send voice messages.", "warn");
-        releasePointer();
         return null;
       }
 
@@ -6332,6 +6574,8 @@ if (voiceBtn) {
             finalizeRecording(false, "cancel");
           });
 
+          voiceRecordingUI.show();
+          beginLevelMonitoring(stream);
           recorder.start();
           setRecordingUI(true);
 
@@ -6347,8 +6591,9 @@ if (voiceBtn) {
           } else {
             showToast("Could not access the microphone.", "error");
           }
-          releasePointer();
           setRecordingUI(false);
+          stopLevelMonitoring();
+          voiceRecordingUI.reset();
           recorder = null;
         } finally {
           const queued = pendingStop;
@@ -6364,6 +6609,13 @@ if (voiceBtn) {
     };
 
     const queueStop = (shouldSend, reason) => {
+      if (!recorder && !startPromise) {
+        return;
+      }
+
+      voiceRecordingUI.setDisabled(true);
+      updateRecorderStatus(shouldSend, reason);
+
       if (recorder) {
         finalizeRecording(shouldSend, reason);
       } else if (startPromise) {
@@ -6371,50 +6623,23 @@ if (voiceBtn) {
       }
     };
 
-    voiceBtn.addEventListener("pointerdown", (event) => {
-      if (event.pointerType === "mouse" && event.button !== 0) return;
+    voiceBtn.addEventListener("click", (event) => {
       event.preventDefault();
-      pointerId = event.pointerId;
-      try {
-        voiceBtn.setPointerCapture(pointerId);
-      } catch {}
-      startRecording();
-    });
-
-    voiceBtn.addEventListener("pointerup", (event) => {
-      if (pointerId != null && event.pointerId !== pointerId) return;
-      event.preventDefault();
-      queueStop(true, "complete");
-    });
-
-    voiceBtn.addEventListener("pointercancel", (event) => {
-      if (pointerId != null && event.pointerId !== pointerId) return;
-      event.preventDefault();
-      queueStop(false, "cancel");
-    });
-
-    voiceBtn.addEventListener("lostpointercapture", () => {
       if (recorder || startPromise) {
-        queueStop(false, "cancel");
-      }
-    });
-
-    voiceBtn.addEventListener("keydown", (event) => {
-      if (event.key === " " || event.key === "Enter") {
-        if (event.repeat) {
-          event.preventDefault();
-          return;
-        }
-        event.preventDefault();
+        queueStop(true, "complete");
+      } else {
         startRecording();
       }
     });
 
-    voiceBtn.addEventListener("keyup", (event) => {
-      if (event.key === " " || event.key === "Enter") {
-        event.preventDefault();
-        queueStop(true, "complete");
-      }
+    voiceRecordingUI.finishBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      queueStop(true, "complete");
+    });
+
+    voiceRecordingUI.cancelBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      queueStop(false, "cancel");
     });
 
     document.addEventListener("keydown", (event) => {
