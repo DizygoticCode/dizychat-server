@@ -1808,8 +1808,21 @@ body:not(.dark) .message.self .meta .meta-status[data-status="delivered"]::after
   padding: 10px 12px;
 }
 
+
 .message.has-inline-preview {
   padding: 10px 12px;
+}
+
+.message.has-inline-media {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  min-width: min(280px, 100%);
+}
+
+.message.has-inline-media .inline-preview {
+  width: 100%;
 }
 
 .message.search-hit {
@@ -1827,6 +1840,13 @@ body:not(.dark) .message.self .meta .meta-status[data-status="delivered"]::after
   flex-direction: column;
   gap: 6px;
   padding: 6px;
+}
+
+.message.media-only {
+  max-width: min(320px, 100%);
+}
+
+.message.tenor-only {
   max-width: min(260px, 100%);
 }
 
@@ -2860,6 +2880,11 @@ body:not(.dark) #soundboard-btn {
   #pinned-messages { max-height: 100px; margin: 4px; font-size: 0.85em; }
   #typing-bubble { bottom: 70px; font-size: 0.85em; max-width: 80%; }
   .message { max-width: 90%; font-size: 0.95em; padding: 10px 12px; }
+  .message.has-inline-media {
+    width: min(100%, 360px);
+    max-width: min(100%, 360px);
+    min-width: min(320px, 100%);
+  }
   .link-preview img { width: 40px; height: 40px; }
   #input { font-size: 0.95em; }
   .header-right button {
