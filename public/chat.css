@@ -1342,7 +1342,6 @@ body:not(.dark) .scroll-to-latest.has-new {
     --toolbar-padding-y: min(var(--toolbar-padding-y), 10px);
     --toolbar-padding-x: min(var(--toolbar-padding-x), 12px);
     --toolbar-gap: min(var(--toolbar-gap), 12px);
-    --toolbar-logo-size: min(var(--toolbar-logo-size), 36px);
     --toolbar-control-height: min(var(--toolbar-control-height), 36px);
     --toolbar-icon-button-size: min(var(--toolbar-icon-button-size), 36px);
     flex-direction: column;
