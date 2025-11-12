@@ -1284,9 +1284,7 @@ function triggerChromeToolbarAttention(type) {
   }
 }
 
-window.addEventListener("focus", () => {
-  resetChromeToolbarAttention();
-});
+window.addEventListener("focus", () => resetChromeToolbarAttention());
 window.addEventListener("pointerdown", () => resetChromeToolbarAttention(), { capture: true });
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {
