@@ -4,76 +4,6 @@
 
 console.log("%c🎛️ DizyChat Supernova Fusion Loaded", "color:#b266ff;font-weight:bold;");
 
-const nativeBadgeController = (() => {
-  if (typeof window === "undefined") {
-    return {
-      isNativePlatform: () => false,
-      canUseBadges: () => false,
-      async incrementBadge() {},
-      async clearBadge() {},
-    };
-  }
-
-  const capacitor = window.Capacitor || null;
-  const pushPlugin =
-    capacitor?.Plugins?.PushNotifications || window.PushNotifications || null;
-
-  const isNativePlatform = () => {
-    if (!capacitor || typeof capacitor.isNativePlatform !== "function") {
-      return false;
-    }
-    try {
-      return Boolean(capacitor.isNativePlatform());
-    } catch (error) {
-      console.warn("Capacitor platform detection failed", error);
-      return false;
-    }
-  };
-
-  const hasBadgeSupport = () =>
-    Boolean(
-      pushPlugin &&
-        typeof pushPlugin.getBadgeCount === "function" &&
-        typeof pushPlugin.setBadgeCount === "function"
-    );
-
-  const canUseBadges = () => isNativePlatform() && hasBadgeSupport();
-
-  const getBadgeCount = async () => {
-    if (!canUseBadges()) return 0;
-    try {
-      const result = await pushPlugin.getBadgeCount();
-      return typeof result?.count === "number" ? result.count : 0;
-    } catch (error) {
-      console.error("Error getting badge count", error);
-      return 0;
-    }
-  };
-
-  const setBadgeCount = async (count) => {
-    if (!canUseBadges()) return;
-    try {
-      await pushPlugin.setBadgeCount({ count });
-    } catch (error) {
-      console.error("Error setting badge count", error);
-    }
-  };
-
-  return {
-    isNativePlatform,
-    canUseBadges,
-    async incrementBadge() {
-      if (!canUseBadges()) return;
-      const current = await getBadgeCount();
-      await setBadgeCount(current + 1);
-    },
-    async clearBadge() {
-      if (!canUseBadges()) return;
-      await setBadgeCount(0);
-    },
-  };
-})();
-
 const resolveSocketConfig = () => {
   if (typeof window === "undefined") {
     return { url: undefined, options: {} };
@@ -1354,13 +1284,7 @@ function triggerChromeToolbarAttention(type) {
   }
 }
 
-window.addEventListener("focus", async () => {
-  resetChromeToolbarAttention();
-
-  if (nativeBadgeController.canUseBadges()) {
-    await nativeBadgeController.clearBadge();
-  }
-});
+window.addEventListener("focus", () => resetChromeToolbarAttention());
 window.addEventListener("pointerdown", () => resetChromeToolbarAttention(), { capture: true });
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {
@@ -6115,15 +6039,11 @@ socket.on("older messages", (payload = {}) => {
   updatePinnedBanner();
 });
 
-socket.on("chat message", async (msg) => {
+socket.on("chat message", (msg) => {
   if (!isViewingChat) return;
   renderMessage(msg, { scrollBehavior: "smooth", respectScrollLock: true });
   maybePlayNotificationSound(msg);
   flashToolbar("message");
-
-  if (document.hidden && nativeBadgeController.canUseBadges()) {
-    await nativeBadgeController.incrementBadge();
-  }
 });
 
 socket.on("message status", ({ id, status }) => {
