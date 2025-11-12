@@ -4,7 +4,63 @@
 
 console.log("%c🎛️ DizyChat Supernova Fusion Loaded", "color:#b266ff;font-weight:bold;");
 
-const socket = io();
+const resolveSocketConfig = () => {
+  if (typeof window === "undefined") {
+    return { url: undefined, options: {} };
+  }
+
+  const config = window.dizychatConfig && typeof window.dizychatConfig === "object"
+    ? window.dizychatConfig
+    : {};
+
+  const rawOptions = config.socketOptions && typeof config.socketOptions === "object"
+    ? { ...config.socketOptions }
+    : {};
+
+  const readString = (value) => (typeof value === "string" ? value.trim() : "");
+
+  let url = readString(config.socketUrl);
+
+  if (!url) {
+    const storageKey = readString(config.socketUrlStorageKey);
+    if (storageKey && typeof window.localStorage !== "undefined") {
+      try {
+        url = readString(window.localStorage.getItem(storageKey));
+      } catch {
+        /* ignore storage errors */
+      }
+    }
+  }
+
+  const origin = typeof window.location === "object" ? readString(window.location?.origin) : "";
+  const isNativeLikeOrigin = origin.startsWith("capacitor://") || origin.startsWith("file://");
+
+  if (!url && isNativeLikeOrigin) {
+    url = readString(config.defaultNativeSocketUrl);
+  }
+
+  if (url && !/^https?:\/\//i.test(url) && !/^wss?:\/\//i.test(url)) {
+    console.warn("DizyChat: ignoring invalid socketUrl", url);
+    url = "";
+  }
+
+  const options = Object.keys(rawOptions).length ? rawOptions : undefined;
+
+  return { url: url || undefined, options };
+};
+
+const { url: socketUrl, options: socketOptions } = resolveSocketConfig();
+
+let socket;
+if (socketUrl && socketOptions) {
+  socket = io(socketUrl, socketOptions);
+} else if (socketUrl) {
+  socket = io(socketUrl);
+} else if (socketOptions) {
+  socket = io(socketOptions);
+} else {
+  socket = io();
+}
 window.socket = socket;
 
 // ------------------- Globals -------------------

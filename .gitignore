@@ -4,3 +4,14 @@ ui-test-artifacts/
 .DS_Store
 public/soundboards/*
 !public/soundboards/.gitkeep
+
+# Capacitor / Android Studio build artifacts
+android/.gradle/
+android/.idea/
+android/.cxx/
+android/build/
+android/app/build/
+android/app/intermediates/
+android/app/generated/
+android/app/debug.keystore
+android/local.properties

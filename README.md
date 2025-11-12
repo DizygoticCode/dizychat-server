@@ -109,6 +109,41 @@ npm start
 
 The server will log the active port, build/version information, and upload limit during boot.
 
+### Configuring native/WebView builds
+Capacitor and similar wrappers load the web bundle from a non-HTTP origin (`capacitor://localhost`).
+The default Socket.IO client assumes it can reuse the current origin, so the native shell
+needs to know which deployed backend to contact. Override the connection target by editing
+`public/app-config.js` before running `npx cap copy android`:
+
+```js
+window.dizychatConfig = {
+  socketUrl: "https://your-production-server.example.com",
+  // Optional: automatically use this URL whenever the page is loaded
+  // from capacitor://localhost or file:// origins.
+  defaultNativeSocketUrl: "https://your-production-server.example.com",
+  // Optional Socket.IO client options
+  socketOptions: {
+    transports: ["websocket"],
+  },
+};
+```
+
+At runtime you can also drop an alternate server URL into `localStorage` under the
+`dizychat-socket-url` key (configurable via `socketUrlStorageKey`) to point debug builds at
+different environments without rebuilding the native project.
+
+> **Tip:** keep your Git commits lean by excluding Gradle build output and Android Studio
+> workspace files. The repository’s `.gitignore` already filters `android/app/build/`,
+> `android/.gradle/`, `android/.idea/`, and `android/local.properties`. If you accidentally
+> generated these before updating `.gitignore`, run:
+>
+> ```bash
+> git rm -r --cached android/app/build android/.gradle android/.idea android/local.properties
+> ```
+>
+> …then commit to drop the tracked artifacts. This keeps your repo small while still
+> checking in the Capacitor project files needed to rebuild the APK.
+
 ## Automated UI smoke tests
 
 The `tests/` folder contains Playwright- and Puppeteer-based smoke tests that hit the deployed Render instance and capture screenshots/video artifacts. They are optional and require installing the browsers locally:
