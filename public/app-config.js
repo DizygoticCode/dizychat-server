@@ -11,7 +11,7 @@ window.dizychatConfig = Object.assign(
      * Optional URL used automatically when the app is loaded from a
      * non-HTTP origin (e.g. capacitor://localhost).
      */
-    defaultNativeSocketUrl: "",
+    defaultNativeSocketUrl: "https://dizychat.com",
     /**
      * Additional options that are passed to io(...).
      * Example: { transports: ["websocket"] }
