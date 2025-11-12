@@ -4,18 +4,75 @@
 
 console.log("%c🎛️ DizyChat Supernova Fusion Loaded", "color:#b266ff;font-weight:bold;");
 
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-import { Capacitor } from "@capacitor/core";
-import { PushNotifications } from "@capacitor/push-notifications";
-=======
-import { Capacitor } from '@capacitor/core';
-import { PushNotifications } from '@capacitor/push-notifications';
->>>>>>> Stashed changes
-=======
-import { Capacitor } from '@capacitor/core';
-import { PushNotifications } from '@capacitor/push-notifications';
->>>>>>> Stashed changes
+const nativeBadgeController = (() => {
+  if (typeof window === "undefined") {
+    return {
+      isNativePlatform: () => false,
+      canUseBadges: () => false,
+      async incrementBadge() {},
+      async clearBadge() {},
+    };
+  }
+
+  const capacitor = window.Capacitor || null;
+  const pushPlugin =
+    capacitor?.Plugins?.PushNotifications || window.PushNotifications || null;
+
+  const isNativePlatform = () => {
+    if (!capacitor || typeof capacitor.isNativePlatform !== "function") {
+      return false;
+    }
+    try {
+      return Boolean(capacitor.isNativePlatform());
+    } catch (error) {
+      console.warn("Capacitor platform detection failed", error);
+      return false;
+    }
+  };
+
+  const hasBadgeSupport = () =>
+    Boolean(
+      pushPlugin &&
+        typeof pushPlugin.getBadgeCount === "function" &&
+        typeof pushPlugin.setBadgeCount === "function"
+    );
+
+  const canUseBadges = () => isNativePlatform() && hasBadgeSupport();
+
+  const getBadgeCount = async () => {
+    if (!canUseBadges()) return 0;
+    try {
+      const result = await pushPlugin.getBadgeCount();
+      return typeof result?.count === "number" ? result.count : 0;
+    } catch (error) {
+      console.error("Error getting badge count", error);
+      return 0;
+    }
+  };
+
+  const setBadgeCount = async (count) => {
+    if (!canUseBadges()) return;
+    try {
+      await pushPlugin.setBadgeCount({ count });
+    } catch (error) {
+      console.error("Error setting badge count", error);
+    }
+  };
+
+  return {
+    isNativePlatform,
+    canUseBadges,
+    async incrementBadge() {
+      if (!canUseBadges()) return;
+      const current = await getBadgeCount();
+      await setBadgeCount(current + 1);
+    },
+    async clearBadge() {
+      if (!canUseBadges()) return;
+      await setBadgeCount(0);
+    },
+  };
+})();
 
 const resolveSocketConfig = () => {
   if (typeof window === "undefined") {
@@ -1300,12 +1357,8 @@ function triggerChromeToolbarAttention(type) {
 window.addEventListener("focus", async () => {
   resetChromeToolbarAttention();
 
-  if (Capacitor.isNativePlatform()) {
-    try {
-      await PushNotifications.setBadgeCount({ count: 0 });
-    } catch (error) {
-      console.error("Error clearing badge count", error);
-    }
+  if (nativeBadgeController.canUseBadges()) {
+    await nativeBadgeController.clearBadge();
   }
 });
 window.addEventListener("pointerdown", () => resetChromeToolbarAttention(), { capture: true });
@@ -6068,15 +6121,8 @@ socket.on("chat message", async (msg) => {
   maybePlayNotificationSound(msg);
   flashToolbar("message");
 
-  if (Capacitor.isNativePlatform() && document.hidden) {
-    try {
-      const result = await PushNotifications.getBadgeCount();
-      let count = result.count || 0;
-      count++;
-      await PushNotifications.setBadgeCount({ count });
-    } catch (error) {
-      console.error("Error setting badge count", error);
-    }
+  if (document.hidden && nativeBadgeController.canUseBadges()) {
+    await nativeBadgeController.incrementBadge();
   }
 });
 
