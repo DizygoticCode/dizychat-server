@@ -4,8 +4,13 @@
 
 console.log("%c🎛️ DizyChat Supernova Fusion Loaded", "color:#b266ff;font-weight:bold;");
 
+<<<<<<< Updated upstream
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
+=======
+import { Capacitor } from '@capacitor/core';
+import { PushNotifications } from '@capacitor/push-notifications';
+>>>>>>> Stashed changes
 
 const resolveSocketConfig = () => {
   if (typeof window === "undefined") {
