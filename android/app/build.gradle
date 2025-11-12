@@ -1,0 +1,72 @@
+apply plugin: 'com.android.application'
+
+// Create a Properties object
+def localProperties = new Properties()
+// Create a File object for local.properties
+def localPropertiesFile = rootProject.file('local.properties')
+
+// Load the properties file if it exists
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader('UTF-8') { reader ->
+        localProperties.load(reader)
+    }
+}
+
+android {
+    namespace "com.chat.dizychat"
+    compileSdk rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.chat.dizychat"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+
+        // Read the variables from local.properties
+        buildConfigField "String", "ADMIN_CREDENTIALS", "\"${localProperties.getProperty('ADMIN_CREDENTIALS', '')}\""
+        buildConfigField "String", "METADEFENDER_API_KEY", "\"${localProperties.getProperty('METADEFENDER_API_KEY', '')}\""
+        buildConfigField "String", "MONGO_URI", "\"${localProperties.getProperty('MONGO_URI', '')}\""
+        buildConfigField "String", "NODE_VERSION", "\"${localProperties.getProperty('NODE_VERSION', '')}\""
+        buildConfigField "String", "PORT", "\"${localProperties.getProperty('PORT', '')}\""
+        buildConfigField "String", "TENOR_API_KEY", "\"${localProperties.getProperty('TENOR_API_KEY', '')}\""
+        buildConfigField "String", "RENDER_API_URL", "\"${localProperties.getProperty('RENDER_API_URL', '')}\""
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    buildFeatures {
+        buildConfig true
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}
