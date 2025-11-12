@@ -4,19 +4,6 @@
 
 console.log("%c🎛️ DizyChat Supernova Fusion Loaded", "color:#b266ff;font-weight:bold;");
 
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-import { Capacitor } from "@capacitor/core";
-import { PushNotifications } from "@capacitor/push-notifications";
-=======
-import { Capacitor } from '@capacitor/core';
-import { PushNotifications } from '@capacitor/push-notifications';
->>>>>>> Stashed changes
-=======
-import { Capacitor } from '@capacitor/core';
-import { PushNotifications } from '@capacitor/push-notifications';
->>>>>>> Stashed changes
-
 const resolveSocketConfig = () => {
   if (typeof window === "undefined") {
     return { url: undefined, options: {} };
@@ -1297,17 +1284,7 @@ function triggerChromeToolbarAttention(type) {
   }
 }
 
-window.addEventListener("focus", async () => {
-  resetChromeToolbarAttention();
-
-  if (Capacitor.isNativePlatform()) {
-    try {
-      await PushNotifications.setBadgeCount({ count: 0 });
-    } catch (error) {
-      console.error("Error clearing badge count", error);
-    }
-  }
-});
+window.addEventListener("focus", () => resetChromeToolbarAttention());
 window.addEventListener("pointerdown", () => resetChromeToolbarAttention(), { capture: true });
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {
@@ -6062,22 +6039,11 @@ socket.on("older messages", (payload = {}) => {
   updatePinnedBanner();
 });
 
-socket.on("chat message", async (msg) => {
+socket.on("chat message", (msg) => {
   if (!isViewingChat) return;
   renderMessage(msg, { scrollBehavior: "smooth", respectScrollLock: true });
   maybePlayNotificationSound(msg);
   flashToolbar("message");
-
-  if (Capacitor.isNativePlatform() && document.hidden) {
-    try {
-      const result = await PushNotifications.getBadgeCount();
-      let count = result.count || 0;
-      count++;
-      await PushNotifications.setBadgeCount({ count });
-    } catch (error) {
-      console.error("Error setting badge count", error);
-    }
-  }
 });
 
 socket.on("message status", ({ id, status }) => {
