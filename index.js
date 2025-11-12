@@ -19,40 +19,13 @@ const nodeFetchModulePromise = import('node-fetch');
 const fetch = (...args) =>
   nodeFetchModulePromise.then(({ default: fetch }) => fetch(...args));
 
-    // ---------------- App Setup ----------------
-    const app = express();
-    const server = http.createServer(app);
-    const cors = require('cors'); // Make sure you have this import near the top
-
-    // --- CORS Configuration ---
-    const allowedOrigins = [
-      'https://dizychat.com',      // Your production website
-      'http://localhost',          // Capacitor's origin for Android
-      'capacitor://localhost'      // Capacitor's origin for iOS and some Android versions
-    ];
-
-    const corsOptions = {
-      origin: (origin, callback) => {
-        // Allow requests with no origin (like mobile apps in some cases or tools like Postman)
-        // or if the origin is in our allowed list.
-        if (!origin || allowedOrigins.includes(origin)) {
-          callback(null, true);
-        } else {
-          callback(new Error('Not allowed by CORS'));
-        }
-      }
-    };
-    
-    // Apply CORS middleware to Express
-    app.use(cors(corsOptions));
-    
-    // Apply CORS configuration to Socket.IO
-    const io = new Server(server, {
-      cors: corsOptions
-    });
-    
-    const PORT = process.env.PORT || 10000;
-    
+// ---------------- App Setup ----------------
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: "*", methods: ["GET","POST"] }
+});
+const PORT = process.env.PORT || 10000;
 
 // ---------------- Admin ----------------
 const normaliseAdminUsername = (value) =>
