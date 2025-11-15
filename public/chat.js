@@ -3518,7 +3518,9 @@ function showLanding({ focusUsername = true } = {}) {
   cancelEnsureMessagesAtBottom();
   setViewMode("landing");
   if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = true;
+  if (chatContainer) chatContainer.style.display = "none";
   if (siteLanding) {
+    siteLanding.style.display = "block";
     try {
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch {
@@ -4667,6 +4669,7 @@ function completeRoomJoin(username, room, password) {
   updateQueryParams(room, password);
 
   if (roomName) roomName.textContent = room ? `#${room}` : "";
+  if (siteLanding) siteLanding.style.display = "none";
   if (usernamePrompt) usernamePrompt.style.display = "none";
 
   if (infowarsModalState.visible) {
@@ -4865,7 +4868,8 @@ socket.on("join room success", () => {
   clearReplyTarget();
   isViewingChat = true;
   if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = !window.currentRoom;
-  setViewMode("chat");
+  if (chatContainer) chatContainer.style.display = "flex";
+  if (siteLanding) siteLanding.style.display = "none";
   if (usernamePrompt) usernamePrompt.style.display = "none";
   input?.focus();
   scrollMessagesToBottom({ behavior: "smooth", delay: 80, force: true });
