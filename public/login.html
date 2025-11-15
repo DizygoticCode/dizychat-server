@@ -12,207 +12,55 @@
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 
-<body class="dark view-landing">
-  <div id="site-landing" class="site-landing">
-    <header class="hero-section" id="home">
-      <nav class="site-nav">
-        <div class="nav-logo">
-          <img
-            src="/logo.svg"
-            alt="DizyChat Logo"
-            class="logo"
-            data-dark-src="/logo.svg"
-            data-light-src="/logo-light.svg"
-          />
-          <span>DizyChat</span>
-        </div>
-        <ul class="nav-links">
-          <li><a href="#home">Home</a></li>
-          <li><a href="#overview">Overview</a></li>
-          <li><a href="#features">Features</a></li>
-          <li><a href="#how-it-works">How it works</a></li>
-          <li><a href="#join">Join</a></li>
-        </ul>
-      </nav>
-      <div class="hero-content">
-        <div class="hero-text">
-          <h1>Drop into the real-time Dizy community space.</h1>
-          <p>
-            DizyChat is the always-on lounge where Dizygotic supporters hang out, share
-            intel, swap memes, and stay synced during live shows. No clutter, no trackers—just
-            encrypted sockets, private rooms, and the vibe you build together.
-          </p>
-          <div class="hero-actions">
-            <a class="hero-primary" href="#join">Jump into a room</a>
-            <a class="hero-secondary" href="#how-it-works">How to use it</a>
-          </div>
-        </div>
-        <div class="cta-card">
-          <h3>Quick orientation</h3>
-          <ul>
-            <li>Pick a handle. No emails, just your alias.</li>
-            <li>Create or join a room name. Passwords keep private chats private.</li>
-            <li>Use copyable invite links to bring friends in instantly.</li>
-          </ul>
-        </div>
-      </div>
-    </header>
+<body class="dark">
+  <!-- ===========================
+       Landing Page
+       =========================== -->
+  <div id="username-prompt">
+    <img
+      src="/logo.svg"
+      alt="DizyChat Logo"
+      class="logo"
+      data-dark-src="/logo.svg"
+      data-light-src="/logo-light.svg"
+    />
+    <h1>Welcome to DizyChat</h1>
+    <div class="landing-inputs">
+      <input id="username-input" placeholder="Choose your username" />
+      <input id="room-input" placeholder="Enter room name" />
+      <input id="room-password" type="password" placeholder="Room password (optional)" />
+      <input
+        id="admin-password"
+        type="password"
+        placeholder="Admin Password"
+        hidden
+        aria-hidden="true"
+        autocomplete="current-password"
+      />
+      <button id="join-btn">Join Chat</button>
+    </div>
 
-    <main>
-      <section id="overview" class="section">
-        <h2>What is DizyChat?</h2>
-        <p class="section-lead">
-          Built by Dizygotic and Psybin, DizyChat is a focused, community-first chat stack that
-          runs on lightning fast Socket.IO infrastructure. Rooms can stay public for casual
-          hangouts or be locked down for trusted squads. You stay in control of your data while
-          still enjoying all the goodies like search, pinning, soundboards, and live streams.
-        </p>
-        <div class="site-details-grid">
-          <div class="site-details-card">
-            <h3>Community heartbeat</h3>
-            <p>
-              Follow live broadcasts together, drop instant reactions, and stay in sync when big
-              news hits. DizyChat is optimized for real-time momentum.
-            </p>
-          </div>
-          <div class="site-details-card">
-            <h3>Device-friendly</h3>
-            <p>
-              Works in any modern browser and powers the native apps via the same index page, so
-              you learn once and use it everywhere.
-            </p>
-          </div>
-          <div class="site-details-card">
-            <h3>Creator-owned</h3>
-            <p>
-              No outside networks, no harvested profiles. Everything lives on the Dizygotic stack
-              so the culture stays yours.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <section id="features" class="section">
-        <h2>Highlights</h2>
-        <p class="section-lead">All the essentials you need for a high-signal chat experience.</p>
-        <div class="feature-grid">
-          <div class="feature-card">
-            <h3>Persistent rooms</h3>
-            <p>Create themed hangouts or spin up private strategy zones with optional passwords.</p>
-          </div>
-          <div class="feature-card">
-            <h3>Search &amp; pins</h3>
-            <p>Find that one link from hours ago, star key drops, and keep missions pinned on top.</p>
-          </div>
-          <div class="feature-card">
-            <h3>Media ready</h3>
-            <p>Attach files, drop voice notes, browse GIFs, and tap built-in emoji palettes.</p>
-          </div>
-          <div class="feature-card">
-            <h3>Ambient extras</h3>
-            <p>Spin up Psybin Radio, watch the InfoWars feed, or cue soundboards while you chat.</p>
-          </div>
-        </div>
-      </section>
-
-      <section id="how-it-works" class="section">
-        <h2>Simple instructions</h2>
-        <p class="section-lead">
-          Getting started takes under a minute. Follow the steps below any time you invite someone
-          new to DizyChat.
-        </p>
-        <div class="instruction-steps">
-          <div class="instruction-step">
-            <h3>1. Choose your name</h3>
-            <p>Enter the alias you want everyone to see. You can change it next time you log in.</p>
-          </div>
-          <div class="instruction-step">
-            <h3>2. Pick a room</h3>
-            <p>
-              Join an existing room from the list or type a new name to create one. Add a password
-              if you want it private.
-            </p>
-          </div>
-          <div class="instruction-step">
-            <h3>3. Share the link</h3>
-            <p>Once inside, copy the invite link from the toolbar to bring the rest of the squad.</p>
-          </div>
-        </div>
-      </section>
-
-      <section id="join" class="section">
-        <div class="cta-card">
-          <h2>Ready to chat?</h2>
-          <p class="section-lead">
-            Use the panel below to log in. Usernames are instant. Room passwords are only needed
-            for private spaces, but feel free to set one so only the right people enter.
-          </p>
-          <div id="username-prompt">
-            <img
-              src="/logo.svg"
-              alt="DizyChat Logo"
-              class="logo"
-              data-dark-src="/logo.svg"
-              data-light-src="/logo-light.svg"
-            />
-            <h3>Sign in to a room</h3>
-            <div class="landing-inputs">
-              <input id="username-input" placeholder="Choose your username" />
-              <input id="room-input" placeholder="Enter room name" />
-              <input id="room-password" type="password" placeholder="Room password (optional)" />
-              <input
-                id="admin-password"
-                type="password"
-                placeholder="Admin Password"
-                hidden
-                aria-hidden="true"
-                autocomplete="current-password"
-              />
-              <button id="join-btn">Join Chat</button>
-            </div>
-
-            <div id="room-list">
-              <h3>Available Public Rooms</h3>
-              <ul id="public-room-list"></ul>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section id="faq" class="section">
-        <h2>Need a refresher?</h2>
-        <p class="section-lead">A few common answers for first-time visitors.</p>
-        <div class="faq">
-          <details>
-            <summary>Do I need an account or email?</summary>
-            <p>Nope. Just type your username and go. We store minimal metadata so conversations stay yours.</p>
-          </details>
-          <details>
-            <summary>How do I keep a room private?</summary>
-            <p>Enter a strong password before you hit join. Share that password only with trusted members.</p>
-          </details>
-        </div>
-      </section>
-    </main>
-
-    <footer class="site-footer">&copy; Dizygotic 2025. All rights reserved.</footer>
+    <div id="room-list">
+      <h3>Available Public Rooms</h3>
+      <ul id="public-room-list"></ul>
+    </div>
   </div>
 
   <!-- ===========================
        Chat Container
        =========================== -->
-  <div id="chat-container">
-    <header>
-      <div class="header-left">
-        <img
-          src="/logo.svg"
-          alt="Logo"
-          class="logo"
-          data-dark-src="/logo.svg"
-          data-light-src="/logo-light.svg"
-        />
-        <span id="room-name"></span>
-      </div>
+    <div id="chat-container" style="display:none;">
+      <header>
+        <div class="header-left">
+          <img
+            src="/logo.svg"
+            alt="Logo"
+            class="logo"
+            data-dark-src="/logo.svg"
+            data-light-src="/logo-light.svg"
+          />
+          <span id="room-name"></span>
+        </div>
       <div id="psybin-player" class="psybin-player" hidden aria-hidden="true">
         <div class="psybin-player-meta" id="psybin-meta" aria-live="polite">
           <span id="psybin-meta-status" class="psybin-player-meta-status" aria-hidden="true"></span>
