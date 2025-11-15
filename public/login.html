@@ -12,55 +12,57 @@
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 
-<body class="dark">
+<body class="dark view-landing">
   <!-- ===========================
-       Landing Page
+       Legacy Login Landing
        =========================== -->
-  <div id="username-prompt">
-    <img
-      src="/logo.svg"
-      alt="DizyChat Logo"
-      class="logo"
-      data-dark-src="/logo.svg"
-      data-light-src="/logo-light.svg"
-    />
-    <h1>Welcome to DizyChat</h1>
-    <div class="landing-inputs">
-      <input id="username-input" placeholder="Choose your username" />
-      <input id="room-input" placeholder="Enter room name" />
-      <input id="room-password" type="password" placeholder="Room password (optional)" />
-      <input
-        id="admin-password"
-        type="password"
-        placeholder="Admin Password"
-        hidden
-        aria-hidden="true"
-        autocomplete="current-password"
+  <div id="site-landing">
+    <div id="username-prompt">
+      <img
+        src="/logo.svg"
+        alt="DizyChat Logo"
+        class="logo"
+        data-dark-src="/logo.svg"
+        data-light-src="/logo-light.svg"
       />
-      <button id="join-btn">Join Chat</button>
-    </div>
+      <h1>Welcome to DizyChat</h1>
+      <div class="landing-inputs">
+        <input id="username-input" placeholder="Choose your username" />
+        <input id="room-input" placeholder="Enter room name" />
+        <input id="room-password" type="password" placeholder="Room password (optional)" />
+        <input
+          id="admin-password"
+          type="password"
+          placeholder="Admin Password"
+          hidden
+          aria-hidden="true"
+          autocomplete="current-password"
+        />
+        <button id="join-btn">Join Chat</button>
+      </div>
 
-    <div id="room-list">
-      <h3>Available Public Rooms</h3>
-      <ul id="public-room-list"></ul>
+      <div id="room-list">
+        <h3>Available Public Rooms</h3>
+        <ul id="public-room-list"></ul>
+      </div>
     </div>
   </div>
 
   <!-- ===========================
        Chat Container
        =========================== -->
-    <div id="chat-container" style="display:none;">
-      <header>
-        <div class="header-left">
-          <img
-            src="/logo.svg"
-            alt="Logo"
-            class="logo"
-            data-dark-src="/logo.svg"
-            data-light-src="/logo-light.svg"
-          />
-          <span id="room-name"></span>
-        </div>
+  <div id="chat-container">
+    <header>
+      <div class="header-left">
+        <img
+          src="/logo.svg"
+          alt="Logo"
+          class="logo"
+          data-dark-src="/logo.svg"
+          data-light-src="/logo-light.svg"
+        />
+        <span id="room-name"></span>
+      </div>
       <div id="psybin-player" class="psybin-player" hidden aria-hidden="true">
         <div class="psybin-player-meta" id="psybin-meta" aria-live="polite">
           <span id="psybin-meta-status" class="psybin-player-meta-status" aria-hidden="true"></span>
