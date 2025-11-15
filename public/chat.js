@@ -99,6 +99,7 @@ const replyPreviewText = document.getElementById("reply-preview-text");
 const replyPreviewCancel = document.getElementById("reply-preview-cancel");
 const quickEmojiPanel = document.getElementById("quick-emoji-panel");
 
+const siteLanding = document.getElementById("site-landing");
 const usernamePrompt = document.getElementById("username-prompt");
 const chatContainer = document.getElementById("chat-container");
 const joinBtn = document.getElementById("join-btn");
@@ -132,6 +133,18 @@ const psybinMetadataText = document.getElementById("psybin-meta-text");
 const scrollToLatestBtn = document.getElementById("scroll-to-latest");
 const scrollToLatestLabel = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-label") || null;
 const scrollToLatestCount = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-count") || null;
+const pageBody = typeof document !== "undefined" ? document.body : null;
+
+function setViewMode(mode) {
+  if (!pageBody) return;
+  const isChat = mode === "chat";
+  pageBody.classList.toggle("view-chat", isChat);
+  pageBody.classList.toggle("view-landing", !isChat);
+}
+
+if (pageBody) {
+  setViewMode(pageBody.classList.contains("view-chat") ? "chat" : "landing");
+}
 
 // ------------------- Emoji Usage Tracking -------------------
 const EMOJI_USAGE_STORAGE_KEY = "dizychat-emoji-usage";
@@ -3503,8 +3516,15 @@ function showLanding({ focusUsername = true } = {}) {
   appState.isAdmin = false;
   clearReplyTarget();
   cancelEnsureMessagesAtBottom();
+  setViewMode("landing");
   if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = true;
-  if (chatContainer) chatContainer.style.display = "none";
+  if (siteLanding) {
+    try {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {
+      /* ignore */
+    }
+  }
   if (usernamePrompt) usernamePrompt.style.display = "flex";
   if (roomName) roomName.textContent = lastRoomName ? `#${lastRoomName}` : "";
   hideSearchResults();
@@ -4618,6 +4638,7 @@ function completeRoomJoin(username, room, password) {
   lastRoomName = room;
   lastRoomPassword = password;
   isViewingChat = true;
+  setViewMode("chat");
   if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = !room;
 
   setPsybinPlayerRoom(room);
@@ -4647,7 +4668,6 @@ function completeRoomJoin(username, room, password) {
 
   if (roomName) roomName.textContent = room ? `#${room}` : "";
   if (usernamePrompt) usernamePrompt.style.display = "none";
-  if (chatContainer) chatContainer.style.display = "flex";
 
   if (infowarsModalState.visible) {
     applyInfowarsModalLayout();
@@ -4845,7 +4865,7 @@ socket.on("join room success", () => {
   clearReplyTarget();
   isViewingChat = true;
   if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = !window.currentRoom;
-  if (chatContainer) chatContainer.style.display = "flex";
+  setViewMode("chat");
   if (usernamePrompt) usernamePrompt.style.display = "none";
   input?.focus();
   scrollMessagesToBottom({ behavior: "smooth", delay: 80, force: true });
