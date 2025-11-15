@@ -3407,7 +3407,11 @@ body:not(.dark) #soundboard-btn {
     max-height: min(120px, 60vw);
   }
   #username-prompt h1 { font-size: 1.4em; }
-  .landing-inputs { width: 100%; max-width: 260px; flex-direction: column; gap: 8px; }
+  .landing-inputs {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
   .landing-inputs input { width: 100%; padding: 10px 12px; font-size: 0.95em; }
   #join-btn { width: 100%; padding: 10px; font-size: 1em; }
   #room-list h3 { font-size: 1em; }
