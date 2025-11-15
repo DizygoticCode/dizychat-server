@@ -99,6 +99,7 @@ const replyPreviewText = document.getElementById("reply-preview-text");
 const replyPreviewCancel = document.getElementById("reply-preview-cancel");
 const quickEmojiPanel = document.getElementById("quick-emoji-panel");
 
+const siteLanding = document.getElementById("site-landing");
 const usernamePrompt = document.getElementById("username-prompt");
 const chatContainer = document.getElementById("chat-container");
 const joinBtn = document.getElementById("join-btn");
@@ -3505,6 +3506,14 @@ function showLanding({ focusUsername = true } = {}) {
   cancelEnsureMessagesAtBottom();
   if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = true;
   if (chatContainer) chatContainer.style.display = "none";
+  if (siteLanding) {
+    siteLanding.style.display = "block";
+    try {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {
+      /* ignore */
+    }
+  }
   if (usernamePrompt) usernamePrompt.style.display = "flex";
   if (roomName) roomName.textContent = lastRoomName ? `#${lastRoomName}` : "";
   hideSearchResults();
@@ -4646,6 +4655,7 @@ function completeRoomJoin(username, room, password) {
   updateQueryParams(room, password);
 
   if (roomName) roomName.textContent = room ? `#${room}` : "";
+  if (siteLanding) siteLanding.style.display = "none";
   if (usernamePrompt) usernamePrompt.style.display = "none";
   if (chatContainer) chatContainer.style.display = "flex";
 
@@ -4846,6 +4856,7 @@ socket.on("join room success", () => {
   isViewingChat = true;
   if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = !window.currentRoom;
   if (chatContainer) chatContainer.style.display = "flex";
+  if (siteLanding) siteLanding.style.display = "none";
   if (usernamePrompt) usernamePrompt.style.display = "none";
   input?.focus();
   scrollMessagesToBottom({ behavior: "smooth", delay: 80, force: true });
