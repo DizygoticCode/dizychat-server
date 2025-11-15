@@ -2022,6 +2022,11 @@ server.listen(PORT, () => {
   console.log(`[Server] Listening on ${PORT}`);
 });
 
+// ---------------- Dedicated Chat Route ----------------
+app.get(['/login', '/chat', '/app'], (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
 // ---------------- Catch-all Route ----------------
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
