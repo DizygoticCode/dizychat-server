@@ -133,6 +133,18 @@ const psybinMetadataText = document.getElementById("psybin-meta-text");
 const scrollToLatestBtn = document.getElementById("scroll-to-latest");
 const scrollToLatestLabel = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-label") || null;
 const scrollToLatestCount = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-count") || null;
+const pageBody = typeof document !== "undefined" ? document.body : null;
+
+function setViewMode(mode) {
+  if (!pageBody) return;
+  const isChat = mode === "chat";
+  pageBody.classList.toggle("view-chat", isChat);
+  pageBody.classList.toggle("view-landing", !isChat);
+}
+
+if (pageBody) {
+  setViewMode(pageBody.classList.contains("view-chat") ? "chat" : "landing");
+}
 
 // ------------------- Emoji Usage Tracking -------------------
 const EMOJI_USAGE_STORAGE_KEY = "dizychat-emoji-usage";
@@ -3504,6 +3516,7 @@ function showLanding({ focusUsername = true } = {}) {
   appState.isAdmin = false;
   clearReplyTarget();
   cancelEnsureMessagesAtBottom();
+  setViewMode("landing");
   if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = true;
   if (chatContainer) chatContainer.style.display = "none";
   if (siteLanding) {
@@ -4627,6 +4640,7 @@ function completeRoomJoin(username, room, password) {
   lastRoomName = room;
   lastRoomPassword = password;
   isViewingChat = true;
+  setViewMode("chat");
   if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = !room;
 
   setPsybinPlayerRoom(room);
@@ -4657,7 +4671,6 @@ function completeRoomJoin(username, room, password) {
   if (roomName) roomName.textContent = room ? `#${room}` : "";
   if (siteLanding) siteLanding.style.display = "none";
   if (usernamePrompt) usernamePrompt.style.display = "none";
-  if (chatContainer) chatContainer.style.display = "flex";
 
   if (infowarsModalState.visible) {
     applyInfowarsModalLayout();

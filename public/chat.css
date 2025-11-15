@@ -150,6 +150,10 @@ body.compact-mode {
 /* ==============================
    Body & Chat Container
    ============================== */
+html {
+  height: 100%;
+}
+
 body {
   font-family: 'Segoe UI', sans-serif;
   margin: 0;
@@ -159,6 +163,22 @@ body {
   overflow-x: hidden;
   background: var(--bg);
   color: var(--text-primary);
+}
+
+body.view-landing {
+  overflow-y: auto;
+}
+
+body.view-chat {
+  overflow-y: hidden;
+}
+
+body.view-landing #chat-container {
+  display: none;
+}
+
+body.view-chat #site-landing {
+  display: none;
 }
 
 @supports (height: 100dvh) {
