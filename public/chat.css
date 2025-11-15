@@ -150,28 +150,27 @@ body.compact-mode {
 /* ==============================
    Body & Chat Container
    ============================== */
+html {
+  height: 100%;
+}
+
 body {
   font-family: 'Segoe UI', sans-serif;
   margin: 0;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
   overflow-x: hidden;
   background: var(--bg);
   color: var(--text-primary);
 }
 
 body.view-landing {
-  height: auto;
-  min-height: 100vh;
   overflow-y: auto;
 }
 
 body.view-chat {
-  height: 100vh;
-  min-height: 100vh;
   overflow-y: hidden;
-  overscroll-behavior: contain;
 }
 
 body.view-landing #chat-container {
@@ -183,8 +182,7 @@ body.view-chat #site-landing {
 }
 
 @supports (height: 100dvh) {
-  body.view-chat {
-    height: 100dvh;
+  body {
     min-height: 100dvh;
   }
 }
@@ -207,8 +205,7 @@ body.dark { background: var(--bg); color: var(--text-primary); }
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
-  min-height: 0;
-  height: 100%;
+  min-height: 100vh;
   background: var(--bg);
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
     env(safe-area-inset-left);
@@ -486,15 +483,9 @@ section[id] {
 
 .landing-inputs {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   width: 100%;
   gap: 12px;
-}
-
-@media (min-width: 768px) {
-  .landing-inputs {
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  }
 }
 
 .landing-inputs input {
