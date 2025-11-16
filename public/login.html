@@ -76,62 +76,13 @@
         <audio id="psybin-audio" preload="none" aria-hidden="true"></audio>
       </div>
       <div class="header-right">
-        <div class="search-stack">
-          <div class="search-bar">
-            <input id="message-search" type="search" placeholder="Search messages…" aria-label="Search messages" />
-            <select id="message-search-filter" aria-label="Search filter">
-              <option value="all">All</option>
-              <option value="pinned">Pinned</option>
-              <option value="starred">Starred</option>
-            </select>
-            <button
-              type="button"
-              id="search-advanced-toggle"
-              class="search-advanced-toggle"
-              aria-label="Toggle advanced filters"
-              aria-expanded="false"
-              aria-controls="search-advanced"
-            >Filters</button>
-            <button
-              type="button"
-              id="search-export-btn"
-              class="search-export-btn"
-              title="Download search CSV"
-              aria-label="Download search CSV"
-              disabled
-            >CSV</button>
-          </div>
-          <div id="search-advanced" class="search-advanced" hidden>
-            <div class="search-advanced-row">
-              <label>
-                <span>From user</span>
-                <input id="search-from-user" type="text" placeholder="@username" autocomplete="off" />
-              </label>
-              <label>
-                <span>From date</span>
-                <input id="search-date-from" type="date" />
-              </label>
-              <label>
-                <span>To date</span>
-                <input id="search-date-to" type="date" />
-              </label>
-            </div>
-            <div class="search-advanced-row search-advanced-row--spread">
-              <fieldset class="search-content-types">
-                <legend>Content</legend>
-                <label><input type="checkbox" name="search-content-type" value="text" checked /> Text</label>
-                <label><input type="checkbox" name="search-content-type" value="attachments" checked /> Attachments</label>
-                <label><input type="checkbox" name="search-content-type" value="system" checked /> System</label>
-              </fieldset>
-              <div class="search-saved-controls">
-                <button type="button" id="search-save-btn" disabled>Save query</button>
-                <select id="search-saved-select" aria-label="Saved searches">
-                  <option value="__placeholder" selected>Saved searches…</option>
-                </select>
-                <button type="button" id="search-delete-saved" disabled>Delete</button>
-              </div>
-            </div>
-          </div>
+        <div class="search-bar">
+          <input id="message-search" type="search" placeholder="Search messages…" aria-label="Search messages" />
+          <select id="message-search-filter" aria-label="Search filter">
+            <option value="all">All</option>
+            <option value="pinned">Pinned</option>
+            <option value="starred">Starred</option>
+          </select>
         </div>
         <button id="toggle-theme" title="Toggle Theme">🌓</button>
         <button id="toggle-density" class="density-toggle" title="Toggle compact view" aria-pressed="false">
@@ -174,25 +125,8 @@
       <div class="stream-resize-handle" aria-hidden="true"></div>
     </div>
 
-      <div id="chat-main">
+    <div id="chat-main">
       <div id="chat-content">
-        <button
-          type="button"
-          id="pin-hub-toggle"
-          class="pin-hub-toggle"
-          hidden
-          aria-hidden="true"
-          aria-haspopup="dialog"
-          aria-expanded="false"
-        >
-          <span class="icon" aria-hidden="true">📌</span>
-          <span class="label">Pins &amp; Stars</span>
-          <span class="counts">
-            <span class="pin-count" id="pin-hub-pin-count">0</span>
-            <span aria-hidden="true">•</span>
-            <span class="star-count" id="pin-hub-star-count">0</span>
-          </span>
-        </button>
         <div id="pinned-messages" style="display:none;"></div>
         <div id="search-results" hidden></div>
         <div id="messages"></div>
@@ -210,13 +144,6 @@
           </div>
           <button type="button" id="reply-preview-cancel" aria-label="Cancel reply">✕</button>
         </div>
-        <div
-          id="composer-draft-tray"
-          class="composer-draft-tray"
-          hidden
-          aria-live="polite"
-          aria-label="Draft attachments"
-        ></div>
         <form id="form">
           <input type="file" id="file-input" hidden />
           <button type="button" id="file-attach" title="Attach file">📎</button>
@@ -267,132 +194,12 @@
           <h2>Online</h2>
           <span id="user-count">0</span>
         </div>
-        <section id="profile-editor" class="profile-editor" aria-label="Your profile">
-          <div class="profile-editor-top">
-            <div class="profile-avatar-field">
-              <div id="profile-avatar-preview" class="profile-avatar-preview" aria-live="polite">
-                <img alt="" loading="lazy" hidden />
-                <span aria-hidden="true">?</span>
-              </div>
-              <div class="profile-avatar-actions">
-                <button type="button" id="profile-avatar-button" class="link">Change photo</button>
-                <button type="button" id="profile-avatar-remove" class="link subtle">Remove</button>
-              </div>
-              <input type="file" id="profile-avatar-input" accept="image/*" hidden />
-            </div>
-            <div class="profile-editor-fields">
-              <label>
-                <span>Status</span>
-                <input id="profile-status" maxlength="80" placeholder="Share what you're doing" />
-              </label>
-              <label>
-                <span>Now playing</span>
-                <input id="profile-now-playing" maxlength="80" placeholder="Add a song or stream" />
-              </label>
-            </div>
-          </div>
-          <label class="profile-bio-field">
-            <span>Bio</span>
-            <textarea
-              id="profile-bio"
-              rows="3"
-              maxlength="200"
-              placeholder="Short bio, link, or vibe"
-            ></textarea>
-          </label>
-          <button type="button" id="profile-save" class="profile-save-btn" disabled>
-            Share profile
-          </button>
-        </section>
         <ul id="user-list"></ul>
         <p id="user-list-empty" class="user-empty">No one else is here yet.</p>
       </aside>
     </div>
 
     <div id="user-context-menu" class="user-context-menu" role="menu" aria-hidden="true" hidden></div>
-    <div id="profile-sheet" class="profile-sheet" hidden aria-hidden="true">
-      <div class="profile-sheet-overlay" data-profile-close></div>
-      <aside
-        id="profile-sheet-panel"
-        class="profile-sheet-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="profile-sheet-name"
-        tabindex="-1"
-      >
-        <header class="profile-sheet-header">
-          <div id="profile-sheet-avatar" class="profile-sheet-avatar" aria-hidden="true"></div>
-          <div class="profile-sheet-heading">
-            <p class="profile-sheet-eyebrow">Profile</p>
-            <h2 id="profile-sheet-name"></h2>
-            <p id="profile-sheet-status" class="profile-sheet-status" hidden></p>
-            <p id="profile-sheet-now-playing" class="profile-sheet-now-playing" hidden></p>
-          </div>
-          <button type="button" id="profile-sheet-close" class="profile-sheet-close" aria-label="Close profile panel">
-            ✕
-          </button>
-        </header>
-        <p id="profile-sheet-bio" class="profile-sheet-bio empty">No bio yet.</p>
-        <div class="profile-sheet-actions">
-          <button type="button" id="profile-sheet-mention" class="profile-chip">@ Mention</button>
-          <button type="button" id="profile-sheet-thread-toggle" class="profile-chip">Side thread</button>
-        </div>
-        <section id="profile-thread" class="profile-thread" hidden>
-          <h3>Side thread</h3>
-          <ol id="profile-thread-messages" class="profile-thread-messages"></ol>
-          <div class="profile-thread-composer">
-            <textarea id="profile-thread-input" rows="2" placeholder="Send a quick DM-style note…"></textarea>
-            <button type="button" id="profile-thread-send">Send</button>
-          </div>
-        </section>
-      </aside>
-    </div>
-    <div id="pin-hub" class="pin-hub" hidden aria-hidden="true">
-      <div id="pin-hub-overlay" class="pin-hub-overlay" tabindex="-1"></div>
-      <aside
-        id="pin-hub-panel"
-        class="pin-hub-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="pin-hub-title"
-        tabindex="-1"
-      >
-        <header class="pin-hub-header">
-          <div>
-            <p class="pin-hub-eyebrow">Room highlights</p>
-            <h2 id="pin-hub-title">Pins &amp; Stars</h2>
-            <p class="pin-hub-subtitle">Jump back to every pinned or starred moment in this room.</p>
-          </div>
-          <div class="pin-hub-header-actions">
-            <button type="button" id="pin-hub-recap" class="pin-hub-action" disabled title="Pin or star something to enable this">
-              Share recap
-            </button>
-            <button type="button" id="pin-hub-close" class="pin-hub-close" aria-label="Close pins &amp; stars panel">✕</button>
-          </div>
-        </header>
-        <p id="pin-hub-reorder-hint" class="pin-hub-hint" hidden>
-          Admins can reorder pins with the arrow buttons to update the room-wide order.
-        </p>
-        <div class="pin-hub-body">
-          <section class="pin-hub-section">
-            <div class="pin-hub-section-header">
-              <h3>📌 Pinned</h3>
-              <span id="pin-hub-pins-total" class="pin-hub-section-count">0</span>
-            </div>
-            <p id="pin-hub-pins-empty" class="pin-hub-empty">No pinned messages yet.</p>
-            <ol id="pin-hub-pin-list" class="pin-hub-list"></ol>
-          </section>
-          <section class="pin-hub-section">
-            <div class="pin-hub-section-header">
-              <h3>⭐ Starred</h3>
-              <span id="pin-hub-stars-total" class="pin-hub-section-count">0</span>
-            </div>
-            <p id="pin-hub-stars-empty" class="pin-hub-empty">No starred posts yet.</p>
-            <ol id="pin-hub-star-list" class="pin-hub-list"></ol>
-          </section>
-        </div>
-      </aside>
-    </div>
   </div>
 
   <!-- ===========================
