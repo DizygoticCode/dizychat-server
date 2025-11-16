@@ -1648,10 +1648,12 @@ const getPublicRoomsSnapshot = () => {
     });
   }
 
-  return Array.from(rooms.values()).sort((a, b) => {
-    if (b.occupants !== a.occupants) return b.occupants - a.occupants;
-    return a.name.localeCompare(b.name);
-  });
+  return Array.from(rooms.values())
+    .filter((room) => !room.requiresPassword)
+    .sort((a, b) => {
+      if (b.occupants !== a.occupants) return b.occupants - a.occupants;
+      return a.name.localeCompare(b.name);
+    });
 };
 
 const emitRoomListUpdate = () => {

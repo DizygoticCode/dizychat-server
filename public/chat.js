@@ -76,6 +76,13 @@ let lastRoomName = "";
 let lastRoomPassword = "";
 let latestPublicRooms = [];
 
+const DEFAULT_PUBLIC_ROOMS = [
+  "General Chat",
+  "InfoWars Chat",
+  "Drum & Bass Chat",
+  "Psybin Radio",
+];
+
 const replyState = {
   targetId: null,
 };
@@ -191,6 +198,10 @@ const scrollToLatestBtn = document.getElementById("scroll-to-latest");
 const scrollToLatestLabel = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-label") || null;
 const scrollToLatestCount = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-count") || null;
 const pageBody = typeof document !== "undefined" ? document.body : null;
+
+// Seed the login view with the default list of persistent rooms so the
+// interface never renders empty while we wait for socket responses.
+renderPublicRooms([]);
 
 function setViewMode(mode) {
   if (!pageBody) return;
@@ -5323,12 +5334,12 @@ socket.on("join error", (msg) => showToast(msg || "Join failed.", "error"));
 socket.on("toast", (data) => showToast(data?.text || "", data?.type || "info"));
 socket.on("connect", () => {
   showToast("Connected", "success");
-  renderPublicRooms([], { state: "loading" });
+  renderPublicRooms(latestPublicRooms);
   socket.emit("request rooms");
 });
 socket.on("disconnect", () => {
   showToast("Disconnected", "error");
-  renderPublicRooms([], { state: "error" });
+  renderPublicRooms(latestPublicRooms);
   hideSearchResults();
 });
 socket.on("room list", (rooms) => {
@@ -6661,10 +6672,51 @@ function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
     return;
   }
 
-  const data = Array.isArray(rooms) ? rooms.filter(Boolean) : [];
-  latestPublicRooms = data;
+  const baseRooms = Array.isArray(rooms) ? rooms.filter(Boolean) : [];
+  const normalized = [];
+  const seenNames = new Set();
 
-  if (!data.length) {
+  baseRooms.forEach((room) => {
+    const roomNameValue = typeof room?.name === "string" ? room.name.trim() : "";
+    if (!roomNameValue || seenNames.has(roomNameValue)) return;
+
+    const requiresPassword = Boolean(room?.requiresPassword);
+    if (requiresPassword) {
+      seenNames.add(roomNameValue);
+      return;
+    }
+
+    const normalizedRoom = {
+      name: roomNameValue,
+      occupants: Number.isFinite(Number(room?.occupants))
+        ? Math.max(0, Number(room.occupants))
+        : 0,
+      requiresPassword,
+    };
+
+    normalized.push({ ...room, ...normalizedRoom });
+    seenNames.add(roomNameValue);
+  });
+
+  DEFAULT_PUBLIC_ROOMS.forEach((roomNameValue) => {
+    if (seenNames.has(roomNameValue)) return;
+    normalized.push({
+      name: roomNameValue,
+      occupants: 0,
+      requiresPassword: false,
+      isFallback: true,
+    });
+    seenNames.add(roomNameValue);
+  });
+
+  normalized.sort((a, b) => {
+    if (b.occupants !== a.occupants) return b.occupants - a.occupants;
+    return a.name.localeCompare(b.name);
+  });
+
+  latestPublicRooms = normalized;
+
+  if (!normalized.length) {
     const emptyItem = document.createElement("li");
     emptyItem.className = "empty";
     emptyItem.textContent = "No public rooms are open yet.";
@@ -6672,7 +6724,7 @@ function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
     return;
   }
 
-  data.forEach((room) => {
+  normalized.forEach((room) => {
     const roomNameValue = typeof room?.name === "string" ? room.name : "";
     if (!roomNameValue) return;
 
