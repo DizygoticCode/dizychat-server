@@ -6,260 +6,317 @@
     name="viewport"
     content="width=device-width, initial-scale=1.0, viewport-fit=cover"
   />
-  <title>DizyChat</title>
+  <title>DizyChat — Host unforgettable rooms</title>
   <link rel="icon" href="/logo.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/chat.css" />
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Inter", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #e2e8f0;
+      background: radial-gradient(circle at top, rgba(147, 51, 234, 0.4), rgba(15, 23, 42, 0.9) 45%),
+        #020617;
+    }
+
+    .page {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      padding: 32px clamp(20px, 6vw, 72px) 48px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .wordmark {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #f8fafc;
+      text-decoration: none;
+    }
+
+    .wordmark img {
+      width: 42px;
+      height: 42px;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 20px;
+      font-size: 0.95rem;
+    }
+
+    .nav-links a {
+      color: #cbd5f5;
+      text-decoration: none;
+      opacity: 0.85;
+    }
+
+    .nav-links a:hover {
+      opacity: 1;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: clamp(32px, 6vw, 64px);
+      align-items: center;
+      margin-top: clamp(48px, 9vw, 96px);
+    }
+
+    .hero-eyebrow {
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      color: rgba(248, 250, 252, 0.7);
+      font-size: 0.8rem;
+    }
+
+    h1 {
+      font-size: clamp(2.5rem, 6vw, 3.5rem);
+      margin: 16px 0;
+      color: #f8fafc;
+    }
+
+    .lead {
+      font-size: 1.1rem;
+      line-height: 1.7;
+      max-width: 48ch;
+      color: rgba(226, 232, 240, 0.9);
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-top: 28px;
+    }
+
+    .hero-actions.center {
+      justify-content: center;
+    }
+
+    .primary-btn,
+    .ghost-btn {
+      border-radius: 999px;
+      border: none;
+      font-weight: 600;
+      padding: 14px 28px;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: transform 120ms ease, box-shadow 120ms ease;
+    }
+
+    .primary-btn {
+      background: linear-gradient(120deg, #a855f7, #ec4899);
+      color: #fff;
+      box-shadow: 0 20px 35px rgba(168, 85, 247, 0.3);
+    }
+
+    .ghost-btn {
+      background: transparent;
+      border: 1px solid rgba(226, 232, 240, 0.5);
+      color: rgba(226, 232, 240, 0.9);
+    }
+
+    .primary-btn:hover,
+    .ghost-btn:hover {
+      transform: translateY(-2px);
+    }
+
+    .hero-card {
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      border-radius: 28px;
+      padding: clamp(24px, 5vw, 32px);
+      box-shadow: 0 25px 60px rgba(2, 6, 23, 0.8);
+    }
+
+    .hero-card h2 {
+      margin: 0 0 16px;
+      color: #f8fafc;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 18px;
+    }
+
+    .stat {
+      background: rgba(8, 47, 73, 0.4);
+      border-radius: 18px;
+      padding: 18px;
+    }
+
+    .stat-value {
+      font-size: 1.7rem;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+
+    section.features {
+      margin-top: clamp(64px, 12vw, 120px);
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 24px;
+    }
+
+    .feature-card {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 20px;
+      padding: 20px;
+      min-height: 180px;
+    }
+
+    .feature-card h3 {
+      margin-top: 0;
+      color: #f8fafc;
+    }
+
+    .feature-card p {
+      color: rgba(226, 232, 240, 0.85);
+      line-height: 1.5;
+    }
+
+    .cta-panel {
+      margin-top: clamp(56px, 8vw, 100px);
+      background: linear-gradient(120deg, rgba(14, 165, 233, 0.12), rgba(236, 72, 153, 0.12));
+      border: 1px solid rgba(236, 72, 153, 0.3);
+      border-radius: 32px;
+      padding: clamp(28px, 8vw, 48px);
+      text-align: center;
+    }
+
+    footer {
+      margin-top: auto;
+      padding-top: 40px;
+      font-size: 0.85rem;
+      color: rgba(148, 163, 184, 0.8);
+      text-align: center;
+    }
+
+    @media (max-width: 600px) {
+      header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .hero-actions {
+        flex-direction: column;
+        width: 100%;
+      }
+
+      .primary-btn,
+      .ghost-btn {
+        width: 100%;
+        text-align: center;
+      }
+    }
+  </style>
 </head>
 
-<body class="dark">
-  <!-- ===========================
-       Landing Page
-       =========================== -->
-  <div id="username-prompt">
-      <img
-        src="/logo.svg"
-        alt="DizyChat Logo"
-        class="logo"
-        data-dark-src="/logo.svg"
-        data-light-src="/logo-light.svg"
-      />
-      <h1>Welcome to DizyChat</h1>
-      <div class="landing-inputs">
-        <input id="username-input" placeholder="Choose your username" />
-        <input id="room-input" placeholder="Enter room name" />
-        <input id="room-password" type="password" placeholder="Room password (optional)" />
-        <input
-          id="admin-password"
-          type="password"
-          placeholder="Admin Password"
-          hidden
-          aria-hidden="true"
-          autocomplete="current-password"
-        />
-        <button id="join-btn">Join Chat</button>
-      </div>
-
-      <div id="room-list">
-        <h3>Available Public Rooms</h3>
-        <ul id="public-room-list"></ul>
-      </div>
-    </div>
-
-  <!-- ===========================
-       Chat Container
-       =========================== -->
-  <div id="chat-container" style="display:none;">
+<body>
+  <div class="page">
     <header>
-      <div class="header-left">
-        <img
-          src="/logo.svg"
-          alt="Logo"
-          class="logo"
-          data-dark-src="/logo.svg"
-          data-light-src="/logo-light.svg"
-        />
-        <span id="room-name"></span>
-      </div>
-      <div id="psybin-player" class="psybin-player" hidden aria-hidden="true">
-        <div class="psybin-player-meta" id="psybin-meta" aria-live="polite">
-          <span id="psybin-meta-status" class="psybin-player-meta-status" aria-hidden="true"></span>
-          <span id="psybin-meta-text" class="psybin-player-meta-text">Live Psybin Radio stream</span>
-        </div>
-        <div class="psybin-player-controls">
-          <span class="psybin-player-label">Psybin Radio</span>
-          <button type="button" id="psybin-play" class="psybin-player-button" aria-label="Play Psybin Radio">▶</button>
-          <button type="button" id="psybin-mute" class="psybin-player-button" aria-label="Mute Psybin Radio" disabled>🔊</button>
-          <label for="psybin-volume" class="sr-only">Psybin Radio volume</label>
-          <input type="range" id="psybin-volume" class="psybin-player-volume" min="0" max="1" step="0.01" value="1" disabled />
-        </div>
-        <audio id="psybin-audio" preload="none" aria-hidden="true"></audio>
-      </div>
-      <div class="header-right">
-        <div class="search-bar">
-          <input id="message-search" type="search" placeholder="Search messages…" aria-label="Search messages" />
-          <select id="message-search-filter" aria-label="Search filter">
-            <option value="all">All</option>
-            <option value="pinned">Pinned</option>
-            <option value="starred">Starred</option>
-          </select>
-        </div>
-        <button id="toggle-theme" title="Toggle Theme">🌓</button>
-        <button id="toggle-density" class="density-toggle" title="Toggle compact view" aria-pressed="false">
-          <span class="icon" aria-hidden="true">🗜️</span>
-          <span class="sr-only">Switch to compact layout</span>
-        </button>
-        <button id="toggle-sounds" class="sound-toggle" title="Enable sound notifications" aria-pressed="false">
-          <span class="icon" aria-hidden="true">🔈</span>
-          <span class="sr-only">Enable sound notifications</span>
-        </button>
-        <button id="copy-join-link" title="Copy Join Link">
-          <span class="icon" aria-hidden="true">🔗</span>
-          <span class="label">Copy Join Link</span>
-        </button>
-        <button id="leave-btn" title="Exit Chat">Leave</button>
-      </div>
+      <a class="wordmark" href="/">
+        <img src="/logo-light.svg" alt="DizyChat logo" />
+        <span>DizyChat</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#features">Features</a>
+        <a href="https://github.com/DizzyYogini/dizychat" target="_blank" rel="noreferrer">GitHub</a>
+        <a href="mailto:hello@dizy.chat">Contact</a>
+      </nav>
     </header>
 
-    <div id="infowars-stream-modal" class="stream-modal" hidden aria-hidden="true">
-      <div class="stream-modal-header">
-        <div class="stream-modal-title">
-          <span aria-hidden="true">📺</span>
-          <span>InfoWars Live Stream</span>
-        </div>
-        <div class="stream-modal-controls">
-          <button
-            type="button"
-            id="infowars-stream-collapse"
-            class="stream-modal-button"
-            title="Minimize stream"
-            aria-label="Minimize stream"
-          >▾</button>
-        </div>
-      </div>
-      <div class="stream-modal-body">
-        <div id="infowars-stream-frame">
-          <div id="rumble_v64cgzd"></div>
-        </div>
-      </div>
-      <div class="stream-resize-handle" aria-hidden="true"></div>
-    </div>
-
-    <div id="chat-main">
-      <div id="chat-content">
-        <div id="pinned-messages" style="display:none;"></div>
-        <div id="search-results" hidden></div>
-        <div id="messages"></div>
-        <button type="button" id="scroll-to-latest" class="scroll-to-latest" hidden aria-hidden="true">
-          <span class="scroll-to-latest-label">Jump to present</span>
-          <span class="scroll-to-latest-count" aria-hidden="true"></span>
-        </button>
-        <div id="typing-bubble" class="hide" aria-live="polite" aria-hidden="true"></div>
-
-        <!-- Message input -->
-        <div id="reply-preview" hidden>
-          <div class="reply-preview-content" tabindex="0" role="button">
-            <div class="reply-preview-title">Replying to <span id="reply-preview-author"></span></div>
-            <div id="reply-preview-text" class="reply-preview-text"></div>
-          </div>
-          <button type="button" id="reply-preview-cancel" aria-label="Cancel reply">✕</button>
-        </div>
-        <form id="form">
-          <input type="file" id="file-input" hidden />
-          <button type="button" id="file-attach" title="Attach file">📎</button>
-          <button
-            type="button"
-            id="voice-btn"
-            title="Click to record a voice message"
-            aria-label="Click to record a voice message"
-            hidden
-            aria-hidden="true"
-          >🎙️</button>
-          <button type="button" id="gif-btn" title="Send GIF">
-            <span aria-hidden="true">GIF</span>
-            <span class="sr-only">Open GIF picker</span>
+    <main>
+      <div>
+        <div class="hero-eyebrow">Curated real-time communities</div>
+        <h1>Spin up private or public rooms with serious vibes.</h1>
+        <p class="lead">
+          DizyChat keeps the chaos organized with live moderation tools, per-room audio streams,
+          and community-first controls. Give guests a branded entry point before they drop into the chat.
+        </p>
+        <div class="hero-actions">
+          <button class="primary-btn" type="button" onclick="window.location.href='/login'">
+            Enter the chat lobby
           </button>
-          <button type="button" id="emoji-btn" title="Emoji">😊</button>
-          <input id="input" autocomplete="off" placeholder="Type a message..." />
-          <div
-            id="quick-emoji-panel"
-            class="quick-emoji-panel"
-            aria-label="Frequently used emojis"
-            role="group"
-          ></div>
-          <button type="submit" title="Send">➤</button>
-        </form>
-
-        <!-- Upload progress bar -->
-        <div class="upload-progress" style="display:none;">
-          <div class="upload-bar"></div>
-        </div>
-        <!-- Visible progress element (styled purple in CSS) -->
-        <progress id="upload-progress" value="0" max="100" style="display:none"></progress>
-
-        <!-- Emoji picker -->
-        <div id="emoji-picker">
-          <div id="quick-emojis" hidden>
-            <button>😀</button>
-            <button>😂</button>
-            <button>😍</button>
-            <button>😎</button>
-            <button>👍</button>
-          </div>
+          <button class="ghost-btn" type="button" onclick="document.getElementById('features').scrollIntoView({ behavior: 'smooth' });">
+            Explore features
+          </button>
         </div>
       </div>
 
-      <aside id="user-sidebar" aria-label="Online users">
-        <div class="sidebar-header">
-          <h2>Online</h2>
-          <span id="user-count">0</span>
+      <div class="hero-card" aria-label="DizyChat highlights">
+        <h2>Why hosts use DizyChat</h2>
+        <div class="stats">
+          <div class="stat">
+            <div class="stat-value">12K+</div>
+            <p>messages moderated per day with AI-assisted tooling.</p>
+          </div>
+          <div class="stat">
+            <div class="stat-value">24/7</div>
+            <p>rooms stay live thanks to resilient socket infrastructure.</p>
+          </div>
+          <div class="stat">
+            <div class="stat-value">∞</div>
+            <p>emoji, GIF, and soundboard combos to keep energy up.</p>
+          </div>
         </div>
-        <ul id="user-list"></ul>
-        <p id="user-list-empty" class="user-empty">No one else is here yet.</p>
-      </aside>
-    </div>
+      </div>
+    </main>
 
-    <div id="user-context-menu" class="user-context-menu" role="menu" aria-hidden="true" hidden></div>
+    <section class="features" id="features">
+      <article class="feature-card">
+        <h3>Instant onboarding</h3>
+        <p>Create a lobby, set a password (or keep it public), and share the invite link—all without touching a dashboard.</p>
+      </article>
+      <article class="feature-card">
+        <h3>Broadcast ready</h3>
+        <p>Drop in live streams or the Psybin Radio player so every room can vibe to the same soundtrack.</p>
+      </article>
+      <article class="feature-card">
+        <h3>Moderator superpowers</h3>
+        <p>Star, pin, purge, or silence straight from the chat window. Role-aware tools keep chaos under control.</p>
+      </article>
+      <article class="feature-card">
+        <h3>Apps, desktop, mobile</h3>
+        <p>The login at <code>/login</code> works on every device—including the native builds driven by this server.</p>
+      </article>
+    </section>
+
+    <section class="cta-panel">
+      <h2>Ready to open the doors?</h2>
+      <p>Let the marketing splash greet your guests, then drop them into the battle-tested chat experience.</p>
+      <div class="hero-actions center">
+        <button class="primary-btn" type="button" onclick="window.location.href='/login'">
+          Join DizyChat
+        </button>
+      </div>
+    </section>
+
+    <footer>
+      © <span id="year"></span> DizyChat • Built for high-signal communities.
+    </footer>
   </div>
-
-  <!-- ===========================
-       Scripts
-       =========================== -->
-  <script src="/socket.io/socket.io.js"></script>
-  <script src="/app-config.js"></script>
-  <script src="/chat.js"></script>
-
   <script>
-    !function (r, u, m, b, l, e) {
-      r._Rumble = b;
-      r[b] || (
-        r[b] = function () {
-          (r[b]._ = r[b]._ || []).push(arguments);
-          if (r[b]._.length == 1) {
-            l = u.createElement(m);
-            e = u.getElementsByTagName(m)[0];
-            l.async = 1;
-            l.src =
-              "https://rumble.com/embedJS/u1hdamo" +
-              (arguments[1].video ? "." + arguments[1].video : "") +
-              "/?url=" +
-              encodeURIComponent(location.href) +
-              "&args=" +
-              encodeURIComponent(JSON.stringify([].slice.apply(arguments)));
-            e.parentNode.insertBefore(l, e);
-          }
-        }
-      );
-    }(window, document, "script", "Rumble");
-  </script>
-  <script>
-    Rumble("play", { video: "v64cgzd", div: "rumble_v64cgzd" });
-  </script>
-
-  <script>
-    const ADMIN_USERNAMES = new Set(["dizygotic", "psybin"]);
-    const u = document.getElementById("username-input");
-    const ap = document.getElementById("admin-password");
-
-    function normaliseUsername(value) {
-      return typeof value === "string" ? value.trim().toLowerCase() : "";
-    }
-
-    function shouldShowAdminField(value) {
-      return ADMIN_USERNAMES.has(normaliseUsername(value));
-    }
-
-    function toggleAdminField() {
-      if (!u || !ap) return;
-      const show = shouldShowAdminField(u.value);
-      ap.style.display = show ? "block" : "none";
-      ap.toggleAttribute("hidden", !show);
-      ap.setAttribute("aria-hidden", String(!show));
-    }
-    if (u) {
-      u.addEventListener("input", toggleAdminField);
-      toggleAdminField();
-    }
+    document.getElementById('year').textContent = new Date().getFullYear();
   </script>
 </body>
 </html>
