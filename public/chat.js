@@ -76,22 +76,6 @@ let lastRoomName = "";
 let lastRoomPassword = "";
 let latestPublicRooms = [];
 
-const DEFAULT_PUBLIC_ROOMS = [
-  "General Chat",
-  "InfoWars Chat",
-  "Drum & Bass Chat",
-  "Psybin Radio",
-];
-const FALLBACK_PUBLIC_ROOMS = DEFAULT_PUBLIC_ROOMS.map((name) => ({
-  name,
-  occupants: 0,
-  requiresPassword: false,
-  isPersistent: true,
-  isFallback: true,
-}));
-
-latestPublicRooms = FALLBACK_PUBLIC_ROOMS.map((room) => ({ ...room }));
-
 const replyState = {
   targetId: null,
 };
@@ -108,45 +92,12 @@ const pinnedContainer = document.getElementById("pinned-messages");
 const searchInput = document.getElementById("message-search");
 const searchFilter = document.getElementById("message-search-filter");
 const searchResultsBox = document.getElementById("search-results");
-const searchAdvancedToggle = document.getElementById("search-advanced-toggle");
-const searchAdvancedPanel = document.getElementById("search-advanced");
-const searchFromInput = document.getElementById("search-from-user");
-const searchDateFromInput = document.getElementById("search-date-from");
-const searchDateToInput = document.getElementById("search-date-to");
-const searchContentTypeInputs = Array.from(
-  document.querySelectorAll('input[name="search-content-type"]')
-);
-const searchSaveButton = document.getElementById("search-save-btn");
-const searchSavedSelect = document.getElementById("search-saved-select");
-const searchDeleteSavedButton = document.getElementById("search-delete-saved");
-const searchExportButton = document.getElementById("search-export-btn");
-
-setSearchAdvancedVisible(false);
-setContentTypeSelection(SEARCH_CONTENT_TYPES);
-setSavedSearches(loadSavedSearches());
-updateSearchControlState();
 const replyPreviewBar = document.getElementById("reply-preview");
 const replyPreviewContent = replyPreviewBar?.querySelector?.(".reply-preview-content") || null;
 const replyPreviewAuthor = document.getElementById("reply-preview-author");
 const replyPreviewText = document.getElementById("reply-preview-text");
 const replyPreviewCancel = document.getElementById("reply-preview-cancel");
 const quickEmojiPanel = document.getElementById("quick-emoji-panel");
-const composerDraftTray = document.getElementById("composer-draft-tray");
-const pinHubToggle = document.getElementById("pin-hub-toggle");
-const pinHub = document.getElementById("pin-hub");
-const pinHubOverlay = document.getElementById("pin-hub-overlay");
-const pinHubPanel = document.getElementById("pin-hub-panel");
-const pinHubCloseBtn = document.getElementById("pin-hub-close");
-const pinHubPinsList = document.getElementById("pin-hub-pin-list");
-const pinHubStarsList = document.getElementById("pin-hub-star-list");
-const pinHubPinsEmpty = document.getElementById("pin-hub-pins-empty");
-const pinHubStarsEmpty = document.getElementById("pin-hub-stars-empty");
-const pinHubRecapBtn = document.getElementById("pin-hub-recap");
-const pinHubReorderHint = document.getElementById("pin-hub-reorder-hint");
-const pinHubPinCountLabel = document.getElementById("pin-hub-pin-count");
-const pinHubStarCountLabel = document.getElementById("pin-hub-star-count");
-const pinHubPinsTotal = document.getElementById("pin-hub-pins-total");
-const pinHubStarsTotal = document.getElementById("pin-hub-stars-total");
 
 const siteLanding = document.getElementById("site-landing");
 const usernamePrompt = document.getElementById("username-prompt");
@@ -172,30 +123,6 @@ const userCount = document.getElementById("user-count");
 const userListEmpty = document.getElementById("user-list-empty");
 const userContextMenu = document.getElementById("user-context-menu");
 const toolbar = document.querySelector("#chat-container > header");
-const profileEditor = document.getElementById("profile-editor");
-const profileAvatarPreview = document.getElementById("profile-avatar-preview");
-const profileAvatarButton = document.getElementById("profile-avatar-button");
-const profileAvatarRemove = document.getElementById("profile-avatar-remove");
-const profileAvatarInput = document.getElementById("profile-avatar-input");
-const profileStatusInput = document.getElementById("profile-status");
-const profileNowPlayingInput = document.getElementById("profile-now-playing");
-const profileBioInput = document.getElementById("profile-bio");
-const profileSaveBtn = document.getElementById("profile-save");
-const profileSheet = document.getElementById("profile-sheet");
-const profileSheetPanel = document.getElementById("profile-sheet-panel");
-const profileSheetClose = document.getElementById("profile-sheet-close");
-const profileSheetOverlay = profileSheet?.querySelector?.("[data-profile-close]") || null;
-const profileSheetName = document.getElementById("profile-sheet-name");
-const profileSheetStatus = document.getElementById("profile-sheet-status");
-const profileSheetNowPlaying = document.getElementById("profile-sheet-now-playing");
-const profileSheetBio = document.getElementById("profile-sheet-bio");
-const profileSheetAvatar = document.getElementById("profile-sheet-avatar");
-const profileSheetMentionBtn = document.getElementById("profile-sheet-mention");
-const profileSheetThreadToggle = document.getElementById("profile-sheet-thread-toggle");
-const profileThreadSection = document.getElementById("profile-thread");
-const profileThreadList = document.getElementById("profile-thread-messages");
-const profileThreadInput = document.getElementById("profile-thread-input");
-const profileThreadSend = document.getElementById("profile-thread-send");
 const psybinPlayer = document.getElementById("psybin-player");
 const psybinAudio = document.getElementById("psybin-audio");
 const psybinPlayBtn = document.getElementById("psybin-play");
@@ -208,10 +135,6 @@ const scrollToLatestLabel = scrollToLatestBtn?.querySelector?.(".scroll-to-lates
 const scrollToLatestCount = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-count") || null;
 const pageBody = typeof document !== "undefined" ? document.body : null;
 
-// Seed the login view with the default list of persistent rooms so the
-// interface never renders empty while we wait for socket responses.
-renderPublicRooms(latestPublicRooms);
-
 function setViewMode(mode) {
   if (!pageBody) return;
   const isChat = mode === "chat";
@@ -222,156 +145,6 @@ function setViewMode(mode) {
 if (pageBody) {
   setViewMode(pageBody.classList.contains("view-chat") ? "chat" : "landing");
 }
-
-if (profileStatusInput) {
-  profileStatusInput.addEventListener("input", () => {
-    profileState.status = clampProfileField(profileStatusInput.value, PROFILE_FIELD_LIMITS.status);
-    markProfileDirty();
-  });
-}
-
-if (profileNowPlayingInput) {
-  profileNowPlayingInput.addEventListener("input", () => {
-    profileState.nowPlaying = clampProfileField(
-      profileNowPlayingInput.value,
-      PROFILE_FIELD_LIMITS.nowPlaying,
-    );
-    markProfileDirty();
-  });
-}
-
-if (profileBioInput) {
-  profileBioInput.addEventListener("input", () => {
-    profileState.bio = clampProfileField(profileBioInput.value, PROFILE_FIELD_LIMITS.bio);
-    markProfileDirty();
-  });
-}
-
-if (usernameInput) {
-  usernameInput.addEventListener("input", () => updateProfilePreview());
-}
-
-if (profileAvatarButton && profileAvatarInput) {
-  profileAvatarButton.addEventListener("click", () => profileAvatarInput.click());
-  profileAvatarInput.addEventListener("change", async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    profileAvatarButton.disabled = true;
-    profileAvatarButton.setAttribute("aria-busy", "true");
-    try {
-      const url = await uploadProfileAvatar(file);
-      if (url) {
-        profileState.avatarUrl = url;
-        updateProfilePreview();
-        markProfileDirty({ skipSync: false });
-        showToast("Avatar updated!", "success");
-      }
-    } catch (err) {
-      const message = err?.message || "Unable to upload avatar.";
-      showToast(message, "error");
-    } finally {
-      profileAvatarButton.disabled = false;
-      profileAvatarButton.removeAttribute("aria-busy");
-    }
-  });
-}
-
-if (profileAvatarRemove) {
-  profileAvatarRemove.addEventListener("click", () => {
-    if (!profileState.avatarUrl) return;
-    profileState.avatarUrl = "";
-    updateProfilePreview();
-    markProfileDirty();
-  });
-}
-
-if (profileSaveBtn) {
-  profileSaveBtn.addEventListener("click", () => {
-    if (!window.currentRoom) {
-      showToast("Join a room to share your profile.", "warn");
-      return;
-    }
-    if (!profileState.dirty) return;
-    profileState.manualSavePending = true;
-    broadcastProfileState();
-  });
-}
-
-if (profileSheetOverlay) {
-  profileSheetOverlay.addEventListener("click", closeProfileSheet);
-}
-
-if (profileSheetClose) {
-  profileSheetClose.addEventListener("click", closeProfileSheet);
-}
-
-if (profileThreadSend) {
-  profileThreadSend.addEventListener("click", () => {
-    if (profileSheetState.username) {
-      sendSideThreadMessage(profileSheetState.username);
-    }
-  });
-}
-
-if (profileThreadInput) {
-  profileThreadInput.addEventListener("keydown", (event) => {
-    if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && profileSheetState.username) {
-      event.preventDefault();
-      sendSideThreadMessage(profileSheetState.username);
-    }
-  });
-}
-
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && profileSheetState.visible) {
-    closeProfileSheet();
-  }
-});
-
-if (pinHubToggle) {
-  pinHubToggle.addEventListener("click", () => {
-    if (pinHubState.visible) {
-      closePinHub();
-    } else {
-      const active = document.activeElement;
-      pinHubState.lastActiveElement =
-        active && typeof active.focus === "function" ? active : pinHubToggle;
-      openPinHub();
-    }
-  });
-}
-
-if (pinHubOverlay) {
-  pinHubOverlay.addEventListener("click", () => closePinHub());
-}
-
-if (pinHubCloseBtn) {
-  pinHubCloseBtn.addEventListener("click", () => closePinHub());
-}
-
-if (pinHubRecapBtn) {
-  pinHubRecapBtn.addEventListener("click", () => {
-    if (!appState.isAdmin) {
-      showToast("Only admins can share recaps.", "warn");
-      return;
-    }
-    const recap = generateSessionRecapText();
-    if (!recap.trim()) {
-      showToast("No pins or stars to summarize yet.", "info");
-      return;
-    }
-    const sent = sendPlainTextMessage(recap);
-    if (sent) {
-      showToast("Session recap shared", "success");
-      closePinHub({ returnFocus: false });
-    } else {
-      showToast("Join a room to share recaps.", "warn");
-    }
-  });
-}
-
-document.addEventListener("keydown", handlePinHubKeydown);
 
 // ------------------- Emoji Usage Tracking -------------------
 const EMOJI_USAGE_STORAGE_KEY = "dizychat-emoji-usage";
@@ -882,486 +655,6 @@ const appState = {
   },
 };
 
-const mentionState = {
-  regex: null,
-  username: '',
-  lastNotice: 0,
-  cooldownMs: 4000,
-};
-
-const profileSheetState = {
-  visible: false,
-  username: '',
-  threadOpen: false,
-};
-
-const PROFILE_STORAGE_KEY = 'dizychat.profile.v2';
-const PROFILE_FIELD_LIMITS = {
-  status: 80,
-  nowPlaying: 80,
-  bio: 200,
-};
-const MAX_PROFILE_AVATAR_SIZE = 2 * 1024 * 1024;
-
-const profileState = {
-  status: '',
-  nowPlaying: '',
-  bio: '',
-  avatarUrl: '',
-  dirty: false,
-  manualSavePending: false,
-};
-
-let profileSyncTimer = null;
-
-const AVATAR_COLOR_PALETTE = [
-  "#a855f7",
-  "#ec4899",
-  "#f97316",
-  "#14b8a6",
-  "#3b82f6",
-  "#facc15",
-];
-
-const clampProfileField = (value, limit) => {
-  if (typeof value !== "string") return "";
-  return value.slice(0, limit);
-};
-
-const loadStoredProfileState = () => {
-  try {
-    const raw = localStorage.getItem(PROFILE_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return {};
-    return {
-      status: typeof parsed.status === "string" ? parsed.status : "",
-      nowPlaying: typeof parsed.nowPlaying === "string" ? parsed.nowPlaying : "",
-      bio: typeof parsed.bio === "string" ? parsed.bio : "",
-      avatarUrl: typeof parsed.avatarUrl === "string" ? parsed.avatarUrl : "",
-    };
-  } catch {
-    return {};
-  }
-};
-
-const persistProfileState = () => {
-  try {
-    const payload = {
-      status: profileState.status || "",
-      nowPlaying: profileState.nowPlaying || "",
-      bio: profileState.bio || "",
-      avatarUrl: profileState.avatarUrl || "",
-    };
-    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(payload));
-  } catch {
-    /* ignore persistence errors */
-  }
-};
-
-const getProfileSnapshot = () => {
-  const status = clampProfileField((profileState.status || "").trim(), PROFILE_FIELD_LIMITS.status);
-  const nowPlaying = clampProfileField((profileState.nowPlaying || "").trim(), PROFILE_FIELD_LIMITS.nowPlaying);
-  const bio = clampProfileField((profileState.bio || "").trim(), PROFILE_FIELD_LIMITS.bio);
-  const avatarUrl = typeof profileState.avatarUrl === "string" ? profileState.avatarUrl.trim() : "";
-  return { status, nowPlaying, bio, avatarUrl };
-};
-
-const hasProfileValues = () => {
-  const snapshot = getProfileSnapshot();
-  return Boolean(snapshot.status || snapshot.nowPlaying || snapshot.bio || snapshot.avatarUrl);
-};
-
-const applyProfileInputsFromState = () => {
-  if (profileStatusInput) profileStatusInput.value = profileState.status || "";
-  if (profileNowPlayingInput) profileNowPlayingInput.value = profileState.nowPlaying || "";
-  if (profileBioInput) profileBioInput.value = profileState.bio || "";
-};
-
-const pickAvatarColor = (username = "") => {
-  const source = username || "dizy";
-  let hash = 0;
-  for (let i = 0; i < source.length; i += 1) {
-    hash = (hash + source.charCodeAt(i) * (i + 11)) % 997;
-  }
-  return AVATAR_COLOR_PALETTE[hash % AVATAR_COLOR_PALETTE.length];
-};
-
-const applyAvatarImage = (node, username, avatarUrl) => {
-  if (!node) return;
-  node.innerHTML = "";
-  const color = pickAvatarColor(username);
-  node.style.background = `linear-gradient(135deg, ${color}, rgba(255, 255, 255, 0.08))`;
-  const url = typeof avatarUrl === "string" ? avatarUrl.trim() : "";
-  if (url) {
-    const img = document.createElement("img");
-    img.src = url;
-    img.alt = username ? `${username}'s avatar` : "Avatar";
-    img.loading = "lazy";
-    node.appendChild(img);
-    return;
-  }
-  const span = document.createElement("span");
-  const initial = typeof username === "string" && username
-    ? username.trim().charAt(0).toUpperCase()
-    : "?";
-  span.textContent = initial || "?";
-  span.setAttribute("aria-hidden", "true");
-  node.appendChild(span);
-};
-
-const updateProfilePreview = () => {
-  if (!profileAvatarPreview) return;
-  const username = window.currentUser || usernameInput?.value || "You";
-  applyAvatarImage(profileAvatarPreview, username, profileState.avatarUrl);
-};
-
-const markProfileDirty = ({ skipSync = false } = {}) => {
-  profileState.dirty = true;
-  persistProfileState();
-  updateProfileSaveButton();
-  if (!skipSync && window.currentRoom) {
-    scheduleProfileSync();
-  }
-};
-
-const scheduleProfileSync = () => {
-  if (!window.currentRoom) return;
-  if (profileSyncTimer) clearTimeout(profileSyncTimer);
-  profileSyncTimer = setTimeout(() => {
-    profileSyncTimer = null;
-    broadcastProfileState();
-  }, 800);
-};
-
-const cancelProfileSync = () => {
-  if (!profileSyncTimer) return;
-  clearTimeout(profileSyncTimer);
-  profileSyncTimer = null;
-};
-
-const broadcastProfileState = ({ skipIfEmpty = false } = {}) => {
-  if (!window.currentRoom) return false;
-  if (skipIfEmpty && !hasProfileValues()) return false;
-  const snapshot = getProfileSnapshot();
-  socket.emit("update profile", snapshot);
-  profileState.dirty = false;
-  updateProfileSaveButton();
-  return true;
-};
-
-const updateProfileSaveButton = () => {
-  if (!profileSaveBtn) return;
-  if (!window.currentRoom) {
-    profileSaveBtn.disabled = true;
-    profileSaveBtn.textContent = "Join a room to share";
-    return;
-  }
-  profileSaveBtn.disabled = !profileState.dirty;
-  profileSaveBtn.textContent = profileState.dirty ? "Share profile" : "Profile shared";
-};
-
-const sanitizeProfileForDisplay = (profile = {}) => {
-  const clean = {};
-  if (typeof profile.status === "string" && profile.status.trim()) clean.status = profile.status.trim();
-  if (typeof profile.nowPlaying === "string" && profile.nowPlaying.trim()) clean.nowPlaying = profile.nowPlaying.trim();
-  if (typeof profile.bio === "string" && profile.bio.trim()) clean.bio = profile.bio.trim();
-  if (typeof profile.avatarUrl === "string" && profile.avatarUrl.trim()) clean.avatarUrl = profile.avatarUrl.trim();
-  return clean;
-};
-
-const escapeForRegex = (value = "") => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-const updateMentionDetector = (username) => {
-  if (!username) {
-    mentionState.regex = null;
-    mentionState.username = "";
-    return;
-  }
-  const escaped = escapeForRegex(username.trim());
-  mentionState.regex = new RegExp(`(^|[^\\w])@${escaped}(?=$|[^\\w])`, "i");
-  mentionState.username = username;
-};
-
-const insertMentionForUser = (username, { focusInput = true } = {}) => {
-  if (!username || !input) return false;
-  const mention = `@${username}`;
-  const current = input.value || "";
-  const start = input.selectionStart ?? current.length;
-  const end = input.selectionEnd ?? current.length;
-  const before = current.slice(0, start);
-  const after = current.slice(end);
-  const needsSpaceBefore = before && !/\s$/.test(before);
-  const needsSpaceAfter = after && !/^\s/.test(after);
-  const insertion = `${needsSpaceBefore ? " " : ""}${mention}${needsSpaceAfter ? "" : " "}`;
-  input.value = `${before}${insertion}${after}`;
-  const cursor = before.length + insertion.length;
-  if (typeof input.setSelectionRange === "function") {
-    input.setSelectionRange(cursor, cursor);
-  }
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-  if (focusInput) {
-    try {
-      input.focus({ preventScroll: true });
-    } catch {
-      input.focus();
-    }
-  }
-  input.classList.add("mention-flash");
-  setTimeout(() => input.classList.remove("mention-flash"), 400);
-  return true;
-};
-
-const triggerMentionNotice = (data) => {
-  if (!data || data.user === window.currentUser) return;
-  const now = Date.now();
-  if (now - mentionState.lastNotice < mentionState.cooldownMs) return;
-  mentionState.lastNotice = now;
-  const author = data.user || "Someone";
-  showToast(`${author} mentioned you`, "info");
-  flashToolbar("mention");
-};
-
-const applyMentionHighlight = (node, data, { notify = true } = {}) => {
-  if (!node) return false;
-  if (!mentionState.regex || !data || !data.text) {
-    node.classList.remove("mention-hit");
-    return false;
-  }
-  mentionState.regex.lastIndex = 0;
-  if (!mentionState.regex.test(data.text)) {
-    node.classList.remove("mention-hit");
-    return false;
-  }
-  node.classList.add("mention-hit");
-  if (notify) {
-    triggerMentionNotice(data);
-  }
-  return true;
-};
-
-const profileSheetFocus = () => {
-  requestAnimationFrame(() => {
-    if (!profileSheetPanel) return;
-    profileSheetPanel.focus?.();
-  });
-};
-
-const renderProfileThreadMessages = (username) => {
-  if (!profileThreadList) return;
-  profileThreadList.innerHTML = "";
-  if (!username) return;
-
-  const selfUser = window.currentUser || "";
-  const mentionRegex = new RegExp(
-    `(^|[^\\w])@${escapeForRegex(username)}(?=$|[^\\w])`,
-    "i",
-  );
-
-  const recent = Array.from(appState.messages.values())
-    .filter((msg) => {
-      if (!msg || msg.deleted) return false;
-      if (msg.user === username) return true;
-      if (!selfUser || msg.user !== selfUser) return false;
-      if (!msg.text) return false;
-      mentionRegex.lastIndex = 0;
-      return mentionRegex.test(msg.text);
-    })
-    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-    .slice(-10);
-
-  if (!recent.length) {
-    const empty = document.createElement("li");
-    empty.className = "empty";
-    empty.textContent = "No side thread activity yet.";
-    profileThreadList.appendChild(empty);
-    return;
-  }
-
-  recent.forEach((msg) => {
-    const li = document.createElement("li");
-    const isSelf = msg.user === selfUser;
-    li.className = isSelf ? "self" : "peer";
-
-    const bubble = document.createElement("div");
-    bubble.className = "thread-bubble";
-
-    const author = document.createElement("p");
-    author.className = "thread-author";
-    author.textContent = isSelf ? "You" : msg.user || username;
-    bubble.appendChild(author);
-
-    const text = document.createElement("p");
-    text.className = "thread-text";
-    text.textContent = msg.text || msg.fileName || "(attachment)";
-    bubble.appendChild(text);
-
-    const time = document.createElement("time");
-    const tsValue = msg.timestamp ? new Date(msg.timestamp) : new Date();
-    const ts = Number.isNaN(tsValue.getTime()) ? new Date() : tsValue;
-    time.dateTime = ts.toISOString();
-    time.textContent = ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    time.className = "thread-time";
-    bubble.appendChild(time);
-
-    li.appendChild(bubble);
-    profileThreadList.appendChild(li);
-  });
-};
-
-const setProfileThreadVisible = (visible) => {
-  profileSheetState.threadOpen = Boolean(visible);
-  if (profileThreadSection) {
-    profileThreadSection.hidden = !visible;
-  }
-  if (visible && profileSheetState.username) {
-    renderProfileThreadMessages(profileSheetState.username);
-  }
-};
-
-const openProfileSheetForUser = (username, { focusThread = false, suppressFocus = false } = {}) => {
-  if (!profileSheet || !username) return;
-  const entry = (appState.users || []).find((user) => user?.username === username);
-  const isSelf = username === window.currentUser;
-  let profile = sanitizeProfileForDisplay(entry?.profile || {});
-  if (isSelf) {
-    const snapshot = getProfileSnapshot();
-    profile = sanitizeProfileForDisplay(snapshot);
-  }
-  profileSheetState.username = username;
-  profileSheetState.visible = true;
-  profileSheet.classList.add("show");
-  profileSheet.removeAttribute("hidden");
-  profileSheet.setAttribute("aria-hidden", "false");
-  if (profileSheetName) profileSheetName.textContent = username;
-  if (profileSheetStatus) {
-    if (profile.status) {
-      profileSheetStatus.textContent = profile.status;
-      profileSheetStatus.hidden = false;
-    } else {
-      profileSheetStatus.textContent = "";
-      profileSheetStatus.hidden = true;
-    }
-  }
-  if (profileSheetNowPlaying) {
-    if (profile.nowPlaying) {
-      profileSheetNowPlaying.textContent = profile.nowPlaying;
-      profileSheetNowPlaying.hidden = false;
-    } else {
-      profileSheetNowPlaying.textContent = "";
-      profileSheetNowPlaying.hidden = true;
-    }
-  }
-  if (profileSheetBio) {
-    if (profile.bio) {
-      profileSheetBio.textContent = profile.bio;
-      profileSheetBio.classList.remove("empty");
-    } else {
-      profileSheetBio.textContent = "No bio yet.";
-      profileSheetBio.classList.add("empty");
-    }
-  }
-  if (profileSheetAvatar) {
-    applyAvatarImage(profileSheetAvatar, username, profile.avatarUrl);
-  }
-  if (profileSheetMentionBtn) {
-    profileSheetMentionBtn.onclick = () => insertMentionForUser(username);
-  }
-  if (profileSheetThreadToggle) {
-    profileSheetThreadToggle.onclick = () => setProfileThreadVisible(!profileSheetState.threadOpen);
-  }
-  setProfileThreadVisible(focusThread || profileSheetState.threadOpen);
-  if (focusThread && profileThreadInput && !suppressFocus) {
-    requestAnimationFrame(() => profileThreadInput.focus());
-  }
-  if (!suppressFocus) {
-    profileSheetFocus();
-  }
-};
-
-const closeProfileSheet = () => {
-  if (!profileSheetState.visible || !profileSheet) return;
-  profileSheetState.visible = false;
-  profileSheetState.username = "";
-  profileSheet.classList.remove("show");
-  profileSheet.setAttribute("aria-hidden", "true");
-  profileSheet.setAttribute("hidden", "hidden");
-  setProfileThreadVisible(false);
-};
-
-const maybeRefreshProfileThread = (data) => {
-  if (!profileSheetState.visible) return;
-  if (!profileSheetState.username || !data?.user) return;
-  if (data.user !== profileSheetState.username) return;
-  if (profileSheetState.threadOpen) {
-    renderProfileThreadMessages(profileSheetState.username);
-  }
-};
-
-const sendSideThreadMessage = (username) => {
-  if (!window.currentRoom || !window.currentUser) {
-    showToast("Join a room to send messages.", "warn");
-    return false;
-  }
-  const text = (profileThreadInput?.value || "").trim();
-  if (!text) {
-    showToast("Type a quick note first.", "warn");
-    return false;
-  }
-  const alreadyMentioned = text.startsWith("@");
-  const composed = alreadyMentioned ? text : `@${username} ${text}`;
-  const sent = sendPlainTextMessage(composed);
-  if (sent && profileThreadInput) {
-    profileThreadInput.value = "";
-    showToast("Side thread message sent", "success");
-  }
-  return sent;
-};
-
-const uploadProfileAvatar = async (file) => {
-  if (!file) return null;
-  const mimeType = typeof file.type === "string" ? file.type : "";
-  if (!mimeType.startsWith("image/")) {
-    showToast("Pick an image file.", "error");
-    return null;
-  }
-  if (file.size > MAX_PROFILE_AVATAR_SIZE) {
-    showToast("Avatar must be under 2 MB.", "error");
-    return null;
-  }
-  const formData = new FormData();
-  formData.append("file", file, file.name || "avatar.png");
-  const response = await fetch("/upload", { method: "POST", body: formData });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || !payload?.url) {
-    throw new Error(payload?.error || "Upload failed");
-  }
-  return payload.url;
-};
-
-const storedProfile = loadStoredProfileState();
-profileState.status = clampProfileField(storedProfile.status || "", PROFILE_FIELD_LIMITS.status);
-profileState.nowPlaying = clampProfileField(
-  storedProfile.nowPlaying || "",
-  PROFILE_FIELD_LIMITS.nowPlaying,
-);
-profileState.bio = clampProfileField(storedProfile.bio || "", PROFILE_FIELD_LIMITS.bio);
-profileState.avatarUrl = storedProfile.avatarUrl || "";
-
-applyProfileInputsFromState();
-updateProfilePreview();
-updateProfileSaveButton();
-
-const SEARCH_CONTENT_TYPES = ["text", "attachments", "system"];
-const SEARCH_FACET_LABELS = {
-  text: "Text",
-  attachments: "Attachments",
-  system: "System",
-};
-const SAVED_SEARCH_STORAGE_KEY = "dizychat.search.saved.v1";
-const SAVED_SEARCH_PLACEHOLDER = "__placeholder";
-let savedSearches = [];
-
 let searchDebounceTimer = null;
 let soundCloudApiPromise = null;
 
@@ -1380,19 +673,6 @@ const scrollSentinelState = {
   visibleRatio: 1,
   programmaticUnlockUntil: 0,
 };
-
-const pinHubState = {
-  visible: false,
-  lastActiveElement: null,
-};
-
-const PIN_HUB_MAX_STARRED_ITEMS = 40;
-const PIN_HUB_MAX_RECAP_PINS = 8;
-const PIN_HUB_MAX_RECAP_STARS = 8;
-const PIN_HUB_PREVIEW_LIMIT = 160;
-let pinnedSignatureCache = null;
-
-renderPinHubHighlights();
 
 let ensureBottomTimer = null;
 
@@ -2508,350 +1788,6 @@ function hideMessageLocally(id) {
   }
 }
 
-// ------------------- Composer Draft Persistence -------------------
-const COMPOSER_DRAFT_STORAGE_PREFIX = "dizychat-draft-";
-const MAX_DRAFT_ATTACHMENTS = 4;
-const MAX_DRAFT_ATTACHMENT_BYTES = 2 * 1024 * 1024; // 2 MB per item
-const MAX_DRAFT_TOTAL_BYTES = 4 * 1024 * 1024; // 4 MB across all staged items
-
-const composerDraftManager = (() => {
-  let attachments = [];
-  let textPersistTimer = null;
-  let lastStorageErrorAt = 0;
-
-  const keyForRoom = (room) => `${COMPOSER_DRAFT_STORAGE_PREFIX}${room || ""}`;
-
-  const sanitizeName = (value, fallback = "attachment") => {
-    if (typeof value !== "string") return fallback;
-    const compact = value.replace(/[\n\r]+/g, " ").replace(/\s+/g, " ").trim();
-    if (!compact) return fallback;
-    return compact.slice(0, 120);
-  };
-
-  const estimateDataUrlBytes = (value) => {
-    if (typeof value !== "string") return 0;
-    const commaIndex = value.indexOf(",");
-    if (commaIndex === -1) return 0;
-    const base64Length = value.length - commaIndex - 1;
-    return Math.ceil((base64Length * 3) / 4);
-  };
-
-  const formatBytes = (bytes) => {
-    const value = Number(bytes);
-    if (!Number.isFinite(value) || value <= 0) return "";
-    if (value < 1024) return `${value} B`;
-    const kb = value / 1024;
-    if (kb < 1024) return `${kb >= 100 ? Math.round(kb) : kb.toFixed(1)} KB`;
-    const mb = kb / 1024;
-    return `${mb >= 100 ? Math.round(mb) : mb.toFixed(1)} MB`;
-  };
-
-  const formatDuration = (ms) => {
-    const value = Number(ms);
-    if (!Number.isFinite(value) || value <= 0) return "";
-    const totalSeconds = Math.max(1, Math.round(value / 1000));
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${String(seconds).padStart(2, "0")}`;
-  };
-
-  const normalizeAttachment = (raw) => {
-    if (!raw || typeof raw !== "object") return null;
-    const dataUrl = typeof raw.dataUrl === "string" && raw.dataUrl.startsWith("data:") ? raw.dataUrl : "";
-    if (!dataUrl) return null;
-    const kind = raw.kind === "voice" ? "voice" : "file";
-    const name = sanitizeName(raw.name, kind === "voice" ? "Voice note" : "Attachment");
-    const fileName = sanitizeName(raw.fileName || name || "attachment");
-    const mimeType = typeof raw.mimeType === "string" && raw.mimeType ? raw.mimeType : kind === "voice" ? "audio/webm" : "application/octet-stream";
-    const size = Number(raw.size) > 0 ? Number(raw.size) : estimateDataUrlBytes(dataUrl);
-    const durationMs = Number(raw.durationMs) > 0 ? Number(raw.durationMs) : 0;
-    const id = typeof raw.id === "string" && raw.id ? raw.id : `draft-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    return { id, kind, name, fileName, mimeType, dataUrl, size, durationMs };
-  };
-
-  const computeTotalBytes = () => attachments.reduce((sum, item) => sum + (Number(item.size) || estimateDataUrlBytes(item.dataUrl)), 0);
-
-  const renderAttachmentTray = () => {
-    if (!composerDraftTray) return;
-    composerDraftTray.innerHTML = "";
-    if (!attachments.length) {
-      composerDraftTray.hidden = true;
-      composerDraftTray.setAttribute("aria-hidden", "true");
-      form?.classList?.remove("has-draft-tray");
-      return;
-    }
-
-    composerDraftTray.hidden = false;
-    composerDraftTray.setAttribute("aria-hidden", "false");
-    form?.classList?.add("has-draft-tray");
-
-    attachments.forEach((item) => {
-      const chip = document.createElement("div");
-      chip.className = "draft-attachment";
-      chip.dataset.id = item.id;
-
-      const icon = document.createElement("span");
-      icon.className = "draft-attachment-icon";
-      icon.textContent = item.kind === "voice" ? "🎙️" : "📎";
-      chip.appendChild(icon);
-
-      const body = document.createElement("div");
-      body.className = "draft-attachment-body";
-      const title = document.createElement("div");
-      title.className = "draft-attachment-title";
-      title.textContent = item.name;
-      body.appendChild(title);
-
-      const metaParts = [];
-      if (item.kind === "voice" && item.durationMs) {
-        metaParts.push(formatDuration(item.durationMs));
-      }
-      if (item.size) {
-        metaParts.push(formatBytes(item.size));
-      }
-      if (metaParts.length) {
-        const meta = document.createElement("div");
-        meta.className = "draft-attachment-meta";
-        meta.textContent = metaParts.join(" • ");
-        body.appendChild(meta);
-      }
-
-      const removeBtn = document.createElement("button");
-      removeBtn.type = "button";
-      removeBtn.className = "draft-attachment-remove";
-      removeBtn.setAttribute(
-        "aria-label",
-        `Remove ${item.kind === "voice" ? "voice note" : "attachment"}`
-      );
-      removeBtn.innerHTML = "✕";
-      removeBtn.addEventListener("click", () => removeAttachment(item.id));
-
-      chip.appendChild(body);
-      chip.appendChild(removeBtn);
-      composerDraftTray.appendChild(chip);
-    });
-  };
-
-  const persistPayload = (room, payload) => {
-    if (!room || typeof localStorage === "undefined") return;
-    try {
-      localStorage.setItem(keyForRoom(room), JSON.stringify(payload));
-    } catch (err) {
-      console.warn("[Draft] Failed to persist", err);
-      if (!lastStorageErrorAt || Date.now() - lastStorageErrorAt > 4000) {
-        window.showToast?.("Unable to save draft—storage is full?", "error");
-        lastStorageErrorAt = Date.now();
-      }
-    }
-  };
-
-  const removePayload = (room) => {
-    if (!room || typeof localStorage === "undefined") return;
-    try {
-      localStorage.removeItem(keyForRoom(room));
-    } catch (err) {
-      console.warn("[Draft] Failed to clear storage", err);
-    }
-  };
-
-  const persistNow = () => {
-    const room = window.currentRoom;
-    if (!room) return;
-    const text = input?.value || "";
-    const trimmed = text.trim();
-    if (!trimmed && !attachments.length) {
-      removePayload(room);
-      return;
-    }
-
-    const payload = {
-      text,
-      attachments: attachments.map((item) => ({ ...item })),
-      updatedAt: Date.now(),
-    };
-    persistPayload(room, payload);
-  };
-
-  const schedulePersist = () => {
-    clearTimeout(textPersistTimer);
-    textPersistTimer = setTimeout(() => {
-      textPersistTimer = null;
-      persistNow();
-    }, 350);
-  };
-
-  const readStoredPayload = (room) => {
-    if (!room || typeof localStorage === "undefined") return null;
-    try {
-      const raw = localStorage.getItem(keyForRoom(room));
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== "object") return null;
-      const text = typeof parsed.text === "string" ? parsed.text : "";
-      const storedAttachments = Array.isArray(parsed.attachments)
-        ? parsed.attachments.map((item) => normalizeAttachment(item)).filter(Boolean)
-        : [];
-      return { text, attachments: storedAttachments };
-    } catch (err) {
-      console.warn("[Draft] Failed to load stored draft", err);
-      return null;
-    }
-  };
-
-  const clearVisibleDraft = () => {
-    attachments = [];
-    renderAttachmentTray();
-    if (input) input.value = "";
-  };
-
-  const removeAttachment = (id) => {
-    attachments = attachments.filter((item) => item.id !== id);
-    renderAttachmentTray();
-    persistNow();
-  };
-
-  const dataUrlToBlob = (dataUrl) => {
-    if (typeof dataUrl !== "string") return null;
-    const commaIndex = dataUrl.indexOf(",");
-    if (commaIndex === -1) return null;
-    const header = dataUrl.slice(0, commaIndex);
-    const base64 = dataUrl.slice(commaIndex + 1);
-    const match = /^data:(.*?)(;base64)?$/i.exec(header);
-    const mimeType = match?.[1] || "application/octet-stream";
-    const isBase64 = Boolean(match?.[2]);
-    try {
-      if (isBase64) {
-        const binary = atob(base64);
-        const len = binary.length;
-        const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i += 1) {
-          bytes[i] = binary.charCodeAt(i);
-        }
-        return new Blob([bytes], { type: mimeType });
-      }
-      return new Blob([decodeURIComponent(base64)], { type: mimeType });
-    } catch (err) {
-      console.warn("[Draft] Failed to convert data URL", err);
-      return null;
-    }
-  };
-
-  const readBlobAsDataUrl = (blob) =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(reader.error || new Error("Unable to read file"));
-      reader.readAsDataURL(blob);
-    });
-
-  const ensureCapacity = (incomingSize = 0) => {
-    if (attachments.length >= MAX_DRAFT_ATTACHMENTS) {
-      throw new Error(`Only ${MAX_DRAFT_ATTACHMENTS} draft attachments supported at once.`);
-    }
-    if (incomingSize > MAX_DRAFT_ATTACHMENT_BYTES) {
-      throw new Error("Attachments must be under 2 MB while drafting.");
-    }
-    if (computeTotalBytes() + incomingSize > MAX_DRAFT_TOTAL_BYTES) {
-      throw new Error("Draft storage is full. Send or remove attachments first.");
-    }
-  };
-
-  const addAttachmentFromBlob = async (blob, meta = {}) => {
-    if (!blob) return null;
-    if (!window.currentRoom) {
-      throw new Error("Join a room to add attachments.");
-    }
-    const size = Number(blob.size) || 0;
-    ensureCapacity(size);
-    const dataUrl = await readBlobAsDataUrl(blob);
-    if (typeof dataUrl !== "string") {
-      throw new Error("Unable to stage attachment.");
-    }
-    const record = normalizeAttachment({
-      id: meta.id,
-      kind: meta.kind || "file",
-      name: meta.name || blob.name || meta.fileName || (meta.kind === "voice" ? "Voice note" : "Attachment"),
-      fileName: meta.fileName || blob.name || "attachment",
-      mimeType: meta.mimeType || blob.type || "application/octet-stream",
-      dataUrl,
-      size: size || estimateDataUrlBytes(dataUrl),
-      durationMs: meta.durationMs || 0,
-    });
-    if (!record) {
-      throw new Error("Unable to stage attachment.");
-    }
-    attachments = [...attachments, record];
-    renderAttachmentTray();
-    persistNow();
-    return record;
-  };
-
-  const sendAttachmentsSequentially = async (replyTo) => {
-    if (!attachments.length) return;
-    const pending = attachments.map((item) => ({ ...item }));
-    for (const entry of pending) {
-      const blob = dataUrlToBlob(entry.dataUrl);
-      if (!blob) {
-        removeAttachment(entry.id);
-        continue;
-      }
-      await uploadFileAndSend(blob, {
-        fileName: entry.fileName || entry.name || "attachment",
-        displayName: entry.kind === "voice" ? entry.name || "Voice note" : entry.name || "Attachment",
-        mimeType: entry.mimeType || blob.type || undefined,
-        replyTo,
-      });
-      removeAttachment(entry.id);
-    }
-  };
-
-  return {
-    noteTextChanged: () => {
-      if (!window.currentRoom) return;
-      schedulePersist();
-    },
-    persistActiveDraft: ({ immediate = true } = {}) => {
-      if (immediate) {
-        clearTimeout(textPersistTimer);
-        textPersistTimer = null;
-        persistNow();
-      } else {
-        if (!window.currentRoom) return;
-        schedulePersist();
-      }
-    },
-    restoreDraftForRoom: (room) => {
-      attachments = [];
-      renderAttachmentTray();
-      if (input) input.value = "";
-      if (!room) return false;
-      const payload = readStoredPayload(room);
-      if (!payload) return false;
-      if (input && typeof payload.text === "string") {
-        input.value = payload.text;
-      }
-      attachments = Array.isArray(payload.attachments)
-        ? payload.attachments.map((item) => ({ ...item }))
-        : [];
-      renderAttachmentTray();
-      return Boolean((payload.text || "").trim() || attachments.length);
-    },
-    clearVisibleDraft,
-    addFileAttachment: (file) => addAttachmentFromBlob(file, { kind: "file", name: file?.name }),
-    addVoiceAttachment: (blob, meta = {}) =>
-      addAttachmentFromBlob(blob, {
-        kind: "voice",
-        name: meta.displayName || meta.fileName || "Voice note",
-        fileName: meta.fileName || meta.displayName || `voice-note-${Date.now()}.webm`,
-        mimeType: meta.mimeType || blob?.type || "audio/webm",
-        durationMs: meta.durationMs || 0,
-      }),
-    removeAttachment,
-    hasAttachments: () => attachments.length > 0,
-    sendAttachmentsSequentially,
-  };
-})();
-
 function storeMessageData(raw) {
   if (!raw) return null;
   const id = raw._id || raw.id;
@@ -2886,23 +1822,6 @@ function storeMessageData(raw) {
 
   merged.pinned = Boolean(raw.pinned ?? merged.pinned);
   merged.pinnedBy = raw.pinnedBy !== undefined ? (raw.pinnedBy || "") : merged.pinnedBy || "";
-  if (raw.pinOrder !== undefined) {
-    if (raw.pinOrder === null) {
-      merged.pinOrder = null;
-    } else {
-      const numeric = Number(raw.pinOrder);
-      merged.pinOrder = Number.isFinite(numeric) ? numeric : null;
-    }
-  } else if (merged.pinOrder !== undefined) {
-    if (merged.pinOrder === null) {
-      merged.pinOrder = null;
-    } else {
-      const numeric = Number(merged.pinOrder);
-      merged.pinOrder = Number.isFinite(numeric) ? numeric : null;
-    }
-  } else {
-    merged.pinOrder = null;
-  }
   merged.deleted = raw.deleted !== undefined ? Boolean(raw.deleted) : Boolean(merged.deleted);
   merged.deletedBy = raw.deletedBy !== undefined ? (raw.deletedBy || "") : merged.deletedBy || "";
 
@@ -2946,7 +1865,6 @@ function storeMessageData(raw) {
     merged.starredBy = [];
     merged.pinned = false;
     merged.pinnedBy = "";
-    merged.pinOrder = null;
   }
 
   appState.messages.set(id, merged);
@@ -3253,7 +2171,6 @@ function updateUserEntryStatus(item, now = Date.now()) {
     severity = "bad";
   }
 
-  const statusHost = item.querySelector(".user-info") || item;
   const statusEl = item.querySelector(".user-status");
 
   if (!statuses.length) {
@@ -3264,7 +2181,7 @@ function updateUserEntryStatus(item, now = Date.now()) {
   let element = statusEl;
   if (!element) {
     element = document.createElement("span");
-    statusHost.appendChild(element);
+    item.appendChild(element);
   }
 
   element.className = `user-status${severity ? ` ${severity}` : ""}`;
@@ -3353,120 +2270,34 @@ function renderUserSidebar(users = []) {
     const mutedUntil = Number(entry.mutedUntil || 0);
     const isMuted = mutedUntil && mutedUntil > now;
     const isBlocked = Boolean(entry.isBlocked);
-    const remoteProfile = sanitizeProfileForDisplay(entry.profile || {});
-    const localProfile = isSelf ? sanitizeProfileForDisplay(getProfileSnapshot()) : {};
-    const profile = { ...remoteProfile, ...localProfile };
-    const userData = { ...entry, mutedUntil, profile };
+    const userData = { ...entry, mutedUntil };
 
     const item = document.createElement("li");
     item.className = "user-entry";
     item.dataset.username = username;
     if (isAdmin) item.classList.add("admin");
 
-    const cardButton = document.createElement("button");
-    cardButton.type = "button";
-    cardButton.className = "user-card";
-    cardButton.addEventListener("click", () => openProfileSheetForUser(username));
-    cardButton.setAttribute(
-      "aria-label",
-      isSelf ? "Open your profile" : `Open ${username}'s profile`,
-    );
-
-    const avatar = document.createElement("div");
-    avatar.className = "user-avatar";
-    applyAvatarImage(avatar, username, profile.avatarUrl);
-    cardButton.appendChild(avatar);
-
-    const infoWrap = document.createElement("div");
-    infoWrap.className = "user-info";
-    cardButton.appendChild(infoWrap);
-
-    const nameRow = document.createElement("div");
-    nameRow.className = "user-primary-row";
-    const nameLabel = document.createElement("span");
-    nameLabel.className = "user-name";
+    const name = document.createElement("span");
+    name.className = "user-name";
     if (isAdmin) {
       const crown = document.createElement("span");
       crown.className = "user-crown";
       crown.textContent = "👑";
-      nameLabel.appendChild(crown);
+      name.appendChild(crown);
     }
+
     const label = document.createElement("span");
     label.textContent = username;
-    nameLabel.appendChild(label);
+    name.appendChild(label);
+
     if (isSelf) {
       const pill = document.createElement("span");
       pill.className = "self-pill";
       pill.textContent = "you";
-      nameLabel.appendChild(pill);
-    }
-    nameRow.appendChild(nameLabel);
-    infoWrap.appendChild(nameRow);
-
-    const statusRow = document.createElement("div");
-    statusRow.className = "user-meta-line";
-    if (profile.status) {
-      const status = document.createElement("span");
-      status.textContent = profile.status;
-      statusRow.appendChild(status);
-    }
-    if (profile.nowPlaying) {
-      const nowPlayingEl = document.createElement("span");
-      nowPlayingEl.textContent = `🎧 ${profile.nowPlaying}`;
-      statusRow.appendChild(nowPlayingEl);
-    }
-    if (statusRow.childElementCount) {
-      infoWrap.appendChild(statusRow);
+      name.appendChild(pill);
     }
 
-    if (profile.bio) {
-      const bioEl = document.createElement("p");
-      bioEl.className = "user-bio";
-      bioEl.textContent = profile.bio;
-      infoWrap.appendChild(bioEl);
-    }
-
-    const chipsRow = document.createElement("div");
-    chipsRow.className = "user-chips";
-    let hasChips = false;
-    if (!isSelf) {
-      const mentionBtn = document.createElement("button");
-      mentionBtn.type = "button";
-      mentionBtn.className = "user-chip mention";
-      mentionBtn.textContent = "@ Mention";
-      mentionBtn.addEventListener("click", (event) => {
-        event.stopPropagation();
-        insertMentionForUser(username);
-      });
-      chipsRow.appendChild(mentionBtn);
-      hasChips = true;
-
-      const threadBtn = document.createElement("button");
-      threadBtn.type = "button";
-      threadBtn.className = "user-chip";
-      threadBtn.textContent = "Side thread";
-      threadBtn.addEventListener("click", (event) => {
-        event.stopPropagation();
-        openProfileSheetForUser(username, { focusThread: true });
-      });
-      chipsRow.appendChild(threadBtn);
-    } else if (profileEditor) {
-      const editBtn = document.createElement("button");
-      editBtn.type = "button";
-      editBtn.className = "user-chip";
-      editBtn.textContent = "Edit profile";
-      editBtn.addEventListener("click", (event) => {
-        event.stopPropagation();
-        profileStatusInput?.focus();
-      });
-      chipsRow.appendChild(editBtn);
-      hasChips = true;
-    }
-    if (hasChips) {
-      infoWrap.appendChild(chipsRow);
-    }
-
-    item.appendChild(cardButton);
+    item.appendChild(name);
 
     if (isMuted) {
       item.dataset.mutedUntil = String(mutedUntil);
@@ -3484,25 +2315,25 @@ function renderUserSidebar(users = []) {
     const canInteract = appState.isAdmin && !isSelf && !isAdmin;
 
     if (canInteract) {
-      const adminBtn = document.createElement("button");
-      adminBtn.type = "button";
-      adminBtn.className = "user-menu-button";
-      adminBtn.setAttribute("aria-haspopup", "menu");
-      adminBtn.setAttribute("aria-controls", "user-context-menu");
-      adminBtn.setAttribute("aria-expanded", "false");
-      adminBtn.setAttribute("aria-label", `Moderate ${username}`);
+      item.classList.add("actionable");
+      item.tabIndex = 0;
+      item.setAttribute("role", "button");
+      item.setAttribute("aria-haspopup", "menu");
+      item.setAttribute("aria-controls", "user-context-menu");
+      item.setAttribute("aria-expanded", "false");
+
       const handleOpen = (event) => {
         event.preventDefault();
         event.stopPropagation();
-        openUserContextMenu(adminBtn, userData);
+        openUserContextMenu(item, userData);
       };
-      adminBtn.addEventListener("click", handleOpen);
-      adminBtn.addEventListener("keydown", (event) => {
+
+      item.addEventListener("click", handleOpen);
+      item.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown") {
           handleOpen(event);
         }
       });
-      item.appendChild(adminBtn);
     } else if (!isSelf) {
       item.classList.add("disabled");
       item.setAttribute("aria-disabled", "true");
@@ -3691,360 +2522,20 @@ function handleModerationNotice({ type, room, until, reason } = {}) {
   }
 }
 
-function resetPinnedSignature() {
-  pinnedSignatureCache = null;
-}
-
-function getPinTimestampValue(msg) {
-  if (!msg) return 0;
-  if (msg.timestamp instanceof Date) {
-    return Number.isNaN(msg.timestamp.getTime()) ? 0 : msg.timestamp.getTime();
-  }
-  if (msg.timestamp) {
-    const ts = new Date(msg.timestamp);
-    return Number.isNaN(ts.getTime()) ? 0 : ts.getTime();
-  }
-  return 0;
-}
-
-function comparePinnedMessages(a, b) {
-  const orderA = typeof a?.pinOrder === "number" ? a.pinOrder : null;
-  const orderB = typeof b?.pinOrder === "number" ? b.pinOrder : null;
-  if (orderA !== null && orderB !== null && orderA !== orderB) {
-    return orderB - orderA;
-  }
-  if (orderA !== null) return -1;
-  if (orderB !== null) return 1;
-  return getPinTimestampValue(b) - getPinTimestampValue(a);
-}
-
-function getOrderedPinnedMessages() {
-  const list = Array.from(appState.pinned.values()).filter((msg) => msg && !msg.deleted);
-  list.sort(comparePinnedMessages);
-  return list;
-}
-
-function getStarredMessages() {
-  return Array.from(appState.messages.values()).filter(
-    (msg) => msg && !msg.deleted && Array.isArray(msg.starredBy) && msg.starredBy.length
-  );
-}
-
-function buildMessagePreviewText(msg) {
-  if (!msg) return "";
-  let preview = typeof msg.text === "string" ? msg.text.trim() : "";
-  if (!preview) {
-    preview = msg.fileName || "";
-  }
-  if (!preview && msg.fileType) {
-    if (msg.fileType.startsWith("image/")) preview = "Image";
-    else if (msg.fileType.startsWith("audio/")) preview = "Audio clip";
-    else if (msg.fileType.startsWith("video/")) preview = "Video";
-  }
-  if (!preview && msg.fileUrl) {
-    preview = msg.fileUrl.split("/").pop() || msg.fileUrl;
-  }
-  if (!preview) preview = "Pinned attachment";
-  preview = preview.replace(/\s+/g, " ").trim();
-  if (preview.length > PIN_HUB_PREVIEW_LIMIT) {
-    return `${preview.slice(0, PIN_HUB_PREVIEW_LIMIT)}…`;
-  }
-  return preview;
-}
-
-function formatPinHubTimestamp(value) {
-  const date = value instanceof Date ? value : new Date(value || Date.now());
-  if (Number.isNaN(date.getTime())) return "";
-  return `${date.toLocaleDateString()} • ${date.toLocaleTimeString()}`;
-}
-
-function createPinHubListItem(msg, { index = 0, total = 0, type = "pin" } = {}) {
-  if (!msg || !msg.id) return null;
-  const item = document.createElement("li");
-  item.className = `pin-hub-item pin-hub-item-${type}`;
-  item.tabIndex = 0;
-  item.dataset.id = msg.id;
-
-  const title = document.createElement("div");
-  title.className = "pin-hub-item-title";
-  const author = document.createElement("span");
-  author.className = "pin-hub-item-author";
-  author.textContent = msg.user || "Anon";
-  const time = document.createElement("span");
-  time.className = "pin-hub-item-time";
-  time.textContent = formatPinHubTimestamp(msg.timestamp);
-  title.appendChild(author);
-  title.appendChild(time);
-  item.appendChild(title);
-
-  const preview = document.createElement("p");
-  preview.className = "pin-hub-item-preview";
-  preview.textContent = buildMessagePreviewText(msg);
-  item.appendChild(preview);
-
-  const meta = document.createElement("div");
-  meta.className = "pin-hub-item-meta";
-  if (type === "pin" && msg.pinnedBy) {
-    const pinnedBy = document.createElement("span");
-    pinnedBy.textContent = `Pinned by ${msg.pinnedBy}`;
-    meta.appendChild(pinnedBy);
-  }
-  if (type === "star") {
-    const starCount = document.createElement("span");
-    starCount.className = "pin-hub-star-count";
-    starCount.textContent = `⭐ ×${msg.starredBy?.length || 0}`;
-    meta.appendChild(starCount);
-  }
-
-  const hasMeta = meta.childElementCount > 0;
-
-  if (type === "pin" && appState.isAdmin && total > 1) {
-    const footer = document.createElement("div");
-    footer.className = "pin-hub-item-footer";
-    if (hasMeta) {
-      footer.appendChild(meta);
-    } else {
-      const spacer = document.createElement("div");
-      spacer.className = "pin-hub-item-meta";
-      footer.appendChild(spacer);
-    }
-    const controls = document.createElement("div");
-    controls.className = "pin-hub-item-controls";
-    const upBtn = document.createElement("button");
-    upBtn.type = "button";
-    upBtn.className = "pin-hub-move";
-    upBtn.textContent = "↑";
-    upBtn.disabled = index === 0;
-    upBtn.title = "Move pin up";
-    upBtn.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      requestPinReorderForMessage(msg.id, -1);
-    });
-    const downBtn = document.createElement("button");
-    downBtn.type = "button";
-    downBtn.className = "pin-hub-move";
-    downBtn.textContent = "↓";
-    downBtn.disabled = index === total - 1;
-    downBtn.title = "Move pin down";
-    downBtn.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      requestPinReorderForMessage(msg.id, 1);
-    });
-    controls.appendChild(upBtn);
-    controls.appendChild(downBtn);
-    footer.appendChild(controls);
-    item.appendChild(footer);
-  } else if (hasMeta) {
-    item.appendChild(meta);
-  }
-
-  const handleJump = () => {
-    focusMessage(msg.id);
-  };
-  item.addEventListener("click", handleJump);
-  item.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      handleJump();
-    }
-  });
-
-  return item;
-}
-
-function renderPinHubHighlights({ pinnedOverride = null } = {}) {
-  const pinned = Array.isArray(pinnedOverride) ? pinnedOverride : getOrderedPinnedMessages();
-  const starredEntries = getStarredMessages()
-    .sort((a, b) => {
-      const diff = (b.starredBy?.length || 0) - (a.starredBy?.length || 0);
-      if (diff !== 0) return diff;
-      return getPinTimestampValue(b) - getPinTimestampValue(a);
-    })
-    .slice(0, PIN_HUB_MAX_STARRED_ITEMS);
-
-  const pinnedCount = pinned.length;
-  const starredCount = starredEntries.length;
-
-  if (pinHubPinCountLabel) pinHubPinCountLabel.textContent = String(pinnedCount);
-  if (pinHubStarCountLabel) pinHubStarCountLabel.textContent = String(starredCount);
-  if (pinHubPinsTotal) pinHubPinsTotal.textContent = `${pinnedCount} pin${pinnedCount === 1 ? "" : "s"}`;
-  if (pinHubStarsTotal) pinHubStarsTotal.textContent = `${starredCount} starred`;
-  if (pinHubToggle) {
-    const ariaLabel = `Open pins and stars (pins ${pinnedCount}, starred posts ${starredCount})`;
-    pinHubToggle.setAttribute("aria-label", ariaLabel);
-  }
-
-  if (pinHubPinsEmpty) pinHubPinsEmpty.hidden = Boolean(pinnedCount);
-  if (pinHubPinsList) {
-    pinHubPinsList.innerHTML = "";
-    if (pinnedCount) {
-      const frag = document.createDocumentFragment();
-      pinned.forEach((msg, index) => {
-        const item = createPinHubListItem(msg, { index, total: pinnedCount, type: "pin" });
-        if (item) frag.appendChild(item);
-      });
-      pinHubPinsList.appendChild(frag);
-    }
-  }
-
-  if (pinHubStarsEmpty) pinHubStarsEmpty.hidden = Boolean(starredCount);
-  if (pinHubStarsList) {
-    pinHubStarsList.innerHTML = "";
-    if (starredCount) {
-      const frag = document.createDocumentFragment();
-      starredEntries.forEach((msg, index) => {
-        const item = createPinHubListItem(msg, { index, total: starredEntries.length, type: "star" });
-        if (item) frag.appendChild(item);
-      });
-      pinHubStarsList.appendChild(frag);
-    }
-  }
-
-  if (pinHubReorderHint) {
-    pinHubReorderHint.hidden = !(appState.isAdmin && pinnedCount > 1);
-  }
-
-  if (pinHubRecapBtn) {
-    const hasHighlights = pinnedCount > 0 || starredCount > 0;
-    const canShare = appState.isAdmin && hasHighlights;
-    pinHubRecapBtn.disabled = !canShare;
-    if (!hasHighlights) {
-      pinHubRecapBtn.title = "Pin or star something to enable this";
-    } else if (!appState.isAdmin) {
-      pinHubRecapBtn.title = "Only admins can share recaps";
-    } else {
-      pinHubRecapBtn.title = "Share a recap message with the room";
-    }
-  }
-}
-
-function applyLocalPinOrder(orderedIds = []) {
-  if (!Array.isArray(orderedIds) || !orderedIds.length) return;
-  const base = Date.now();
-  orderedIds.forEach((id, index) => {
-    if (!id) return;
-    const data = appState.messages.get(id);
-    if (!data) return;
-    data.pinOrder = base - index;
-    appState.messages.set(id, data);
-    if (data.pinned && !data.deleted) {
-      appState.pinned.set(id, data);
-    }
-  });
-}
-
-function requestPinReorderForMessage(id, direction) {
-  if (!appState.isAdmin || !window.currentRoom || !id) return;
-  const pinned = getOrderedPinnedMessages();
-  if (pinned.length < 2) return;
-  const index = pinned.findIndex((msg) => msg.id === id);
-  if (index === -1) return;
-  const targetIndex = index + direction;
-  if (targetIndex < 0 || targetIndex >= pinned.length) return;
-  const orderedIds = pinned.map((msg) => msg.id);
-  const [moved] = orderedIds.splice(index, 1);
-  orderedIds.splice(targetIndex, 0, moved);
-  applyLocalPinOrder(orderedIds);
-  resetPinnedSignature();
-  updatePinnedBanner();
-  socket.emit("reorder pins", { room: window.currentRoom, orderedIds });
-}
-
-function generateSessionRecapText() {
-  const pinned = getOrderedPinnedMessages();
-  const starred = getStarredMessages()
-    .sort((a, b) => {
-      const diff = (b.starredBy?.length || 0) - (a.starredBy?.length || 0);
-      if (diff !== 0) return diff;
-      return getPinTimestampValue(b) - getPinTimestampValue(a);
-    });
-  if (!pinned.length && !starred.length) return "";
-  const lines = [];
-  const roomLabel = window.currentRoom ? `#${window.currentRoom}` : "this room";
-  lines.push(`Session recap for ${roomLabel}`);
-  lines.push(new Date().toLocaleString());
-  if (pinned.length) {
-    lines.push("", "📌 Pins:");
-    pinned.slice(0, PIN_HUB_MAX_RECAP_PINS).forEach((msg, index) => {
-      lines.push(`${index + 1}. ${msg.user || "Anon"} — ${buildMessagePreviewText(msg)}`);
-    });
-  }
-  if (starred.length) {
-    lines.push("", "⭐ Starred:");
-    starred.slice(0, PIN_HUB_MAX_RECAP_STARS).forEach((msg, index) => {
-      lines.push(
-        `${index + 1}. ${msg.user || "Anon"} — ${buildMessagePreviewText(msg)} (×${msg.starredBy?.length || 0})`
-      );
-    });
-  }
-  return lines.join("\n");
-}
-
-function openPinHub() {
-  if (!pinHub) return;
-  renderPinHubHighlights();
-  pinHub.removeAttribute("hidden");
-  pinHub.setAttribute("aria-hidden", "false");
-  requestAnimationFrame(() => {
-    pinHub.classList.add("show");
-  });
-  pinHubState.visible = true;
-  if (pinHubToggle) pinHubToggle.setAttribute("aria-expanded", "true");
-  if (pageBody) pageBody.classList.add("pin-hub-open");
-  if (pinHubPanel && typeof pinHubPanel.focus === "function") {
-    pinHubPanel.focus({ preventScroll: true });
-  }
-}
-
-function closePinHub({ returnFocus = true } = {}) {
-  if (!pinHub || !pinHubState.visible) return;
-  pinHubState.visible = false;
-  pinHub.classList.remove("show");
-  pinHub.setAttribute("aria-hidden", "true");
-  pinHub.setAttribute("hidden", "hidden");
-  if (pinHubToggle) pinHubToggle.setAttribute("aria-expanded", "false");
-  if (pageBody) pageBody.classList.remove("pin-hub-open");
-  if (returnFocus) {
-    const target = pinHubState.lastActiveElement || pinHubToggle;
-    if (target && typeof target.focus === "function") {
-      target.focus();
-    }
-  }
-  pinHubState.lastActiveElement = null;
-}
-
-function handlePinHubKeydown(event) {
-  if (event.key === "Escape" && pinHubState.visible) {
-    event.preventDefault();
-    closePinHub();
-  }
-}
-
-function updatePinnedBanner(options = {}) {
-  if (!pinnedContainer) {
-    if (options.force) {
-      renderPinHubHighlights();
-    }
-    return;
-  }
-  const pinned = getOrderedPinnedMessages();
-  const signature = pinned.length
-    ? pinned
-        .map((msg) => `${msg.id}:${Number.isFinite(msg.pinOrder) ? msg.pinOrder : ""}:${getPinTimestampValue(msg)}`)
-        .join("|")
-    : "none";
-  if (!options.force && signature === pinnedSignatureCache) {
-    return;
-  }
-  pinnedSignatureCache = signature;
+function updatePinnedBanner() {
+  if (!pinnedContainer) return;
+  const pinned = Array.from(appState.pinned.values()).filter((msg) => !msg.deleted);
   if (!pinned.length) {
     pinnedContainer.innerHTML = "";
     pinnedContainer.style.display = "none";
-    renderPinHubHighlights({ pinnedOverride: pinned });
     return;
   }
+
+  pinned.sort((a, b) => {
+    const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+    const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+    return tb - ta;
+  });
 
   pinnedContainer.innerHTML = "";
   pinned.forEach((msg) => {
@@ -4054,8 +2545,8 @@ function updatePinnedBanner(options = {}) {
 
     const text = document.createElement("div");
     text.className = "pinned-text";
-    const preview = buildMessagePreviewText(msg);
-    text.textContent = preview;
+    const preview = msg.text?.trim() || msg.fileName || msg.fileUrl || "Pinned attachment";
+    text.textContent = preview.length > 120 ? `${preview.slice(0, 120)}…` : preview;
 
     const meta = document.createElement("div");
     meta.className = "pinned-meta";
@@ -4068,7 +2559,6 @@ function updatePinnedBanner(options = {}) {
   });
 
   pinnedContainer.style.display = "flex";
-  renderPinHubHighlights({ pinnedOverride: pinned });
 }
 
 function focusMessage(id) {
@@ -4450,8 +2940,6 @@ function updateMessageNode(id) {
   updateMessageFlags(node, data);
   setupMessageActions(node, data);
   renderMessageReactions(node, data);
-  applyMentionHighlight(node, data, { notify: false });
-  maybeRefreshProfileThread(data);
 
   if (replyState.targetId && normalizeMessageId(replyState.targetId) === data.id) {
     if (data.deleted) {
@@ -4548,198 +3036,6 @@ function confirmDeleteOptions({ canDeleteEveryone }) {
   });
 }
 
-function loadSavedSearches() {
-  try {
-    const raw = localStorage.getItem(SAVED_SEARCH_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((entry) => entry && entry.id && entry.params).slice(0, 20);
-  } catch (err) {
-    console.warn("Failed to load saved searches", err);
-    return [];
-  }
-}
-
-function setSavedSearches(next = []) {
-  savedSearches = next.slice(0, 20);
-  try {
-    localStorage.setItem(SAVED_SEARCH_STORAGE_KEY, JSON.stringify(savedSearches));
-  } catch (err) {
-    console.warn("Failed to persist saved searches", err);
-  }
-  renderSavedSearchOptions();
-}
-
-function renderSavedSearchOptions() {
-  if (!searchSavedSelect) return;
-  searchSavedSelect.innerHTML = "";
-  const placeholder = document.createElement("option");
-  placeholder.value = SAVED_SEARCH_PLACEHOLDER;
-  placeholder.textContent = savedSearches.length ? "Saved searches…" : "No saved searches yet";
-  searchSavedSelect.appendChild(placeholder);
-
-  savedSearches.forEach((entry) => {
-    const option = document.createElement("option");
-    option.value = entry.id;
-    option.textContent = entry.name;
-    searchSavedSelect.appendChild(option);
-  });
-
-  searchSavedSelect.value = SAVED_SEARCH_PLACEHOLDER;
-  updateSearchControlState();
-}
-
-function updateSearchControlState(payload = buildSearchPayload()) {
-  if (searchSaveButton) {
-    searchSaveButton.disabled = !payload.hasFilters;
-  }
-  if (searchExportButton) {
-    searchExportButton.disabled = !payload.hasFilters;
-  }
-  if (searchAdvancedToggle && searchAdvancedPanel) {
-    const isPanelOpen = !searchAdvancedPanel.hidden;
-    searchAdvancedToggle.classList.toggle("is-active", isPanelOpen || payload.hasFilters);
-  }
-  if (searchDeleteSavedButton && searchSavedSelect) {
-    searchDeleteSavedButton.disabled = searchSavedSelect.value === SAVED_SEARCH_PLACEHOLDER;
-  }
-}
-
-function setSearchAdvancedVisible(visible = false) {
-  if (!searchAdvancedPanel || !searchAdvancedToggle) return;
-  const show = Boolean(visible);
-  searchAdvancedPanel.hidden = !show;
-  searchAdvancedToggle.setAttribute("aria-expanded", String(show));
-  searchAdvancedToggle.classList.toggle("is-active", show);
-}
-
-function getSelectedContentTypes() {
-  const selected = searchContentTypeInputs
-    .filter((input) => input.checked)
-    .map((input) => input.value);
-  return selected.length ? selected : SEARCH_CONTENT_TYPES.slice();
-}
-
-function setContentTypeSelection(types = SEARCH_CONTENT_TYPES) {
-  const values = Array.isArray(types) && types.length ? new Set(types) : new Set(SEARCH_CONTENT_TYPES);
-  searchContentTypeInputs.forEach((input) => {
-    input.checked = values.has(input.value);
-  });
-}
-
-function parseInlineSearchTokens(rawQuery = "") {
-  const tokens = rawQuery.split(/\s+/).filter(Boolean);
-  const rest = [];
-  let fromUser = "";
-  tokens.forEach((token) => {
-    const match = token.match(/^from:(.+)$/i);
-    if (match && !fromUser) {
-      fromUser = match[1].replace(/^@+/, "");
-      return;
-    }
-    rest.push(token);
-  });
-  return { query: rest.join(" ").trim(), fromUser };
-}
-
-function buildSearchPayload() {
-  const rawQuery = (searchInput?.value || "").trim();
-  const inlineTokens = parseInlineSearchTokens(rawQuery);
-  const manualFrom = (searchFromInput?.value || "").trim().replace(/^@+/, "");
-  const fromUser = manualFrom || inlineTokens.fromUser || "";
-  const filter = searchFilter?.value || "all";
-  const dateFrom = searchDateFromInput?.value || "";
-  const dateTo = searchDateToInput?.value || "";
-  const contentTypes = getSelectedContentTypes();
-  const hasContentFilter = contentTypes.length < SEARCH_CONTENT_TYPES.length;
-  const hasFilters = Boolean(
-    inlineTokens.query ||
-      fromUser ||
-      (filter && filter !== "all") ||
-      dateFrom ||
-      dateTo ||
-      hasContentFilter
-  );
-
-  return {
-    query: inlineTokens.query,
-    rawQuery,
-    filter,
-    fromUser,
-    dateFrom,
-    dateTo,
-    contentTypes,
-    hasFilters,
-  };
-}
-
-function showSearchLoading() {
-  if (!searchResultsBox) return;
-  searchResultsBox.hidden = false;
-  searchResultsBox.classList.add("show");
-  searchResultsBox.innerHTML = '<div class="search-results-status">Searching…</div>';
-}
-
-function renderTimelineHistogram(container, entries = [], unit = "hour") {
-  if (!container) return;
-  container.innerHTML = "";
-  if (!Array.isArray(entries) || !entries.length) {
-    container.setAttribute("aria-hidden", "true");
-    return;
-  }
-
-  container.removeAttribute("aria-hidden");
-  const bars = document.createElement("div");
-  bars.className = "search-timeline-bars";
-  const maxCount = Math.max(...entries.map((entry) => entry.count || 0), 1);
-
-  entries.forEach((entry) => {
-    const bar = document.createElement("div");
-    bar.className = "search-timeline-bar";
-    const fill = document.createElement("div");
-    fill.className = "search-timeline-bar-fill";
-    const heightPercent = Math.max(6, Math.round(((entry.count || 0) / maxCount) * 100));
-    fill.style.height = `${heightPercent}%`;
-    const label = document.createElement("div");
-    label.className = "search-timeline-bar-label";
-    label.textContent = formatTimelineLabel(entry.bucket, unit);
-    bar.title = `${entry.count || 0} messages`;
-    bar.append(fill, label);
-    bars.appendChild(bar);
-  });
-
-  container.appendChild(bars);
-}
-
-function formatTimelineLabel(bucket, unit) {
-  if (!bucket) return "";
-  const date = new Date(bucket);
-  if (Number.isNaN(date.getTime())) return bucket;
-  if (unit === "day") {
-    return date.toLocaleDateString([], { month: "short", day: "numeric" });
-  }
-  return date.toLocaleString([], { month: "short", day: "numeric", hour: "numeric" });
-}
-
-function toggleFacetSelection(type) {
-  if (!SEARCH_CONTENT_TYPES.includes(type)) return;
-  const current = new Set(getSelectedContentTypes());
-  if (current.size === SEARCH_CONTENT_TYPES.length && current.has(type)) {
-    current.clear();
-    current.add(type);
-  } else if (current.has(type)) {
-    current.delete(type);
-    if (!current.size) {
-      SEARCH_CONTENT_TYPES.forEach((value) => current.add(value));
-    }
-  } else {
-    current.add(type);
-  }
-  setContentTypeSelection(Array.from(current));
-  triggerSearch({ immediate: true });
-}
-
 function hideSearchResults() {
   if (!searchResultsBox) return;
   searchResultsBox.classList.remove("show");
@@ -4747,213 +3043,67 @@ function hideSearchResults() {
   searchResultsBox.innerHTML = "";
 }
 
-function renderSearchResults({ results = [], facets = {}, timeline = [], total = 0, timelineUnit = "hour" } = {}) {
+function renderSearchResults(results = []) {
   if (!searchResultsBox) return;
-  updateSearchControlState();
-  searchResultsBox.innerHTML = "";
-
-  const header = document.createElement("div");
-  header.className = "search-results-header";
-  const totalLabel = document.createElement("span");
-  totalLabel.innerHTML = `<strong>${total}</strong> ${total === 1 ? "match" : "matches"}`;
-  header.appendChild(totalLabel);
-  searchResultsBox.appendChild(header);
-
-  const facetsRow = document.createElement("div");
-  facetsRow.className = "search-facets";
-  const selectedTypes = new Set(getSelectedContentTypes());
-  SEARCH_CONTENT_TYPES.forEach((type) => {
-    const count = typeof facets?.[type] === "number" ? facets[type] : 0;
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "search-facet";
-    button.classList.toggle("is-active", selectedTypes.has(type));
-    button.innerHTML = `${SEARCH_FACET_LABELS[type]} <span class="count">${count}</span>`;
-    button.addEventListener("click", () => toggleFacetSelection(type));
-    facetsRow.appendChild(button);
-  });
-  searchResultsBox.appendChild(facetsRow);
-
-  const timelineContainer = document.createElement("div");
-  timelineContainer.className = "search-timeline";
-  renderTimelineHistogram(timelineContainer, timeline, timelineUnit);
-  searchResultsBox.appendChild(timelineContainer);
-
-  const list = document.createElement("div");
-  list.className = "search-results-list";
   if (!Array.isArray(results) || !results.length) {
-    const empty = document.createElement("div");
-    empty.className = "search-results-empty";
-    empty.textContent = "No matches found for this filter.";
-    list.appendChild(empty);
-  } else {
-    results.forEach((msg) => {
-      const data = storeMessageData(msg);
-      if (!data) return;
-      const item = document.createElement("div");
-      item.className = "search-result-item";
-      item.dataset.id = data.id;
-
-      const meta = document.createElement("div");
-      meta.className = "search-result-meta";
-      const name = document.createElement("span");
-      name.textContent = data.user || "Anon";
-      const typeBadge = document.createElement("span");
-      typeBadge.className = "search-result-type";
-      typeBadge.textContent = SEARCH_FACET_LABELS[data.facetType] || SEARCH_FACET_LABELS.text;
-      const time = document.createElement("span");
-      time.textContent = new Date(data.timestamp || Date.now()).toLocaleString();
-      meta.append(name, typeBadge, time);
-
-      const text = document.createElement("div");
-      text.className = "search-result-text";
-      const preview = data.deleted
-        ? "Message deleted"
-        : data.text?.trim() || data.fileName || data.fileUrl || "Attachment";
-      text.textContent = preview.length > 140 ? `${preview.slice(0, 140)}…` : preview;
-
-      item.append(meta, text);
-      item.addEventListener("click", () => {
-        focusMessage(data.id);
-        hideSearchResults();
-      });
-
-      list.appendChild(item);
-    });
-  }
-
-  searchResultsBox.appendChild(list);
-  searchResultsBox.hidden = false;
-  searchResultsBox.classList.add("show");
-}
-
-function triggerSearch({ immediate = false } = {}) {
-  if (!searchInput || !searchFilter || !window.currentRoom) return;
-  const payload = buildSearchPayload();
-  updateSearchControlState(payload);
-  if (!payload.hasFilters) {
     hideSearchResults();
     return;
   }
 
-  const emitSearch = () => {
-    showSearchLoading();
-    socket.emit("search messages", {
-      room: window.currentRoom,
-      query: payload.query,
-      filter: payload.filter,
-      fromUser: payload.fromUser,
-      dateFrom: payload.dateFrom,
-      dateTo: payload.dateTo,
-      contentTypes: payload.contentTypes,
-    });
-  };
+  searchResultsBox.innerHTML = "";
+  results.forEach((msg) => {
+    const data = storeMessageData(msg);
+    if (!data) return;
+    const item = document.createElement("div");
+    item.className = "search-result-item";
+    item.dataset.id = data.id;
 
-  if (immediate) {
-    emitSearch();
+    const meta = document.createElement("div");
+    meta.className = "search-result-meta";
+    const name = document.createElement("span");
+    name.textContent = data.user || "Anon";
+    const time = document.createElement("span");
+    time.textContent = new Date(data.timestamp || Date.now()).toLocaleTimeString();
+    meta.append(name, time);
+
+    const text = document.createElement("div");
+    text.className = "search-result-text";
+    const preview = data.deleted
+      ? "Message deleted"
+      : data.text?.trim() || data.fileName || data.fileUrl || "Attachment";
+    text.textContent = preview.length > 140 ? `${preview.slice(0, 140)}…` : preview;
+
+    item.append(meta, text);
+    item.addEventListener("click", () => {
+      focusMessage(data.id);
+      hideSearchResults();
+    });
+
+    searchResultsBox.appendChild(item);
+  });
+
+  searchResultsBox.hidden = false;
+  searchResultsBox.classList.add("show");
+}
+
+function triggerSearch() {
+  if (!searchInput || !searchFilter || !window.currentRoom) return;
+  const query = searchInput.value.trim();
+  const filter = searchFilter.value;
+
+  if (!query && filter === "all") {
+    hideSearchResults();
     return;
   }
 
   if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
-  searchDebounceTimer = setTimeout(emitSearch, 250);
-}
-
-function generateSavedSearchId() {
-  if (window.crypto?.randomUUID) {
-    return window.crypto.randomUUID();
-  }
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function handleSaveSearch() {
-  const payload = buildSearchPayload();
-  if (!payload.hasFilters) {
-    showToast("Add a filter or query before saving.", "info");
-    return;
-  }
-  const suggestedName = payload.rawQuery || `Search ${savedSearches.length + 1}`;
-  const name = window.prompt("Name this search", suggestedName);
-  if (!name) return;
-  const entry = {
-    id: generateSavedSearchId(),
-    name: name.trim(),
-    params: {
-      query: payload.query,
-      rawQuery: payload.rawQuery,
-      filter: payload.filter,
-      fromUser: payload.fromUser,
-      dateFrom: payload.dateFrom,
-      dateTo: payload.dateTo,
-      contentTypes: payload.contentTypes,
-    },
-  };
-  const next = [entry, ...savedSearches.filter((item) => item.name !== entry.name)];
-  setSavedSearches(next);
-  showToast("Search saved.", "success");
-}
-
-function handleDeleteSavedSearch() {
-  if (!searchSavedSelect || searchSavedSelect.value === SAVED_SEARCH_PLACEHOLDER) return;
-  const next = savedSearches.filter((entry) => entry.id !== searchSavedSelect.value);
-  setSavedSearches(next);
-  searchSavedSelect.value = SAVED_SEARCH_PLACEHOLDER;
-  updateSearchControlState();
-  showToast("Saved search deleted.", "info");
-}
-
-function applySavedSearch(entry) {
-  if (!entry?.params) return;
-  const { params } = entry;
-  if (searchInput) searchInput.value = params.rawQuery || params.query || "";
-  if (searchFilter) searchFilter.value = params.filter || "all";
-  if (searchFromInput) searchFromInput.value = params.fromUser ? `@${params.fromUser}` : "";
-  if (searchDateFromInput) searchDateFromInput.value = params.dateFrom || "";
-  if (searchDateToInput) searchDateToInput.value = params.dateTo || "";
-  setContentTypeSelection(params.contentTypes || SEARCH_CONTENT_TYPES);
-  setSearchAdvancedVisible(true);
-  triggerSearch({ immediate: true });
-}
-
-async function downloadSearchCsv() {
-  if (!window.currentRoom) return;
-  const payload = buildSearchPayload();
-  if (!payload.hasFilters) {
-    showToast("Choose a filter or query before exporting.", "info");
-    return;
-  }
-
-  const params = new URLSearchParams();
-  if (payload.query) params.set("q", payload.query);
-  if (payload.filter && payload.filter !== "all") params.set("filter", payload.filter);
-  if (payload.fromUser) params.set("from", payload.fromUser);
-  if (payload.dateFrom) params.set("dateFrom", payload.dateFrom);
-  if (payload.dateTo) params.set("dateTo", payload.dateTo);
-  if (payload.contentTypes.length && payload.contentTypes.length < SEARCH_CONTENT_TYPES.length) {
-    params.set("types", payload.contentTypes.join(","));
-  }
-  if (window.currentUser) params.set("username", window.currentUser);
-
-  const queryString = params.toString();
-  const url = `/rooms/${encodeURIComponent(window.currentRoom)}/search/export${
-    queryString ? `?${queryString}` : ""
-  }`;
-
-  try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error("Export failed");
-    const blob = await response.blob();
-    const downloadUrl = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = downloadUrl;
-    link.download = `${window.currentRoom}-search.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
-  } catch (err) {
-    console.error(err);
-    showToast("Unable to export search results.", "error");
-  }
+  searchDebounceTimer = setTimeout(() => {
+    socket.emit("search messages", {
+      room: window.currentRoom,
+      query,
+      filter,
+    });
+  }, 250);
 }
 
 function loadSoundCloudApi() {
@@ -5131,64 +3281,18 @@ document.addEventListener("keydown", (event) => {
 
 if (searchInput) {
   searchInput.addEventListener("input", () => {
+    if (!searchInput.value.trim() && (!searchFilter || searchFilter.value === "all")) {
+      hideSearchResults();
+      return;
+    }
     triggerSearch();
-  });
-  searchInput.addEventListener("search", () => {
-    triggerSearch({ immediate: true });
   });
 }
 
 if (searchFilter) {
   searchFilter.addEventListener("change", () => {
-    triggerSearch({ immediate: true });
+    triggerSearch();
   });
-}
-
-if (searchFromInput) {
-  searchFromInput.addEventListener("input", () => triggerSearch());
-}
-
-[searchDateFromInput, searchDateToInput].forEach((inputEl) => {
-  inputEl?.addEventListener("change", () => triggerSearch({ immediate: true }));
-});
-
-searchContentTypeInputs.forEach((inputEl) => {
-  inputEl.addEventListener("change", () => triggerSearch({ immediate: true }));
-});
-
-if (searchAdvancedToggle && searchAdvancedPanel) {
-  searchAdvancedToggle.addEventListener("click", () => {
-    const nextState = searchAdvancedPanel.hidden;
-    setSearchAdvancedVisible(nextState);
-    updateSearchControlState();
-  });
-}
-
-if (searchSaveButton) {
-  searchSaveButton.addEventListener("click", handleSaveSearch);
-}
-
-if (searchDeleteSavedButton) {
-  searchDeleteSavedButton.addEventListener("click", handleDeleteSavedSearch);
-}
-
-if (searchSavedSelect) {
-  searchSavedSelect.addEventListener("change", () => {
-    if (searchSavedSelect.value === SAVED_SEARCH_PLACEHOLDER) {
-      updateSearchControlState();
-      return;
-    }
-    const entry = savedSearches.find((item) => item.id === searchSavedSelect.value);
-    if (entry) {
-      applySavedSearch(entry);
-    }
-    searchSavedSelect.value = SAVED_SEARCH_PLACEHOLDER;
-    updateSearchControlState();
-  });
-}
-
-if (searchExportButton) {
-  searchExportButton.addEventListener("click", downloadSearchCsv);
 }
 // ------------------- Toasts (bottom-left, glowing, auto-hide) -------------------
 (() => {
@@ -5343,12 +3447,12 @@ socket.on("join error", (msg) => showToast(msg || "Join failed.", "error"));
 socket.on("toast", (data) => showToast(data?.text || "", data?.type || "info"));
 socket.on("connect", () => {
   showToast("Connected", "success");
-  renderPublicRooms(latestPublicRooms);
+  renderPublicRooms([], { state: "loading" });
   socket.emit("request rooms");
 });
 socket.on("disconnect", () => {
   showToast("Disconnected", "error");
-  renderPublicRooms(latestPublicRooms);
+  renderPublicRooms([], { state: "error" });
   hideSearchResults();
 });
 socket.on("room list", (rooms) => {
@@ -5358,36 +3462,6 @@ socket.on("room list", (rooms) => {
 socket.on("room users", ({ room, users } = {}) => {
   if (room && window.currentRoom && room !== window.currentRoom) return;
   renderUserSidebar(Array.isArray(users) ? users : []);
-  if (profileSheetState.visible && profileSheetState.username && Array.isArray(users)) {
-    const match = users.find((user) => user?.username === profileSheetState.username);
-    if (match) {
-      openProfileSheetForUser(profileSheetState.username, {
-        focusThread: profileSheetState.threadOpen,
-        suppressFocus: true,
-      });
-    } else {
-      closeProfileSheet();
-    }
-  }
-});
-
-socket.on("profile updated", (profile) => {
-  profileState.dirty = false;
-  updateProfileSaveButton();
-  if (profileState.manualSavePending) {
-    showToast("Profile updated for this room.", "success");
-    profileState.manualSavePending = false;
-  }
-  if (Array.isArray(appState.users) && appState.users.length) {
-    renderUserSidebar(appState.users);
-  }
-});
-
-socket.on("profile error", (message) => {
-  profileState.dirty = true;
-  profileState.manualSavePending = false;
-  updateProfileSaveButton();
-  showToast(message || "Unable to update profile.", "error");
 });
 
 socket.on("user moderation", ({ room, target, action, performedBy, duration } = {}) => {
@@ -5437,19 +3511,6 @@ function updateQueryParams(room, password) {
 }
 
 function showLanding({ focusUsername = true } = {}) {
-  updateMentionDetector("");
-  cancelProfileSync();
-  closeProfileSheet();
-  updateProfileSaveButton();
-  profileState.manualSavePending = false;
-  composerDraftManager.persistActiveDraft({ immediate: true });
-  composerDraftManager.clearVisibleDraft();
-  closePinHub({ returnFocus: false });
-  if (pinHubToggle) {
-    pinHubToggle.setAttribute("hidden", "hidden");
-    pinHubToggle.setAttribute("aria-hidden", "true");
-    pinHubToggle.setAttribute("aria-expanded", "false");
-  }
   isViewingChat = false;
   resetChromeToolbarAttention();
   appState.isAdmin = false;
@@ -5473,7 +3534,6 @@ function showLanding({ focusUsername = true } = {}) {
     pinnedContainer.innerHTML = "";
     pinnedContainer.style.display = "none";
   }
-  renderPinHubHighlights();
   resetMessageReadObserver();
   if (messages) {
     messages.innerHTML = "";
@@ -6548,7 +4608,6 @@ if (typeof window !== "undefined") {
   });
 
   window.addEventListener("beforeunload", () => {
-    composerDraftManager.persistActiveDraft({ immediate: true });
     stopInfowarsStreamPlayback();
     if (psybinAudio) {
       try {
@@ -6574,13 +4633,9 @@ if (scrollToLatestBtn) {
 // ===== JOIN ROOM (with corrections for transition) =====
 
 function completeRoomJoin(username, room, password) {
-  composerDraftManager.persistActiveDraft({ immediate: true });
-  composerDraftManager.clearVisibleDraft();
   window.currentUser = username;
   window.currentRoom = room;
   window.currentPassword = password;
-  updateMentionDetector(username);
-  updateProfilePreview();
 
   lastRoomName = room;
   lastRoomPassword = password;
@@ -6595,8 +4650,6 @@ function completeRoomJoin(username, room, password) {
   loadHiddenMessagesForRoom(room);
   appState.messages.clear();
   appState.pinned.clear();
-  resetPinnedSignature();
-  renderPinHubHighlights();
   hideSearchResults();
   resetMessageReadObserver();
   if (messages) {
@@ -6613,12 +4666,6 @@ function completeRoomJoin(username, room, password) {
   }
   renderUserSidebar([]);
 
-  if (pinHubToggle) {
-    pinHubToggle.removeAttribute("hidden");
-    pinHubToggle.setAttribute("aria-hidden", "false");
-    pinHubToggle.setAttribute("aria-expanded", pinHubState.visible ? "true" : "false");
-  }
-
   updateQueryParams(room, password);
 
   if (roomName) roomName.textContent = room ? `#${room}` : "";
@@ -6630,11 +4677,6 @@ function completeRoomJoin(username, room, password) {
   }
 
   scrollMessagesToBottom({ behavior: "smooth", delay: 200, force: true });
-
-  const restoredDraft = composerDraftManager.restoreDraftForRoom(room);
-  if (restoredDraft && room) {
-    showToast(`Draft restored for #${room}`, "info");
-  }
 }
 
 function emitJoinRequest() {
@@ -6681,42 +4723,10 @@ function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
     return;
   }
 
-  const baseRooms = Array.isArray(rooms) ? rooms.filter(Boolean) : [];
-  const normalized = [];
-  const seenNames = new Set();
+  const data = Array.isArray(rooms) ? rooms.filter(Boolean) : [];
+  latestPublicRooms = data;
 
-  baseRooms.forEach((room) => {
-    const roomNameValue = typeof room?.name === "string" ? room.name.trim() : "";
-    if (!roomNameValue || seenNames.has(roomNameValue)) return;
-
-    const normalizedRoom = {
-      name: roomNameValue,
-      occupants: Number.isFinite(Number(room?.occupants))
-        ? Math.max(0, Number(room.occupants))
-        : 0,
-      requiresPassword: Boolean(room?.requiresPassword),
-      isPersistent: Boolean(room?.isPersistent),
-      isFallback: Boolean(room?.isFallback),
-    };
-
-    normalized.push({ ...room, ...normalizedRoom });
-    seenNames.add(roomNameValue);
-  });
-
-  FALLBACK_PUBLIC_ROOMS.forEach((room) => {
-    if (seenNames.has(room.name)) return;
-    normalized.push({ ...room });
-    seenNames.add(room.name);
-  });
-
-  normalized.sort((a, b) => {
-    if (b.occupants !== a.occupants) return b.occupants - a.occupants;
-    return a.name.localeCompare(b.name);
-  });
-
-  latestPublicRooms = normalized.map((room) => ({ ...room }));
-
-  if (!normalized.length) {
+  if (!data.length) {
     const emptyItem = document.createElement("li");
     emptyItem.className = "empty";
     emptyItem.textContent = "No public rooms are open yet.";
@@ -6724,7 +4734,7 @@ function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
     return;
   }
 
-  normalized.forEach((room) => {
+  data.forEach((room) => {
     const roomNameValue = typeof room?.name === "string" ? room.name : "";
     if (!roomNameValue) return;
 
@@ -6735,31 +4745,16 @@ function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
     item.className = "public-room-item";
     item.dataset.room = roomNameValue;
 
-    const headingEl = document.createElement("div");
-    headingEl.className = "room-heading";
-
     const nameEl = document.createElement("span");
     nameEl.className = "room-name";
     nameEl.textContent = roomNameValue;
-    headingEl.appendChild(nameEl);
-
-    if (room?.isPersistent || room?.isFallback) {
-      const badgeEl = document.createElement("span");
-      badgeEl.className = "room-badge";
-      badgeEl.textContent = room?.isFallback ? "Default" : "Featured";
-      headingEl.appendChild(badgeEl);
-      item.classList.add("persistent");
-      if (room?.isFallback) {
-        item.dataset.fallback = "true";
-      }
-    }
 
     const metaEl = document.createElement("span");
     metaEl.className = "room-meta";
     const peopleLabel = occupants === 1 ? "1 online" : `${occupants} online`;
     metaEl.textContent = requiresPassword ? `${peopleLabel} • 🔒` : peopleLabel;
 
-    item.appendChild(headingEl);
+    item.appendChild(nameEl);
     item.appendChild(metaEl);
     item.tabIndex = 0;
 
@@ -6878,8 +4873,6 @@ socket.on("join room success", () => {
   if (usernamePrompt) usernamePrompt.style.display = "none";
   input?.focus();
   scrollMessagesToBottom({ behavior: "smooth", delay: 80, force: true });
-  updateProfileSaveButton();
-  broadcastProfileState({ skipIfEmpty: true });
 });
 
 // Join error handling
@@ -7320,62 +5313,20 @@ if (emojiPicker) {
 
 // ------------------- Sending Messages -------------------
 if (form) {
-  let isSendingComposerPayload = false;
-  form.addEventListener("submit", async (e) => {
+  form.addEventListener("submit", (e) => {
     e.preventDefault();
-    if (isSendingComposerPayload) return;
-
     const rawText = input?.value || "";
-    const trimmed = rawText.trim();
-    const hasAttachments = composerDraftManager.hasAttachments();
-
-    if (!trimmed && !hasAttachments) {
-      return;
-    }
-
-    if (!window.currentRoom || !window.currentUser) {
-      showToast("Join a room to send messages.", "warn");
-      return;
-    }
-
     const replyTo = normalizeMessageId(replyState.targetId) || undefined;
-    isSendingComposerPayload = true;
-    try {
-      if (trimmed) {
-        const sent = sendPlainTextMessage(rawText, { replyTo });
-        if (!sent) {
-          showToast("Unable to send message.", "error");
-          return;
-        }
-        input.value = "";
-      }
-
-      if (hasAttachments) {
-        await composerDraftManager.sendAttachmentsSequentially(replyTo);
-        if (!trimmed) {
-          input.value = "";
-        }
-      }
-
-      if (isTyping) {
-        socket.emit("stop typing");
-        isTyping = false;
-        clearTimeout(typingTimeout);
-      }
-
-      clearReplyTarget();
-      composerDraftManager.persistActiveDraft({ immediate: true });
-    } catch (err) {
-      console.error("[Composer] Failed to send payload", err);
-    } finally {
-      isSendingComposerPayload = false;
-    }
+    const sent = sendPlainTextMessage(rawText, { replyTo });
+    if (!sent) return;
+    input.value = "";
+    clearReplyTarget();
+    socket.emit("stop typing");
   });
 }
 
 // ------------------- Typing Indicator -------------------
 input?.addEventListener("input", () => {
-  composerDraftManager.noteTextChanged();
   if (!isTyping) {
     socket.emit("typing", window.currentUser);
     isTyping = true;
@@ -7975,9 +5926,7 @@ function renderMessage(
   } else {
     messages.appendChild(wrap);
   }
-  const shouldNotifyMention = !isPrepend && !skipScroll;
   applyMessageStatus(wrap, data);
-  applyMentionHighlight(wrap, data, { notify: shouldNotifyMention });
   setupMessageActions(wrap, data);
   updateMessageFlags(wrap, data);
   trackMessageRead(wrap, data);
@@ -7989,7 +5938,6 @@ function renderMessage(
   }
 
   renderMessageReactions(wrap, data);
-  maybeRefreshProfileThread(data);
 
   if (!skipScroll) {
     if (respectScrollLock) {
@@ -8035,8 +5983,6 @@ socket.on("load messages", (payload) => {
   clearReplyTarget();
   appState.messages.clear();
   appState.pinned.clear();
-  resetPinnedSignature();
-  renderPinHubHighlights();
   if (appState.history) {
     appState.history.cursor = cursor;
     appState.history.hasMore = hasMore;
@@ -8144,7 +6090,6 @@ socket.on("delete message", (payload) => {
   storeMessageData({ id, deleted: true });
   updateMessageNode(id);
   updatePinnedBanner();
-  renderPinHubHighlights();
   showToast("Message deleted", "info");
 });
 
@@ -8155,7 +6100,6 @@ socket.on("delete message local", ({ id }) => {
 
 socket.on("pinned messages", (arr = []) => {
   appState.pinned.clear();
-  resetPinnedSignature();
   (arr || []).forEach((entry) => {
     const data = storeMessageData({ ...entry, pinned: true });
     if (data) updateMessageNode(data.id);
@@ -8182,14 +6126,12 @@ socket.on("message starred", ({ id, starredBy = [] }) => {
   const data = storeMessageData({ id, starredBy });
   if (!data) return;
   updateMessageNode(data.id);
-  renderPinHubHighlights();
 });
 
 socket.on("message unstarred", ({ id, starredBy = [] }) => {
   const data = storeMessageData({ id, starredBy });
   if (!data) return;
   updateMessageNode(data.id);
-  renderPinHubHighlights();
 });
 
 socket.on("update reactions", ({ id, reactions = [] } = {}) => {
@@ -8199,9 +6141,9 @@ socket.on("update reactions", ({ id, reactions = [] } = {}) => {
   updateMessageNode(data.id);
 });
 
-socket.on("search results", (payload = {}) => {
-  if (payload.room && window.currentRoom && payload.room !== window.currentRoom) return;
-  renderSearchResults(payload);
+socket.on("search results", ({ room, results } = {}) => {
+  if (room && window.currentRoom && room !== window.currentRoom) return;
+  renderSearchResults(results || []);
 });
 
 socket.on("admin status", ({ isAdmin }) => {
@@ -8209,7 +6151,6 @@ socket.on("admin status", ({ isAdmin }) => {
   appState.isAdmin = Boolean(isAdmin);
   refreshActionMenus();
   renderUserSidebar(appState.users);
-  renderPinHubHighlights();
   if (appState.isAdmin && !previous) {
     showToast("Admin mode enabled", "success");
   } else if (!appState.isAdmin && previous) {
@@ -8230,16 +6171,13 @@ const createUploadOverlay = () => {
 const uploadFileAndSend = async (fileOrBlob, options = {}) => {
   if (!fileOrBlob) return false;
 
-  const { fileName: overrideName, displayName, mimeType, replyTo: explicitReply } = options;
+  const { fileName: overrideName, displayName, mimeType } = options;
   const intrinsicName =
     typeof fileOrBlob?.name === "string" && fileOrBlob.name
       ? fileOrBlob.name
       : "";
   const uploadName = overrideName || intrinsicName || "attachment";
   const label = displayName || uploadName;
-  const normalizedReply = normalizeMessageId(
-    explicitReply !== undefined ? explicitReply : replyState.targetId
-  ) || undefined;
 
   showToast(`Uploading ${label}…`, "info");
 
@@ -8273,7 +6211,8 @@ const uploadFileAndSend = async (fileOrBlob, options = {}) => {
 
     showToast(`Uploaded: ${label}`, "success");
 
-    const payload = {
+    const replyTo = normalizeMessageId(replyState.targetId) || undefined;
+    socket.emit("chat message", {
       room: window.currentRoom,
       user: window.currentUser,
       text: data.url,
@@ -8281,14 +6220,10 @@ const uploadFileAndSend = async (fileOrBlob, options = {}) => {
       fileUrl: data.url,
       fileType: data.type || mimeType || fileOrBlob.type || "",
       fileName: data.name || uploadName || "",
-    };
+      replyTo,
+    });
 
-    if (normalizedReply) {
-      payload.replyTo = normalizedReply;
-    }
-
-    socket.emit("chat message", payload);
-
+    clearReplyTarget();
     return true;
   } catch (err) {
     console.error("[Upload Error]", err);
@@ -8310,20 +6245,11 @@ if (attachBtn && fileInput) {
     if (!file) return;
 
     try {
-      const record = await composerDraftManager.addFileAttachment(file);
-      if (record) {
-        showToast(`${record.name} added to draft. Press send to upload.`, "success");
-        try {
-          input?.focus({ preventScroll: true });
-        } catch {
-          input?.focus();
-        }
-      }
-    } catch (err) {
-      const message = err?.message || "Unable to stage attachment.";
-      showToast(message, "error");
+      await uploadFileAndSend(file);
+      fileInput.value = "";
+    } catch {
+      /* handled in uploadFileAndSend */
     }
-    fileInput.value = "";
   });
 }
 
@@ -8708,8 +6634,6 @@ if (voiceBtn) {
         recordedChunks && recordedChunks.length
           ? new Blob(recordedChunks, { type: mimeType })
           : null;
-      const voiceDurationMs =
-        recordingStartTime != null ? Date.now() - recordingStartTime : 0;
 
       cleanupStream(currentRecorder?.stream);
       resetRecordingState();
@@ -8731,17 +6655,13 @@ if (voiceBtn) {
       const filename = `voice-${timestamp}.${extension}`;
 
       try {
-        await composerDraftManager.addVoiceAttachment(blob, {
+        await uploadFileAndSend(blob, {
           fileName: filename,
           displayName: filename,
           mimeType,
-          durationMs: voiceDurationMs,
         });
-        showToast("Voice note saved to draft. Press send when ready.", "success");
-      } catch (err) {
-        console.error("[Voice] Failed to stage recording", err);
-        const message = err?.message || "Unable to save voice note draft.";
-        showToast(message, "error");
+      } catch {
+        /* errors handled in uploadFileAndSend */
       }
     };
 
