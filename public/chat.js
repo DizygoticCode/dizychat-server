@@ -156,6 +156,30 @@ const userCount = document.getElementById("user-count");
 const userListEmpty = document.getElementById("user-list-empty");
 const userContextMenu = document.getElementById("user-context-menu");
 const toolbar = document.querySelector("#chat-container > header");
+const profileEditor = document.getElementById("profile-editor");
+const profileAvatarPreview = document.getElementById("profile-avatar-preview");
+const profileAvatarButton = document.getElementById("profile-avatar-button");
+const profileAvatarRemove = document.getElementById("profile-avatar-remove");
+const profileAvatarInput = document.getElementById("profile-avatar-input");
+const profileStatusInput = document.getElementById("profile-status");
+const profileNowPlayingInput = document.getElementById("profile-now-playing");
+const profileBioInput = document.getElementById("profile-bio");
+const profileSaveBtn = document.getElementById("profile-save");
+const profileSheet = document.getElementById("profile-sheet");
+const profileSheetPanel = document.getElementById("profile-sheet-panel");
+const profileSheetClose = document.getElementById("profile-sheet-close");
+const profileSheetOverlay = profileSheet?.querySelector?.("[data-profile-close]") || null;
+const profileSheetName = document.getElementById("profile-sheet-name");
+const profileSheetStatus = document.getElementById("profile-sheet-status");
+const profileSheetNowPlaying = document.getElementById("profile-sheet-now-playing");
+const profileSheetBio = document.getElementById("profile-sheet-bio");
+const profileSheetAvatar = document.getElementById("profile-sheet-avatar");
+const profileSheetMentionBtn = document.getElementById("profile-sheet-mention");
+const profileSheetThreadToggle = document.getElementById("profile-sheet-thread-toggle");
+const profileThreadSection = document.getElementById("profile-thread");
+const profileThreadList = document.getElementById("profile-thread-messages");
+const profileThreadInput = document.getElementById("profile-thread-input");
+const profileThreadSend = document.getElementById("profile-thread-send");
 const psybinPlayer = document.getElementById("psybin-player");
 const psybinAudio = document.getElementById("psybin-audio");
 const psybinPlayBtn = document.getElementById("psybin-play");
@@ -178,6 +202,112 @@ function setViewMode(mode) {
 if (pageBody) {
   setViewMode(pageBody.classList.contains("view-chat") ? "chat" : "landing");
 }
+
+if (profileStatusInput) {
+  profileStatusInput.addEventListener("input", () => {
+    profileState.status = clampProfileField(profileStatusInput.value, PROFILE_FIELD_LIMITS.status);
+    markProfileDirty();
+  });
+}
+
+if (profileNowPlayingInput) {
+  profileNowPlayingInput.addEventListener("input", () => {
+    profileState.nowPlaying = clampProfileField(
+      profileNowPlayingInput.value,
+      PROFILE_FIELD_LIMITS.nowPlaying,
+    );
+    markProfileDirty();
+  });
+}
+
+if (profileBioInput) {
+  profileBioInput.addEventListener("input", () => {
+    profileState.bio = clampProfileField(profileBioInput.value, PROFILE_FIELD_LIMITS.bio);
+    markProfileDirty();
+  });
+}
+
+if (usernameInput) {
+  usernameInput.addEventListener("input", () => updateProfilePreview());
+}
+
+if (profileAvatarButton && profileAvatarInput) {
+  profileAvatarButton.addEventListener("click", () => profileAvatarInput.click());
+  profileAvatarInput.addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    profileAvatarButton.disabled = true;
+    profileAvatarButton.setAttribute("aria-busy", "true");
+    try {
+      const url = await uploadProfileAvatar(file);
+      if (url) {
+        profileState.avatarUrl = url;
+        updateProfilePreview();
+        markProfileDirty({ skipSync: false });
+        showToast("Avatar updated!", "success");
+      }
+    } catch (err) {
+      const message = err?.message || "Unable to upload avatar.";
+      showToast(message, "error");
+    } finally {
+      profileAvatarButton.disabled = false;
+      profileAvatarButton.removeAttribute("aria-busy");
+    }
+  });
+}
+
+if (profileAvatarRemove) {
+  profileAvatarRemove.addEventListener("click", () => {
+    if (!profileState.avatarUrl) return;
+    profileState.avatarUrl = "";
+    updateProfilePreview();
+    markProfileDirty();
+  });
+}
+
+if (profileSaveBtn) {
+  profileSaveBtn.addEventListener("click", () => {
+    if (!window.currentRoom) {
+      showToast("Join a room to share your profile.", "warn");
+      return;
+    }
+    if (!profileState.dirty) return;
+    profileState.manualSavePending = true;
+    broadcastProfileState();
+  });
+}
+
+if (profileSheetOverlay) {
+  profileSheetOverlay.addEventListener("click", closeProfileSheet);
+}
+
+if (profileSheetClose) {
+  profileSheetClose.addEventListener("click", closeProfileSheet);
+}
+
+if (profileThreadSend) {
+  profileThreadSend.addEventListener("click", () => {
+    if (profileSheetState.username) {
+      sendSideThreadMessage(profileSheetState.username);
+    }
+  });
+}
+
+if (profileThreadInput) {
+  profileThreadInput.addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && profileSheetState.username) {
+      event.preventDefault();
+      sendSideThreadMessage(profileSheetState.username);
+    }
+  });
+}
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && profileSheetState.visible) {
+    closeProfileSheet();
+  }
+});
 
 if (pinHubToggle) {
   pinHubToggle.addEventListener("click", () => {
@@ -731,6 +861,476 @@ const appState = {
     loading: false,
   },
 };
+
+const mentionState = {
+  regex: null,
+  username: '',
+  lastNotice: 0,
+  cooldownMs: 4000,
+};
+
+const profileSheetState = {
+  visible: false,
+  username: '',
+  threadOpen: false,
+};
+
+const PROFILE_STORAGE_KEY = 'dizychat.profile.v2';
+const PROFILE_FIELD_LIMITS = {
+  status: 80,
+  nowPlaying: 80,
+  bio: 200,
+};
+const MAX_PROFILE_AVATAR_SIZE = 2 * 1024 * 1024;
+
+const profileState = {
+  status: '',
+  nowPlaying: '',
+  bio: '',
+  avatarUrl: '',
+  dirty: false,
+  manualSavePending: false,
+};
+
+let profileSyncTimer = null;
+
+const AVATAR_COLOR_PALETTE = [
+  "#a855f7",
+  "#ec4899",
+  "#f97316",
+  "#14b8a6",
+  "#3b82f6",
+  "#facc15",
+];
+
+const clampProfileField = (value, limit) => {
+  if (typeof value !== "string") return "";
+  return value.slice(0, limit);
+};
+
+const loadStoredProfileState = () => {
+  try {
+    const raw = localStorage.getItem(PROFILE_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    return {
+      status: typeof parsed.status === "string" ? parsed.status : "",
+      nowPlaying: typeof parsed.nowPlaying === "string" ? parsed.nowPlaying : "",
+      bio: typeof parsed.bio === "string" ? parsed.bio : "",
+      avatarUrl: typeof parsed.avatarUrl === "string" ? parsed.avatarUrl : "",
+    };
+  } catch {
+    return {};
+  }
+};
+
+const persistProfileState = () => {
+  try {
+    const payload = {
+      status: profileState.status || "",
+      nowPlaying: profileState.nowPlaying || "",
+      bio: profileState.bio || "",
+      avatarUrl: profileState.avatarUrl || "",
+    };
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    /* ignore persistence errors */
+  }
+};
+
+const getProfileSnapshot = () => {
+  const status = clampProfileField((profileState.status || "").trim(), PROFILE_FIELD_LIMITS.status);
+  const nowPlaying = clampProfileField((profileState.nowPlaying || "").trim(), PROFILE_FIELD_LIMITS.nowPlaying);
+  const bio = clampProfileField((profileState.bio || "").trim(), PROFILE_FIELD_LIMITS.bio);
+  const avatarUrl = typeof profileState.avatarUrl === "string" ? profileState.avatarUrl.trim() : "";
+  return { status, nowPlaying, bio, avatarUrl };
+};
+
+const hasProfileValues = () => {
+  const snapshot = getProfileSnapshot();
+  return Boolean(snapshot.status || snapshot.nowPlaying || snapshot.bio || snapshot.avatarUrl);
+};
+
+const applyProfileInputsFromState = () => {
+  if (profileStatusInput) profileStatusInput.value = profileState.status || "";
+  if (profileNowPlayingInput) profileNowPlayingInput.value = profileState.nowPlaying || "";
+  if (profileBioInput) profileBioInput.value = profileState.bio || "";
+};
+
+const pickAvatarColor = (username = "") => {
+  const source = username || "dizy";
+  let hash = 0;
+  for (let i = 0; i < source.length; i += 1) {
+    hash = (hash + source.charCodeAt(i) * (i + 11)) % 997;
+  }
+  return AVATAR_COLOR_PALETTE[hash % AVATAR_COLOR_PALETTE.length];
+};
+
+const applyAvatarImage = (node, username, avatarUrl) => {
+  if (!node) return;
+  node.innerHTML = "";
+  const color = pickAvatarColor(username);
+  node.style.background = `linear-gradient(135deg, ${color}, rgba(255, 255, 255, 0.08))`;
+  const url = typeof avatarUrl === "string" ? avatarUrl.trim() : "";
+  if (url) {
+    const img = document.createElement("img");
+    img.src = url;
+    img.alt = username ? `${username}'s avatar` : "Avatar";
+    img.loading = "lazy";
+    node.appendChild(img);
+    return;
+  }
+  const span = document.createElement("span");
+  const initial = typeof username === "string" && username
+    ? username.trim().charAt(0).toUpperCase()
+    : "?";
+  span.textContent = initial || "?";
+  span.setAttribute("aria-hidden", "true");
+  node.appendChild(span);
+};
+
+const updateProfilePreview = () => {
+  if (!profileAvatarPreview) return;
+  const username = window.currentUser || usernameInput?.value || "You";
+  applyAvatarImage(profileAvatarPreview, username, profileState.avatarUrl);
+};
+
+const markProfileDirty = ({ skipSync = false } = {}) => {
+  profileState.dirty = true;
+  persistProfileState();
+  updateProfileSaveButton();
+  if (!skipSync && window.currentRoom) {
+    scheduleProfileSync();
+  }
+};
+
+const scheduleProfileSync = () => {
+  if (!window.currentRoom) return;
+  if (profileSyncTimer) clearTimeout(profileSyncTimer);
+  profileSyncTimer = setTimeout(() => {
+    profileSyncTimer = null;
+    broadcastProfileState();
+  }, 800);
+};
+
+const cancelProfileSync = () => {
+  if (!profileSyncTimer) return;
+  clearTimeout(profileSyncTimer);
+  profileSyncTimer = null;
+};
+
+const broadcastProfileState = ({ skipIfEmpty = false } = {}) => {
+  if (!window.currentRoom) return false;
+  if (skipIfEmpty && !hasProfileValues()) return false;
+  const snapshot = getProfileSnapshot();
+  socket.emit("update profile", snapshot);
+  profileState.dirty = false;
+  updateProfileSaveButton();
+  return true;
+};
+
+const updateProfileSaveButton = () => {
+  if (!profileSaveBtn) return;
+  if (!window.currentRoom) {
+    profileSaveBtn.disabled = true;
+    profileSaveBtn.textContent = "Join a room to share";
+    return;
+  }
+  profileSaveBtn.disabled = !profileState.dirty;
+  profileSaveBtn.textContent = profileState.dirty ? "Share profile" : "Profile shared";
+};
+
+const sanitizeProfileForDisplay = (profile = {}) => {
+  const clean = {};
+  if (typeof profile.status === "string" && profile.status.trim()) clean.status = profile.status.trim();
+  if (typeof profile.nowPlaying === "string" && profile.nowPlaying.trim()) clean.nowPlaying = profile.nowPlaying.trim();
+  if (typeof profile.bio === "string" && profile.bio.trim()) clean.bio = profile.bio.trim();
+  if (typeof profile.avatarUrl === "string" && profile.avatarUrl.trim()) clean.avatarUrl = profile.avatarUrl.trim();
+  return clean;
+};
+
+const escapeForRegex = (value = "") => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const updateMentionDetector = (username) => {
+  if (!username) {
+    mentionState.regex = null;
+    mentionState.username = "";
+    return;
+  }
+  const escaped = escapeForRegex(username.trim());
+  mentionState.regex = new RegExp(`(^|[^\\w])@${escaped}(?=$|[^\\w])`, "i");
+  mentionState.username = username;
+};
+
+const insertMentionForUser = (username, { focusInput = true } = {}) => {
+  if (!username || !input) return false;
+  const mention = `@${username}`;
+  const current = input.value || "";
+  const start = input.selectionStart ?? current.length;
+  const end = input.selectionEnd ?? current.length;
+  const before = current.slice(0, start);
+  const after = current.slice(end);
+  const needsSpaceBefore = before && !/\s$/.test(before);
+  const needsSpaceAfter = after && !/^\s/.test(after);
+  const insertion = `${needsSpaceBefore ? " " : ""}${mention}${needsSpaceAfter ? "" : " "}`;
+  input.value = `${before}${insertion}${after}`;
+  const cursor = before.length + insertion.length;
+  if (typeof input.setSelectionRange === "function") {
+    input.setSelectionRange(cursor, cursor);
+  }
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  if (focusInput) {
+    try {
+      input.focus({ preventScroll: true });
+    } catch {
+      input.focus();
+    }
+  }
+  input.classList.add("mention-flash");
+  setTimeout(() => input.classList.remove("mention-flash"), 400);
+  return true;
+};
+
+const triggerMentionNotice = (data) => {
+  if (!data || data.user === window.currentUser) return;
+  const now = Date.now();
+  if (now - mentionState.lastNotice < mentionState.cooldownMs) return;
+  mentionState.lastNotice = now;
+  const author = data.user || "Someone";
+  showToast(`${author} mentioned you`, "info");
+  flashToolbar("mention");
+};
+
+const applyMentionHighlight = (node, data, { notify = true } = {}) => {
+  if (!node) return false;
+  if (!mentionState.regex || !data || !data.text) {
+    node.classList.remove("mention-hit");
+    return false;
+  }
+  mentionState.regex.lastIndex = 0;
+  if (!mentionState.regex.test(data.text)) {
+    node.classList.remove("mention-hit");
+    return false;
+  }
+  node.classList.add("mention-hit");
+  if (notify) {
+    triggerMentionNotice(data);
+  }
+  return true;
+};
+
+const profileSheetFocus = () => {
+  requestAnimationFrame(() => {
+    if (!profileSheetPanel) return;
+    profileSheetPanel.focus?.();
+  });
+};
+
+const renderProfileThreadMessages = (username) => {
+  if (!profileThreadList) return;
+  profileThreadList.innerHTML = "";
+  if (!username) return;
+
+  const selfUser = window.currentUser || "";
+  const mentionRegex = new RegExp(
+    `(^|[^\\w])@${escapeForRegex(username)}(?=$|[^\\w])`,
+    "i",
+  );
+
+  const recent = Array.from(appState.messages.values())
+    .filter((msg) => {
+      if (!msg || msg.deleted) return false;
+      if (msg.user === username) return true;
+      if (!selfUser || msg.user !== selfUser) return false;
+      if (!msg.text) return false;
+      mentionRegex.lastIndex = 0;
+      return mentionRegex.test(msg.text);
+    })
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+    .slice(-10);
+
+  if (!recent.length) {
+    const empty = document.createElement("li");
+    empty.className = "empty";
+    empty.textContent = "No side thread activity yet.";
+    profileThreadList.appendChild(empty);
+    return;
+  }
+
+  recent.forEach((msg) => {
+    const li = document.createElement("li");
+    const isSelf = msg.user === selfUser;
+    li.className = isSelf ? "self" : "peer";
+
+    const bubble = document.createElement("div");
+    bubble.className = "thread-bubble";
+
+    const author = document.createElement("p");
+    author.className = "thread-author";
+    author.textContent = isSelf ? "You" : msg.user || username;
+    bubble.appendChild(author);
+
+    const text = document.createElement("p");
+    text.className = "thread-text";
+    text.textContent = msg.text || msg.fileName || "(attachment)";
+    bubble.appendChild(text);
+
+    const time = document.createElement("time");
+    const tsValue = msg.timestamp ? new Date(msg.timestamp) : new Date();
+    const ts = Number.isNaN(tsValue.getTime()) ? new Date() : tsValue;
+    time.dateTime = ts.toISOString();
+    time.textContent = ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    time.className = "thread-time";
+    bubble.appendChild(time);
+
+    li.appendChild(bubble);
+    profileThreadList.appendChild(li);
+  });
+};
+
+const setProfileThreadVisible = (visible) => {
+  profileSheetState.threadOpen = Boolean(visible);
+  if (profileThreadSection) {
+    profileThreadSection.hidden = !visible;
+  }
+  if (visible && profileSheetState.username) {
+    renderProfileThreadMessages(profileSheetState.username);
+  }
+};
+
+const openProfileSheetForUser = (username, { focusThread = false, suppressFocus = false } = {}) => {
+  if (!profileSheet || !username) return;
+  const entry = (appState.users || []).find((user) => user?.username === username);
+  const isSelf = username === window.currentUser;
+  let profile = sanitizeProfileForDisplay(entry?.profile || {});
+  if (isSelf) {
+    const snapshot = getProfileSnapshot();
+    profile = sanitizeProfileForDisplay(snapshot);
+  }
+  profileSheetState.username = username;
+  profileSheetState.visible = true;
+  profileSheet.classList.add("show");
+  profileSheet.removeAttribute("hidden");
+  profileSheet.setAttribute("aria-hidden", "false");
+  if (profileSheetName) profileSheetName.textContent = username;
+  if (profileSheetStatus) {
+    if (profile.status) {
+      profileSheetStatus.textContent = profile.status;
+      profileSheetStatus.hidden = false;
+    } else {
+      profileSheetStatus.textContent = "";
+      profileSheetStatus.hidden = true;
+    }
+  }
+  if (profileSheetNowPlaying) {
+    if (profile.nowPlaying) {
+      profileSheetNowPlaying.textContent = profile.nowPlaying;
+      profileSheetNowPlaying.hidden = false;
+    } else {
+      profileSheetNowPlaying.textContent = "";
+      profileSheetNowPlaying.hidden = true;
+    }
+  }
+  if (profileSheetBio) {
+    if (profile.bio) {
+      profileSheetBio.textContent = profile.bio;
+      profileSheetBio.classList.remove("empty");
+    } else {
+      profileSheetBio.textContent = "No bio yet.";
+      profileSheetBio.classList.add("empty");
+    }
+  }
+  if (profileSheetAvatar) {
+    applyAvatarImage(profileSheetAvatar, username, profile.avatarUrl);
+  }
+  if (profileSheetMentionBtn) {
+    profileSheetMentionBtn.onclick = () => insertMentionForUser(username);
+  }
+  if (profileSheetThreadToggle) {
+    profileSheetThreadToggle.onclick = () => setProfileThreadVisible(!profileSheetState.threadOpen);
+  }
+  setProfileThreadVisible(focusThread || profileSheetState.threadOpen);
+  if (focusThread && profileThreadInput && !suppressFocus) {
+    requestAnimationFrame(() => profileThreadInput.focus());
+  }
+  if (!suppressFocus) {
+    profileSheetFocus();
+  }
+};
+
+const closeProfileSheet = () => {
+  if (!profileSheetState.visible || !profileSheet) return;
+  profileSheetState.visible = false;
+  profileSheetState.username = "";
+  profileSheet.classList.remove("show");
+  profileSheet.setAttribute("aria-hidden", "true");
+  profileSheet.setAttribute("hidden", "hidden");
+  setProfileThreadVisible(false);
+};
+
+const maybeRefreshProfileThread = (data) => {
+  if (!profileSheetState.visible) return;
+  if (!profileSheetState.username || !data?.user) return;
+  if (data.user !== profileSheetState.username) return;
+  if (profileSheetState.threadOpen) {
+    renderProfileThreadMessages(profileSheetState.username);
+  }
+};
+
+const sendSideThreadMessage = (username) => {
+  if (!window.currentRoom || !window.currentUser) {
+    showToast("Join a room to send messages.", "warn");
+    return false;
+  }
+  const text = (profileThreadInput?.value || "").trim();
+  if (!text) {
+    showToast("Type a quick note first.", "warn");
+    return false;
+  }
+  const alreadyMentioned = text.startsWith("@");
+  const composed = alreadyMentioned ? text : `@${username} ${text}`;
+  const sent = sendPlainTextMessage(composed);
+  if (sent && profileThreadInput) {
+    profileThreadInput.value = "";
+    showToast("Side thread message sent", "success");
+  }
+  return sent;
+};
+
+const uploadProfileAvatar = async (file) => {
+  if (!file) return null;
+  const mimeType = typeof file.type === "string" ? file.type : "";
+  if (!mimeType.startsWith("image/")) {
+    showToast("Pick an image file.", "error");
+    return null;
+  }
+  if (file.size > MAX_PROFILE_AVATAR_SIZE) {
+    showToast("Avatar must be under 2 MB.", "error");
+    return null;
+  }
+  const formData = new FormData();
+  formData.append("file", file, file.name || "avatar.png");
+  const response = await fetch("/upload", { method: "POST", body: formData });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload?.url) {
+    throw new Error(payload?.error || "Upload failed");
+  }
+  return payload.url;
+};
+
+const storedProfile = loadStoredProfileState();
+profileState.status = clampProfileField(storedProfile.status || "", PROFILE_FIELD_LIMITS.status);
+profileState.nowPlaying = clampProfileField(
+  storedProfile.nowPlaying || "",
+  PROFILE_FIELD_LIMITS.nowPlaying,
+);
+profileState.bio = clampProfileField(storedProfile.bio || "", PROFILE_FIELD_LIMITS.bio);
+profileState.avatarUrl = storedProfile.avatarUrl || "";
+
+applyProfileInputsFromState();
+updateProfilePreview();
+updateProfileSaveButton();
 
 const SEARCH_CONTENT_TYPES = ["text", "attachments", "system"];
 const SEARCH_FACET_LABELS = {
@@ -2633,6 +3233,7 @@ function updateUserEntryStatus(item, now = Date.now()) {
     severity = "bad";
   }
 
+  const statusHost = item.querySelector(".user-info") || item;
   const statusEl = item.querySelector(".user-status");
 
   if (!statuses.length) {
@@ -2643,7 +3244,7 @@ function updateUserEntryStatus(item, now = Date.now()) {
   let element = statusEl;
   if (!element) {
     element = document.createElement("span");
-    item.appendChild(element);
+    statusHost.appendChild(element);
   }
 
   element.className = `user-status${severity ? ` ${severity}` : ""}`;
@@ -2732,34 +3333,120 @@ function renderUserSidebar(users = []) {
     const mutedUntil = Number(entry.mutedUntil || 0);
     const isMuted = mutedUntil && mutedUntil > now;
     const isBlocked = Boolean(entry.isBlocked);
-    const userData = { ...entry, mutedUntil };
+    const remoteProfile = sanitizeProfileForDisplay(entry.profile || {});
+    const localProfile = isSelf ? sanitizeProfileForDisplay(getProfileSnapshot()) : {};
+    const profile = { ...remoteProfile, ...localProfile };
+    const userData = { ...entry, mutedUntil, profile };
 
     const item = document.createElement("li");
     item.className = "user-entry";
     item.dataset.username = username;
     if (isAdmin) item.classList.add("admin");
 
-    const name = document.createElement("span");
-    name.className = "user-name";
+    const cardButton = document.createElement("button");
+    cardButton.type = "button";
+    cardButton.className = "user-card";
+    cardButton.addEventListener("click", () => openProfileSheetForUser(username));
+    cardButton.setAttribute(
+      "aria-label",
+      isSelf ? "Open your profile" : `Open ${username}'s profile`,
+    );
+
+    const avatar = document.createElement("div");
+    avatar.className = "user-avatar";
+    applyAvatarImage(avatar, username, profile.avatarUrl);
+    cardButton.appendChild(avatar);
+
+    const infoWrap = document.createElement("div");
+    infoWrap.className = "user-info";
+    cardButton.appendChild(infoWrap);
+
+    const nameRow = document.createElement("div");
+    nameRow.className = "user-primary-row";
+    const nameLabel = document.createElement("span");
+    nameLabel.className = "user-name";
     if (isAdmin) {
       const crown = document.createElement("span");
       crown.className = "user-crown";
       crown.textContent = "👑";
-      name.appendChild(crown);
+      nameLabel.appendChild(crown);
     }
-
     const label = document.createElement("span");
     label.textContent = username;
-    name.appendChild(label);
-
+    nameLabel.appendChild(label);
     if (isSelf) {
       const pill = document.createElement("span");
       pill.className = "self-pill";
       pill.textContent = "you";
-      name.appendChild(pill);
+      nameLabel.appendChild(pill);
+    }
+    nameRow.appendChild(nameLabel);
+    infoWrap.appendChild(nameRow);
+
+    const statusRow = document.createElement("div");
+    statusRow.className = "user-meta-line";
+    if (profile.status) {
+      const status = document.createElement("span");
+      status.textContent = profile.status;
+      statusRow.appendChild(status);
+    }
+    if (profile.nowPlaying) {
+      const nowPlayingEl = document.createElement("span");
+      nowPlayingEl.textContent = `🎧 ${profile.nowPlaying}`;
+      statusRow.appendChild(nowPlayingEl);
+    }
+    if (statusRow.childElementCount) {
+      infoWrap.appendChild(statusRow);
     }
 
-    item.appendChild(name);
+    if (profile.bio) {
+      const bioEl = document.createElement("p");
+      bioEl.className = "user-bio";
+      bioEl.textContent = profile.bio;
+      infoWrap.appendChild(bioEl);
+    }
+
+    const chipsRow = document.createElement("div");
+    chipsRow.className = "user-chips";
+    let hasChips = false;
+    if (!isSelf) {
+      const mentionBtn = document.createElement("button");
+      mentionBtn.type = "button";
+      mentionBtn.className = "user-chip mention";
+      mentionBtn.textContent = "@ Mention";
+      mentionBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        insertMentionForUser(username);
+      });
+      chipsRow.appendChild(mentionBtn);
+      hasChips = true;
+
+      const threadBtn = document.createElement("button");
+      threadBtn.type = "button";
+      threadBtn.className = "user-chip";
+      threadBtn.textContent = "Side thread";
+      threadBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        openProfileSheetForUser(username, { focusThread: true });
+      });
+      chipsRow.appendChild(threadBtn);
+    } else if (profileEditor) {
+      const editBtn = document.createElement("button");
+      editBtn.type = "button";
+      editBtn.className = "user-chip";
+      editBtn.textContent = "Edit profile";
+      editBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        profileStatusInput?.focus();
+      });
+      chipsRow.appendChild(editBtn);
+      hasChips = true;
+    }
+    if (hasChips) {
+      infoWrap.appendChild(chipsRow);
+    }
+
+    item.appendChild(cardButton);
 
     if (isMuted) {
       item.dataset.mutedUntil = String(mutedUntil);
@@ -2777,25 +3464,25 @@ function renderUserSidebar(users = []) {
     const canInteract = appState.isAdmin && !isSelf && !isAdmin;
 
     if (canInteract) {
-      item.classList.add("actionable");
-      item.tabIndex = 0;
-      item.setAttribute("role", "button");
-      item.setAttribute("aria-haspopup", "menu");
-      item.setAttribute("aria-controls", "user-context-menu");
-      item.setAttribute("aria-expanded", "false");
-
+      const adminBtn = document.createElement("button");
+      adminBtn.type = "button";
+      adminBtn.className = "user-menu-button";
+      adminBtn.setAttribute("aria-haspopup", "menu");
+      adminBtn.setAttribute("aria-controls", "user-context-menu");
+      adminBtn.setAttribute("aria-expanded", "false");
+      adminBtn.setAttribute("aria-label", `Moderate ${username}`);
       const handleOpen = (event) => {
         event.preventDefault();
         event.stopPropagation();
-        openUserContextMenu(item, userData);
+        openUserContextMenu(adminBtn, userData);
       };
-
-      item.addEventListener("click", handleOpen);
-      item.addEventListener("keydown", (event) => {
+      adminBtn.addEventListener("click", handleOpen);
+      adminBtn.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown") {
           handleOpen(event);
         }
       });
+      item.appendChild(adminBtn);
     } else if (!isSelf) {
       item.classList.add("disabled");
       item.setAttribute("aria-disabled", "true");
@@ -3743,6 +4430,8 @@ function updateMessageNode(id) {
   updateMessageFlags(node, data);
   setupMessageActions(node, data);
   renderMessageReactions(node, data);
+  applyMentionHighlight(node, data, { notify: false });
+  maybeRefreshProfileThread(data);
 
   if (replyState.targetId && normalizeMessageId(replyState.targetId) === data.id) {
     if (data.deleted) {
@@ -4649,6 +5338,36 @@ socket.on("room list", (rooms) => {
 socket.on("room users", ({ room, users } = {}) => {
   if (room && window.currentRoom && room !== window.currentRoom) return;
   renderUserSidebar(Array.isArray(users) ? users : []);
+  if (profileSheetState.visible && profileSheetState.username && Array.isArray(users)) {
+    const match = users.find((user) => user?.username === profileSheetState.username);
+    if (match) {
+      openProfileSheetForUser(profileSheetState.username, {
+        focusThread: profileSheetState.threadOpen,
+        suppressFocus: true,
+      });
+    } else {
+      closeProfileSheet();
+    }
+  }
+});
+
+socket.on("profile updated", (profile) => {
+  profileState.dirty = false;
+  updateProfileSaveButton();
+  if (profileState.manualSavePending) {
+    showToast("Profile updated for this room.", "success");
+    profileState.manualSavePending = false;
+  }
+  if (Array.isArray(appState.users) && appState.users.length) {
+    renderUserSidebar(appState.users);
+  }
+});
+
+socket.on("profile error", (message) => {
+  profileState.dirty = true;
+  profileState.manualSavePending = false;
+  updateProfileSaveButton();
+  showToast(message || "Unable to update profile.", "error");
 });
 
 socket.on("user moderation", ({ room, target, action, performedBy, duration } = {}) => {
@@ -4698,6 +5417,11 @@ function updateQueryParams(room, password) {
 }
 
 function showLanding({ focusUsername = true } = {}) {
+  updateMentionDetector("");
+  cancelProfileSync();
+  closeProfileSheet();
+  updateProfileSaveButton();
+  profileState.manualSavePending = false;
   composerDraftManager.persistActiveDraft({ immediate: true });
   composerDraftManager.clearVisibleDraft();
   closePinHub({ returnFocus: false });
@@ -5835,6 +6559,8 @@ function completeRoomJoin(username, room, password) {
   window.currentUser = username;
   window.currentRoom = room;
   window.currentPassword = password;
+  updateMentionDetector(username);
+  updateProfilePreview();
 
   lastRoomName = room;
   lastRoomPassword = password;
@@ -6085,6 +6811,8 @@ socket.on("join room success", () => {
   if (usernamePrompt) usernamePrompt.style.display = "none";
   input?.focus();
   scrollMessagesToBottom({ behavior: "smooth", delay: 80, force: true });
+  updateProfileSaveButton();
+  broadcastProfileState({ skipIfEmpty: true });
 });
 
 // Join error handling
@@ -7180,7 +7908,9 @@ function renderMessage(
   } else {
     messages.appendChild(wrap);
   }
+  const shouldNotifyMention = !isPrepend && !skipScroll;
   applyMessageStatus(wrap, data);
+  applyMentionHighlight(wrap, data, { notify: shouldNotifyMention });
   setupMessageActions(wrap, data);
   updateMessageFlags(wrap, data);
   trackMessageRead(wrap, data);
@@ -7192,6 +7922,7 @@ function renderMessage(
   }
 
   renderMessageReactions(wrap, data);
+  maybeRefreshProfileThread(data);
 
   if (!skipScroll) {
     if (respectScrollLock) {

@@ -1538,6 +1538,133 @@ body:not(.dark) .scroll-to-latest.has-new {
   font-weight: 600;
 }
 
+.profile-editor {
+  background: var(--surface-alt);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 16px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.profile-editor-top {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.profile-avatar-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.profile-avatar-preview {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(162, 89, 255, 0.8), rgba(244, 114, 182, 0.75));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: #fff;
+  overflow: hidden;
+  position: relative;
+}
+
+.profile-avatar-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.user-avatar span,
+.profile-sheet-avatar span,
+.profile-avatar-preview span {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.profile-avatar-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.profile-avatar-actions button {
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 0.78rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.profile-avatar-actions button.subtle {
+  color: var(--text-muted);
+}
+
+.profile-editor-fields {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.profile-editor-fields label,
+.profile-bio-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.profile-editor-fields input,
+.profile-bio-field textarea {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--surface);
+  color: var(--text-primary);
+  padding: 6px 10px;
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+
+.profile-bio-field textarea {
+  resize: vertical;
+  min-height: 72px;
+}
+
+.profile-save-btn {
+  align-self: flex-end;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #fff;
+  background: linear-gradient(135deg, rgba(162, 89, 255, 0.9), rgba(244, 114, 182, 0.85));
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.25);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.profile-save-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.profile-save-btn:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
 #user-list {
   list-style: none;
   margin: 0;
@@ -1550,27 +1677,139 @@ body:not(.dark) .scroll-to-latest.has-new {
   min-height: 0;
 }
 
+
 .user-entry {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 12px;
-  border-radius: 12px;
-  background: var(--surface-alt);
-  border: 1px solid transparent;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.2s ease;
-  cursor: default;
+  align-items: stretch;
+  gap: 8px;
 }
 
-.user-entry .user-name {
+.user-card {
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: var(--surface-alt);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex: 1;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+}
+
+.user-card:hover,
+.user-card:focus-visible {
+  border-color: rgba(187, 134, 252, 0.35);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.user-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.3), rgba(236, 72, 153, 0.3));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  color: #fff;
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+
+.user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.user-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.user-primary-row {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-weight: 500;
+  flex-wrap: wrap;
+  font-weight: 600;
   color: var(--text-primary);
 }
 
+.user-meta-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+
+.user-bio {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.user-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.user-chip {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+
+.user-chip.mention {
+  border-color: rgba(187, 134, 252, 0.45);
+  color: var(--accent);
+}
+
+.user-chip:hover {
+  border-color: rgba(187, 134, 252, 0.55);
+  color: var(--text-primary);
+}
+
+.user-menu-button {
+  border-radius: 50%;
+  width: 34px;
+  height: 34px;
+  border: 1px solid transparent;
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.user-menu-button:hover,
+.user-menu-button:focus-visible {
+  border-color: rgba(187, 134, 252, 0.45);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.user-entry .user-name,
 .user-entry .user-name .user-crown {
   font-size: 1.05em;
 }
@@ -1599,24 +1838,259 @@ body:not(.dark) .scroll-to-latest.has-new {
   color: #f6c343;
 }
 
-.user-entry.actionable {
+.user-entry.disabled {
+  opacity: 0.65;
+}
+
+.message.mention-hit {
+  border-color: rgba(236, 72, 153, 0.5);
+  box-shadow: 0 10px 28px rgba(236, 72, 153, 0.15);
+  position: relative;
+}
+
+.message.mention-hit::after {
+  content: "@you";
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  font-size: 0.7rem;
+  color: rgba(236, 72, 153, 0.85);
+}
+
+#input.mention-flash {
+  animation: mentionFlash 0.6s ease;
+}
+
+@keyframes mentionFlash {
+  0% {
+    box-shadow: 0 0 0 rgba(236, 72, 153, 0.65);
+  }
+  40% {
+    box-shadow: 0 0 0 6px rgba(236, 72, 153, 0.25);
+  }
+  100% {
+    box-shadow: 0 0 0 rgba(236, 72, 153, 0);
+  }
+}
+
+.profile-sheet {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 80;
+}
+
+.profile-sheet.show {
+  display: flex;
+}
+
+.profile-sheet-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.profile-sheet-panel {
+  position: relative;
+  z-index: 1;
+  width: min(480px, 92vw);
+  max-height: 90vh;
+  background: var(--surface);
+  border-radius: 24px;
+  border: 1px solid var(--border-color);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 25px 70px rgba(0, 0, 0, 0.45);
+  overflow-y: auto;
+}
+
+.profile-sheet-header {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.profile-sheet-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.4), rgba(244, 114, 182, 0.4));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #fff;
+  overflow: hidden;
+}
+
+.profile-sheet-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile-sheet-heading {
+  flex: 1;
+}
+
+.profile-sheet-status,
+.profile-sheet-now-playing {
+  font-size: 0.85rem;
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+}
+
+.profile-sheet-now-playing::before {
+  content: "🎧 ";
+}
+
+.profile-sheet-close {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.1rem;
   cursor: pointer;
 }
 
-.user-entry.actionable:focus-visible {
-  outline: 2px solid rgba(187, 134, 252, 0.85);
-  outline-offset: 2px;
-  border-color: rgba(187, 134, 252, 0.55);
+.profile-sheet-bio {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text-secondary);
 }
 
-.user-entry.actionable:hover {
-  transform: translateY(-1px);
-  border-color: rgba(187, 134, 252, 0.35);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.25);
+.profile-sheet-bio.empty {
+  color: var(--text-muted);
+  font-style: italic;
 }
 
-.user-entry.disabled {
-  opacity: 0.65;
+.profile-sheet-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.profile-chip {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--surface-alt);
+  color: var(--text-primary);
+  padding: 6px 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.profile-thread {
+  border-top: 1px solid var(--border-color);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.profile-thread-messages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.profile-thread-messages li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+
+.profile-thread-messages li .thread-bubble {
+  background: var(--surface-alt);
+  border-radius: 12px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.12);
+}
+
+.profile-thread-messages li.self {
+  align-items: flex-end;
+}
+
+.profile-thread-messages li.self .thread-bubble {
+  background: rgba(187, 134, 252, 0.18);
+  border-color: rgba(187, 134, 252, 0.4);
+  box-shadow: 0 6px 20px rgba(187, 134, 252, 0.2);
+}
+
+.profile-thread-messages li.peer .thread-bubble {
+  align-self: flex-start;
+}
+
+.profile-thread-messages .thread-author {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 4px;
+  color: var(--text-muted);
+}
+
+.profile-thread-messages li.self .thread-author {
+  color: var(--accent);
+}
+
+.profile-thread-messages .thread-text {
+  margin: 0;
+  color: var(--text-primary);
+  white-space: pre-line;
+}
+
+.profile-thread-messages .thread-time {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+
+.profile-thread-messages .empty {
+  border: 1px dashed var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 8px 10px;
+  border-radius: 12px;
+}
+
+.profile-thread-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.profile-thread-composer textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-alt);
+  color: var(--text-primary);
+  padding: 8px;
+  font-family: inherit;
+}
+
+.profile-thread-composer button {
+  align-self: flex-end;
+  border-radius: 999px;
+  border: none;
+  padding: 6px 16px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  font-weight: 600;
 }
 
 #user-list-empty {
