@@ -92,6 +92,23 @@ const pinnedContainer = document.getElementById("pinned-messages");
 const searchInput = document.getElementById("message-search");
 const searchFilter = document.getElementById("message-search-filter");
 const searchResultsBox = document.getElementById("search-results");
+const searchAdvancedToggle = document.getElementById("search-advanced-toggle");
+const searchAdvancedPanel = document.getElementById("search-advanced");
+const searchFromInput = document.getElementById("search-from-user");
+const searchDateFromInput = document.getElementById("search-date-from");
+const searchDateToInput = document.getElementById("search-date-to");
+const searchContentTypeInputs = Array.from(
+  document.querySelectorAll('input[name="search-content-type"]')
+);
+const searchSaveButton = document.getElementById("search-save-btn");
+const searchSavedSelect = document.getElementById("search-saved-select");
+const searchDeleteSavedButton = document.getElementById("search-delete-saved");
+const searchExportButton = document.getElementById("search-export-btn");
+
+setSearchAdvancedVisible(false);
+setContentTypeSelection(SEARCH_CONTENT_TYPES);
+setSavedSearches(loadSavedSearches());
+updateSearchControlState();
 const replyPreviewBar = document.getElementById("reply-preview");
 const replyPreviewContent = replyPreviewBar?.querySelector?.(".reply-preview-content") || null;
 const replyPreviewAuthor = document.getElementById("reply-preview-author");
@@ -714,6 +731,16 @@ const appState = {
     loading: false,
   },
 };
+
+const SEARCH_CONTENT_TYPES = ["text", "attachments", "system"];
+const SEARCH_FACET_LABELS = {
+  text: "Text",
+  attachments: "Attachments",
+  system: "System",
+};
+const SAVED_SEARCH_STORAGE_KEY = "dizychat.search.saved.v1";
+const SAVED_SEARCH_PLACEHOLDER = "__placeholder";
+let savedSearches = [];
 
 let searchDebounceTimer = null;
 let soundCloudApiPromise = null;
@@ -3812,6 +3839,198 @@ function confirmDeleteOptions({ canDeleteEveryone }) {
   });
 }
 
+function loadSavedSearches() {
+  try {
+    const raw = localStorage.getItem(SAVED_SEARCH_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry) => entry && entry.id && entry.params).slice(0, 20);
+  } catch (err) {
+    console.warn("Failed to load saved searches", err);
+    return [];
+  }
+}
+
+function setSavedSearches(next = []) {
+  savedSearches = next.slice(0, 20);
+  try {
+    localStorage.setItem(SAVED_SEARCH_STORAGE_KEY, JSON.stringify(savedSearches));
+  } catch (err) {
+    console.warn("Failed to persist saved searches", err);
+  }
+  renderSavedSearchOptions();
+}
+
+function renderSavedSearchOptions() {
+  if (!searchSavedSelect) return;
+  searchSavedSelect.innerHTML = "";
+  const placeholder = document.createElement("option");
+  placeholder.value = SAVED_SEARCH_PLACEHOLDER;
+  placeholder.textContent = savedSearches.length ? "Saved searches…" : "No saved searches yet";
+  searchSavedSelect.appendChild(placeholder);
+
+  savedSearches.forEach((entry) => {
+    const option = document.createElement("option");
+    option.value = entry.id;
+    option.textContent = entry.name;
+    searchSavedSelect.appendChild(option);
+  });
+
+  searchSavedSelect.value = SAVED_SEARCH_PLACEHOLDER;
+  updateSearchControlState();
+}
+
+function updateSearchControlState(payload = buildSearchPayload()) {
+  if (searchSaveButton) {
+    searchSaveButton.disabled = !payload.hasFilters;
+  }
+  if (searchExportButton) {
+    searchExportButton.disabled = !payload.hasFilters;
+  }
+  if (searchAdvancedToggle && searchAdvancedPanel) {
+    const isPanelOpen = !searchAdvancedPanel.hidden;
+    searchAdvancedToggle.classList.toggle("is-active", isPanelOpen || payload.hasFilters);
+  }
+  if (searchDeleteSavedButton && searchSavedSelect) {
+    searchDeleteSavedButton.disabled = searchSavedSelect.value === SAVED_SEARCH_PLACEHOLDER;
+  }
+}
+
+function setSearchAdvancedVisible(visible = false) {
+  if (!searchAdvancedPanel || !searchAdvancedToggle) return;
+  const show = Boolean(visible);
+  searchAdvancedPanel.hidden = !show;
+  searchAdvancedToggle.setAttribute("aria-expanded", String(show));
+  searchAdvancedToggle.classList.toggle("is-active", show);
+}
+
+function getSelectedContentTypes() {
+  const selected = searchContentTypeInputs
+    .filter((input) => input.checked)
+    .map((input) => input.value);
+  return selected.length ? selected : SEARCH_CONTENT_TYPES.slice();
+}
+
+function setContentTypeSelection(types = SEARCH_CONTENT_TYPES) {
+  const values = Array.isArray(types) && types.length ? new Set(types) : new Set(SEARCH_CONTENT_TYPES);
+  searchContentTypeInputs.forEach((input) => {
+    input.checked = values.has(input.value);
+  });
+}
+
+function parseInlineSearchTokens(rawQuery = "") {
+  const tokens = rawQuery.split(/\s+/).filter(Boolean);
+  const rest = [];
+  let fromUser = "";
+  tokens.forEach((token) => {
+    const match = token.match(/^from:(.+)$/i);
+    if (match && !fromUser) {
+      fromUser = match[1].replace(/^@+/, "");
+      return;
+    }
+    rest.push(token);
+  });
+  return { query: rest.join(" ").trim(), fromUser };
+}
+
+function buildSearchPayload() {
+  const rawQuery = (searchInput?.value || "").trim();
+  const inlineTokens = parseInlineSearchTokens(rawQuery);
+  const manualFrom = (searchFromInput?.value || "").trim().replace(/^@+/, "");
+  const fromUser = manualFrom || inlineTokens.fromUser || "";
+  const filter = searchFilter?.value || "all";
+  const dateFrom = searchDateFromInput?.value || "";
+  const dateTo = searchDateToInput?.value || "";
+  const contentTypes = getSelectedContentTypes();
+  const hasContentFilter = contentTypes.length < SEARCH_CONTENT_TYPES.length;
+  const hasFilters = Boolean(
+    inlineTokens.query ||
+      fromUser ||
+      (filter && filter !== "all") ||
+      dateFrom ||
+      dateTo ||
+      hasContentFilter
+  );
+
+  return {
+    query: inlineTokens.query,
+    rawQuery,
+    filter,
+    fromUser,
+    dateFrom,
+    dateTo,
+    contentTypes,
+    hasFilters,
+  };
+}
+
+function showSearchLoading() {
+  if (!searchResultsBox) return;
+  searchResultsBox.hidden = false;
+  searchResultsBox.classList.add("show");
+  searchResultsBox.innerHTML = '<div class="search-results-status">Searching…</div>';
+}
+
+function renderTimelineHistogram(container, entries = [], unit = "hour") {
+  if (!container) return;
+  container.innerHTML = "";
+  if (!Array.isArray(entries) || !entries.length) {
+    container.setAttribute("aria-hidden", "true");
+    return;
+  }
+
+  container.removeAttribute("aria-hidden");
+  const bars = document.createElement("div");
+  bars.className = "search-timeline-bars";
+  const maxCount = Math.max(...entries.map((entry) => entry.count || 0), 1);
+
+  entries.forEach((entry) => {
+    const bar = document.createElement("div");
+    bar.className = "search-timeline-bar";
+    const fill = document.createElement("div");
+    fill.className = "search-timeline-bar-fill";
+    const heightPercent = Math.max(6, Math.round(((entry.count || 0) / maxCount) * 100));
+    fill.style.height = `${heightPercent}%`;
+    const label = document.createElement("div");
+    label.className = "search-timeline-bar-label";
+    label.textContent = formatTimelineLabel(entry.bucket, unit);
+    bar.title = `${entry.count || 0} messages`;
+    bar.append(fill, label);
+    bars.appendChild(bar);
+  });
+
+  container.appendChild(bars);
+}
+
+function formatTimelineLabel(bucket, unit) {
+  if (!bucket) return "";
+  const date = new Date(bucket);
+  if (Number.isNaN(date.getTime())) return bucket;
+  if (unit === "day") {
+    return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  }
+  return date.toLocaleString([], { month: "short", day: "numeric", hour: "numeric" });
+}
+
+function toggleFacetSelection(type) {
+  if (!SEARCH_CONTENT_TYPES.includes(type)) return;
+  const current = new Set(getSelectedContentTypes());
+  if (current.size === SEARCH_CONTENT_TYPES.length && current.has(type)) {
+    current.clear();
+    current.add(type);
+  } else if (current.has(type)) {
+    current.delete(type);
+    if (!current.size) {
+      SEARCH_CONTENT_TYPES.forEach((value) => current.add(value));
+    }
+  } else {
+    current.add(type);
+  }
+  setContentTypeSelection(Array.from(current));
+  triggerSearch({ immediate: true });
+}
+
 function hideSearchResults() {
   if (!searchResultsBox) return;
   searchResultsBox.classList.remove("show");
@@ -3819,67 +4038,213 @@ function hideSearchResults() {
   searchResultsBox.innerHTML = "";
 }
 
-function renderSearchResults(results = []) {
+function renderSearchResults({ results = [], facets = {}, timeline = [], total = 0, timelineUnit = "hour" } = {}) {
   if (!searchResultsBox) return;
+  updateSearchControlState();
+  searchResultsBox.innerHTML = "";
+
+  const header = document.createElement("div");
+  header.className = "search-results-header";
+  const totalLabel = document.createElement("span");
+  totalLabel.innerHTML = `<strong>${total}</strong> ${total === 1 ? "match" : "matches"}`;
+  header.appendChild(totalLabel);
+  searchResultsBox.appendChild(header);
+
+  const facetsRow = document.createElement("div");
+  facetsRow.className = "search-facets";
+  const selectedTypes = new Set(getSelectedContentTypes());
+  SEARCH_CONTENT_TYPES.forEach((type) => {
+    const count = typeof facets?.[type] === "number" ? facets[type] : 0;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "search-facet";
+    button.classList.toggle("is-active", selectedTypes.has(type));
+    button.innerHTML = `${SEARCH_FACET_LABELS[type]} <span class="count">${count}</span>`;
+    button.addEventListener("click", () => toggleFacetSelection(type));
+    facetsRow.appendChild(button);
+  });
+  searchResultsBox.appendChild(facetsRow);
+
+  const timelineContainer = document.createElement("div");
+  timelineContainer.className = "search-timeline";
+  renderTimelineHistogram(timelineContainer, timeline, timelineUnit);
+  searchResultsBox.appendChild(timelineContainer);
+
+  const list = document.createElement("div");
+  list.className = "search-results-list";
   if (!Array.isArray(results) || !results.length) {
-    hideSearchResults();
-    return;
+    const empty = document.createElement("div");
+    empty.className = "search-results-empty";
+    empty.textContent = "No matches found for this filter.";
+    list.appendChild(empty);
+  } else {
+    results.forEach((msg) => {
+      const data = storeMessageData(msg);
+      if (!data) return;
+      const item = document.createElement("div");
+      item.className = "search-result-item";
+      item.dataset.id = data.id;
+
+      const meta = document.createElement("div");
+      meta.className = "search-result-meta";
+      const name = document.createElement("span");
+      name.textContent = data.user || "Anon";
+      const typeBadge = document.createElement("span");
+      typeBadge.className = "search-result-type";
+      typeBadge.textContent = SEARCH_FACET_LABELS[data.facetType] || SEARCH_FACET_LABELS.text;
+      const time = document.createElement("span");
+      time.textContent = new Date(data.timestamp || Date.now()).toLocaleString();
+      meta.append(name, typeBadge, time);
+
+      const text = document.createElement("div");
+      text.className = "search-result-text";
+      const preview = data.deleted
+        ? "Message deleted"
+        : data.text?.trim() || data.fileName || data.fileUrl || "Attachment";
+      text.textContent = preview.length > 140 ? `${preview.slice(0, 140)}…` : preview;
+
+      item.append(meta, text);
+      item.addEventListener("click", () => {
+        focusMessage(data.id);
+        hideSearchResults();
+      });
+
+      list.appendChild(item);
+    });
   }
 
-  searchResultsBox.innerHTML = "";
-  results.forEach((msg) => {
-    const data = storeMessageData(msg);
-    if (!data) return;
-    const item = document.createElement("div");
-    item.className = "search-result-item";
-    item.dataset.id = data.id;
-
-    const meta = document.createElement("div");
-    meta.className = "search-result-meta";
-    const name = document.createElement("span");
-    name.textContent = data.user || "Anon";
-    const time = document.createElement("span");
-    time.textContent = new Date(data.timestamp || Date.now()).toLocaleTimeString();
-    meta.append(name, time);
-
-    const text = document.createElement("div");
-    text.className = "search-result-text";
-    const preview = data.deleted
-      ? "Message deleted"
-      : data.text?.trim() || data.fileName || data.fileUrl || "Attachment";
-    text.textContent = preview.length > 140 ? `${preview.slice(0, 140)}…` : preview;
-
-    item.append(meta, text);
-    item.addEventListener("click", () => {
-      focusMessage(data.id);
-      hideSearchResults();
-    });
-
-    searchResultsBox.appendChild(item);
-  });
-
+  searchResultsBox.appendChild(list);
   searchResultsBox.hidden = false;
   searchResultsBox.classList.add("show");
 }
 
-function triggerSearch() {
+function triggerSearch({ immediate = false } = {}) {
   if (!searchInput || !searchFilter || !window.currentRoom) return;
-  const query = searchInput.value.trim();
-  const filter = searchFilter.value;
-
-  if (!query && filter === "all") {
+  const payload = buildSearchPayload();
+  updateSearchControlState(payload);
+  if (!payload.hasFilters) {
     hideSearchResults();
     return;
   }
 
-  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
-  searchDebounceTimer = setTimeout(() => {
+  const emitSearch = () => {
+    showSearchLoading();
     socket.emit("search messages", {
       room: window.currentRoom,
-      query,
-      filter,
+      query: payload.query,
+      filter: payload.filter,
+      fromUser: payload.fromUser,
+      dateFrom: payload.dateFrom,
+      dateTo: payload.dateTo,
+      contentTypes: payload.contentTypes,
     });
-  }, 250);
+  };
+
+  if (immediate) {
+    emitSearch();
+    return;
+  }
+
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(emitSearch, 250);
+}
+
+function generateSavedSearchId() {
+  if (window.crypto?.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function handleSaveSearch() {
+  const payload = buildSearchPayload();
+  if (!payload.hasFilters) {
+    showToast("Add a filter or query before saving.", "info");
+    return;
+  }
+  const suggestedName = payload.rawQuery || `Search ${savedSearches.length + 1}`;
+  const name = window.prompt("Name this search", suggestedName);
+  if (!name) return;
+  const entry = {
+    id: generateSavedSearchId(),
+    name: name.trim(),
+    params: {
+      query: payload.query,
+      rawQuery: payload.rawQuery,
+      filter: payload.filter,
+      fromUser: payload.fromUser,
+      dateFrom: payload.dateFrom,
+      dateTo: payload.dateTo,
+      contentTypes: payload.contentTypes,
+    },
+  };
+  const next = [entry, ...savedSearches.filter((item) => item.name !== entry.name)];
+  setSavedSearches(next);
+  showToast("Search saved.", "success");
+}
+
+function handleDeleteSavedSearch() {
+  if (!searchSavedSelect || searchSavedSelect.value === SAVED_SEARCH_PLACEHOLDER) return;
+  const next = savedSearches.filter((entry) => entry.id !== searchSavedSelect.value);
+  setSavedSearches(next);
+  searchSavedSelect.value = SAVED_SEARCH_PLACEHOLDER;
+  updateSearchControlState();
+  showToast("Saved search deleted.", "info");
+}
+
+function applySavedSearch(entry) {
+  if (!entry?.params) return;
+  const { params } = entry;
+  if (searchInput) searchInput.value = params.rawQuery || params.query || "";
+  if (searchFilter) searchFilter.value = params.filter || "all";
+  if (searchFromInput) searchFromInput.value = params.fromUser ? `@${params.fromUser}` : "";
+  if (searchDateFromInput) searchDateFromInput.value = params.dateFrom || "";
+  if (searchDateToInput) searchDateToInput.value = params.dateTo || "";
+  setContentTypeSelection(params.contentTypes || SEARCH_CONTENT_TYPES);
+  setSearchAdvancedVisible(true);
+  triggerSearch({ immediate: true });
+}
+
+async function downloadSearchCsv() {
+  if (!window.currentRoom) return;
+  const payload = buildSearchPayload();
+  if (!payload.hasFilters) {
+    showToast("Choose a filter or query before exporting.", "info");
+    return;
+  }
+
+  const params = new URLSearchParams();
+  if (payload.query) params.set("q", payload.query);
+  if (payload.filter && payload.filter !== "all") params.set("filter", payload.filter);
+  if (payload.fromUser) params.set("from", payload.fromUser);
+  if (payload.dateFrom) params.set("dateFrom", payload.dateFrom);
+  if (payload.dateTo) params.set("dateTo", payload.dateTo);
+  if (payload.contentTypes.length && payload.contentTypes.length < SEARCH_CONTENT_TYPES.length) {
+    params.set("types", payload.contentTypes.join(","));
+  }
+  if (window.currentUser) params.set("username", window.currentUser);
+
+  const queryString = params.toString();
+  const url = `/rooms/${encodeURIComponent(window.currentRoom)}/search/export${
+    queryString ? `?${queryString}` : ""
+  }`;
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Export failed");
+    const blob = await response.blob();
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = `${window.currentRoom}-search.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
+  } catch (err) {
+    console.error(err);
+    showToast("Unable to export search results.", "error");
+  }
 }
 
 function loadSoundCloudApi() {
@@ -4057,18 +4422,64 @@ document.addEventListener("keydown", (event) => {
 
 if (searchInput) {
   searchInput.addEventListener("input", () => {
-    if (!searchInput.value.trim() && (!searchFilter || searchFilter.value === "all")) {
-      hideSearchResults();
-      return;
-    }
     triggerSearch();
+  });
+  searchInput.addEventListener("search", () => {
+    triggerSearch({ immediate: true });
   });
 }
 
 if (searchFilter) {
   searchFilter.addEventListener("change", () => {
-    triggerSearch();
+    triggerSearch({ immediate: true });
   });
+}
+
+if (searchFromInput) {
+  searchFromInput.addEventListener("input", () => triggerSearch());
+}
+
+[searchDateFromInput, searchDateToInput].forEach((inputEl) => {
+  inputEl?.addEventListener("change", () => triggerSearch({ immediate: true }));
+});
+
+searchContentTypeInputs.forEach((inputEl) => {
+  inputEl.addEventListener("change", () => triggerSearch({ immediate: true }));
+});
+
+if (searchAdvancedToggle && searchAdvancedPanel) {
+  searchAdvancedToggle.addEventListener("click", () => {
+    const nextState = searchAdvancedPanel.hidden;
+    setSearchAdvancedVisible(nextState);
+    updateSearchControlState();
+  });
+}
+
+if (searchSaveButton) {
+  searchSaveButton.addEventListener("click", handleSaveSearch);
+}
+
+if (searchDeleteSavedButton) {
+  searchDeleteSavedButton.addEventListener("click", handleDeleteSavedSearch);
+}
+
+if (searchSavedSelect) {
+  searchSavedSelect.addEventListener("change", () => {
+    if (searchSavedSelect.value === SAVED_SEARCH_PLACEHOLDER) {
+      updateSearchControlState();
+      return;
+    }
+    const entry = savedSearches.find((item) => item.id === searchSavedSelect.value);
+    if (entry) {
+      applySavedSearch(entry);
+    }
+    searchSavedSelect.value = SAVED_SEARCH_PLACEHOLDER;
+    updateSearchControlState();
+  });
+}
+
+if (searchExportButton) {
+  searchExportButton.addEventListener("click", downloadSearchCsv);
 }
 // ------------------- Toasts (bottom-left, glowing, auto-hide) -------------------
 (() => {
@@ -6990,9 +7401,9 @@ socket.on("update reactions", ({ id, reactions = [] } = {}) => {
   updateMessageNode(data.id);
 });
 
-socket.on("search results", ({ room, results } = {}) => {
-  if (room && window.currentRoom && room !== window.currentRoom) return;
-  renderSearchResults(results || []);
+socket.on("search results", (payload = {}) => {
+  if (payload.room && window.currentRoom && payload.room !== window.currentRoom) return;
+  renderSearchResults(payload);
 });
 
 socket.on("admin status", ({ isAdmin }) => {

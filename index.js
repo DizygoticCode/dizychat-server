@@ -171,6 +171,250 @@ const fetchMessageHistoryChunk = async (roomName, { beforeId } = {}) => {
     cursor: hasMore && oldestDoc ? String(oldestDoc._id) : null,
   };
 };
+
+const SEARCH_CONTENT_TYPES = ['text', 'attachments', 'system'];
+
+const escapeRegex = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const parseDateBoundary = (value, { endOfDay = false } = {}) => {
+  if (!value) return null;
+  const inputDate = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(inputDate.getTime())) return null;
+  const date = new Date(inputDate);
+  if (endOfDay) {
+    date.setUTCHours(23, 59, 59, 999);
+  } else {
+    date.setUTCHours(0, 0, 0, 0);
+  }
+  return date;
+};
+
+const facetTypeExpression = {
+  $switch: {
+    branches: [
+      {
+        case: {
+          $regexMatch: {
+            input: { $toLower: { $ifNull: ['$user', ''] } },
+            regex: '^system',
+          },
+        },
+        then: 'system',
+      },
+      {
+        case: {
+          $or: [
+            { $gt: [{ $strLenCP: { $ifNull: ['$fileUrl', ''] } }, 0] },
+            { $gt: [{ $strLenCP: { $ifNull: ['$fileName', ''] } }, 0] },
+            { $gt: [{ $strLenCP: { $ifNull: ['$fileType', ''] } }, 0] },
+          ],
+        },
+        then: 'attachments',
+      },
+    ],
+    default: 'text',
+  },
+};
+
+const resolveTimelineUnit = (fromDate, toDate) => {
+  if (fromDate && toDate) {
+    const spanMs = Math.abs(toDate.getTime() - fromDate.getTime());
+    const oneDay = 24 * 60 * 60 * 1000;
+    if (spanMs <= oneDay * 2) return 'hour';
+    return 'day';
+  }
+  return 'hour';
+};
+
+const sanitiseContentTypes = (types) => {
+  if (!Array.isArray(types)) return SEARCH_CONTENT_TYPES.slice();
+  const set = new Set();
+  types.forEach((type) => {
+    if (SEARCH_CONTENT_TYPES.includes(type)) {
+      set.add(type);
+    }
+  });
+  return set.size ? Array.from(set) : SEARCH_CONTENT_TYPES.slice();
+};
+
+const buildSearchMatch = ({
+  room,
+  filter = 'all',
+  searchQuery = '',
+  fromUser = '',
+  username = '',
+  dateFrom = null,
+  dateTo = null,
+}) => {
+  const match = { room, deleted: { $ne: true } };
+
+  if (filter === 'pinned') {
+    match.pinned = true;
+  } else if (filter === 'starred') {
+    if (username) {
+      match.starredBy = username;
+    } else {
+      match.starredBy = { $exists: true, $not: { $size: 0 } };
+    }
+  }
+
+  const cleanedFrom = typeof fromUser === 'string' ? fromUser.trim() : '';
+  if (cleanedFrom) {
+    match.user = new RegExp(`^${escapeRegex(cleanedFrom.replace(/^@+/, ''))}$`, 'i');
+  }
+
+  if (dateFrom || dateTo) {
+    match.timestamp = {};
+    if (dateFrom) match.timestamp.$gte = dateFrom;
+    if (dateTo) match.timestamp.$lte = dateTo;
+  }
+
+  if (searchQuery) {
+    match.$text = { $search: searchQuery };
+  }
+
+  return match;
+};
+
+const normalizeSearchOptions = (
+  {
+    room,
+    query = '',
+    filter = 'all',
+    contentTypes = SEARCH_CONTENT_TYPES,
+    fromUser = '',
+    dateFrom,
+    dateTo,
+    limit = 50,
+    username = '',
+  },
+  { limitCap = 250 } = {}
+) => {
+  const targetRoom = normaliseRoomName(room);
+  if (!targetRoom) return null;
+
+  const trimmedQuery = typeof query === 'string' ? query.trim().slice(0, 160) : '';
+  const allowedFilters = new Set(['all', 'pinned', 'starred']);
+  const safeFilter = allowedFilters.has(filter) ? filter : 'all';
+  const fromDate = parseDateBoundary(dateFrom);
+  const toDate = parseDateBoundary(dateTo, { endOfDay: true });
+  const safeContentTypes = sanitiseContentTypes(contentTypes);
+  const fromUserValue = typeof fromUser === 'string' ? fromUser.replace(/^@+/, '').trim() : '';
+  const safeUsername = typeof username === 'string' ? username.trim() : '';
+  const limitCount = Math.max(1, Math.min(Number(limit) || 50, limitCap));
+
+  return {
+    room: targetRoom,
+    query: trimmedQuery,
+    filter: safeFilter,
+    contentTypes: safeContentTypes,
+    fromUser: fromUserValue,
+    dateFrom: fromDate,
+    dateTo: toDate,
+    limit: limitCount,
+    username: safeUsername,
+  };
+};
+
+const runMessageSearch = async ({
+  room,
+  query,
+  filter,
+  contentTypes,
+  fromUser,
+  dateFrom,
+  dateTo,
+  limit,
+  username,
+  includeTimeline = true,
+  includeFacets = true,
+}) => {
+  if (!room) {
+    return { results: [], facets: {}, timeline: [], total: 0, timelineUnit: 'hour' };
+  }
+
+  const matchStage = buildSearchMatch({
+    room,
+    filter,
+    searchQuery: query,
+    fromUser,
+    username,
+    dateFrom,
+    dateTo,
+  });
+
+  const pipeline = [{ $match: matchStage }, { $addFields: { facetType: facetTypeExpression } }];
+
+  const sanitizedContent = Array.isArray(contentTypes) && contentTypes.length ? contentTypes : SEARCH_CONTENT_TYPES;
+  if (sanitizedContent.length && sanitizedContent.length !== SEARCH_CONTENT_TYPES.length) {
+    pipeline.push({ $match: { facetType: { $in: sanitizedContent } } });
+  }
+
+  const facetsStage = {
+    results: [
+      { $sort: { timestamp: -1, _id: -1 } },
+      { $limit: limit },
+    ],
+    totalCount: [{ $count: 'value' }],
+  };
+
+  if (includeFacets) {
+    facetsStage.facets = [
+      { $group: { _id: '$facetType', count: { $sum: 1 } } },
+    ];
+  }
+
+  let timelineUnit = 'hour';
+  if (includeTimeline) {
+    timelineUnit = resolveTimelineUnit(dateFrom, dateTo);
+    const timelineFormat = timelineUnit === 'day' ? '%Y-%m-%dT00:00:00Z' : '%Y-%m-%dT%H:00:00Z';
+    facetsStage.timeline = [
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: timelineFormat,
+              date: '$timestamp',
+              timezone: 'UTC',
+            },
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ];
+  }
+
+  pipeline.push({ $facet: facetsStage });
+
+  const [aggregateResult] = await Message.aggregate(pipeline).allowDiskUse(true);
+
+  const facetCounts = { text: 0, attachments: 0, system: 0 };
+  if (Array.isArray(aggregateResult?.facets)) {
+    aggregateResult.facets.forEach((entry) => {
+      if (entry?._id && typeof entry.count === 'number') {
+        facetCounts[entry._id] = entry.count;
+      }
+    });
+  }
+
+  const total = aggregateResult?.totalCount?.[0]?.value || 0;
+  const results = Array.isArray(aggregateResult?.results) ? aggregateResult.results : [];
+  const timelineEntries = Array.isArray(aggregateResult?.timeline) ? aggregateResult.timeline : [];
+  const formattedTimeline = includeTimeline
+    ? timelineEntries
+        .filter((entry) => entry && entry._id)
+        .map((entry) => ({ bucket: entry._id, count: entry.count || 0 }))
+    : [];
+
+  return {
+    results,
+    facets: includeFacets ? facetCounts : {},
+    timeline: formattedTimeline,
+    total,
+    timelineUnit,
+  };
+};
 app.use(
   "/uploads",
   express.static(path.resolve("public/uploads"), {
@@ -178,6 +422,75 @@ app.use(
     immutable: true,
   })
 );
+
+const parseContentTypesQuery = (value) => {
+  if (!value) return undefined;
+  const source = Array.isArray(value) ? value : String(value).split(',');
+  return source
+    .map((item) => (typeof item === 'string' ? item.trim() : ''))
+    .filter(Boolean);
+};
+
+const escapeCsvValue = (value) => {
+  const str = value == null ? '' : String(value);
+  if (str.includes('"') || str.includes(',') || str.includes('\n')) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+};
+
+app.get('/rooms/:room/search/export', async (req, res) => {
+  try {
+    const searchOptions = normalizeSearchOptions(
+      {
+        room: req.params.room,
+        query: req.query.q || req.query.query || '',
+        filter: req.query.filter || 'all',
+        fromUser: req.query.from || req.query.fromUser || '',
+        dateFrom: req.query.dateFrom,
+        dateTo: req.query.dateTo,
+        contentTypes: parseContentTypesQuery(req.query.types),
+        limit: req.query.limit || 500,
+        username: req.query.username || '',
+      },
+      { limitCap: 2000 }
+    );
+
+    if (!searchOptions) {
+      res.status(400).json({ error: 'Invalid search request' });
+      return;
+    }
+
+    const { results } = await runMessageSearch({
+      ...searchOptions,
+      includeTimeline: false,
+      includeFacets: false,
+    });
+
+    const csvLines = ['timestamp,user,facetType,text,fileName,fileUrl'];
+    results.forEach((row) => {
+      const timestamp = new Date(row.timestamp || row.time || Date.now()).toISOString();
+      const text = row.deleted ? 'Message deleted' : row.text || '';
+      csvLines.push(
+        [
+          escapeCsvValue(timestamp),
+          escapeCsvValue(row.user || ''),
+          escapeCsvValue(row.facetType || 'text'),
+          escapeCsvValue(text),
+          escapeCsvValue(row.fileName || ''),
+          escapeCsvValue(row.fileUrl || ''),
+        ].join(',')
+      );
+    });
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${searchOptions.room}-search.csv"`);
+    res.send(csvLines.join('\n'));
+  } catch (err) {
+    console.error('[Search export] Error:', err);
+    res.status(500).json({ error: 'Unable to export search results' });
+  }
+});
 
 const METADEFENDER_API_KEY = process.env.METADEFENDER_API_KEY;
 const METADEFENDER_BASE_URL =
@@ -1800,39 +2113,53 @@ io.on('connection', socket => {
     } catch(err){ console.error("[React] Error:", err); }
   });
 
-  socket.on('search messages', async ({ room, query = '', filter = 'all', limit = 50 } = {}) => {
+  socket.on('search messages', async (payload = {}) => {
     try {
-      const targetRoom = normaliseRoomName(room) || socket.currentRoom;
+      const targetRoom = normaliseRoomName(payload.room) || socket.currentRoom;
       if (!targetRoom) return;
 
-      const conditions = { room: targetRoom, deleted: { $ne: true } };
+      const searchOptions = normalizeSearchOptions({
+        room: targetRoom,
+        query: payload.query,
+        filter: payload.filter,
+        contentTypes: Array.isArray(payload.contentTypes) ? payload.contentTypes : undefined,
+        fromUser: payload.fromUser,
+        dateFrom: payload.dateFrom,
+        dateTo: payload.dateTo,
+        limit: payload.limit,
+        username: socket.username || '',
+      });
+      if (!searchOptions) return;
 
-      if (filter === 'pinned') {
-        conditions.pinned = true;
-      } else if (filter === 'starred') {
-        const username = socket.username || '';
-        if (username) conditions.starredBy = username;
-        else conditions.starredBy = { $exists: true, $not: { $size: 0 } };
-      }
+      const { results, facets, timeline, total, timelineUnit } = await runMessageSearch({
+        ...searchOptions,
+        includeTimeline: true,
+        includeFacets: true,
+      });
 
-      const limitCount = Math.max(1, Math.min(Number(limit) || 50, 100));
-      let results;
-      if (query && query.trim()) {
-        const searchQuery = query.trim();
-        results = await Message.find({ ...conditions, $text: { $search: searchQuery } })
-          .sort({ timestamp: -1 })
-          .limit(limitCount);
-      } else {
-        results = await Message.find(conditions)
-          .sort({ timestamp: -1 })
-          .limit(limitCount);
-      }
-
-      const payload = results.map(m => (m.toJSON ? m.toJSON() : m));
-      socket.emit('search results', { room: targetRoom, query, filter, results: payload });
+      const payloadResults = results.map(toPlainMessage);
+      socket.emit('search results', {
+        room: targetRoom,
+        query: searchOptions.query,
+        filter: searchOptions.filter,
+        results: payloadResults,
+        facets,
+        total,
+        timeline,
+        timelineUnit,
+      });
     } catch(err){
       console.error('[Search] Error:', err);
-      socket.emit('search results', { room: room || socket.currentRoom, query, filter, results: [] });
+      socket.emit('search results', {
+        room: payload.room || socket.currentRoom,
+        query: payload.query,
+        filter: payload.filter,
+        results: [],
+        facets: {},
+        total: 0,
+        timeline: [],
+        timelineUnit: 'hour',
+      });
     }
   });
 
