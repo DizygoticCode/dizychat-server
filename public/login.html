@@ -76,13 +76,62 @@
         <audio id="psybin-audio" preload="none" aria-hidden="true"></audio>
       </div>
       <div class="header-right">
-        <div class="search-bar">
-          <input id="message-search" type="search" placeholder="Search messages…" aria-label="Search messages" />
-          <select id="message-search-filter" aria-label="Search filter">
-            <option value="all">All</option>
-            <option value="pinned">Pinned</option>
-            <option value="starred">Starred</option>
-          </select>
+        <div class="search-stack">
+          <div class="search-bar">
+            <input id="message-search" type="search" placeholder="Search messages…" aria-label="Search messages" />
+            <select id="message-search-filter" aria-label="Search filter">
+              <option value="all">All</option>
+              <option value="pinned">Pinned</option>
+              <option value="starred">Starred</option>
+            </select>
+            <button
+              type="button"
+              id="search-advanced-toggle"
+              class="search-advanced-toggle"
+              aria-label="Toggle advanced filters"
+              aria-expanded="false"
+              aria-controls="search-advanced"
+            >Filters</button>
+            <button
+              type="button"
+              id="search-export-btn"
+              class="search-export-btn"
+              title="Download search CSV"
+              aria-label="Download search CSV"
+              disabled
+            >CSV</button>
+          </div>
+          <div id="search-advanced" class="search-advanced" hidden>
+            <div class="search-advanced-row">
+              <label>
+                <span>From user</span>
+                <input id="search-from-user" type="text" placeholder="@username" autocomplete="off" />
+              </label>
+              <label>
+                <span>From date</span>
+                <input id="search-date-from" type="date" />
+              </label>
+              <label>
+                <span>To date</span>
+                <input id="search-date-to" type="date" />
+              </label>
+            </div>
+            <div class="search-advanced-row search-advanced-row--spread">
+              <fieldset class="search-content-types">
+                <legend>Content</legend>
+                <label><input type="checkbox" name="search-content-type" value="text" checked /> Text</label>
+                <label><input type="checkbox" name="search-content-type" value="attachments" checked /> Attachments</label>
+                <label><input type="checkbox" name="search-content-type" value="system" checked /> System</label>
+              </fieldset>
+              <div class="search-saved-controls">
+                <button type="button" id="search-save-btn" disabled>Save query</button>
+                <select id="search-saved-select" aria-label="Saved searches">
+                  <option value="__placeholder" selected>Saved searches…</option>
+                </select>
+                <button type="button" id="search-delete-saved" disabled>Delete</button>
+              </div>
+            </div>
+          </div>
         </div>
         <button id="toggle-theme" title="Toggle Theme">🌓</button>
         <button id="toggle-density" class="density-toggle" title="Toggle compact view" aria-pressed="false">
