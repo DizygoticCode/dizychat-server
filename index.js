@@ -1628,14 +1628,17 @@ const getPublicRoomsSnapshot = () => {
       name: room,
       occupants: members ? members.size : 0,
       requiresPassword: Boolean(roomPasswords.get(room)),
+      isPersistent: true,
     });
   });
 
   for (const [room, members] of roomMembers.entries()) {
+    const requiresPassword = Boolean(roomPasswords.get(room));
     if (rooms.has(room)) {
       const entry = rooms.get(room);
       entry.occupants = members ? members.size : 0;
-      entry.requiresPassword = Boolean(roomPasswords.get(room));
+      entry.requiresPassword = requiresPassword;
+      entry.isPersistent = true;
       continue;
     }
 
@@ -1644,16 +1647,21 @@ const getPublicRoomsSnapshot = () => {
     rooms.set(room, {
       name: room,
       occupants: members.size,
-      requiresPassword: Boolean(roomPasswords.get(room)),
+      requiresPassword,
+      isPersistent: PERSISTENT_ROOM_SET.has(room),
     });
   }
 
   return Array.from(rooms.values())
-    .filter((room) => !room.requiresPassword)
     .sort((a, b) => {
       if (b.occupants !== a.occupants) return b.occupants - a.occupants;
       return a.name.localeCompare(b.name);
-    });
+    })
+    .map((room) => ({
+      ...room,
+      requiresPassword: Boolean(room.requiresPassword),
+      isPersistent: Boolean(room.isPersistent),
+    }));
 };
 
 const emitRoomListUpdate = () => {
