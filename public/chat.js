@@ -199,6 +199,10 @@ const scrollToLatestLabel = scrollToLatestBtn?.querySelector?.(".scroll-to-lates
 const scrollToLatestCount = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-count") || null;
 const pageBody = typeof document !== "undefined" ? document.body : null;
 
+// Seed the login view with the default list of persistent rooms so the
+// interface never renders empty while we wait for socket responses.
+renderPublicRooms([]);
+
 function setViewMode(mode) {
   if (!pageBody) return;
   const isChat = mode === "chat";
@@ -5330,12 +5334,12 @@ socket.on("join error", (msg) => showToast(msg || "Join failed.", "error"));
 socket.on("toast", (data) => showToast(data?.text || "", data?.type || "info"));
 socket.on("connect", () => {
   showToast("Connected", "success");
-  renderPublicRooms([], { state: "loading" });
+  renderPublicRooms(latestPublicRooms);
   socket.emit("request rooms");
 });
 socket.on("disconnect", () => {
   showToast("Disconnected", "error");
-  renderPublicRooms([], { state: "error" });
+  renderPublicRooms(latestPublicRooms);
   hideSearchResults();
 });
 socket.on("room list", (rooms) => {
