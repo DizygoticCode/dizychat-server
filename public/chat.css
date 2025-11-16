@@ -185,6 +185,11 @@ body.view-chat #site-landing {
   body {
     min-height: 100dvh;
   }
+
+  #chat-container {
+    min-height: 100dvh;
+    height: 100dvh;
+  }
 }
 
 body.dark { background: var(--bg); color: var(--text-primary); }
@@ -206,6 +211,7 @@ body.dark { background: var(--bg); color: var(--text-primary); }
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 100vh;
+  height: 100vh;
   background: var(--bg);
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
     env(safe-area-inset-left);
