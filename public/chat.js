@@ -98,6 +98,7 @@ const replyPreviewAuthor = document.getElementById("reply-preview-author");
 const replyPreviewText = document.getElementById("reply-preview-text");
 const replyPreviewCancel = document.getElementById("reply-preview-cancel");
 const quickEmojiPanel = document.getElementById("quick-emoji-panel");
+const composerDraftTray = document.getElementById("composer-draft-tray");
 
 const siteLanding = document.getElementById("site-landing");
 const usernamePrompt = document.getElementById("username-prompt");
@@ -1787,6 +1788,350 @@ function hideMessageLocally(id) {
     existing.remove();
   }
 }
+
+// ------------------- Composer Draft Persistence -------------------
+const COMPOSER_DRAFT_STORAGE_PREFIX = "dizychat-draft-";
+const MAX_DRAFT_ATTACHMENTS = 4;
+const MAX_DRAFT_ATTACHMENT_BYTES = 2 * 1024 * 1024; // 2 MB per item
+const MAX_DRAFT_TOTAL_BYTES = 4 * 1024 * 1024; // 4 MB across all staged items
+
+const composerDraftManager = (() => {
+  let attachments = [];
+  let textPersistTimer = null;
+  let lastStorageErrorAt = 0;
+
+  const keyForRoom = (room) => `${COMPOSER_DRAFT_STORAGE_PREFIX}${room || ""}`;
+
+  const sanitizeName = (value, fallback = "attachment") => {
+    if (typeof value !== "string") return fallback;
+    const compact = value.replace(/[\n\r]+/g, " ").replace(/\s+/g, " ").trim();
+    if (!compact) return fallback;
+    return compact.slice(0, 120);
+  };
+
+  const estimateDataUrlBytes = (value) => {
+    if (typeof value !== "string") return 0;
+    const commaIndex = value.indexOf(",");
+    if (commaIndex === -1) return 0;
+    const base64Length = value.length - commaIndex - 1;
+    return Math.ceil((base64Length * 3) / 4);
+  };
+
+  const formatBytes = (bytes) => {
+    const value = Number(bytes);
+    if (!Number.isFinite(value) || value <= 0) return "";
+    if (value < 1024) return `${value} B`;
+    const kb = value / 1024;
+    if (kb < 1024) return `${kb >= 100 ? Math.round(kb) : kb.toFixed(1)} KB`;
+    const mb = kb / 1024;
+    return `${mb >= 100 ? Math.round(mb) : mb.toFixed(1)} MB`;
+  };
+
+  const formatDuration = (ms) => {
+    const value = Number(ms);
+    if (!Number.isFinite(value) || value <= 0) return "";
+    const totalSeconds = Math.max(1, Math.round(value / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  };
+
+  const normalizeAttachment = (raw) => {
+    if (!raw || typeof raw !== "object") return null;
+    const dataUrl = typeof raw.dataUrl === "string" && raw.dataUrl.startsWith("data:") ? raw.dataUrl : "";
+    if (!dataUrl) return null;
+    const kind = raw.kind === "voice" ? "voice" : "file";
+    const name = sanitizeName(raw.name, kind === "voice" ? "Voice note" : "Attachment");
+    const fileName = sanitizeName(raw.fileName || name || "attachment");
+    const mimeType = typeof raw.mimeType === "string" && raw.mimeType ? raw.mimeType : kind === "voice" ? "audio/webm" : "application/octet-stream";
+    const size = Number(raw.size) > 0 ? Number(raw.size) : estimateDataUrlBytes(dataUrl);
+    const durationMs = Number(raw.durationMs) > 0 ? Number(raw.durationMs) : 0;
+    const id = typeof raw.id === "string" && raw.id ? raw.id : `draft-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    return { id, kind, name, fileName, mimeType, dataUrl, size, durationMs };
+  };
+
+  const computeTotalBytes = () => attachments.reduce((sum, item) => sum + (Number(item.size) || estimateDataUrlBytes(item.dataUrl)), 0);
+
+  const renderAttachmentTray = () => {
+    if (!composerDraftTray) return;
+    composerDraftTray.innerHTML = "";
+    if (!attachments.length) {
+      composerDraftTray.hidden = true;
+      composerDraftTray.setAttribute("aria-hidden", "true");
+      form?.classList?.remove("has-draft-tray");
+      return;
+    }
+
+    composerDraftTray.hidden = false;
+    composerDraftTray.setAttribute("aria-hidden", "false");
+    form?.classList?.add("has-draft-tray");
+
+    attachments.forEach((item) => {
+      const chip = document.createElement("div");
+      chip.className = "draft-attachment";
+      chip.dataset.id = item.id;
+
+      const icon = document.createElement("span");
+      icon.className = "draft-attachment-icon";
+      icon.textContent = item.kind === "voice" ? "🎙️" : "📎";
+      chip.appendChild(icon);
+
+      const body = document.createElement("div");
+      body.className = "draft-attachment-body";
+      const title = document.createElement("div");
+      title.className = "draft-attachment-title";
+      title.textContent = item.name;
+      body.appendChild(title);
+
+      const metaParts = [];
+      if (item.kind === "voice" && item.durationMs) {
+        metaParts.push(formatDuration(item.durationMs));
+      }
+      if (item.size) {
+        metaParts.push(formatBytes(item.size));
+      }
+      if (metaParts.length) {
+        const meta = document.createElement("div");
+        meta.className = "draft-attachment-meta";
+        meta.textContent = metaParts.join(" • ");
+        body.appendChild(meta);
+      }
+
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "draft-attachment-remove";
+      removeBtn.setAttribute(
+        "aria-label",
+        `Remove ${item.kind === "voice" ? "voice note" : "attachment"}`
+      );
+      removeBtn.innerHTML = "✕";
+      removeBtn.addEventListener("click", () => removeAttachment(item.id));
+
+      chip.appendChild(body);
+      chip.appendChild(removeBtn);
+      composerDraftTray.appendChild(chip);
+    });
+  };
+
+  const persistPayload = (room, payload) => {
+    if (!room || typeof localStorage === "undefined") return;
+    try {
+      localStorage.setItem(keyForRoom(room), JSON.stringify(payload));
+    } catch (err) {
+      console.warn("[Draft] Failed to persist", err);
+      if (!lastStorageErrorAt || Date.now() - lastStorageErrorAt > 4000) {
+        window.showToast?.("Unable to save draft—storage is full?", "error");
+        lastStorageErrorAt = Date.now();
+      }
+    }
+  };
+
+  const removePayload = (room) => {
+    if (!room || typeof localStorage === "undefined") return;
+    try {
+      localStorage.removeItem(keyForRoom(room));
+    } catch (err) {
+      console.warn("[Draft] Failed to clear storage", err);
+    }
+  };
+
+  const persistNow = () => {
+    const room = window.currentRoom;
+    if (!room) return;
+    const text = input?.value || "";
+    const trimmed = text.trim();
+    if (!trimmed && !attachments.length) {
+      removePayload(room);
+      return;
+    }
+
+    const payload = {
+      text,
+      attachments: attachments.map((item) => ({ ...item })),
+      updatedAt: Date.now(),
+    };
+    persistPayload(room, payload);
+  };
+
+  const schedulePersist = () => {
+    clearTimeout(textPersistTimer);
+    textPersistTimer = setTimeout(() => {
+      textPersistTimer = null;
+      persistNow();
+    }, 350);
+  };
+
+  const readStoredPayload = (room) => {
+    if (!room || typeof localStorage === "undefined") return null;
+    try {
+      const raw = localStorage.getItem(keyForRoom(room));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return null;
+      const text = typeof parsed.text === "string" ? parsed.text : "";
+      const storedAttachments = Array.isArray(parsed.attachments)
+        ? parsed.attachments.map((item) => normalizeAttachment(item)).filter(Boolean)
+        : [];
+      return { text, attachments: storedAttachments };
+    } catch (err) {
+      console.warn("[Draft] Failed to load stored draft", err);
+      return null;
+    }
+  };
+
+  const clearVisibleDraft = () => {
+    attachments = [];
+    renderAttachmentTray();
+    if (input) input.value = "";
+  };
+
+  const removeAttachment = (id) => {
+    attachments = attachments.filter((item) => item.id !== id);
+    renderAttachmentTray();
+    persistNow();
+  };
+
+  const dataUrlToBlob = (dataUrl) => {
+    if (typeof dataUrl !== "string") return null;
+    const commaIndex = dataUrl.indexOf(",");
+    if (commaIndex === -1) return null;
+    const header = dataUrl.slice(0, commaIndex);
+    const base64 = dataUrl.slice(commaIndex + 1);
+    const match = /^data:(.*?)(;base64)?$/i.exec(header);
+    const mimeType = match?.[1] || "application/octet-stream";
+    const isBase64 = Boolean(match?.[2]);
+    try {
+      if (isBase64) {
+        const binary = atob(base64);
+        const len = binary.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i += 1) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        return new Blob([bytes], { type: mimeType });
+      }
+      return new Blob([decodeURIComponent(base64)], { type: mimeType });
+    } catch (err) {
+      console.warn("[Draft] Failed to convert data URL", err);
+      return null;
+    }
+  };
+
+  const readBlobAsDataUrl = (blob) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error || new Error("Unable to read file"));
+      reader.readAsDataURL(blob);
+    });
+
+  const ensureCapacity = (incomingSize = 0) => {
+    if (attachments.length >= MAX_DRAFT_ATTACHMENTS) {
+      throw new Error(`Only ${MAX_DRAFT_ATTACHMENTS} draft attachments supported at once.`);
+    }
+    if (incomingSize > MAX_DRAFT_ATTACHMENT_BYTES) {
+      throw new Error("Attachments must be under 2 MB while drafting.");
+    }
+    if (computeTotalBytes() + incomingSize > MAX_DRAFT_TOTAL_BYTES) {
+      throw new Error("Draft storage is full. Send or remove attachments first.");
+    }
+  };
+
+  const addAttachmentFromBlob = async (blob, meta = {}) => {
+    if (!blob) return null;
+    if (!window.currentRoom) {
+      throw new Error("Join a room to add attachments.");
+    }
+    const size = Number(blob.size) || 0;
+    ensureCapacity(size);
+    const dataUrl = await readBlobAsDataUrl(blob);
+    if (typeof dataUrl !== "string") {
+      throw new Error("Unable to stage attachment.");
+    }
+    const record = normalizeAttachment({
+      id: meta.id,
+      kind: meta.kind || "file",
+      name: meta.name || blob.name || meta.fileName || (meta.kind === "voice" ? "Voice note" : "Attachment"),
+      fileName: meta.fileName || blob.name || "attachment",
+      mimeType: meta.mimeType || blob.type || "application/octet-stream",
+      dataUrl,
+      size: size || estimateDataUrlBytes(dataUrl),
+      durationMs: meta.durationMs || 0,
+    });
+    if (!record) {
+      throw new Error("Unable to stage attachment.");
+    }
+    attachments = [...attachments, record];
+    renderAttachmentTray();
+    persistNow();
+    return record;
+  };
+
+  const sendAttachmentsSequentially = async (replyTo) => {
+    if (!attachments.length) return;
+    const pending = attachments.map((item) => ({ ...item }));
+    for (const entry of pending) {
+      const blob = dataUrlToBlob(entry.dataUrl);
+      if (!blob) {
+        removeAttachment(entry.id);
+        continue;
+      }
+      await uploadFileAndSend(blob, {
+        fileName: entry.fileName || entry.name || "attachment",
+        displayName: entry.kind === "voice" ? entry.name || "Voice note" : entry.name || "Attachment",
+        mimeType: entry.mimeType || blob.type || undefined,
+        replyTo,
+      });
+      removeAttachment(entry.id);
+    }
+  };
+
+  return {
+    noteTextChanged: () => {
+      if (!window.currentRoom) return;
+      schedulePersist();
+    },
+    persistActiveDraft: ({ immediate = true } = {}) => {
+      if (immediate) {
+        clearTimeout(textPersistTimer);
+        textPersistTimer = null;
+        persistNow();
+      } else {
+        if (!window.currentRoom) return;
+        schedulePersist();
+      }
+    },
+    restoreDraftForRoom: (room) => {
+      attachments = [];
+      renderAttachmentTray();
+      if (input) input.value = "";
+      if (!room) return false;
+      const payload = readStoredPayload(room);
+      if (!payload) return false;
+      if (input && typeof payload.text === "string") {
+        input.value = payload.text;
+      }
+      attachments = Array.isArray(payload.attachments)
+        ? payload.attachments.map((item) => ({ ...item }))
+        : [];
+      renderAttachmentTray();
+      return Boolean((payload.text || "").trim() || attachments.length);
+    },
+    clearVisibleDraft,
+    addFileAttachment: (file) => addAttachmentFromBlob(file, { kind: "file", name: file?.name }),
+    addVoiceAttachment: (blob, meta = {}) =>
+      addAttachmentFromBlob(blob, {
+        kind: "voice",
+        name: meta.displayName || meta.fileName || "Voice note",
+        fileName: meta.fileName || meta.displayName || `voice-note-${Date.now()}.webm`,
+        mimeType: meta.mimeType || blob?.type || "audio/webm",
+        durationMs: meta.durationMs || 0,
+      }),
+    removeAttachment,
+    hasAttachments: () => attachments.length > 0,
+    sendAttachmentsSequentially,
+  };
+})();
 
 function storeMessageData(raw) {
   if (!raw) return null;
@@ -3511,6 +3856,8 @@ function updateQueryParams(room, password) {
 }
 
 function showLanding({ focusUsername = true } = {}) {
+  composerDraftManager.persistActiveDraft({ immediate: true });
+  composerDraftManager.clearVisibleDraft();
   isViewingChat = false;
   resetChromeToolbarAttention();
   appState.isAdmin = false;
@@ -4608,6 +4955,7 @@ if (typeof window !== "undefined") {
   });
 
   window.addEventListener("beforeunload", () => {
+    composerDraftManager.persistActiveDraft({ immediate: true });
     stopInfowarsStreamPlayback();
     if (psybinAudio) {
       try {
@@ -4633,6 +4981,8 @@ if (scrollToLatestBtn) {
 // ===== JOIN ROOM (with corrections for transition) =====
 
 function completeRoomJoin(username, room, password) {
+  composerDraftManager.persistActiveDraft({ immediate: true });
+  composerDraftManager.clearVisibleDraft();
   window.currentUser = username;
   window.currentRoom = room;
   window.currentPassword = password;
@@ -4677,6 +5027,11 @@ function completeRoomJoin(username, room, password) {
   }
 
   scrollMessagesToBottom({ behavior: "smooth", delay: 200, force: true });
+
+  const restoredDraft = composerDraftManager.restoreDraftForRoom(room);
+  if (restoredDraft && room) {
+    showToast(`Draft restored for #${room}`, "info");
+  }
 }
 
 function emitJoinRequest() {
@@ -5313,20 +5668,62 @@ if (emojiPicker) {
 
 // ------------------- Sending Messages -------------------
 if (form) {
-  form.addEventListener("submit", (e) => {
+  let isSendingComposerPayload = false;
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (isSendingComposerPayload) return;
+
     const rawText = input?.value || "";
+    const trimmed = rawText.trim();
+    const hasAttachments = composerDraftManager.hasAttachments();
+
+    if (!trimmed && !hasAttachments) {
+      return;
+    }
+
+    if (!window.currentRoom || !window.currentUser) {
+      showToast("Join a room to send messages.", "warn");
+      return;
+    }
+
     const replyTo = normalizeMessageId(replyState.targetId) || undefined;
-    const sent = sendPlainTextMessage(rawText, { replyTo });
-    if (!sent) return;
-    input.value = "";
-    clearReplyTarget();
-    socket.emit("stop typing");
+    isSendingComposerPayload = true;
+    try {
+      if (trimmed) {
+        const sent = sendPlainTextMessage(rawText, { replyTo });
+        if (!sent) {
+          showToast("Unable to send message.", "error");
+          return;
+        }
+        input.value = "";
+      }
+
+      if (hasAttachments) {
+        await composerDraftManager.sendAttachmentsSequentially(replyTo);
+        if (!trimmed) {
+          input.value = "";
+        }
+      }
+
+      if (isTyping) {
+        socket.emit("stop typing");
+        isTyping = false;
+        clearTimeout(typingTimeout);
+      }
+
+      clearReplyTarget();
+      composerDraftManager.persistActiveDraft({ immediate: true });
+    } catch (err) {
+      console.error("[Composer] Failed to send payload", err);
+    } finally {
+      isSendingComposerPayload = false;
+    }
   });
 }
 
 // ------------------- Typing Indicator -------------------
 input?.addEventListener("input", () => {
+  composerDraftManager.noteTextChanged();
   if (!isTyping) {
     socket.emit("typing", window.currentUser);
     isTyping = true;
@@ -6171,13 +6568,16 @@ const createUploadOverlay = () => {
 const uploadFileAndSend = async (fileOrBlob, options = {}) => {
   if (!fileOrBlob) return false;
 
-  const { fileName: overrideName, displayName, mimeType } = options;
+  const { fileName: overrideName, displayName, mimeType, replyTo: explicitReply } = options;
   const intrinsicName =
     typeof fileOrBlob?.name === "string" && fileOrBlob.name
       ? fileOrBlob.name
       : "";
   const uploadName = overrideName || intrinsicName || "attachment";
   const label = displayName || uploadName;
+  const normalizedReply = normalizeMessageId(
+    explicitReply !== undefined ? explicitReply : replyState.targetId
+  ) || undefined;
 
   showToast(`Uploading ${label}…`, "info");
 
@@ -6211,8 +6611,7 @@ const uploadFileAndSend = async (fileOrBlob, options = {}) => {
 
     showToast(`Uploaded: ${label}`, "success");
 
-    const replyTo = normalizeMessageId(replyState.targetId) || undefined;
-    socket.emit("chat message", {
+    const payload = {
       room: window.currentRoom,
       user: window.currentUser,
       text: data.url,
@@ -6220,10 +6619,14 @@ const uploadFileAndSend = async (fileOrBlob, options = {}) => {
       fileUrl: data.url,
       fileType: data.type || mimeType || fileOrBlob.type || "",
       fileName: data.name || uploadName || "",
-      replyTo,
-    });
+    };
 
-    clearReplyTarget();
+    if (normalizedReply) {
+      payload.replyTo = normalizedReply;
+    }
+
+    socket.emit("chat message", payload);
+
     return true;
   } catch (err) {
     console.error("[Upload Error]", err);
@@ -6245,11 +6648,20 @@ if (attachBtn && fileInput) {
     if (!file) return;
 
     try {
-      await uploadFileAndSend(file);
-      fileInput.value = "";
-    } catch {
-      /* handled in uploadFileAndSend */
+      const record = await composerDraftManager.addFileAttachment(file);
+      if (record) {
+        showToast(`${record.name} added to draft. Press send to upload.`, "success");
+        try {
+          input?.focus({ preventScroll: true });
+        } catch {
+          input?.focus();
+        }
+      }
+    } catch (err) {
+      const message = err?.message || "Unable to stage attachment.";
+      showToast(message, "error");
     }
+    fileInput.value = "";
   });
 }
 
@@ -6634,6 +7046,8 @@ if (voiceBtn) {
         recordedChunks && recordedChunks.length
           ? new Blob(recordedChunks, { type: mimeType })
           : null;
+      const voiceDurationMs =
+        recordingStartTime != null ? Date.now() - recordingStartTime : 0;
 
       cleanupStream(currentRecorder?.stream);
       resetRecordingState();
@@ -6655,13 +7069,17 @@ if (voiceBtn) {
       const filename = `voice-${timestamp}.${extension}`;
 
       try {
-        await uploadFileAndSend(blob, {
+        await composerDraftManager.addVoiceAttachment(blob, {
           fileName: filename,
           displayName: filename,
           mimeType,
+          durationMs: voiceDurationMs,
         });
-      } catch {
-        /* errors handled in uploadFileAndSend */
+        showToast("Voice note saved to draft. Press send when ready.", "success");
+      } catch (err) {
+        console.error("[Voice] Failed to stage recording", err);
+        const message = err?.message || "Unable to save voice note draft.";
+        showToast(message, "error");
       }
     };
 

@@ -2288,6 +2288,84 @@ body.light .message .reactions .reaction-chip.own {
   z-index: 15;
 }
 
+#form.has-draft-tray {
+  border-top: none;
+}
+
+#composer-draft-tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px var(--input-padding-x);
+  background: var(--surface);
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+#composer-draft-tray[hidden] {
+  display: none;
+}
+
+.draft-attachment {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(255,255,255,0.08);
+  background: var(--surface-alt, rgba(20, 20, 30, 0.8));
+  box-shadow: 0 6px 14px rgba(2, 6, 23, 0.35);
+  min-width: 180px;
+  flex: 1 1 200px;
+}
+
+body.light .draft-attachment {
+  border-color: rgba(0,0,0,0.08);
+  background: rgba(248,250,252,0.9);
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
+}
+
+.draft-attachment-icon {
+  font-size: 1.2em;
+}
+
+.draft-attachment-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.draft-attachment-title {
+  font-weight: 600;
+  font-size: 0.95em;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.draft-attachment-meta {
+  font-size: 0.8em;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.draft-attachment-remove {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.9em;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm, 8px);
+  transition: color 0.2s ease, background 0.2s ease;
+}
+
+.draft-attachment-remove:hover,
+.draft-attachment-remove:focus-visible {
+  color: var(--accent);
+  background: rgba(187, 134, 252, 0.15);
+}
+
 #quick-emoji-panel {
   display: inline-flex;
   align-items: center;
