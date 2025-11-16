@@ -1643,6 +1643,7 @@ io.on('connection', socket => {
       msg.starredBy = [];
       msg.pinned = false;
       msg.pinnedBy = '';
+      msg.pinOrder = null;
       await msg.save();
 
       if (originalFileUrl) {
@@ -1665,6 +1666,7 @@ io.on('connection', socket => {
 
       msg.pinned = true;
       msg.pinnedBy = socket.username || '';
+      msg.pinOrder = Date.now();
       await msg.save();
 
       const payload = msg.toJSON ? msg.toJSON() : msg;
@@ -1690,6 +1692,7 @@ io.on('connection', socket => {
 
       msg.pinned = false;
       msg.pinnedBy = '';
+      msg.pinOrder = null;
       await msg.save();
 
       const payload = msg.toJSON ? msg.toJSON() : msg;
@@ -1699,9 +1702,47 @@ io.on('connection', socket => {
 
   socket.on('get pinned', async ({ room }) => {
     try {
-      const pinned = await Message.find({ room, pinned: true, deleted: { $ne: true } }).sort({ timestamp: -1 }).limit(50);
+      const pinned = await Message.find({ room, pinned: true, deleted: { $ne: true } })
+        .sort({ pinOrder: -1, timestamp: -1 })
+        .limit(50);
       socket.emit('pinned messages', pinned);
     } catch(err){ console.error("[Pinned fetch] Error:", err); }
+  });
+
+  socket.on('reorder pins', async ({ room, orderedIds = [] }) => {
+    try {
+      const targetRoom = room || socket.currentRoom;
+      if (!targetRoom || !Array.isArray(orderedIds) || !orderedIds.length) return;
+      if (!socket.isAdmin) {
+        socket.emit('toast', { type: 'warn', text: 'Only admins can reorder pins.' });
+        return;
+      }
+
+      const sanitizedIds = orderedIds
+        .map((id) => (typeof id === 'string' ? id.trim() : ''))
+        .filter((id) => id && mongoose.Types.ObjectId.isValid(id));
+      if (!sanitizedIds.length) return;
+
+      const now = Date.now();
+      const operations = sanitizedIds.map((id, index) => ({
+        updateOne: {
+          filter: { _id: id, room: targetRoom, pinned: true, deleted: { $ne: true } },
+          update: { $set: { pinOrder: now - index } },
+        },
+      }));
+
+      if (!operations.length) return;
+
+      await Message.bulkWrite(operations, { ordered: false });
+
+      const refreshedPins = await Message.find({ room: targetRoom, pinned: true, deleted: { $ne: true } })
+        .sort({ pinOrder: -1, timestamp: -1 })
+        .limit(50);
+
+      io.to(targetRoom).emit('pinned messages', refreshedPins);
+    } catch (err) {
+      console.error('[Pin reorder] Error:', err);
+    }
   });
 
   socket.on('star message', async ({ room, id, user }) => {

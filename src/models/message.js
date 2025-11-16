@@ -31,6 +31,7 @@ const messageSchema = new mongoose.Schema({
   reactions: { type: [reactionSchema], default: [] },   // structured reactions
   pinned: { type: Boolean, default: false },            // pin messages
   pinnedBy: { type: String, default: "" },             // user who pinned the message
+  pinOrder: { type: Number, default: null },            // ordering index for pins
   starredBy: { type: [String], default: [] },           // list of users who starred it
   deleted: { type: Boolean, default: false },           // soft delete flag
   deletedAt: { type: Date },

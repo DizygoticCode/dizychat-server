@@ -4,76 +4,6 @@
 
 console.log("%c🎛️ DizyChat Supernova Fusion Loaded", "color:#b266ff;font-weight:bold;");
 
-const nativeBadgeController = (() => {
-  if (typeof window === "undefined") {
-    return {
-      isNativePlatform: () => false,
-      canUseBadges: () => false,
-      async incrementBadge() {},
-      async clearBadge() {},
-    };
-  }
-
-  const capacitor = window.Capacitor || null;
-  const pushPlugin =
-    capacitor?.Plugins?.PushNotifications || window.PushNotifications || null;
-
-  const isNativePlatform = () => {
-    if (!capacitor || typeof capacitor.isNativePlatform !== "function") {
-      return false;
-    }
-    try {
-      return Boolean(capacitor.isNativePlatform());
-    } catch (error) {
-      console.warn("Capacitor platform detection failed", error);
-      return false;
-    }
-  };
-
-  const hasBadgeSupport = () =>
-    Boolean(
-      pushPlugin &&
-        typeof pushPlugin.getBadgeCount === "function" &&
-        typeof pushPlugin.setBadgeCount === "function"
-    );
-
-  const canUseBadges = () => isNativePlatform() && hasBadgeSupport();
-
-  const getBadgeCount = async () => {
-    if (!canUseBadges()) return 0;
-    try {
-      const result = await pushPlugin.getBadgeCount();
-      return typeof result?.count === "number" ? result.count : 0;
-    } catch (error) {
-      console.error("Error getting badge count", error);
-      return 0;
-    }
-  };
-
-  const setBadgeCount = async (count) => {
-    if (!canUseBadges()) return;
-    try {
-      await pushPlugin.setBadgeCount({ count });
-    } catch (error) {
-      console.error("Error setting badge count", error);
-    }
-  };
-
-  return {
-    isNativePlatform,
-    canUseBadges,
-    async incrementBadge() {
-      if (!canUseBadges()) return;
-      const current = await getBadgeCount();
-      await setBadgeCount(current + 1);
-    },
-    async clearBadge() {
-      if (!canUseBadges()) return;
-      await setBadgeCount(0);
-    },
-  };
-})();
-
 const resolveSocketConfig = () => {
   if (typeof window === "undefined") {
     return { url: undefined, options: {} };
@@ -168,7 +98,24 @@ const replyPreviewAuthor = document.getElementById("reply-preview-author");
 const replyPreviewText = document.getElementById("reply-preview-text");
 const replyPreviewCancel = document.getElementById("reply-preview-cancel");
 const quickEmojiPanel = document.getElementById("quick-emoji-panel");
+const composerDraftTray = document.getElementById("composer-draft-tray");
+const pinHubToggle = document.getElementById("pin-hub-toggle");
+const pinHub = document.getElementById("pin-hub");
+const pinHubOverlay = document.getElementById("pin-hub-overlay");
+const pinHubPanel = document.getElementById("pin-hub-panel");
+const pinHubCloseBtn = document.getElementById("pin-hub-close");
+const pinHubPinsList = document.getElementById("pin-hub-pin-list");
+const pinHubStarsList = document.getElementById("pin-hub-star-list");
+const pinHubPinsEmpty = document.getElementById("pin-hub-pins-empty");
+const pinHubStarsEmpty = document.getElementById("pin-hub-stars-empty");
+const pinHubRecapBtn = document.getElementById("pin-hub-recap");
+const pinHubReorderHint = document.getElementById("pin-hub-reorder-hint");
+const pinHubPinCountLabel = document.getElementById("pin-hub-pin-count");
+const pinHubStarCountLabel = document.getElementById("pin-hub-star-count");
+const pinHubPinsTotal = document.getElementById("pin-hub-pins-total");
+const pinHubStarsTotal = document.getElementById("pin-hub-stars-total");
 
+const siteLanding = document.getElementById("site-landing");
 const usernamePrompt = document.getElementById("username-prompt");
 const chatContainer = document.getElementById("chat-container");
 const joinBtn = document.getElementById("join-btn");
@@ -202,6 +149,64 @@ const psybinMetadataText = document.getElementById("psybin-meta-text");
 const scrollToLatestBtn = document.getElementById("scroll-to-latest");
 const scrollToLatestLabel = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-label") || null;
 const scrollToLatestCount = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-count") || null;
+const pageBody = typeof document !== "undefined" ? document.body : null;
+
+function setViewMode(mode) {
+  if (!pageBody) return;
+  const isChat = mode === "chat";
+  pageBody.classList.toggle("view-chat", isChat);
+  pageBody.classList.toggle("view-landing", !isChat);
+}
+
+if (pageBody) {
+  setViewMode(pageBody.classList.contains("view-chat") ? "chat" : "landing");
+}
+
+renderPinHubHighlights();
+
+if (pinHubToggle) {
+  pinHubToggle.addEventListener("click", () => {
+    if (pinHubState.visible) {
+      closePinHub();
+    } else {
+      const active = document.activeElement;
+      pinHubState.lastActiveElement =
+        active && typeof active.focus === "function" ? active : pinHubToggle;
+      openPinHub();
+    }
+  });
+}
+
+if (pinHubOverlay) {
+  pinHubOverlay.addEventListener("click", () => closePinHub());
+}
+
+if (pinHubCloseBtn) {
+  pinHubCloseBtn.addEventListener("click", () => closePinHub());
+}
+
+if (pinHubRecapBtn) {
+  pinHubRecapBtn.addEventListener("click", () => {
+    if (!appState.isAdmin) {
+      showToast("Only admins can share recaps.", "warn");
+      return;
+    }
+    const recap = generateSessionRecapText();
+    if (!recap.trim()) {
+      showToast("No pins or stars to summarize yet.", "info");
+      return;
+    }
+    const sent = sendPlainTextMessage(recap);
+    if (sent) {
+      showToast("Session recap shared", "success");
+      closePinHub({ returnFocus: false });
+    } else {
+      showToast("Join a room to share recaps.", "warn");
+    }
+  });
+}
+
+document.addEventListener("keydown", handlePinHubKeydown);
 
 // ------------------- Emoji Usage Tracking -------------------
 const EMOJI_USAGE_STORAGE_KEY = "dizychat-emoji-usage";
@@ -730,6 +735,17 @@ const scrollSentinelState = {
   visibleRatio: 1,
   programmaticUnlockUntil: 0,
 };
+
+const pinHubState = {
+  visible: false,
+  lastActiveElement: null,
+};
+
+const PIN_HUB_MAX_STARRED_ITEMS = 40;
+const PIN_HUB_MAX_RECAP_PINS = 8;
+const PIN_HUB_MAX_RECAP_STARS = 8;
+const PIN_HUB_PREVIEW_LIMIT = 160;
+let pinnedSignatureCache = null;
 
 let ensureBottomTimer = null;
 
@@ -1354,13 +1370,7 @@ function triggerChromeToolbarAttention(type) {
   }
 }
 
-window.addEventListener("focus", async () => {
-  resetChromeToolbarAttention();
-
-  if (nativeBadgeController.canUseBadges()) {
-    await nativeBadgeController.clearBadge();
-  }
-});
+window.addEventListener("focus", () => resetChromeToolbarAttention());
 window.addEventListener("pointerdown", () => resetChromeToolbarAttention(), { capture: true });
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {
@@ -1851,6 +1861,350 @@ function hideMessageLocally(id) {
   }
 }
 
+// ------------------- Composer Draft Persistence -------------------
+const COMPOSER_DRAFT_STORAGE_PREFIX = "dizychat-draft-";
+const MAX_DRAFT_ATTACHMENTS = 4;
+const MAX_DRAFT_ATTACHMENT_BYTES = 2 * 1024 * 1024; // 2 MB per item
+const MAX_DRAFT_TOTAL_BYTES = 4 * 1024 * 1024; // 4 MB across all staged items
+
+const composerDraftManager = (() => {
+  let attachments = [];
+  let textPersistTimer = null;
+  let lastStorageErrorAt = 0;
+
+  const keyForRoom = (room) => `${COMPOSER_DRAFT_STORAGE_PREFIX}${room || ""}`;
+
+  const sanitizeName = (value, fallback = "attachment") => {
+    if (typeof value !== "string") return fallback;
+    const compact = value.replace(/[\n\r]+/g, " ").replace(/\s+/g, " ").trim();
+    if (!compact) return fallback;
+    return compact.slice(0, 120);
+  };
+
+  const estimateDataUrlBytes = (value) => {
+    if (typeof value !== "string") return 0;
+    const commaIndex = value.indexOf(",");
+    if (commaIndex === -1) return 0;
+    const base64Length = value.length - commaIndex - 1;
+    return Math.ceil((base64Length * 3) / 4);
+  };
+
+  const formatBytes = (bytes) => {
+    const value = Number(bytes);
+    if (!Number.isFinite(value) || value <= 0) return "";
+    if (value < 1024) return `${value} B`;
+    const kb = value / 1024;
+    if (kb < 1024) return `${kb >= 100 ? Math.round(kb) : kb.toFixed(1)} KB`;
+    const mb = kb / 1024;
+    return `${mb >= 100 ? Math.round(mb) : mb.toFixed(1)} MB`;
+  };
+
+  const formatDuration = (ms) => {
+    const value = Number(ms);
+    if (!Number.isFinite(value) || value <= 0) return "";
+    const totalSeconds = Math.max(1, Math.round(value / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  };
+
+  const normalizeAttachment = (raw) => {
+    if (!raw || typeof raw !== "object") return null;
+    const dataUrl = typeof raw.dataUrl === "string" && raw.dataUrl.startsWith("data:") ? raw.dataUrl : "";
+    if (!dataUrl) return null;
+    const kind = raw.kind === "voice" ? "voice" : "file";
+    const name = sanitizeName(raw.name, kind === "voice" ? "Voice note" : "Attachment");
+    const fileName = sanitizeName(raw.fileName || name || "attachment");
+    const mimeType = typeof raw.mimeType === "string" && raw.mimeType ? raw.mimeType : kind === "voice" ? "audio/webm" : "application/octet-stream";
+    const size = Number(raw.size) > 0 ? Number(raw.size) : estimateDataUrlBytes(dataUrl);
+    const durationMs = Number(raw.durationMs) > 0 ? Number(raw.durationMs) : 0;
+    const id = typeof raw.id === "string" && raw.id ? raw.id : `draft-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    return { id, kind, name, fileName, mimeType, dataUrl, size, durationMs };
+  };
+
+  const computeTotalBytes = () => attachments.reduce((sum, item) => sum + (Number(item.size) || estimateDataUrlBytes(item.dataUrl)), 0);
+
+  const renderAttachmentTray = () => {
+    if (!composerDraftTray) return;
+    composerDraftTray.innerHTML = "";
+    if (!attachments.length) {
+      composerDraftTray.hidden = true;
+      composerDraftTray.setAttribute("aria-hidden", "true");
+      form?.classList?.remove("has-draft-tray");
+      return;
+    }
+
+    composerDraftTray.hidden = false;
+    composerDraftTray.setAttribute("aria-hidden", "false");
+    form?.classList?.add("has-draft-tray");
+
+    attachments.forEach((item) => {
+      const chip = document.createElement("div");
+      chip.className = "draft-attachment";
+      chip.dataset.id = item.id;
+
+      const icon = document.createElement("span");
+      icon.className = "draft-attachment-icon";
+      icon.textContent = item.kind === "voice" ? "🎙️" : "📎";
+      chip.appendChild(icon);
+
+      const body = document.createElement("div");
+      body.className = "draft-attachment-body";
+      const title = document.createElement("div");
+      title.className = "draft-attachment-title";
+      title.textContent = item.name;
+      body.appendChild(title);
+
+      const metaParts = [];
+      if (item.kind === "voice" && item.durationMs) {
+        metaParts.push(formatDuration(item.durationMs));
+      }
+      if (item.size) {
+        metaParts.push(formatBytes(item.size));
+      }
+      if (metaParts.length) {
+        const meta = document.createElement("div");
+        meta.className = "draft-attachment-meta";
+        meta.textContent = metaParts.join(" • ");
+        body.appendChild(meta);
+      }
+
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "draft-attachment-remove";
+      removeBtn.setAttribute(
+        "aria-label",
+        `Remove ${item.kind === "voice" ? "voice note" : "attachment"}`
+      );
+      removeBtn.innerHTML = "✕";
+      removeBtn.addEventListener("click", () => removeAttachment(item.id));
+
+      chip.appendChild(body);
+      chip.appendChild(removeBtn);
+      composerDraftTray.appendChild(chip);
+    });
+  };
+
+  const persistPayload = (room, payload) => {
+    if (!room || typeof localStorage === "undefined") return;
+    try {
+      localStorage.setItem(keyForRoom(room), JSON.stringify(payload));
+    } catch (err) {
+      console.warn("[Draft] Failed to persist", err);
+      if (!lastStorageErrorAt || Date.now() - lastStorageErrorAt > 4000) {
+        window.showToast?.("Unable to save draft—storage is full?", "error");
+        lastStorageErrorAt = Date.now();
+      }
+    }
+  };
+
+  const removePayload = (room) => {
+    if (!room || typeof localStorage === "undefined") return;
+    try {
+      localStorage.removeItem(keyForRoom(room));
+    } catch (err) {
+      console.warn("[Draft] Failed to clear storage", err);
+    }
+  };
+
+  const persistNow = () => {
+    const room = window.currentRoom;
+    if (!room) return;
+    const text = input?.value || "";
+    const trimmed = text.trim();
+    if (!trimmed && !attachments.length) {
+      removePayload(room);
+      return;
+    }
+
+    const payload = {
+      text,
+      attachments: attachments.map((item) => ({ ...item })),
+      updatedAt: Date.now(),
+    };
+    persistPayload(room, payload);
+  };
+
+  const schedulePersist = () => {
+    clearTimeout(textPersistTimer);
+    textPersistTimer = setTimeout(() => {
+      textPersistTimer = null;
+      persistNow();
+    }, 350);
+  };
+
+  const readStoredPayload = (room) => {
+    if (!room || typeof localStorage === "undefined") return null;
+    try {
+      const raw = localStorage.getItem(keyForRoom(room));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return null;
+      const text = typeof parsed.text === "string" ? parsed.text : "";
+      const storedAttachments = Array.isArray(parsed.attachments)
+        ? parsed.attachments.map((item) => normalizeAttachment(item)).filter(Boolean)
+        : [];
+      return { text, attachments: storedAttachments };
+    } catch (err) {
+      console.warn("[Draft] Failed to load stored draft", err);
+      return null;
+    }
+  };
+
+  const clearVisibleDraft = () => {
+    attachments = [];
+    renderAttachmentTray();
+    if (input) input.value = "";
+  };
+
+  const removeAttachment = (id) => {
+    attachments = attachments.filter((item) => item.id !== id);
+    renderAttachmentTray();
+    persistNow();
+  };
+
+  const dataUrlToBlob = (dataUrl) => {
+    if (typeof dataUrl !== "string") return null;
+    const commaIndex = dataUrl.indexOf(",");
+    if (commaIndex === -1) return null;
+    const header = dataUrl.slice(0, commaIndex);
+    const base64 = dataUrl.slice(commaIndex + 1);
+    const match = /^data:(.*?)(;base64)?$/i.exec(header);
+    const mimeType = match?.[1] || "application/octet-stream";
+    const isBase64 = Boolean(match?.[2]);
+    try {
+      if (isBase64) {
+        const binary = atob(base64);
+        const len = binary.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i += 1) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        return new Blob([bytes], { type: mimeType });
+      }
+      return new Blob([decodeURIComponent(base64)], { type: mimeType });
+    } catch (err) {
+      console.warn("[Draft] Failed to convert data URL", err);
+      return null;
+    }
+  };
+
+  const readBlobAsDataUrl = (blob) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error || new Error("Unable to read file"));
+      reader.readAsDataURL(blob);
+    });
+
+  const ensureCapacity = (incomingSize = 0) => {
+    if (attachments.length >= MAX_DRAFT_ATTACHMENTS) {
+      throw new Error(`Only ${MAX_DRAFT_ATTACHMENTS} draft attachments supported at once.`);
+    }
+    if (incomingSize > MAX_DRAFT_ATTACHMENT_BYTES) {
+      throw new Error("Attachments must be under 2 MB while drafting.");
+    }
+    if (computeTotalBytes() + incomingSize > MAX_DRAFT_TOTAL_BYTES) {
+      throw new Error("Draft storage is full. Send or remove attachments first.");
+    }
+  };
+
+  const addAttachmentFromBlob = async (blob, meta = {}) => {
+    if (!blob) return null;
+    if (!window.currentRoom) {
+      throw new Error("Join a room to add attachments.");
+    }
+    const size = Number(blob.size) || 0;
+    ensureCapacity(size);
+    const dataUrl = await readBlobAsDataUrl(blob);
+    if (typeof dataUrl !== "string") {
+      throw new Error("Unable to stage attachment.");
+    }
+    const record = normalizeAttachment({
+      id: meta.id,
+      kind: meta.kind || "file",
+      name: meta.name || blob.name || meta.fileName || (meta.kind === "voice" ? "Voice note" : "Attachment"),
+      fileName: meta.fileName || blob.name || "attachment",
+      mimeType: meta.mimeType || blob.type || "application/octet-stream",
+      dataUrl,
+      size: size || estimateDataUrlBytes(dataUrl),
+      durationMs: meta.durationMs || 0,
+    });
+    if (!record) {
+      throw new Error("Unable to stage attachment.");
+    }
+    attachments = [...attachments, record];
+    renderAttachmentTray();
+    persistNow();
+    return record;
+  };
+
+  const sendAttachmentsSequentially = async (replyTo) => {
+    if (!attachments.length) return;
+    const pending = attachments.map((item) => ({ ...item }));
+    for (const entry of pending) {
+      const blob = dataUrlToBlob(entry.dataUrl);
+      if (!blob) {
+        removeAttachment(entry.id);
+        continue;
+      }
+      await uploadFileAndSend(blob, {
+        fileName: entry.fileName || entry.name || "attachment",
+        displayName: entry.kind === "voice" ? entry.name || "Voice note" : entry.name || "Attachment",
+        mimeType: entry.mimeType || blob.type || undefined,
+        replyTo,
+      });
+      removeAttachment(entry.id);
+    }
+  };
+
+  return {
+    noteTextChanged: () => {
+      if (!window.currentRoom) return;
+      schedulePersist();
+    },
+    persistActiveDraft: ({ immediate = true } = {}) => {
+      if (immediate) {
+        clearTimeout(textPersistTimer);
+        textPersistTimer = null;
+        persistNow();
+      } else {
+        if (!window.currentRoom) return;
+        schedulePersist();
+      }
+    },
+    restoreDraftForRoom: (room) => {
+      attachments = [];
+      renderAttachmentTray();
+      if (input) input.value = "";
+      if (!room) return false;
+      const payload = readStoredPayload(room);
+      if (!payload) return false;
+      if (input && typeof payload.text === "string") {
+        input.value = payload.text;
+      }
+      attachments = Array.isArray(payload.attachments)
+        ? payload.attachments.map((item) => ({ ...item }))
+        : [];
+      renderAttachmentTray();
+      return Boolean((payload.text || "").trim() || attachments.length);
+    },
+    clearVisibleDraft,
+    addFileAttachment: (file) => addAttachmentFromBlob(file, { kind: "file", name: file?.name }),
+    addVoiceAttachment: (blob, meta = {}) =>
+      addAttachmentFromBlob(blob, {
+        kind: "voice",
+        name: meta.displayName || meta.fileName || "Voice note",
+        fileName: meta.fileName || meta.displayName || `voice-note-${Date.now()}.webm`,
+        mimeType: meta.mimeType || blob?.type || "audio/webm",
+        durationMs: meta.durationMs || 0,
+      }),
+    removeAttachment,
+    hasAttachments: () => attachments.length > 0,
+    sendAttachmentsSequentially,
+  };
+})();
+
 function storeMessageData(raw) {
   if (!raw) return null;
   const id = raw._id || raw.id;
@@ -1885,6 +2239,23 @@ function storeMessageData(raw) {
 
   merged.pinned = Boolean(raw.pinned ?? merged.pinned);
   merged.pinnedBy = raw.pinnedBy !== undefined ? (raw.pinnedBy || "") : merged.pinnedBy || "";
+  if (raw.pinOrder !== undefined) {
+    if (raw.pinOrder === null) {
+      merged.pinOrder = null;
+    } else {
+      const numeric = Number(raw.pinOrder);
+      merged.pinOrder = Number.isFinite(numeric) ? numeric : null;
+    }
+  } else if (merged.pinOrder !== undefined) {
+    if (merged.pinOrder === null) {
+      merged.pinOrder = null;
+    } else {
+      const numeric = Number(merged.pinOrder);
+      merged.pinOrder = Number.isFinite(numeric) ? numeric : null;
+    }
+  } else {
+    merged.pinOrder = null;
+  }
   merged.deleted = raw.deleted !== undefined ? Boolean(raw.deleted) : Boolean(merged.deleted);
   merged.deletedBy = raw.deletedBy !== undefined ? (raw.deletedBy || "") : merged.deletedBy || "";
 
@@ -1928,6 +2299,7 @@ function storeMessageData(raw) {
     merged.starredBy = [];
     merged.pinned = false;
     merged.pinnedBy = "";
+    merged.pinOrder = null;
   }
 
   appState.messages.set(id, merged);
@@ -2585,20 +2957,360 @@ function handleModerationNotice({ type, room, until, reason } = {}) {
   }
 }
 
-function updatePinnedBanner() {
-  if (!pinnedContainer) return;
-  const pinned = Array.from(appState.pinned.values()).filter((msg) => !msg.deleted);
+function resetPinnedSignature() {
+  pinnedSignatureCache = null;
+}
+
+function getPinTimestampValue(msg) {
+  if (!msg) return 0;
+  if (msg.timestamp instanceof Date) {
+    return Number.isNaN(msg.timestamp.getTime()) ? 0 : msg.timestamp.getTime();
+  }
+  if (msg.timestamp) {
+    const ts = new Date(msg.timestamp);
+    return Number.isNaN(ts.getTime()) ? 0 : ts.getTime();
+  }
+  return 0;
+}
+
+function comparePinnedMessages(a, b) {
+  const orderA = typeof a?.pinOrder === "number" ? a.pinOrder : null;
+  const orderB = typeof b?.pinOrder === "number" ? b.pinOrder : null;
+  if (orderA !== null && orderB !== null && orderA !== orderB) {
+    return orderB - orderA;
+  }
+  if (orderA !== null) return -1;
+  if (orderB !== null) return 1;
+  return getPinTimestampValue(b) - getPinTimestampValue(a);
+}
+
+function getOrderedPinnedMessages() {
+  const list = Array.from(appState.pinned.values()).filter((msg) => msg && !msg.deleted);
+  list.sort(comparePinnedMessages);
+  return list;
+}
+
+function getStarredMessages() {
+  return Array.from(appState.messages.values()).filter(
+    (msg) => msg && !msg.deleted && Array.isArray(msg.starredBy) && msg.starredBy.length
+  );
+}
+
+function buildMessagePreviewText(msg) {
+  if (!msg) return "";
+  let preview = typeof msg.text === "string" ? msg.text.trim() : "";
+  if (!preview) {
+    preview = msg.fileName || "";
+  }
+  if (!preview && msg.fileType) {
+    if (msg.fileType.startsWith("image/")) preview = "Image";
+    else if (msg.fileType.startsWith("audio/")) preview = "Audio clip";
+    else if (msg.fileType.startsWith("video/")) preview = "Video";
+  }
+  if (!preview && msg.fileUrl) {
+    preview = msg.fileUrl.split("/").pop() || msg.fileUrl;
+  }
+  if (!preview) preview = "Pinned attachment";
+  preview = preview.replace(/\s+/g, " ").trim();
+  if (preview.length > PIN_HUB_PREVIEW_LIMIT) {
+    return `${preview.slice(0, PIN_HUB_PREVIEW_LIMIT)}…`;
+  }
+  return preview;
+}
+
+function formatPinHubTimestamp(value) {
+  const date = value instanceof Date ? value : new Date(value || Date.now());
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.toLocaleDateString()} • ${date.toLocaleTimeString()}`;
+}
+
+function createPinHubListItem(msg, { index = 0, total = 0, type = "pin" } = {}) {
+  if (!msg || !msg.id) return null;
+  const item = document.createElement("li");
+  item.className = `pin-hub-item pin-hub-item-${type}`;
+  item.tabIndex = 0;
+  item.dataset.id = msg.id;
+
+  const title = document.createElement("div");
+  title.className = "pin-hub-item-title";
+  const author = document.createElement("span");
+  author.className = "pin-hub-item-author";
+  author.textContent = msg.user || "Anon";
+  const time = document.createElement("span");
+  time.className = "pin-hub-item-time";
+  time.textContent = formatPinHubTimestamp(msg.timestamp);
+  title.appendChild(author);
+  title.appendChild(time);
+  item.appendChild(title);
+
+  const preview = document.createElement("p");
+  preview.className = "pin-hub-item-preview";
+  preview.textContent = buildMessagePreviewText(msg);
+  item.appendChild(preview);
+
+  const meta = document.createElement("div");
+  meta.className = "pin-hub-item-meta";
+  if (type === "pin" && msg.pinnedBy) {
+    const pinnedBy = document.createElement("span");
+    pinnedBy.textContent = `Pinned by ${msg.pinnedBy}`;
+    meta.appendChild(pinnedBy);
+  }
+  if (type === "star") {
+    const starCount = document.createElement("span");
+    starCount.className = "pin-hub-star-count";
+    starCount.textContent = `⭐ ×${msg.starredBy?.length || 0}`;
+    meta.appendChild(starCount);
+  }
+
+  const hasMeta = meta.childElementCount > 0;
+
+  if (type === "pin" && appState.isAdmin && total > 1) {
+    const footer = document.createElement("div");
+    footer.className = "pin-hub-item-footer";
+    if (hasMeta) {
+      footer.appendChild(meta);
+    } else {
+      const spacer = document.createElement("div");
+      spacer.className = "pin-hub-item-meta";
+      footer.appendChild(spacer);
+    }
+    const controls = document.createElement("div");
+    controls.className = "pin-hub-item-controls";
+    const upBtn = document.createElement("button");
+    upBtn.type = "button";
+    upBtn.className = "pin-hub-move";
+    upBtn.textContent = "↑";
+    upBtn.disabled = index === 0;
+    upBtn.title = "Move pin up";
+    upBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      requestPinReorderForMessage(msg.id, -1);
+    });
+    const downBtn = document.createElement("button");
+    downBtn.type = "button";
+    downBtn.className = "pin-hub-move";
+    downBtn.textContent = "↓";
+    downBtn.disabled = index === total - 1;
+    downBtn.title = "Move pin down";
+    downBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      requestPinReorderForMessage(msg.id, 1);
+    });
+    controls.appendChild(upBtn);
+    controls.appendChild(downBtn);
+    footer.appendChild(controls);
+    item.appendChild(footer);
+  } else if (hasMeta) {
+    item.appendChild(meta);
+  }
+
+  const handleJump = () => {
+    focusMessage(msg.id);
+  };
+  item.addEventListener("click", handleJump);
+  item.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      handleJump();
+    }
+  });
+
+  return item;
+}
+
+function renderPinHubHighlights({ pinnedOverride = null } = {}) {
+  const pinned = Array.isArray(pinnedOverride) ? pinnedOverride : getOrderedPinnedMessages();
+  const starredEntries = getStarredMessages()
+    .sort((a, b) => {
+      const diff = (b.starredBy?.length || 0) - (a.starredBy?.length || 0);
+      if (diff !== 0) return diff;
+      return getPinTimestampValue(b) - getPinTimestampValue(a);
+    })
+    .slice(0, PIN_HUB_MAX_STARRED_ITEMS);
+
+  const pinnedCount = pinned.length;
+  const starredCount = starredEntries.length;
+
+  if (pinHubPinCountLabel) pinHubPinCountLabel.textContent = String(pinnedCount);
+  if (pinHubStarCountLabel) pinHubStarCountLabel.textContent = String(starredCount);
+  if (pinHubPinsTotal) pinHubPinsTotal.textContent = `${pinnedCount} pin${pinnedCount === 1 ? "" : "s"}`;
+  if (pinHubStarsTotal) pinHubStarsTotal.textContent = `${starredCount} starred`;
+  if (pinHubToggle) {
+    const ariaLabel = `Open pins and stars (pins ${pinnedCount}, starred posts ${starredCount})`;
+    pinHubToggle.setAttribute("aria-label", ariaLabel);
+  }
+
+  if (pinHubPinsEmpty) pinHubPinsEmpty.hidden = Boolean(pinnedCount);
+  if (pinHubPinsList) {
+    pinHubPinsList.innerHTML = "";
+    if (pinnedCount) {
+      const frag = document.createDocumentFragment();
+      pinned.forEach((msg, index) => {
+        const item = createPinHubListItem(msg, { index, total: pinnedCount, type: "pin" });
+        if (item) frag.appendChild(item);
+      });
+      pinHubPinsList.appendChild(frag);
+    }
+  }
+
+  if (pinHubStarsEmpty) pinHubStarsEmpty.hidden = Boolean(starredCount);
+  if (pinHubStarsList) {
+    pinHubStarsList.innerHTML = "";
+    if (starredCount) {
+      const frag = document.createDocumentFragment();
+      starredEntries.forEach((msg, index) => {
+        const item = createPinHubListItem(msg, { index, total: starredEntries.length, type: "star" });
+        if (item) frag.appendChild(item);
+      });
+      pinHubStarsList.appendChild(frag);
+    }
+  }
+
+  if (pinHubReorderHint) {
+    pinHubReorderHint.hidden = !(appState.isAdmin && pinnedCount > 1);
+  }
+
+  if (pinHubRecapBtn) {
+    const hasHighlights = pinnedCount > 0 || starredCount > 0;
+    const canShare = appState.isAdmin && hasHighlights;
+    pinHubRecapBtn.disabled = !canShare;
+    if (!hasHighlights) {
+      pinHubRecapBtn.title = "Pin or star something to enable this";
+    } else if (!appState.isAdmin) {
+      pinHubRecapBtn.title = "Only admins can share recaps";
+    } else {
+      pinHubRecapBtn.title = "Share a recap message with the room";
+    }
+  }
+}
+
+function applyLocalPinOrder(orderedIds = []) {
+  if (!Array.isArray(orderedIds) || !orderedIds.length) return;
+  const base = Date.now();
+  orderedIds.forEach((id, index) => {
+    if (!id) return;
+    const data = appState.messages.get(id);
+    if (!data) return;
+    data.pinOrder = base - index;
+    appState.messages.set(id, data);
+    if (data.pinned && !data.deleted) {
+      appState.pinned.set(id, data);
+    }
+  });
+}
+
+function requestPinReorderForMessage(id, direction) {
+  if (!appState.isAdmin || !window.currentRoom || !id) return;
+  const pinned = getOrderedPinnedMessages();
+  if (pinned.length < 2) return;
+  const index = pinned.findIndex((msg) => msg.id === id);
+  if (index === -1) return;
+  const targetIndex = index + direction;
+  if (targetIndex < 0 || targetIndex >= pinned.length) return;
+  const orderedIds = pinned.map((msg) => msg.id);
+  const [moved] = orderedIds.splice(index, 1);
+  orderedIds.splice(targetIndex, 0, moved);
+  applyLocalPinOrder(orderedIds);
+  resetPinnedSignature();
+  updatePinnedBanner();
+  socket.emit("reorder pins", { room: window.currentRoom, orderedIds });
+}
+
+function generateSessionRecapText() {
+  const pinned = getOrderedPinnedMessages();
+  const starred = getStarredMessages()
+    .sort((a, b) => {
+      const diff = (b.starredBy?.length || 0) - (a.starredBy?.length || 0);
+      if (diff !== 0) return diff;
+      return getPinTimestampValue(b) - getPinTimestampValue(a);
+    });
+  if (!pinned.length && !starred.length) return "";
+  const lines = [];
+  const roomLabel = window.currentRoom ? `#${window.currentRoom}` : "this room";
+  lines.push(`Session recap for ${roomLabel}`);
+  lines.push(new Date().toLocaleString());
+  if (pinned.length) {
+    lines.push("", "📌 Pins:");
+    pinned.slice(0, PIN_HUB_MAX_RECAP_PINS).forEach((msg, index) => {
+      lines.push(`${index + 1}. ${msg.user || "Anon"} — ${buildMessagePreviewText(msg)}`);
+    });
+  }
+  if (starred.length) {
+    lines.push("", "⭐ Starred:");
+    starred.slice(0, PIN_HUB_MAX_RECAP_STARS).forEach((msg, index) => {
+      lines.push(
+        `${index + 1}. ${msg.user || "Anon"} — ${buildMessagePreviewText(msg)} (×${msg.starredBy?.length || 0})`
+      );
+    });
+  }
+  return lines.join("\n");
+}
+
+function openPinHub() {
+  if (!pinHub) return;
+  renderPinHubHighlights();
+  pinHub.removeAttribute("hidden");
+  pinHub.setAttribute("aria-hidden", "false");
+  requestAnimationFrame(() => {
+    pinHub.classList.add("show");
+  });
+  pinHubState.visible = true;
+  if (pinHubToggle) pinHubToggle.setAttribute("aria-expanded", "true");
+  if (pageBody) pageBody.classList.add("pin-hub-open");
+  if (pinHubPanel && typeof pinHubPanel.focus === "function") {
+    pinHubPanel.focus({ preventScroll: true });
+  }
+}
+
+function closePinHub({ returnFocus = true } = {}) {
+  if (!pinHub || !pinHubState.visible) return;
+  pinHubState.visible = false;
+  pinHub.classList.remove("show");
+  pinHub.setAttribute("aria-hidden", "true");
+  pinHub.setAttribute("hidden", "hidden");
+  if (pinHubToggle) pinHubToggle.setAttribute("aria-expanded", "false");
+  if (pageBody) pageBody.classList.remove("pin-hub-open");
+  if (returnFocus) {
+    const target = pinHubState.lastActiveElement || pinHubToggle;
+    if (target && typeof target.focus === "function") {
+      target.focus();
+    }
+  }
+  pinHubState.lastActiveElement = null;
+}
+
+function handlePinHubKeydown(event) {
+  if (event.key === "Escape" && pinHubState.visible) {
+    event.preventDefault();
+    closePinHub();
+  }
+}
+
+function updatePinnedBanner(options = {}) {
+  if (!pinnedContainer) {
+    if (options.force) {
+      renderPinHubHighlights();
+    }
+    return;
+  }
+  const pinned = getOrderedPinnedMessages();
+  const signature = pinned.length
+    ? pinned
+        .map((msg) => `${msg.id}:${Number.isFinite(msg.pinOrder) ? msg.pinOrder : ""}:${getPinTimestampValue(msg)}`)
+        .join("|")
+    : "none";
+  if (!options.force && signature === pinnedSignatureCache) {
+    return;
+  }
+  pinnedSignatureCache = signature;
   if (!pinned.length) {
     pinnedContainer.innerHTML = "";
     pinnedContainer.style.display = "none";
+    renderPinHubHighlights({ pinnedOverride: pinned });
     return;
   }
-
-  pinned.sort((a, b) => {
-    const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
-    const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
-    return tb - ta;
-  });
 
   pinnedContainer.innerHTML = "";
   pinned.forEach((msg) => {
@@ -2608,8 +3320,8 @@ function updatePinnedBanner() {
 
     const text = document.createElement("div");
     text.className = "pinned-text";
-    const preview = msg.text?.trim() || msg.fileName || msg.fileUrl || "Pinned attachment";
-    text.textContent = preview.length > 120 ? `${preview.slice(0, 120)}…` : preview;
+    const preview = buildMessagePreviewText(msg);
+    text.textContent = preview;
 
     const meta = document.createElement("div");
     meta.className = "pinned-meta";
@@ -2622,6 +3334,7 @@ function updatePinnedBanner() {
   });
 
   pinnedContainer.style.display = "flex";
+  renderPinHubHighlights({ pinnedOverride: pinned });
 }
 
 function focusMessage(id) {
@@ -3574,13 +4287,30 @@ function updateQueryParams(room, password) {
 }
 
 function showLanding({ focusUsername = true } = {}) {
+  composerDraftManager.persistActiveDraft({ immediate: true });
+  composerDraftManager.clearVisibleDraft();
+  closePinHub({ returnFocus: false });
+  if (pinHubToggle) {
+    pinHubToggle.setAttribute("hidden", "hidden");
+    pinHubToggle.setAttribute("aria-hidden", "true");
+    pinHubToggle.setAttribute("aria-expanded", "false");
+  }
   isViewingChat = false;
   resetChromeToolbarAttention();
   appState.isAdmin = false;
   clearReplyTarget();
   cancelEnsureMessagesAtBottom();
+  setViewMode("landing");
   if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = true;
   if (chatContainer) chatContainer.style.display = "none";
+  if (siteLanding) {
+    siteLanding.style.display = "block";
+    try {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {
+      /* ignore */
+    }
+  }
   if (usernamePrompt) usernamePrompt.style.display = "flex";
   if (roomName) roomName.textContent = lastRoomName ? `#${lastRoomName}` : "";
   hideSearchResults();
@@ -3588,6 +4318,7 @@ function showLanding({ focusUsername = true } = {}) {
     pinnedContainer.innerHTML = "";
     pinnedContainer.style.display = "none";
   }
+  renderPinHubHighlights();
   resetMessageReadObserver();
   if (messages) {
     messages.innerHTML = "";
@@ -4662,6 +5393,7 @@ if (typeof window !== "undefined") {
   });
 
   window.addEventListener("beforeunload", () => {
+    composerDraftManager.persistActiveDraft({ immediate: true });
     stopInfowarsStreamPlayback();
     if (psybinAudio) {
       try {
@@ -4687,6 +5419,8 @@ if (scrollToLatestBtn) {
 // ===== JOIN ROOM (with corrections for transition) =====
 
 function completeRoomJoin(username, room, password) {
+  composerDraftManager.persistActiveDraft({ immediate: true });
+  composerDraftManager.clearVisibleDraft();
   window.currentUser = username;
   window.currentRoom = room;
   window.currentPassword = password;
@@ -4694,6 +5428,7 @@ function completeRoomJoin(username, room, password) {
   lastRoomName = room;
   lastRoomPassword = password;
   isViewingChat = true;
+  setViewMode("chat");
   if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = !room;
 
   setPsybinPlayerRoom(room);
@@ -4703,6 +5438,8 @@ function completeRoomJoin(username, room, password) {
   loadHiddenMessagesForRoom(room);
   appState.messages.clear();
   appState.pinned.clear();
+  resetPinnedSignature();
+  renderPinHubHighlights();
   hideSearchResults();
   resetMessageReadObserver();
   if (messages) {
@@ -4719,17 +5456,28 @@ function completeRoomJoin(username, room, password) {
   }
   renderUserSidebar([]);
 
+  if (pinHubToggle) {
+    pinHubToggle.removeAttribute("hidden");
+    pinHubToggle.setAttribute("aria-hidden", "false");
+    pinHubToggle.setAttribute("aria-expanded", pinHubState.visible ? "true" : "false");
+  }
+
   updateQueryParams(room, password);
 
   if (roomName) roomName.textContent = room ? `#${room}` : "";
+  if (siteLanding) siteLanding.style.display = "none";
   if (usernamePrompt) usernamePrompt.style.display = "none";
-  if (chatContainer) chatContainer.style.display = "flex";
 
   if (infowarsModalState.visible) {
     applyInfowarsModalLayout();
   }
 
   scrollMessagesToBottom({ behavior: "smooth", delay: 200, force: true });
+
+  const restoredDraft = composerDraftManager.restoreDraftForRoom(room);
+  if (restoredDraft && room) {
+    showToast(`Draft restored for #${room}`, "info");
+  }
 }
 
 function emitJoinRequest() {
@@ -4922,6 +5670,7 @@ socket.on("join room success", () => {
   isViewingChat = true;
   if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = !window.currentRoom;
   if (chatContainer) chatContainer.style.display = "flex";
+  if (siteLanding) siteLanding.style.display = "none";
   if (usernamePrompt) usernamePrompt.style.display = "none";
   input?.focus();
   scrollMessagesToBottom({ behavior: "smooth", delay: 80, force: true });
@@ -5365,20 +6114,62 @@ if (emojiPicker) {
 
 // ------------------- Sending Messages -------------------
 if (form) {
-  form.addEventListener("submit", (e) => {
+  let isSendingComposerPayload = false;
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (isSendingComposerPayload) return;
+
     const rawText = input?.value || "";
+    const trimmed = rawText.trim();
+    const hasAttachments = composerDraftManager.hasAttachments();
+
+    if (!trimmed && !hasAttachments) {
+      return;
+    }
+
+    if (!window.currentRoom || !window.currentUser) {
+      showToast("Join a room to send messages.", "warn");
+      return;
+    }
+
     const replyTo = normalizeMessageId(replyState.targetId) || undefined;
-    const sent = sendPlainTextMessage(rawText, { replyTo });
-    if (!sent) return;
-    input.value = "";
-    clearReplyTarget();
-    socket.emit("stop typing");
+    isSendingComposerPayload = true;
+    try {
+      if (trimmed) {
+        const sent = sendPlainTextMessage(rawText, { replyTo });
+        if (!sent) {
+          showToast("Unable to send message.", "error");
+          return;
+        }
+        input.value = "";
+      }
+
+      if (hasAttachments) {
+        await composerDraftManager.sendAttachmentsSequentially(replyTo);
+        if (!trimmed) {
+          input.value = "";
+        }
+      }
+
+      if (isTyping) {
+        socket.emit("stop typing");
+        isTyping = false;
+        clearTimeout(typingTimeout);
+      }
+
+      clearReplyTarget();
+      composerDraftManager.persistActiveDraft({ immediate: true });
+    } catch (err) {
+      console.error("[Composer] Failed to send payload", err);
+    } finally {
+      isSendingComposerPayload = false;
+    }
   });
 }
 
 // ------------------- Typing Indicator -------------------
 input?.addEventListener("input", () => {
+  composerDraftManager.noteTextChanged();
   if (!isTyping) {
     socket.emit("typing", window.currentUser);
     isTyping = true;
@@ -6035,6 +6826,8 @@ socket.on("load messages", (payload) => {
   clearReplyTarget();
   appState.messages.clear();
   appState.pinned.clear();
+  resetPinnedSignature();
+  renderPinHubHighlights();
   if (appState.history) {
     appState.history.cursor = cursor;
     appState.history.hasMore = hasMore;
@@ -6115,15 +6908,11 @@ socket.on("older messages", (payload = {}) => {
   updatePinnedBanner();
 });
 
-socket.on("chat message", async (msg) => {
+socket.on("chat message", (msg) => {
   if (!isViewingChat) return;
   renderMessage(msg, { scrollBehavior: "smooth", respectScrollLock: true });
   maybePlayNotificationSound(msg);
   flashToolbar("message");
-
-  if (document.hidden && nativeBadgeController.canUseBadges()) {
-    await nativeBadgeController.incrementBadge();
-  }
 });
 
 socket.on("message status", ({ id, status }) => {
@@ -6146,6 +6935,7 @@ socket.on("delete message", (payload) => {
   storeMessageData({ id, deleted: true });
   updateMessageNode(id);
   updatePinnedBanner();
+  renderPinHubHighlights();
   showToast("Message deleted", "info");
 });
 
@@ -6156,6 +6946,7 @@ socket.on("delete message local", ({ id }) => {
 
 socket.on("pinned messages", (arr = []) => {
   appState.pinned.clear();
+  resetPinnedSignature();
   (arr || []).forEach((entry) => {
     const data = storeMessageData({ ...entry, pinned: true });
     if (data) updateMessageNode(data.id);
@@ -6182,12 +6973,14 @@ socket.on("message starred", ({ id, starredBy = [] }) => {
   const data = storeMessageData({ id, starredBy });
   if (!data) return;
   updateMessageNode(data.id);
+  renderPinHubHighlights();
 });
 
 socket.on("message unstarred", ({ id, starredBy = [] }) => {
   const data = storeMessageData({ id, starredBy });
   if (!data) return;
   updateMessageNode(data.id);
+  renderPinHubHighlights();
 });
 
 socket.on("update reactions", ({ id, reactions = [] } = {}) => {
@@ -6207,6 +7000,7 @@ socket.on("admin status", ({ isAdmin }) => {
   appState.isAdmin = Boolean(isAdmin);
   refreshActionMenus();
   renderUserSidebar(appState.users);
+  renderPinHubHighlights();
   if (appState.isAdmin && !previous) {
     showToast("Admin mode enabled", "success");
   } else if (!appState.isAdmin && previous) {
@@ -6227,13 +7021,16 @@ const createUploadOverlay = () => {
 const uploadFileAndSend = async (fileOrBlob, options = {}) => {
   if (!fileOrBlob) return false;
 
-  const { fileName: overrideName, displayName, mimeType } = options;
+  const { fileName: overrideName, displayName, mimeType, replyTo: explicitReply } = options;
   const intrinsicName =
     typeof fileOrBlob?.name === "string" && fileOrBlob.name
       ? fileOrBlob.name
       : "";
   const uploadName = overrideName || intrinsicName || "attachment";
   const label = displayName || uploadName;
+  const normalizedReply = normalizeMessageId(
+    explicitReply !== undefined ? explicitReply : replyState.targetId
+  ) || undefined;
 
   showToast(`Uploading ${label}…`, "info");
 
@@ -6267,8 +7064,7 @@ const uploadFileAndSend = async (fileOrBlob, options = {}) => {
 
     showToast(`Uploaded: ${label}`, "success");
 
-    const replyTo = normalizeMessageId(replyState.targetId) || undefined;
-    socket.emit("chat message", {
+    const payload = {
       room: window.currentRoom,
       user: window.currentUser,
       text: data.url,
@@ -6276,10 +7072,14 @@ const uploadFileAndSend = async (fileOrBlob, options = {}) => {
       fileUrl: data.url,
       fileType: data.type || mimeType || fileOrBlob.type || "",
       fileName: data.name || uploadName || "",
-      replyTo,
-    });
+    };
 
-    clearReplyTarget();
+    if (normalizedReply) {
+      payload.replyTo = normalizedReply;
+    }
+
+    socket.emit("chat message", payload);
+
     return true;
   } catch (err) {
     console.error("[Upload Error]", err);
@@ -6301,11 +7101,20 @@ if (attachBtn && fileInput) {
     if (!file) return;
 
     try {
-      await uploadFileAndSend(file);
-      fileInput.value = "";
-    } catch {
-      /* handled in uploadFileAndSend */
+      const record = await composerDraftManager.addFileAttachment(file);
+      if (record) {
+        showToast(`${record.name} added to draft. Press send to upload.`, "success");
+        try {
+          input?.focus({ preventScroll: true });
+        } catch {
+          input?.focus();
+        }
+      }
+    } catch (err) {
+      const message = err?.message || "Unable to stage attachment.";
+      showToast(message, "error");
     }
+    fileInput.value = "";
   });
 }
 
@@ -6690,6 +7499,8 @@ if (voiceBtn) {
         recordedChunks && recordedChunks.length
           ? new Blob(recordedChunks, { type: mimeType })
           : null;
+      const voiceDurationMs =
+        recordingStartTime != null ? Date.now() - recordingStartTime : 0;
 
       cleanupStream(currentRecorder?.stream);
       resetRecordingState();
@@ -6711,13 +7522,17 @@ if (voiceBtn) {
       const filename = `voice-${timestamp}.${extension}`;
 
       try {
-        await uploadFileAndSend(blob, {
+        await composerDraftManager.addVoiceAttachment(blob, {
           fileName: filename,
           displayName: filename,
           mimeType,
+          durationMs: voiceDurationMs,
         });
-      } catch {
-        /* errors handled in uploadFileAndSend */
+        showToast("Voice note saved to draft. Press send when ready.", "success");
+      } catch (err) {
+        console.error("[Voice] Failed to stage recording", err);
+        const message = err?.message || "Unable to save voice note draft.";
+        showToast(message, "error");
       }
     };
 
