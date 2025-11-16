@@ -267,12 +267,86 @@
           <h2>Online</h2>
           <span id="user-count">0</span>
         </div>
+        <section id="profile-editor" class="profile-editor" aria-label="Your profile">
+          <div class="profile-editor-top">
+            <div class="profile-avatar-field">
+              <div id="profile-avatar-preview" class="profile-avatar-preview" aria-live="polite">
+                <img alt="" loading="lazy" hidden />
+                <span aria-hidden="true">?</span>
+              </div>
+              <div class="profile-avatar-actions">
+                <button type="button" id="profile-avatar-button" class="link">Change photo</button>
+                <button type="button" id="profile-avatar-remove" class="link subtle">Remove</button>
+              </div>
+              <input type="file" id="profile-avatar-input" accept="image/*" hidden />
+            </div>
+            <div class="profile-editor-fields">
+              <label>
+                <span>Status</span>
+                <input id="profile-status" maxlength="80" placeholder="Share what you're doing" />
+              </label>
+              <label>
+                <span>Now playing</span>
+                <input id="profile-now-playing" maxlength="80" placeholder="Add a song or stream" />
+              </label>
+            </div>
+          </div>
+          <label class="profile-bio-field">
+            <span>Bio</span>
+            <textarea
+              id="profile-bio"
+              rows="3"
+              maxlength="200"
+              placeholder="Short bio, link, or vibe"
+            ></textarea>
+          </label>
+          <button type="button" id="profile-save" class="profile-save-btn" disabled>
+            Share profile
+          </button>
+        </section>
         <ul id="user-list"></ul>
         <p id="user-list-empty" class="user-empty">No one else is here yet.</p>
       </aside>
     </div>
 
     <div id="user-context-menu" class="user-context-menu" role="menu" aria-hidden="true" hidden></div>
+    <div id="profile-sheet" class="profile-sheet" hidden aria-hidden="true">
+      <div class="profile-sheet-overlay" data-profile-close></div>
+      <aside
+        id="profile-sheet-panel"
+        class="profile-sheet-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profile-sheet-name"
+        tabindex="-1"
+      >
+        <header class="profile-sheet-header">
+          <div id="profile-sheet-avatar" class="profile-sheet-avatar" aria-hidden="true"></div>
+          <div class="profile-sheet-heading">
+            <p class="profile-sheet-eyebrow">Profile</p>
+            <h2 id="profile-sheet-name"></h2>
+            <p id="profile-sheet-status" class="profile-sheet-status" hidden></p>
+            <p id="profile-sheet-now-playing" class="profile-sheet-now-playing" hidden></p>
+          </div>
+          <button type="button" id="profile-sheet-close" class="profile-sheet-close" aria-label="Close profile panel">
+            ✕
+          </button>
+        </header>
+        <p id="profile-sheet-bio" class="profile-sheet-bio empty">No bio yet.</p>
+        <div class="profile-sheet-actions">
+          <button type="button" id="profile-sheet-mention" class="profile-chip">@ Mention</button>
+          <button type="button" id="profile-sheet-thread-toggle" class="profile-chip">Side thread</button>
+        </div>
+        <section id="profile-thread" class="profile-thread" hidden>
+          <h3>Side thread</h3>
+          <ol id="profile-thread-messages" class="profile-thread-messages"></ol>
+          <div class="profile-thread-composer">
+            <textarea id="profile-thread-input" rows="2" placeholder="Send a quick DM-style note…"></textarea>
+            <button type="button" id="profile-thread-send">Send</button>
+          </div>
+        </section>
+      </aside>
+    </div>
     <div id="pin-hub" class="pin-hub" hidden aria-hidden="true">
       <div id="pin-hub-overlay" class="pin-hub-overlay" tabindex="-1"></div>
       <aside

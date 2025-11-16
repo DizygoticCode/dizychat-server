@@ -113,6 +113,52 @@ const uploadDir = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 const fsPromises = fs.promises;
 
+const PROFILE_TEXT_LIMITS = {
+  status: 80,
+  nowPlaying: 80,
+  bio: 200,
+};
+const MAX_AVATAR_URL_LENGTH = 200;
+
+const sanitizeProfileText = (value, maxLength) => {
+  if (typeof value !== 'string') return '';
+  const trimmed = sanitizeHtml(value, { allowedTags: [], allowedAttributes: {} }).trim();
+  if (!trimmed) return '';
+  return trimmed.slice(0, maxLength);
+};
+
+const normalizeAvatarUrl = (value) => {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (!trimmed || !trimmed.startsWith('/uploads/')) return '';
+  if (trimmed.includes('..')) return '';
+  const sanitized = trimmed.replace(/\\+/g, '/').split('?')[0];
+  return sanitized.slice(0, MAX_AVATAR_URL_LENGTH);
+};
+
+const normalizeProfilePayload = (payload = {}) => {
+  const profile = {};
+  const status = sanitizeProfileText(payload.status || '', PROFILE_TEXT_LIMITS.status);
+  if (status) profile.status = status;
+  const nowPlaying = sanitizeProfileText(payload.nowPlaying || '', PROFILE_TEXT_LIMITS.nowPlaying);
+  if (nowPlaying) profile.nowPlaying = nowPlaying;
+  const bio = sanitizeProfileText(payload.bio || '', PROFILE_TEXT_LIMITS.bio);
+  if (bio) profile.bio = bio;
+  const avatarUrl = normalizeAvatarUrl(payload.avatarUrl || '');
+  if (avatarUrl) profile.avatarUrl = avatarUrl;
+  return Object.keys(profile).length ? profile : null;
+};
+
+const cloneProfilePayload = (profile) => {
+  if (!profile || typeof profile !== 'object') return null;
+  const payload = {};
+  if (profile.status) payload.status = profile.status;
+  if (profile.nowPlaying) payload.nowPlaying = profile.nowPlaying;
+  if (profile.bio) payload.bio = profile.bio;
+  if (profile.avatarUrl) payload.avatarUrl = profile.avatarUrl;
+  return Object.keys(payload).length ? payload : null;
+};
+
 const parseHistoryChunkSize = () => {
   const rawValue = process.env.MESSAGE_HISTORY_CHUNK_SIZE;
   if (!rawValue) return 150;
@@ -1484,12 +1530,13 @@ const getMuteExpiry = (room, username) => {
 const emitRoomUsers = (room) => {
   const presence = roomPresence.get(room);
   const users = presence
-    ? Array.from(presence.values()).map(({ id, username, isAdmin }) => ({
+    ? Array.from(presence.values()).map(({ id, username, isAdmin, profile }) => ({
         id,
         username,
         isAdmin: Boolean(isAdmin),
         mutedUntil: getMuteExpiry(room, username) || 0,
         isBlocked: isUserBlocked(room, username),
+        profile: cloneProfilePayload(profile),
       }))
     : [];
 
@@ -1510,6 +1557,7 @@ const registerSocketInRoom = (socket, room) => {
     id: socket.id,
     username: socket.username,
     isAdmin: socket.isAdmin,
+    profile: cloneProfilePayload(socket.profile),
   });
   emitRoomUsers(targetRoom);
 };
@@ -1523,6 +1571,7 @@ const refreshSocketPresence = (socket) => {
     id: socket.id,
     username: socket.username,
     isAdmin: socket.isAdmin,
+    profile: cloneProfilePayload(socket.profile),
   });
   emitRoomUsers(room);
 };
@@ -1680,6 +1729,7 @@ function requireAdmin(socket){
 io.on('connection', socket => {
   console.log('[Socket] Connected', socket.id);
   socket.isAdmin = false;
+  socket.profile = null;
   socket.emit('room list', getPublicRoomsSnapshot());
 
   socket.on('join room', async ({ room, username, password }) => {
@@ -1779,6 +1829,18 @@ io.on('connection', socket => {
 
   socket.on('request rooms', () => {
     socket.emit('room list', getPublicRoomsSnapshot());
+  });
+
+  socket.on('update profile', (payload = {}) => {
+    try {
+      const profile = normalizeProfilePayload(payload);
+      socket.profile = profile;
+      refreshSocketPresence(socket);
+      socket.emit('profile updated', profile);
+    } catch (err) {
+      console.error('[Profile] Failed to update profile', err);
+      socket.emit('profile error', 'Unable to update profile right now.');
+    }
   });
 
 
