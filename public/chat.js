@@ -82,6 +82,15 @@ const DEFAULT_PUBLIC_ROOMS = [
   "Drum & Bass Chat",
   "Psybin Radio",
 ];
+const FALLBACK_PUBLIC_ROOMS = DEFAULT_PUBLIC_ROOMS.map((name) => ({
+  name,
+  occupants: 0,
+  requiresPassword: false,
+  isPersistent: true,
+  isFallback: true,
+}));
+
+latestPublicRooms = FALLBACK_PUBLIC_ROOMS.map((room) => ({ ...room }));
 
 const replyState = {
   targetId: null,
@@ -201,7 +210,7 @@ const pageBody = typeof document !== "undefined" ? document.body : null;
 
 // Seed the login view with the default list of persistent rooms so the
 // interface never renders empty while we wait for socket responses.
-renderPublicRooms([]);
+renderPublicRooms(latestPublicRooms);
 
 function setViewMode(mode) {
   if (!pageBody) return;
@@ -6680,33 +6689,24 @@ function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
     const roomNameValue = typeof room?.name === "string" ? room.name.trim() : "";
     if (!roomNameValue || seenNames.has(roomNameValue)) return;
 
-    const requiresPassword = Boolean(room?.requiresPassword);
-    if (requiresPassword) {
-      seenNames.add(roomNameValue);
-      return;
-    }
-
     const normalizedRoom = {
       name: roomNameValue,
       occupants: Number.isFinite(Number(room?.occupants))
         ? Math.max(0, Number(room.occupants))
         : 0,
-      requiresPassword,
+      requiresPassword: Boolean(room?.requiresPassword),
+      isPersistent: Boolean(room?.isPersistent),
+      isFallback: Boolean(room?.isFallback),
     };
 
     normalized.push({ ...room, ...normalizedRoom });
     seenNames.add(roomNameValue);
   });
 
-  DEFAULT_PUBLIC_ROOMS.forEach((roomNameValue) => {
-    if (seenNames.has(roomNameValue)) return;
-    normalized.push({
-      name: roomNameValue,
-      occupants: 0,
-      requiresPassword: false,
-      isFallback: true,
-    });
-    seenNames.add(roomNameValue);
+  FALLBACK_PUBLIC_ROOMS.forEach((room) => {
+    if (seenNames.has(room.name)) return;
+    normalized.push({ ...room });
+    seenNames.add(room.name);
   });
 
   normalized.sort((a, b) => {
@@ -6714,7 +6714,7 @@ function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
     return a.name.localeCompare(b.name);
   });
 
-  latestPublicRooms = normalized;
+  latestPublicRooms = normalized.map((room) => ({ ...room }));
 
   if (!normalized.length) {
     const emptyItem = document.createElement("li");
@@ -6735,16 +6735,31 @@ function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
     item.className = "public-room-item";
     item.dataset.room = roomNameValue;
 
+    const headingEl = document.createElement("div");
+    headingEl.className = "room-heading";
+
     const nameEl = document.createElement("span");
     nameEl.className = "room-name";
     nameEl.textContent = roomNameValue;
+    headingEl.appendChild(nameEl);
+
+    if (room?.isPersistent || room?.isFallback) {
+      const badgeEl = document.createElement("span");
+      badgeEl.className = "room-badge";
+      badgeEl.textContent = room?.isFallback ? "Default" : "Featured";
+      headingEl.appendChild(badgeEl);
+      item.classList.add("persistent");
+      if (room?.isFallback) {
+        item.dataset.fallback = "true";
+      }
+    }
 
     const metaEl = document.createElement("span");
     metaEl.className = "room-meta";
     const peopleLabel = occupants === 1 ? "1 online" : `${occupants} online`;
     metaEl.textContent = requiresPassword ? `${peopleLabel} • 🔒` : peopleLabel;
 
-    item.appendChild(nameEl);
+    item.appendChild(headingEl);
     item.appendChild(metaEl);
     item.tabIndex = 0;
 
