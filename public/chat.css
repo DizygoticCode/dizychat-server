@@ -44,6 +44,7 @@
   --toolbar-search-padding-x: 6px;
   --toolbar-search-margin-left: 16px;
   --toolbar-search-font-size: 0.85em;
+  --toolbar-top-extra: 0px;
   --room-name-font-size: 1.1em;
   --messages-padding-y: 12px;
   --messages-padding-x: 12px;
@@ -662,7 +663,8 @@ section[id] {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: var(--toolbar-padding-y) var(--toolbar-padding-x);
+  padding: calc(var(--toolbar-padding-y) + var(--toolbar-top-extra, 0px))
+    var(--toolbar-padding-x) var(--toolbar-padding-y) var(--toolbar-padding-x);
   background: var(--surface);
   background-color: var(--surface);
   border-bottom: 1px solid var(--border-color);
@@ -3298,6 +3300,7 @@ body:not(.dark) #soundboard-btn {
     --toolbar-search-padding-x: 4px;
     --toolbar-search-margin-left: 10px;
     --toolbar-search-font-size: 0.8em;
+    --toolbar-top-extra: calc(env(safe-area-inset-top) + 4px);
     --room-name-font-size: 1em;
     --messages-padding-y: 8px;
     --messages-padding-x: 8px;
