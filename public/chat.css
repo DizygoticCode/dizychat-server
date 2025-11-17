@@ -530,39 +530,42 @@ section[id] {
 }
 
 
+
+
 .landing-inputs {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  width: min(420px, 100%);
-  gap: 12px;
+  width: min(185px, 80vw);
+  gap: 6px;
   margin: 0 auto;
 }
 
 .landing-inputs input {
-  padding: 10px 14px;
+  padding: 4px 8px;
   border-radius: var(--radius);
   border: 1px solid var(--input-border);
   background: var(--input-bg);
   color: var(--text-primary);
-}
-
-.landing-inputs input,
-.landing-inputs button {
+  font-size: 0.65rem;
   width: 100%;
 }
 
 .landing-inputs input::placeholder { color: var(--text-muted); }
 
 #join-btn {
-  margin-top: 8px;
-  padding: 10px;
+  align-self: center;
+  margin-top: 4px;
+  padding: 4px 16px;
   border: none;
   border-radius: var(--radius);
   background: var(--accent);
   color: #fff;
   font-weight: 600;
   cursor: pointer;
+  font-size: 0.8rem;
+  display: inline-flex;
+  justify-content: center;
 }
 
 #join-btn:hover { opacity: 0.9; }
