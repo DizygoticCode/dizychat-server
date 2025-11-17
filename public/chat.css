@@ -530,21 +530,24 @@ section[id] {
 }
 
 
+
+
 .landing-inputs {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  width: min(420px, 100%);
-  gap: 12px;
+  width: min(260px, 85vw);
+  gap: 8px;
   margin: 0 auto;
 }
 
 .landing-inputs input {
-  padding: 10px 14px;
+  padding: 6px 10px;
   border-radius: var(--radius);
   border: 1px solid var(--input-border);
   background: var(--input-bg);
   color: var(--text-primary);
+  font-size: 0.85rem;
 }
 
 .landing-inputs input,
@@ -555,14 +558,15 @@ section[id] {
 .landing-inputs input::placeholder { color: var(--text-muted); }
 
 #join-btn {
-  margin-top: 8px;
-  padding: 10px;
+  margin-top: 4px;
+  padding: 6px 10px;
   border: none;
   border-radius: var(--radius);
   background: var(--accent);
   color: #fff;
   font-weight: 600;
   cursor: pointer;
+  font-size: 0.85rem;
 }
 
 #join-btn:hover { opacity: 0.9; }
