@@ -684,10 +684,8 @@ const PSYBIN_RADIO_ROOM = "Psybin Radio";
 const PSYBIN_RADIO_STREAM_URL = "https://www.psyb.in/radio/";
 const PSYBIN_RADIO_ROOM_CANONICAL = PSYBIN_RADIO_ROOM.toLowerCase();
 const PSYBIN_METADATA_URL = "/api/psybin/now-playing";
-const PSYBIN_TRACK_TIME_URL = "/current_track_time.txt";
 const PSYBIN_METADATA_REFRESH_MS = 10000;
 const PSYBIN_METADATA_RETRY_MS = 15000;
-const PSYBIN_TRACK_CHECK_MS = 5000;
 const PSYBIN_METADATA_IDLE_TEXT = "Live Psybin Radio stream";
 const PSYBIN_COVER_FALLBACK = "https://psyb.in/tmp/cover.jpg";
 const psybinPlayerState = {
@@ -701,12 +699,6 @@ const psybinPlayerState = {
   remainingTimer: null,
   trackSignature: "",
   coverBuster: null,
-};
-const psybinTrackWatcherState = {
-  timer: null,
-  requestInFlight: false,
-  abortController: null,
-  lastTrack: "",
 };
 
 const INFOWARS_ROOM_KEYWORD = "infowars";
@@ -3970,6 +3962,24 @@ function handlePsybinTrackChange() {
   clearPsybinRemainingTicker();
 }
 
+function formatRemainingMs(remainingMs) {
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return "";
+  const totalSeconds = Math.max(0, Math.round(remainingMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")} left`;
+}
+
+function getPsybinRemainingMs(metadata) {
+  if (!metadata) return null;
+  const remainingMs = Number(metadata.remainingMs);
+  const fetchedAt = Number(metadata.fetchedAt);
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return null;
+  const elapsed = Number.isFinite(fetchedAt) ? Date.now() - fetchedAt : 0;
+  const adjusted = remainingMs - (Number.isFinite(elapsed) ? elapsed : 0);
+  return adjusted > 0 ? adjusted : 0;
+}
+
 function clearPsybinRemainingTicker() {
   if (psybinPlayerState.remainingTimer) {
     clearInterval(psybinPlayerState.remainingTimer);
@@ -3977,23 +3987,12 @@ function clearPsybinRemainingTicker() {
   }
 }
 
-async function updatePsybinRemainingTimeDisplay() {
+function updatePsybinRemainingTimeDisplay() {
   if (!psybinRemaining) return;
-  if (!psybinPlayer || psybinPlayer.hidden) {
-    psybinRemaining.textContent = "";
-    psybinRemaining.hidden = true;
-    return;
-  }
-
-  try {
-    const res = await fetch(PSYBIN_TRACK_TIME_URL, { cache: "no-store" });
-    const text = (await res.text()).trim();
-    psybinRemaining.textContent = text || "--:--";
-    psybinRemaining.hidden = false;
-  } catch (_err) {
-    psybinRemaining.textContent = "--:--";
-    psybinRemaining.hidden = false;
-  }
+  const remaining = getPsybinRemainingMs(psybinPlayerState.metadata);
+  const label = formatRemainingMs(remaining);
+  psybinRemaining.textContent = label;
+  psybinRemaining.hidden = !label;
 }
 
 function ensurePsybinRemainingTicker() {
@@ -4004,7 +4003,9 @@ function ensurePsybinRemainingTicker() {
   }
 
   updatePsybinRemainingTimeDisplay();
-  psybinPlayerState.remainingTimer = setInterval(updatePsybinRemainingTimeDisplay, 1000);
+  if (psybinRemaining && psybinRemaining.textContent) {
+    psybinPlayerState.remainingTimer = setInterval(updatePsybinRemainingTimeDisplay, 1000);
+  }
 }
 
 function updatePsybinCoverDisplay(metadata) {
@@ -4138,7 +4139,6 @@ async function fetchPsybinMetadata() {
 
 function ensurePsybinMetadataPolling({ immediate = false } = {}) {
   if (!psybinPlayer || psybinPlayer.hidden) return;
-  ensurePsybinTrackWatcher();
   if (immediate) {
     if (psybinPlayerState.metadataRequestInFlight) return;
     clearPsybinMetadataTimer();
@@ -4151,7 +4151,6 @@ function ensurePsybinMetadataPolling({ immediate = false } = {}) {
 
 function stopPsybinMetadataUpdates({ resetMetadata = false } = {}) {
   clearPsybinMetadataTimer();
-  stopPsybinTrackWatcher();
   const controller = psybinPlayerState.metadataAbortController;
   if (controller) {
     try {
