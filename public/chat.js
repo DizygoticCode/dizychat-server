@@ -130,6 +130,8 @@ const psybinMuteBtn = document.getElementById("psybin-mute");
 const psybinVolumeInput = document.getElementById("psybin-volume");
 const psybinMetadata = document.getElementById("psybin-meta");
 const psybinMetadataText = document.getElementById("psybin-meta-text");
+const psybinCover = document.getElementById("psybin-cover");
+const psybinRemaining = document.getElementById("psybin-meta-remaining");
 const scrollToLatestBtn = document.getElementById("scroll-to-latest");
 const scrollToLatestLabel = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-label") || null;
 const scrollToLatestCount = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-count") || null;
@@ -685,6 +687,7 @@ const PSYBIN_METADATA_URL = "/api/psybin/now-playing";
 const PSYBIN_METADATA_REFRESH_MS = 45000;
 const PSYBIN_METADATA_RETRY_MS = 15000;
 const PSYBIN_METADATA_IDLE_TEXT = "Live Psybin Radio stream";
+const PSYBIN_COVER_FALLBACK = "https://psyb.in/tmp/cover.jpg";
 const psybinPlayerState = {
   initialised: false,
   lastVolume: 1,
@@ -693,6 +696,7 @@ const psybinPlayerState = {
   metadataAbortController: null,
   metadataRequestInFlight: false,
   isStreamLoading: false,
+  remainingTimer: null,
 };
 
 const INFOWARS_ROOM_KEYWORD = "infowars";
@@ -3899,6 +3903,8 @@ function normalisePsybinMetadata(payload) {
       artist: "",
       text: "",
       fetchedAt: Date.now(),
+      coverUrl: PSYBIN_COVER_FALLBACK,
+      remainingMs: null,
     };
   }
 
@@ -3907,13 +3913,80 @@ function normalisePsybinMetadata(payload) {
     const numeric = Number(value);
     return Number.isFinite(numeric) ? numeric : Date.now();
   };
+  const normaliseDuration = (value) => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric >= 0 ? numeric : null;
+  };
+
+  const coverUrl = normaliseString(payload.coverUrl) || PSYBIN_COVER_FALLBACK;
+  const remainingMs = normaliseDuration(payload.remainingMs);
 
   const title = normaliseString(payload.title);
   const artist = normaliseString(payload.artist);
   const text = normaliseString(payload.text);
   const fetchedAt = normaliseNumber(payload.fetchedAt);
 
-  return { title, artist, text, fetchedAt };
+  return { title, artist, text, fetchedAt, coverUrl, remainingMs };
+}
+
+function formatRemainingMs(remainingMs) {
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return "";
+  const totalSeconds = Math.max(0, Math.round(remainingMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")} left`;
+}
+
+function getPsybinRemainingMs(metadata) {
+  if (!metadata) return null;
+  const remainingMs = Number(metadata.remainingMs);
+  const fetchedAt = Number(metadata.fetchedAt);
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return null;
+  const elapsed = Number.isFinite(fetchedAt) ? Date.now() - fetchedAt : 0;
+  const adjusted = remainingMs - (Number.isFinite(elapsed) ? elapsed : 0);
+  return adjusted > 0 ? adjusted : 0;
+}
+
+function clearPsybinRemainingTicker() {
+  if (psybinPlayerState.remainingTimer) {
+    clearInterval(psybinPlayerState.remainingTimer);
+    psybinPlayerState.remainingTimer = null;
+  }
+}
+
+function updatePsybinRemainingTimeDisplay() {
+  if (!psybinRemaining) return;
+  const remaining = getPsybinRemainingMs(psybinPlayerState.metadata);
+  const label = formatRemainingMs(remaining);
+  psybinRemaining.textContent = label;
+  psybinRemaining.hidden = !label;
+}
+
+function ensurePsybinRemainingTicker() {
+  clearPsybinRemainingTicker();
+  if (!psybinPlayer || psybinPlayer.hidden) {
+    updatePsybinRemainingTimeDisplay();
+    return;
+  }
+
+  updatePsybinRemainingTimeDisplay();
+  if (psybinRemaining && psybinRemaining.textContent) {
+    psybinPlayerState.remainingTimer = setInterval(updatePsybinRemainingTimeDisplay, 1000);
+  }
+}
+
+function updatePsybinCoverDisplay(metadata) {
+  if (!psybinCover) return;
+  const coverUrl = typeof metadata?.coverUrl === "string" ? metadata.coverUrl.trim() : "";
+  if (coverUrl) {
+    if (psybinCover.src !== coverUrl) {
+      psybinCover.src = coverUrl;
+    }
+    psybinCover.hidden = false;
+  } else {
+    psybinCover.hidden = true;
+    psybinCover.removeAttribute("src");
+  }
 }
 
 function updatePsybinMetadataDisplay() {
@@ -3949,6 +4022,8 @@ function updatePsybinMetadataDisplay() {
   }
 
   psybinMetadata.dataset.state = state;
+  updatePsybinCoverDisplay(metadata);
+  ensurePsybinRemainingTicker();
 }
 
 function setPsybinStreamLoading(loading) {
@@ -4048,6 +4123,7 @@ function stopPsybinMetadataUpdates({ resetMetadata = false } = {}) {
   if (resetMetadata) {
     psybinPlayerState.metadata = null;
   }
+  clearPsybinRemainingTicker();
   updatePsybinMetadataDisplay();
 }
 

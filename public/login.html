@@ -62,9 +62,20 @@
         <span id="room-name"></span>
       </div>
       <div id="psybin-player" class="psybin-player" hidden aria-hidden="true">
-        <div class="psybin-player-meta" id="psybin-meta" aria-live="polite">
-          <span id="psybin-meta-status" class="psybin-player-meta-status" aria-hidden="true"></span>
-          <span id="psybin-meta-text" class="psybin-player-meta-text">Live Psybin Radio stream</span>
+        <div class="psybin-player-top">
+          <img
+            id="psybin-cover"
+            class="psybin-player-cover"
+            src=""
+            alt="Current Psybin track artwork"
+            loading="lazy"
+            hidden
+          />
+          <div class="psybin-player-meta" id="psybin-meta" aria-live="polite">
+            <span id="psybin-meta-status" class="psybin-player-meta-status" aria-hidden="true"></span>
+            <span id="psybin-meta-text" class="psybin-player-meta-text">Live Psybin Radio stream</span>
+            <span id="psybin-meta-remaining" class="psybin-player-remaining" aria-live="off"></span>
+          </div>
         </div>
         <div class="psybin-player-controls">
           <span class="psybin-player-label">Psybin Radio</span>
