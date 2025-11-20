@@ -684,7 +684,7 @@ const PSYBIN_RADIO_ROOM = "Psybin Radio";
 const PSYBIN_RADIO_STREAM_URL = "https://www.psyb.in/radio/";
 const PSYBIN_RADIO_ROOM_CANONICAL = PSYBIN_RADIO_ROOM.toLowerCase();
 const PSYBIN_METADATA_URL = "/api/psybin/now-playing";
-const PSYBIN_METADATA_REFRESH_MS = 45000;
+const PSYBIN_METADATA_REFRESH_MS = 10000;
 const PSYBIN_METADATA_RETRY_MS = 15000;
 const PSYBIN_METADATA_IDLE_TEXT = "Live Psybin Radio stream";
 const PSYBIN_COVER_FALLBACK = "https://psyb.in/tmp/cover.jpg";
@@ -697,6 +697,8 @@ const psybinPlayerState = {
   metadataRequestInFlight: false,
   isStreamLoading: false,
   remainingTimer: null,
+  trackSignature: "",
+  coverBuster: null,
 };
 
 const INFOWARS_ROOM_KEYWORD = "infowars";
@@ -3929,6 +3931,37 @@ function normalisePsybinMetadata(payload) {
   return { title, artist, text, fetchedAt, coverUrl, remainingMs };
 }
 
+function getPsybinTrackSignature(metadata) {
+  if (!metadata) return "";
+  const safeString = (value) => (typeof value === "string" ? value.trim().toLowerCase() : "");
+  const artist = safeString(metadata.artist);
+  const title = safeString(metadata.title);
+  const text = safeString(metadata.text);
+  const parts = [];
+  if (artist) parts.push(artist);
+  if (title) parts.push(title);
+  if (!parts.length && text) parts.push(text);
+  return parts.join(" — ");
+}
+
+function didPsybinTrackChange(previousMetadata, nextMetadata) {
+  return getPsybinTrackSignature(previousMetadata) !== getPsybinTrackSignature(nextMetadata);
+}
+
+function getPsybinCoverUrl(metadata) {
+  const rawUrl = typeof metadata?.coverUrl === "string" ? metadata.coverUrl.trim() : "";
+  if (!rawUrl) return "";
+  const cacheBuster = psybinPlayerState.coverBuster;
+  if (!cacheBuster) return rawUrl;
+  const separator = rawUrl.includes("?") ? "&" : "?";
+  return `${rawUrl}${separator}t=${cacheBuster}`;
+}
+
+function handlePsybinTrackChange() {
+  psybinPlayerState.coverBuster = Date.now();
+  clearPsybinRemainingTicker();
+}
+
 function formatRemainingMs(remainingMs) {
   if (!Number.isFinite(remainingMs) || remainingMs <= 0) return "";
   const totalSeconds = Math.max(0, Math.round(remainingMs / 1000));
@@ -3977,7 +4010,7 @@ function ensurePsybinRemainingTicker() {
 
 function updatePsybinCoverDisplay(metadata) {
   if (!psybinCover) return;
-  const coverUrl = typeof metadata?.coverUrl === "string" ? metadata.coverUrl.trim() : "";
+  const coverUrl = getPsybinCoverUrl(metadata);
   if (coverUrl) {
     if (psybinCover.src !== coverUrl) {
       psybinCover.src = coverUrl;
@@ -4080,7 +4113,15 @@ async function fetchPsybinMetadata() {
       .json()
       .catch(() => ({ title: "", artist: "", text: "" }));
 
-    psybinPlayerState.metadata = normalisePsybinMetadata(payload);
+    const nextMetadata = normalisePsybinMetadata(payload);
+    const trackChanged = didPsybinTrackChange(psybinPlayerState.metadata, nextMetadata);
+    psybinPlayerState.metadata = trackChanged
+      ? { ...nextMetadata, fetchedAt: Date.now() }
+      : nextMetadata;
+    psybinPlayerState.trackSignature = getPsybinTrackSignature(psybinPlayerState.metadata);
+    if (trackChanged) {
+      handlePsybinTrackChange();
+    }
     nextDelay = PSYBIN_METADATA_REFRESH_MS;
   } catch (err) {
     if (err?.name !== "AbortError") {
@@ -4122,6 +4163,8 @@ function stopPsybinMetadataUpdates({ resetMetadata = false } = {}) {
   psybinPlayerState.metadataRequestInFlight = false;
   if (resetMetadata) {
     psybinPlayerState.metadata = null;
+    psybinPlayerState.trackSignature = "";
+    psybinPlayerState.coverBuster = null;
   }
   clearPsybinRemainingTicker();
   updatePsybinMetadataDisplay();
