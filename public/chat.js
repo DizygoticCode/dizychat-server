@@ -687,6 +687,7 @@ const PSYBIN_METADATA_URL = "/api/psybin/now-playing";
 const PSYBIN_TRACK_TIME_URL = "/current_track_time.txt";
 const PSYBIN_METADATA_REFRESH_MS = 10000;
 const PSYBIN_METADATA_RETRY_MS = 15000;
+const PSYBIN_TRACK_CHECK_MS = 5000;
 const PSYBIN_METADATA_IDLE_TEXT = "Live Psybin Radio stream";
 const PSYBIN_COVER_FALLBACK = "https://psyb.in/tmp/cover.jpg";
 const psybinPlayerState = {
@@ -700,6 +701,12 @@ const psybinPlayerState = {
   remainingTimer: null,
   trackSignature: "",
   coverBuster: null,
+};
+const psybinTrackWatcherState = {
+  timer: null,
+  requestInFlight: false,
+  abortController: null,
+  lastTrack: "",
 };
 
 const INFOWARS_ROOM_KEYWORD = "infowars";
@@ -4131,6 +4138,7 @@ async function fetchPsybinMetadata() {
 
 function ensurePsybinMetadataPolling({ immediate = false } = {}) {
   if (!psybinPlayer || psybinPlayer.hidden) return;
+  ensurePsybinTrackWatcher();
   if (immediate) {
     if (psybinPlayerState.metadataRequestInFlight) return;
     clearPsybinMetadataTimer();
@@ -4143,6 +4151,7 @@ function ensurePsybinMetadataPolling({ immediate = false } = {}) {
 
 function stopPsybinMetadataUpdates({ resetMetadata = false } = {}) {
   clearPsybinMetadataTimer();
+  stopPsybinTrackWatcher();
   const controller = psybinPlayerState.metadataAbortController;
   if (controller) {
     try {

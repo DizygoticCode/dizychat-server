@@ -186,6 +186,8 @@ const PSYBIN_STATUS_URL =
   process.env.PSYBIN_STATUS_URL || 'https://www.psyb.in/radio/status-json.xsl';
 const PSYBIN_CURRENT_SONG_URL =
   process.env.PSYBIN_CURRENT_SONG_URL || 'https://psyb.in/current_song.txt';
+const PSYBIN_CURRENT_TRACK_URL =
+  process.env.PSYBIN_CURRENT_TRACK_URL || 'https://psyb.in/current_track.txt';
 const PSYBIN_CURRENT_TRACK_TIME_URL =
   process.env.PSYBIN_CURRENT_TRACK_TIME_URL || 'https://psyb.in/current_track_time.txt';
 const PSYBIN_CURRENT_COVER_URL =
@@ -562,6 +564,60 @@ app.get('/api/psybin/now-playing', async (req, res) => {
       title: '',
       artist: '',
       text: '',
+      fetchedAt: Date.now(),
+      error:
+        err?.name === 'AbortError' || err?.code === 'ABORT_ERR'
+          ? 'TIMEOUT'
+          : 'UNAVAILABLE',
+    });
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+});
+
+app.get('/api/psybin/current-track', async (req, res) => {
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timeoutId = controller
+    ? setTimeout(() => {
+        try {
+          controller.abort();
+        } catch (_err) {
+          /* ignore */
+        }
+      }, PSYBIN_STATUS_TIMEOUT_MS)
+    : null;
+
+  try {
+    const response = await fetch(PSYBIN_CURRENT_TRACK_URL, {
+      method: 'GET',
+      headers: {
+        'user-agent': 'DizyChat/1.0 (+https://dizy.chat)',
+        accept: 'text/plain',
+      },
+      signal: controller?.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const rawText = await response.text();
+    const track = rawText
+      .split(/\r?\n/g)
+      .map((line) => normalisePsybinString(line))
+      .filter(Boolean)
+      .pop();
+
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ track: track || '', fetchedAt: Date.now() });
+  } catch (err) {
+    const message =
+      err?.name === 'AbortError' || err?.code === 'ABORT_ERR'
+        ? 'Psybin track request timed out'
+        : err?.message;
+    console.warn('[Psybin] Current track proxy failed:', message);
+    res.status(502).json({
+      track: '',
       fetchedAt: Date.now(),
       error:
         err?.name === 'AbortError' || err?.code === 'ABORT_ERR'
