@@ -684,8 +684,10 @@ const PSYBIN_RADIO_ROOM = "Psybin Radio";
 const PSYBIN_RADIO_STREAM_URL = "https://www.psyb.in/radio/";
 const PSYBIN_RADIO_ROOM_CANONICAL = PSYBIN_RADIO_ROOM.toLowerCase();
 const PSYBIN_METADATA_URL = "/api/psybin/now-playing";
+const PSYBIN_CURRENT_TRACK_URL = "/api/psybin/current-track";
 const PSYBIN_METADATA_REFRESH_MS = 10000;
 const PSYBIN_METADATA_RETRY_MS = 15000;
+const PSYBIN_TRACK_CHECK_MS = 5000;
 const PSYBIN_METADATA_IDLE_TEXT = "Live Psybin Radio stream";
 const PSYBIN_COVER_FALLBACK = "https://psyb.in/tmp/cover.jpg";
 const psybinPlayerState = {
@@ -699,6 +701,12 @@ const psybinPlayerState = {
   remainingTimer: null,
   trackSignature: "",
   coverBuster: null,
+};
+const psybinTrackWatcherState = {
+  timer: null,
+  requestInFlight: false,
+  abortController: null,
+  lastTrack: "",
 };
 
 const INFOWARS_ROOM_KEYWORD = "infowars";
@@ -3980,6 +3988,94 @@ function getPsybinRemainingMs(metadata) {
   return adjusted > 0 ? adjusted : 0;
 }
 
+function clearPsybinTrackWatcherTimer() {
+  if (psybinTrackWatcherState.timer) {
+    clearTimeout(psybinTrackWatcherState.timer);
+    psybinTrackWatcherState.timer = null;
+  }
+}
+
+function stopPsybinTrackWatcher() {
+  clearPsybinTrackWatcherTimer();
+  const controller = psybinTrackWatcherState.abortController;
+  if (controller) {
+    try {
+      controller.abort();
+    } catch (_err) {
+      /* ignore */
+    }
+    psybinTrackWatcherState.abortController = null;
+  }
+  psybinTrackWatcherState.requestInFlight = false;
+  psybinTrackWatcherState.lastTrack = "";
+}
+
+function schedulePsybinTrackWatcher(delayMs = PSYBIN_TRACK_CHECK_MS) {
+  clearPsybinTrackWatcherTimer();
+  const delay = Math.max(0, Number(delayMs) || 0);
+  psybinTrackWatcherState.timer = setTimeout(() => {
+    psybinTrackWatcherState.timer = null;
+    checkPsybinTrackChange();
+  }, delay);
+}
+
+async function checkPsybinTrackChange() {
+  if (!psybinPlayer || psybinPlayer.hidden) return;
+  if (psybinTrackWatcherState.requestInFlight) return;
+  if (typeof window === "undefined" || typeof window.fetch !== "function") return;
+
+  psybinTrackWatcherState.requestInFlight = true;
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  if (controller) {
+    psybinTrackWatcherState.abortController = controller;
+  }
+
+  let nextDelay = PSYBIN_TRACK_CHECK_MS;
+
+  try {
+    const response = await window.fetch(PSYBIN_CURRENT_TRACK_URL, {
+      method: "GET",
+      credentials: "same-origin",
+      cache: "no-store",
+      signal: controller?.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const payload = await response.json().catch(() => ({ track: "" }));
+    const trackText = typeof payload.track === "string" ? payload.track.trim() : "";
+    const hasTrack = Boolean(trackText);
+    const changed = hasTrack && trackText !== psybinTrackWatcherState.lastTrack;
+
+    if (hasTrack) {
+      psybinTrackWatcherState.lastTrack = trackText;
+    }
+
+    if (changed) {
+      ensurePsybinMetadataPolling({ immediate: true });
+    }
+  } catch (err) {
+    if (err?.name !== "AbortError") {
+      console.warn("[Psybin] Track watcher failed", err);
+    }
+    nextDelay = PSYBIN_METADATA_RETRY_MS;
+  } finally {
+    if (psybinTrackWatcherState.abortController === controller) {
+      psybinTrackWatcherState.abortController = null;
+    }
+    psybinTrackWatcherState.requestInFlight = false;
+    schedulePsybinTrackWatcher(nextDelay);
+  }
+}
+
+function ensurePsybinTrackWatcher() {
+  if (!psybinPlayer || psybinPlayer.hidden) return;
+  if (psybinTrackWatcherState.timer) return;
+  schedulePsybinTrackWatcher(PSYBIN_TRACK_CHECK_MS);
+}
+
 function clearPsybinRemainingTicker() {
   if (psybinPlayerState.remainingTimer) {
     clearInterval(psybinPlayerState.remainingTimer);
@@ -4139,6 +4235,7 @@ async function fetchPsybinMetadata() {
 
 function ensurePsybinMetadataPolling({ immediate = false } = {}) {
   if (!psybinPlayer || psybinPlayer.hidden) return;
+  ensurePsybinTrackWatcher();
   if (immediate) {
     if (psybinPlayerState.metadataRequestInFlight) return;
     clearPsybinMetadataTimer();
@@ -4151,6 +4248,7 @@ function ensurePsybinMetadataPolling({ immediate = false } = {}) {
 
 function stopPsybinMetadataUpdates({ resetMetadata = false } = {}) {
   clearPsybinMetadataTimer();
+  stopPsybinTrackWatcher();
   const controller = psybinPlayerState.metadataAbortController;
   if (controller) {
     try {
