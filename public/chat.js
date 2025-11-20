@@ -684,10 +684,12 @@ const PSYBIN_RADIO_ROOM = "Psybin Radio";
 const PSYBIN_RADIO_STREAM_URL = "https://www.psyb.in/radio/";
 const PSYBIN_RADIO_ROOM_CANONICAL = PSYBIN_RADIO_ROOM.toLowerCase();
 const PSYBIN_METADATA_URL = "/api/psybin/now-playing";
+const PSYBIN_REMAINING_URL = "https://psyb.in/current_track_time.txt";
 const PSYBIN_METADATA_REFRESH_MS = 10000;
 const PSYBIN_METADATA_RETRY_MS = 15000;
 const PSYBIN_METADATA_IDLE_TEXT = "Live Psybin Radio stream";
 const PSYBIN_COVER_FALLBACK = "https://psyb.in/tmp/cover.jpg";
+const PSYBIN_REMAINING_REFRESH_MS = 1000;
 const psybinPlayerState = {
   initialised: false,
   lastVolume: 1,
@@ -697,6 +699,7 @@ const psybinPlayerState = {
   metadataRequestInFlight: false,
   isStreamLoading: false,
   remainingTimer: null,
+  remainingRequestInFlight: false,
   trackSignature: "",
   coverBuster: null,
 };
@@ -3995,6 +3998,43 @@ function updatePsybinRemainingTimeDisplay() {
   psybinRemaining.hidden = !label;
 }
 
+async function refreshPsybinRemainingMs() {
+  if (!psybinPlayer || psybinPlayer.hidden) return;
+  if (psybinPlayerState.remainingRequestInFlight) return;
+  if (typeof window === "undefined" || typeof window.fetch !== "function") return;
+
+  psybinPlayerState.remainingRequestInFlight = true;
+
+  try {
+    const response = await window.fetch(PSYBIN_REMAINING_URL, {
+      method: "GET",
+      cache: "no-store",
+      credentials: "omit",
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const remainingText = await response.text().catch(() => "");
+    const numeric = Number.parseFloat(remainingText.trim());
+
+    if (Number.isFinite(numeric) && numeric >= 0) {
+      const remainingMs = Math.round(numeric * 1000);
+      psybinPlayerState.metadata = {
+        ...(psybinPlayerState.metadata || { text: PSYBIN_METADATA_IDLE_TEXT }),
+        remainingMs,
+        fetchedAt: Date.now(),
+      };
+      updatePsybinRemainingTimeDisplay();
+    }
+  } catch (err) {
+    console.warn("[Psybin] Remaining time fetch failed", err);
+  } finally {
+    psybinPlayerState.remainingRequestInFlight = false;
+  }
+}
+
 function ensurePsybinRemainingTicker() {
   clearPsybinRemainingTicker();
   if (!psybinPlayer || psybinPlayer.hidden) {
@@ -4003,9 +4043,11 @@ function ensurePsybinRemainingTicker() {
   }
 
   updatePsybinRemainingTimeDisplay();
-  if (psybinRemaining && psybinRemaining.textContent) {
-    psybinPlayerState.remainingTimer = setInterval(updatePsybinRemainingTimeDisplay, 1000);
-  }
+  refreshPsybinRemainingMs();
+  psybinPlayerState.remainingTimer = setInterval(() => {
+    refreshPsybinRemainingMs();
+    updatePsybinRemainingTimeDisplay();
+  }, PSYBIN_REMAINING_REFRESH_MS);
 }
 
 function updatePsybinCoverDisplay(metadata) {
