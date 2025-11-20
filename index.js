@@ -184,6 +184,12 @@ const METADEFENDER_BASE_URL =
   process.env.METADEFENDER_BASE_URL || 'https://api.metadefender.com/v4';
 const PSYBIN_STATUS_URL =
   process.env.PSYBIN_STATUS_URL || 'https://www.psyb.in/radio/status-json.xsl';
+const PSYBIN_CURRENT_SONG_URL =
+  process.env.PSYBIN_CURRENT_SONG_URL || 'https://psyb.in/current_song.txt';
+const PSYBIN_CURRENT_TRACK_TIME_URL =
+  process.env.PSYBIN_CURRENT_TRACK_TIME_URL || 'https://psyb.in/current_track_time.txt';
+const PSYBIN_CURRENT_COVER_URL =
+  process.env.PSYBIN_CURRENT_COVER_URL || 'https://psyb.in/tmp/cover.jpg';
 const PSYBIN_STATUS_TIMEOUT_RAW = Number.parseInt(
   String(process.env.PSYBIN_STATUS_TIMEOUT_MS ?? '').trim(),
   10,
@@ -447,7 +453,7 @@ app.get('/api/psybin/now-playing', async (req, res) => {
       }, PSYBIN_STATUS_TIMEOUT_MS)
     : null;
 
-  try {
+  const fallbackMetadata = async () => {
     const response = await fetch(PSYBIN_STATUS_URL, {
       method: 'GET',
       headers: {
@@ -471,12 +477,79 @@ app.get('/api/psybin/now-playing', async (req, res) => {
       throw new Error(`Invalid Psybin metadata payload: ${err.message}`);
     }
 
-    const metadata = mapPsybinNowPlaying(payload);
+    return mapPsybinNowPlaying(payload);
+  };
+
+  try {
+    const [songResult, timeResult] = await Promise.allSettled([
+      fetch(PSYBIN_CURRENT_SONG_URL, {
+        method: 'GET',
+        headers: {
+          'user-agent': 'DizyChat/1.0 (+https://dizy.chat)',
+          accept: 'text/plain',
+        },
+        signal: controller?.signal,
+      }),
+      fetch(PSYBIN_CURRENT_TRACK_TIME_URL, {
+        method: 'GET',
+        headers: {
+          'user-agent': 'DizyChat/1.0 (+https://dizy.chat)',
+          accept: 'text/plain',
+        },
+        signal: controller?.signal,
+      }),
+    ]);
+
+    if (songResult.status !== 'fulfilled') {
+      throw songResult.reason || new Error('Failed to fetch Psybin song data');
+    }
+
+    const songResponse = songResult.value;
+    const timeResponse = timeResult.status === 'fulfilled' ? timeResult.value : null;
+
+    if (!songResponse.ok) {
+      throw new Error(`HTTP ${songResponse.status}`);
+    }
+
+    const rawSong = await songResponse.text();
+    const lines = rawSong
+      .split(/\r?\n/g)
+      .map((line) => normalisePsybinString(line))
+      .filter(Boolean);
+
+    const latestLine = lines.length ? lines[lines.length - 1] : '';
+    const split = splitPsybinArtistTitle(latestLine);
+    let artist = split?.artist || '';
+    let title = split?.title || '';
+    let text = latestLine || '';
+
+    if (!text || (!artist && !title)) {
+      try {
+        const fallback = await fallbackMetadata();
+        artist = fallback.artist;
+        title = fallback.title;
+        text = fallback.text;
+      } catch (fallbackErr) {
+        console.warn('[Psybin] Fallback metadata fetch failed', fallbackErr?.message);
+      }
+    }
+
+    let remainingMs = null;
+    if (timeResponse?.ok) {
+      const remainingText = await timeResponse.text().catch(() => '');
+      const numeric = Number.parseFloat(normalisePsybinString(remainingText));
+      if (Number.isFinite(numeric) && numeric >= 0) {
+        remainingMs = Math.round(numeric * 1000);
+      }
+    }
+
     res.setHeader('Cache-Control', 'no-store');
     res.json({
-      title: metadata.title,
-      artist: metadata.artist,
-      text: metadata.text,
+      title,
+      artist,
+      text,
+      coverUrl: PSYBIN_CURRENT_COVER_URL,
+      remainingMs,
       fetchedAt: Date.now(),
     });
   } catch (err) {

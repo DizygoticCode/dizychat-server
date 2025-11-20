@@ -760,6 +760,12 @@ section[id] {
   display: none !important;
 }
 
+.psybin-player-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .psybin-player-meta {
   display: flex;
   align-items: center;
@@ -768,6 +774,16 @@ section[id] {
   line-height: 1.4;
   color: var(--text-secondary, rgba(255, 255, 255, 0.72));
   min-height: 1.2em;
+  flex: 1 1 auto;
+}
+
+.psybin-player-cover {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-sm, 6px);
+  object-fit: cover;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15));
+  background: var(--surface, rgba(255, 255, 255, 0.04));
 }
 
 .psybin-player-meta[data-state="loading"] .psybin-player-meta-status {
@@ -790,6 +806,12 @@ section[id] {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.psybin-player-remaining {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary, rgba(255, 255, 255, 0.6));
 }
 
 .psybin-player-controls {
