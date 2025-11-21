@@ -768,7 +768,7 @@ section[id] {
 
 .psybin-player-meta {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   font-size: 0.78em;
   line-height: 1.4;
@@ -803,9 +803,8 @@ section[id] {
 .psybin-player-meta-text {
   flex: 1 1 auto;
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .psybin-player-remaining {
