@@ -684,12 +684,11 @@ const PSYBIN_RADIO_ROOM = "Psybin Radio";
 const PSYBIN_RADIO_STREAM_URL = "https://www.psyb.in/radio/";
 const PSYBIN_RADIO_ROOM_CANONICAL = PSYBIN_RADIO_ROOM.toLowerCase();
 const PSYBIN_METADATA_URL = "/api/psybin/now-playing";
-const PSYBIN_REMAINING_URL = "https://psyb.in/current_track_time.txt";
 const PSYBIN_METADATA_REFRESH_MS = 10000;
 const PSYBIN_METADATA_RETRY_MS = 15000;
 const PSYBIN_METADATA_IDLE_TEXT = "Live Psybin Radio stream";
 const PSYBIN_COVER_FALLBACK = "https://psyb.in/tmp/cover.jpg";
-const PSYBIN_REMAINING_REFRESH_MS = 1000;
+const PSYBIN_ELAPSED_REFRESH_MS = 1000;
 const psybinPlayerState = {
   initialised: false,
   lastVolume: 1,
@@ -698,8 +697,8 @@ const psybinPlayerState = {
   metadataAbortController: null,
   metadataRequestInFlight: false,
   isStreamLoading: false,
-  remainingTimer: null,
-  remainingRequestInFlight: false,
+  elapsedTimer: null,
+  trackStartedAt: null,
   trackSignature: "",
   coverBuster: null,
 };
@@ -3962,92 +3961,51 @@ function getPsybinCoverUrl(metadata) {
 
 function handlePsybinTrackChange() {
   psybinPlayerState.coverBuster = Date.now();
-  clearPsybinRemainingTicker();
+  psybinPlayerState.trackStartedAt = Date.now();
+  clearPsybinElapsedTicker();
 }
 
-function formatRemainingMs(remainingMs) {
-  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return "";
-  const totalSeconds = Math.max(0, Math.round(remainingMs / 1000));
+function formatElapsedMs(elapsedMs) {
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return "";
+  const totalSeconds = Math.max(0, Math.round(elapsedMs / 1000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  return `${minutes}:${String(seconds).padStart(2, "0")} left`;
+  return `${minutes}:${String(seconds).padStart(2, "0")} elapsed`;
 }
 
-function getPsybinRemainingMs(metadata) {
-  if (!metadata) return null;
-  const remainingMs = Number(metadata.remainingMs);
-  const fetchedAt = Number(metadata.fetchedAt);
-  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return null;
-  const elapsed = Number.isFinite(fetchedAt) ? Date.now() - fetchedAt : 0;
-  const adjusted = remainingMs - (Number.isFinite(elapsed) ? elapsed : 0);
-  return adjusted > 0 ? adjusted : 0;
+function getPsybinElapsedMs() {
+  const startedAt = psybinPlayerState.trackStartedAt;
+  if (!Number.isFinite(startedAt)) return null;
+  const elapsed = Date.now() - Number(startedAt);
+  return elapsed >= 0 ? elapsed : 0;
 }
 
-function clearPsybinRemainingTicker() {
-  if (psybinPlayerState.remainingTimer) {
-    clearInterval(psybinPlayerState.remainingTimer);
-    psybinPlayerState.remainingTimer = null;
+function clearPsybinElapsedTicker() {
+  if (psybinPlayerState.elapsedTimer) {
+    clearInterval(psybinPlayerState.elapsedTimer);
+    psybinPlayerState.elapsedTimer = null;
   }
 }
 
-function updatePsybinRemainingTimeDisplay() {
+function updatePsybinElapsedTimeDisplay() {
   if (!psybinRemaining) return;
-  const remaining = getPsybinRemainingMs(psybinPlayerState.metadata);
-  const label = formatRemainingMs(remaining);
+  const elapsed = getPsybinElapsedMs();
+  const label = formatElapsedMs(elapsed);
   psybinRemaining.textContent = label;
   psybinRemaining.hidden = !label;
 }
 
-async function refreshPsybinRemainingMs() {
-  if (!psybinPlayer || psybinPlayer.hidden) return;
-  if (psybinPlayerState.remainingRequestInFlight) return;
-  if (typeof window === "undefined" || typeof window.fetch !== "function") return;
-
-  psybinPlayerState.remainingRequestInFlight = true;
-
-  try {
-    const response = await window.fetch(PSYBIN_REMAINING_URL, {
-      method: "GET",
-      cache: "no-store",
-      credentials: "omit",
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const remainingText = await response.text().catch(() => "");
-    const numeric = Number.parseFloat(remainingText.trim());
-
-    if (Number.isFinite(numeric) && numeric >= 0) {
-      const remainingMs = Math.round(numeric * 1000);
-      psybinPlayerState.metadata = {
-        ...(psybinPlayerState.metadata || { text: PSYBIN_METADATA_IDLE_TEXT }),
-        remainingMs,
-        fetchedAt: Date.now(),
-      };
-      updatePsybinRemainingTimeDisplay();
-    }
-  } catch (err) {
-    console.warn("[Psybin] Remaining time fetch failed", err);
-  } finally {
-    psybinPlayerState.remainingRequestInFlight = false;
-  }
-}
-
-function ensurePsybinRemainingTicker() {
-  clearPsybinRemainingTicker();
+function ensurePsybinElapsedTicker() {
+  clearPsybinElapsedTicker();
   if (!psybinPlayer || psybinPlayer.hidden) {
-    updatePsybinRemainingTimeDisplay();
+    updatePsybinElapsedTimeDisplay();
     return;
   }
 
-  updatePsybinRemainingTimeDisplay();
-  refreshPsybinRemainingMs();
-  psybinPlayerState.remainingTimer = setInterval(() => {
-    refreshPsybinRemainingMs();
-    updatePsybinRemainingTimeDisplay();
-  }, PSYBIN_REMAINING_REFRESH_MS);
+  updatePsybinElapsedTimeDisplay();
+  psybinPlayerState.elapsedTimer = setInterval(() => {
+    updatePsybinElapsedTimeDisplay();
+  }, PSYBIN_ELAPSED_REFRESH_MS);
 }
 
 function updatePsybinCoverDisplay(metadata) {
@@ -4071,6 +4029,13 @@ function updatePsybinMetadataDisplay() {
 
   let displayText = PSYBIN_METADATA_IDLE_TEXT;
   let state = "idle";
+
+  if (!psybinPlayerState.trackStartedAt && metadata) {
+    const fetchedAt = Number(metadata.fetchedAt);
+    if (Number.isFinite(fetchedAt)) {
+      psybinPlayerState.trackStartedAt = fetchedAt;
+    }
+  }
 
   if (isStreamLoading) {
     displayText = "Connecting to Psybin Radio…";
@@ -4098,7 +4063,7 @@ function updatePsybinMetadataDisplay() {
 
   psybinMetadata.dataset.state = state;
   updatePsybinCoverDisplay(metadata);
-  ensurePsybinRemainingTicker();
+  ensurePsybinElapsedTicker();
 }
 
 function setPsybinStreamLoading(loading) {
@@ -4207,8 +4172,9 @@ function stopPsybinMetadataUpdates({ resetMetadata = false } = {}) {
     psybinPlayerState.metadata = null;
     psybinPlayerState.trackSignature = "";
     psybinPlayerState.coverBuster = null;
+    psybinPlayerState.trackStartedAt = null;
   }
-  clearPsybinRemainingTicker();
+  clearPsybinElapsedTicker();
   updatePsybinMetadataDisplay();
 }
 
