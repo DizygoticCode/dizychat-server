@@ -511,8 +511,18 @@ const chromeToolbarState = {
   tintedIcons: new Map(),
 };
 
+const faviconLink =
+  document.querySelector("link[rel~='icon']") ||
+  (() => {
+    const link = document.createElement("link");
+    link.rel = "icon";
+    link.href = "/logo.svg";
+    document.head.appendChild(link);
+    return link;
+  })();
+
 const faviconImage = new Image();
-faviconImage.src = "/logo.svg";
+faviconImage.src = faviconLink?.getAttribute("href") || "/logo.svg";
 const faviconCanvas = document.createElement("canvas");
 faviconCanvas.width = 32;
 faviconCanvas.height = 32;
@@ -1112,25 +1122,19 @@ function normalizeReactions(list) {
 const TOOLBAR_FLASH_CLASSES = ["toolbar-flash-message", "toolbar-flash-join"];
 
 function getFaviconLink() {
-  const head = document.head || document.getElementsByTagName("head")[0];
-  if (!head) return null;
-  let link = head.querySelector('link[rel*="icon" i]');
-  if (!link) {
-    link = document.createElement("link");
-    link.setAttribute("rel", "icon");
-    head.appendChild(link);
-  }
-  return link;
+  return faviconLink || null;
 }
 
 function rememberOriginalFavicon() {
   if (chromeToolbarState.originalFaviconHref) return;
   const link = getFaviconLink();
   if (!link) return;
-  chromeToolbarState.originalFaviconHref = link.getAttribute("href") || link.href || "";
-  if (chromeToolbarState.originalFaviconHref) {
-    faviconImage.src = chromeToolbarState.originalFaviconHref;
+  const href = link.getAttribute("href") || link.href || "/logo.svg";
+  chromeToolbarState.originalFaviconHref = href;
+  if (!link.getAttribute("href")) {
+    link.setAttribute("href", href);
   }
+  faviconImage.src = href;
 }
 
 function setFaviconHref(href) {
