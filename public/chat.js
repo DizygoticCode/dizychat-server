@@ -3457,9 +3457,18 @@ socket.on("connect", () => {
   showToast("Connected", "success");
   renderPublicRooms([], { state: "loading" });
   socket.emit("request rooms");
+
+  // If we were previously in a room, automatically rejoin it after reconnecting.
+  if (window.currentRoom && window.currentUser) {
+    socket.emit("join room", {
+      room: window.currentRoom,
+      username: window.currentUser,
+      password: window.currentPassword || "",
+    });
+  }
 });
 socket.on("disconnect", () => {
-  showToast("Disconnected", "error");
+  showToast("Disconnected — attempting to reconnect…", "warn");
   renderPublicRooms([], { state: "error" });
   hideSearchResults();
 });
@@ -5010,7 +5019,7 @@ socket.on("join room error", (error) => {
 
 // Handle disconnect and clean up
 socket.on("disconnect", () => {
-  showLanding({ focusUsername: false });
+  // Keep the current chat context while Socket.IO handles reconnection.
   hideSearchResults();
 });
 
