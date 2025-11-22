@@ -16,6 +16,31 @@ const SOUND_PUBLIC_DIR = path.join(__dirname, '..', 'public', 'soundboards');
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36';
 
+// Some boards are now fronted by stricter bot protection; allow users to pass a
+// cookie copied from a real browser session to bypass the challenge locally.
+const COOKIE_HEADER = process.env.SB_101SOUNDBOARDS_COOKIE;
+
+const BASE_HEADERS = {
+  'User-Agent': USER_AGENT,
+  // mimic modern chromium fetch headers
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Accept-Encoding': 'gzip, deflate, br',
+  'Cache-Control': 'no-cache',
+  Pragma: 'no-cache',
+  Connection: 'keep-alive',
+  Referer: 'https://www.101soundboards.com/',
+  Origin: 'https://www.101soundboards.com',
+  'Sec-Fetch-Site': 'same-origin',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-Dest': 'document',
+  'Sec-Ch-Ua': '"Chromium";v="127", "Not=A?Brand";v="99"',
+  'Sec-Ch-Ua-Mobile': '?0',
+  'Sec-Ch-Ua-Platform': '"Windows"',
+};
+
+if (COOKIE_HEADER) BASE_HEADERS.Cookie = COOKIE_HEADER;
+
 const normaliseString = (value) => (typeof value === 'string' ? value.trim() : '');
 
 const ensureDir = async (targetPath) => {
@@ -31,14 +56,7 @@ const fetchText = (url) =>
       u,
       {
         method: 'GET',
-        headers: {
-          'User-Agent': USER_AGENT,
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'en-GB,en;q=0.9',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Connection': 'keep-alive',
-          'Referer': 'https://www.101soundboards.com/',
-        },
+        headers: BASE_HEADERS,
       },
       (res) => {
         // follow simple redirects
@@ -81,12 +99,7 @@ const fetchBinary = (url) =>
       u,
       {
         method: 'GET',
-        headers: {
-          'User-Agent': USER_AGENT,
-          'Accept': '*/*',
-          'Connection': 'keep-alive',
-          'Referer': 'https://www.101soundboards.com/',
-        },
+        headers: { ...BASE_HEADERS, Accept: '*/*', 'Sec-Fetch-Dest': 'empty' },
       },
       (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {

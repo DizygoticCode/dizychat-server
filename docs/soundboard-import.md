@@ -5,7 +5,7 @@ This guide walks through downloading entire boards from [101soundboards.com](htt
 ## Prerequisites
 
 - Node.js 16+ installed locally.
-- Network access to `www.101soundboards.com` (some corporate VPNs block media domains—disable them if the script reports `ENOTFOUND` or `ECONNRESET`).
+- Network access to `www.101soundboards.com` (some corporate VPNs block media domains—disable them if the script reports `ENOTFOUND` or `ECONNRESET`). If the site shows a bot-check page in your browser, copy the resulting cookie into `SB_101SOUNDBOARDS_COOKIE` before running the importer.
 - A populated board list under `data/soundboards/board.txt` or another list file you plan to pass to the importer.
 
 ## 1. Review or curate your board list
@@ -71,7 +71,7 @@ The `/soundboard-clips` endpoint now exposes the newly imported boards, and the 
 
 | Symptom | Fix |
 | --- | --- |
-| `Request failed with status 403/404` | The board or clip is no longer public. Remove it from the list and rerun. |
+| `Request failed with status 403/404` | First, open the board in a real browser to confirm it still exists. If you are shown a bot-check, copy the cookie value into the `SB_101SOUNDBOARDS_COOKIE` environment variable so the importer can reuse it. If the board is gone, remove it from the list and rerun. |
 | `Network error (ENOTFOUND / ECONNRESET)` | Check your connection, disable VPNs, or retry—some hosts throttle repeated downloads. |
 | Script exits immediately with “No boards to import” | Ensure your list file contains at least one non-comment line or pass `--board <slug>`. |
 | Files downloaded but not usable in git | This is intentional. The repo ignores `public/soundboards/*` to keep pull requests light. Commit the JSON files only; distribute audio separately if needed. |
