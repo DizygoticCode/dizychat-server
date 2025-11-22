@@ -73,19 +73,6 @@
   --sidebar-padding-y: 16px;
   --sidebar-padding-x: 18px;
   --sidebar-gap: 12px;
-  --viewport-height: 100vh;
-}
-
-@supports (height: 100svh) {
-  :root {
-    --viewport-height: 100svh;
-  }
-}
-
-@supports (height: 100svh) and (height: 100dvh) {
-  :root {
-    --viewport-height: min(100svh, 100dvh);
-  }
 }
 
 body:not(.dark) {
@@ -171,7 +158,8 @@ html {
 body {
   font-family: 'Segoe UI', sans-serif;
   margin: 0;
-  min-height: var(--viewport-height);
+  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   overflow-x: hidden;
@@ -197,12 +185,13 @@ body.view-chat #site-landing {
 
 @supports (height: 100dvh) {
   body {
-    min-height: var(--viewport-height);
+    min-height: 100dvh;
+    height: 100dvh;
   }
 
   #chat-container {
-    min-height: var(--viewport-height);
-    height: var(--viewport-height);
+    min-height: 100dvh;
+    height: 100dvh;
   }
 }
 
@@ -224,8 +213,8 @@ body.dark { background: var(--bg); color: var(--text-primary); }
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
-  min-height: var(--viewport-height);
-  height: var(--viewport-height);
+  min-height: 100vh;
+  height: 100vh;
   background: var(--bg);
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
     env(safe-area-inset-left);
