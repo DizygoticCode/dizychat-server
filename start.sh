@@ -54,9 +54,13 @@ if [ -z "${DISABLE_SB_FETCH:-}" ]; then
     echo "[dl] Fetching: $url ${title:+($title)}"
 
     if [ -n "$title" ]; then
-      node scripts/download-101-soundboard.js --board "$url" --title "$title" --resume --concurrency "$SB_CONCURRENCY" --delayMs "$SB_DELAY_MS"
+      if ! node scripts/download-101-soundboard.js --board "$url" --title "$title" --resume --concurrency "$SB_CONCURRENCY" --delayMs "$SB_DELAY_MS"; then
+        echo "[dl] ERROR: failed to fetch $url ($title) — continuing to next board"
+      fi
     else
-      node scripts/download-101-soundboard.js --board "$url" --resume --concurrency "$SB_CONCURRENCY" --delayMs "$SB_DELAY_MS"
+      if ! node scripts/download-101-soundboard.js --board "$url" --resume --concurrency "$SB_CONCURRENCY" --delayMs "$SB_DELAY_MS"; then
+        echo "[dl] ERROR: failed to fetch $url — continuing to next board"
+      fi
     fi
   done < "$BOARD_FILE"
 
