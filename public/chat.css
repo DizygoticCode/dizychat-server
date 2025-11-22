@@ -570,7 +570,7 @@ section[id] {
   font-weight: 600;
   cursor: pointer;
   font-size: 0.85rem;
-  width: max(120px)
+  width: max(180px)
 }
 
 #join-btn:hover { opacity: 0.9; }
