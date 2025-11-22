@@ -539,7 +539,7 @@ section[id] {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: max(180px, 85vw);
+  width: max(65px);
   gap: 8px;
   margin: 0 auto;
 }
@@ -570,6 +570,7 @@ section[id] {
   font-weight: 600;
   cursor: pointer;
   font-size: 0.85rem;
+  width: max(65px)
 }
 
 #join-btn:hover { opacity: 0.9; }
