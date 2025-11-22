@@ -136,22 +136,6 @@ const scrollToLatestBtn = document.getElementById("scroll-to-latest");
 const scrollToLatestLabel = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-label") || null;
 const scrollToLatestCount = scrollToLatestBtn?.querySelector?.(".scroll-to-latest-count") || null;
 const pageBody = typeof document !== "undefined" ? document.body : null;
-const rootElement = typeof document !== "undefined" ? document.documentElement : null;
-
-const updateViewportHeightVar = () => {
-  if (!rootElement || typeof window === "undefined") return;
-  const viewportHeight = window.visualViewport?.height || window.innerHeight || 0;
-  if (viewportHeight) {
-    rootElement.style.setProperty("--viewport-height", `${viewportHeight}px`);
-  }
-};
-
-updateViewportHeightVar();
-if (typeof window !== "undefined") {
-  window.addEventListener("resize", updateViewportHeightVar);
-  window.addEventListener("orientationchange", updateViewportHeightVar);
-  window.visualViewport?.addEventListener("resize", updateViewportHeightVar);
-}
 
 function setViewMode(mode) {
   if (!pageBody) return;
