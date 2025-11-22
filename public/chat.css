@@ -539,7 +539,7 @@ section[id] {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: max(160px);
+  width: max(220px);
   gap: 8px;
   margin: 0 auto;
 }
