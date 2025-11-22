@@ -73,19 +73,6 @@
   --sidebar-padding-y: 16px;
   --sidebar-padding-x: 18px;
   --sidebar-gap: 12px;
-  --viewport-height: 100vh;
-}
-
-@supports (height: 100svh) {
-  :root {
-    --viewport-height: 100svh;
-  }
-}
-
-@supports (height: 100svh) and (height: 100dvh) {
-  :root {
-    --viewport-height: min(100svh, 100dvh);
-  }
 }
 
 body:not(.dark) {
@@ -171,7 +158,8 @@ html {
 body {
   font-family: 'Segoe UI', sans-serif;
   margin: 0;
-  min-height: var(--viewport-height);
+  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   overflow-x: hidden;
@@ -197,12 +185,13 @@ body.view-chat #site-landing {
 
 @supports (height: 100dvh) {
   body {
-    min-height: var(--viewport-height);
+    min-height: 100dvh;
+    height: 100dvh;
   }
 
   #chat-container {
-    min-height: var(--viewport-height);
-    height: var(--viewport-height);
+    min-height: 100dvh;
+    height: 100dvh;
   }
 }
 
@@ -224,8 +213,8 @@ body.dark { background: var(--bg); color: var(--text-primary); }
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
-  min-height: var(--viewport-height);
-  height: var(--viewport-height);
+  min-height: 100vh;
+  height: 100vh;
   background: var(--bg);
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
     env(safe-area-inset-left);
@@ -734,7 +723,12 @@ section[id] {
 }
 
 
-#chat-container header .header-left { display: flex; align-items: center; gap: 10px; }
+#chat-container header .header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
 
 #chat-container header .logo {
   width: var(--toolbar-logo-size);
@@ -753,6 +747,7 @@ section[id] {
   gap: var(--toolbar-gap);
   padding-left: var(--toolbar-gap);
   margin-left: auto;
+  flex-wrap: wrap;
 }
 
 .psybin-player {
@@ -777,6 +772,7 @@ section[id] {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .psybin-player-meta {
@@ -830,6 +826,7 @@ section[id] {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .psybin-player-label {
@@ -913,6 +910,7 @@ section[id] {
   font-weight: 600;
   letter-spacing: 0.01em;
   touch-action: none;
+  flex-wrap: wrap;
 }
 
 .stream-modal:active .stream-modal-header,
@@ -925,12 +923,15 @@ section[id] {
   align-items: center;
   gap: 8px;
   font-size: 0.95em;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .stream-modal-controls {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
 }
 
 .stream-modal-button {
@@ -1082,6 +1083,7 @@ body:not(.dark) .stream-modal-button:focus-visible {
   padding: var(--toolbar-search-padding-y) var(--toolbar-search-padding-x);
   border: 1px solid var(--border-color);
   margin-left: var(--toolbar-search-margin-left);
+  flex-wrap: wrap;
 }
 
 #chat-container .search-bar input,
@@ -2326,6 +2328,7 @@ body.light .message .reactions .reaction-chip.own {
   position: sticky;
   bottom: 0;
   z-index: 15;
+  flex-wrap: wrap;
 }
 
 #quick-emoji-panel {
