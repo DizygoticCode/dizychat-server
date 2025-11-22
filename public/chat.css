@@ -3518,6 +3518,58 @@ body:not(.dark) #soundboard-btn {
   }
 }
 
+@media (orientation: portrait) and (max-width: 720px) {
+  /* Keep controls compact on very narrow portrait widths so the layout matches the
+     near-desktop narrow view shown in the reference screenshot. */
+  #chat-container header .header-right {
+    grid-template-columns: repeat(auto-fit, minmax(120px, auto));
+  }
+
+  #chat-container .header-right button {
+    width: auto;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 540px) {
+  /* Maintain the compact layout from the narrow desktop view on phones. */
+  #chat-container {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  #chat-main {
+    width: 100%;
+    align-items: stretch;
+  }
+
+  #chat-content,
+  #user-sidebar {
+    width: 100%;
+  }
+
+  #messages {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .message {
+    max-width: 92%;
+  }
+
+  .message.has-inline-media {
+    width: min(100%, 280px);
+    max-width: min(100%, 280px);
+    min-width: min(240px, 100%);
+  }
+
+  #form {
+    padding-left: 12px;
+    padding-right: 12px;
+    gap: 8px;
+  }
+}
+
 @media (max-width: 360px) {
   #chat-container > header {
     --toolbar-logo-size: clamp(20px, 22vw, 24px);
