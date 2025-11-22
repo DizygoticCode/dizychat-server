@@ -3478,6 +3478,46 @@ body:not(.dark) #soundboard-btn {
   }
 }
 
+@media (orientation: portrait) and (max-width: 720px) {
+  #chat-container > header {
+    align-items: stretch;
+    --toolbar-padding-y: 8px;
+    --toolbar-padding-x: 10px;
+    --toolbar-gap: 8px;
+    --toolbar-control-height: 36px;
+    --toolbar-button-padding-y: 4px;
+    --toolbar-button-padding-x: 10px;
+    --toolbar-button-font-size: 0.9em;
+    --toolbar-icon-button-size: 36px;
+  }
+
+  #chat-container header .header-left,
+  #psybin-player,
+  #chat-container header .header-right,
+  #chat-container .search-bar {
+    width: 100%;
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  #chat-container header .header-right {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    justify-items: stretch;
+    padding-left: 0;
+    margin-left: 0;
+    gap: 6px;
+  }
+
+  #chat-container .header-right button {
+    width: 100%;
+    justify-content: center;
+    min-height: var(--toolbar-control-height);
+    padding: var(--toolbar-button-padding-y) var(--toolbar-button-padding-x);
+    font-size: var(--toolbar-button-font-size);
+  }
+}
+
 @media (max-width: 360px) {
   #chat-container > header {
     --toolbar-logo-size: clamp(20px, 22vw, 24px);
