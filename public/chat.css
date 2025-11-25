@@ -195,6 +195,18 @@ body.view-chat #site-landing {
   }
 }
 
+@supports (height: 100svh) {
+  body {
+    min-height: 100svh;
+    height: 100svh;
+  }
+
+  #chat-container {
+    min-height: 100svh;
+    height: 100svh;
+  }
+}
+
 body.dark { background: var(--bg); color: var(--text-primary); }
 
 .sr-only {
@@ -215,6 +227,8 @@ body.dark { background: var(--bg); color: var(--text-primary); }
   flex: 1 1 auto;
   min-height: 100vh;
   height: 100vh;
+  width: 100%;
+  max-width: 100vw;
   background: var(--bg);
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
     env(safe-area-inset-left);
@@ -3481,6 +3495,7 @@ body:not(.dark) #soundboard-btn {
 
 @media (orientation: portrait) and (max-width: 720px) {
   #chat-container > header {
+    flex-direction: column;
     align-items: stretch;
     --toolbar-padding-y: 8px;
     --toolbar-padding-x: 10px;
@@ -3502,12 +3517,12 @@ body:not(.dark) #soundboard-btn {
   }
 
   #chat-container header .header-right {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    display: flex;
+    flex-direction: column;
     justify-items: stretch;
     padding-left: 0;
     margin-left: 0;
-    gap: 6px;
+    gap: 8px;
   }
 
   #chat-container .header-right button {
@@ -3523,11 +3538,14 @@ body:not(.dark) #soundboard-btn {
   /* Keep controls compact on very narrow portrait widths so the layout matches the
      near-desktop narrow view shown in the reference screenshot. */
   #chat-container header .header-right {
-    grid-template-columns: repeat(auto-fit, minmax(120px, auto));
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    gap: 8px;
   }
 
   #chat-container .header-right button {
-    width: auto;
+    width: 100%;
     justify-content: center;
   }
 }
