@@ -12,6 +12,7 @@ const cheerio = require('cheerio');
 const fs = require('fs');
 const multer = require('multer');
 const sanitizeHtml = require('sanitize-html');
+const crypto = require('crypto');
 const Message = require('./src/models/message');
 const soundboardStore = require('./src/utils/soundboard');
 
@@ -30,6 +31,21 @@ const PORT = process.env.PORT || 10000;
 // ---------------- Admin ----------------
 const normaliseAdminUsername = (value) =>
   typeof value === 'string' ? value.trim().toLowerCase() : '';
+
+const parseAdminSessionTtlMs = () => {
+  const raw = process.env.ADMIN_SESSION_TTL_MINUTES;
+  if (!raw) return 30 * 60 * 1000;
+
+  const numeric = Number.parseInt(String(raw).trim(), 10);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 30 * 60 * 1000;
+
+  const minMinutes = 5;
+  const maxMinutes = 8 * 60;
+  const safeMinutes = Math.min(Math.max(numeric, minMinutes), maxMinutes);
+  return safeMinutes * 60 * 1000;
+};
+
+const ADMIN_SESSION_TTL_MS = parseAdminSessionTtlMs();
 
 const buildAdminCredentials = () => {
   const entries = new Map();
@@ -76,6 +92,51 @@ const buildAdminCredentials = () => {
 };
 
 const adminCredentials = buildAdminCredentials();
+
+const adminSessionsByToken = new Map();
+const adminSessionsByUser = new Map();
+
+const purgeAdminSession = (token) => {
+  const entry = adminSessionsByToken.get(token);
+  if (!entry) return;
+  adminSessionsByToken.delete(token);
+  adminSessionsByUser.delete(entry.canonicalUsername);
+};
+
+const issueAdminSession = (username) => {
+  const canonical = normaliseAdminUsername(username);
+  if (!canonical) return null;
+
+  const existingToken = adminSessionsByUser.get(canonical);
+  if (existingToken) {
+    purgeAdminSession(existingToken);
+  }
+
+  const token = crypto.randomUUID();
+  const expiresAt = Date.now() + ADMIN_SESSION_TTL_MS;
+  const entry = { token, username, canonicalUsername: canonical, expiresAt };
+  adminSessionsByToken.set(token, entry);
+  adminSessionsByUser.set(canonical, token);
+  return entry;
+};
+
+const resolveAdminSession = (token) => {
+  if (!token) return null;
+  const entry = adminSessionsByToken.get(token);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    purgeAdminSession(token);
+    return null;
+  }
+  return entry;
+};
+
+const revokeAdminSessionForUser = (username) => {
+  const canonical = normaliseAdminUsername(username);
+  if (!canonical) return;
+  const token = adminSessionsByUser.get(canonical);
+  if (token) purgeAdminSession(token);
+};
 
 const resolveAdminCredential = (username, password) => {
   if (typeof password !== 'string' || !password.trim()) return null;
@@ -1442,7 +1503,7 @@ io.on('connection', socket => {
   socket.isAdmin = false;
   socket.emit('room list', getPublicRoomsSnapshot());
 
-  socket.on('join room', async ({ room, username, password }) => {
+  socket.on('join room', async ({ room, username, password, adminToken }) => {
     const roomName = normaliseRoomName(room);
     if (!roomName) {
       sendJoinError(socket, 'Room name is required');
@@ -1466,9 +1527,13 @@ io.on('connection', socket => {
       emitRoomListUpdate();
     }
 
+    const adminSession = resolveAdminSession(adminToken);
+
     // Track user identity & room
     const fallbackUser = `Guest-${socket.id.slice(0, 4)}`;
-    socket.username = normaliseUsername(username, fallbackUser);
+    const requestedUsername = adminSession?.username ?? username;
+    socket.username = normaliseUsername(requestedUsername, fallbackUser);
+    socket.isAdmin = Boolean(adminSession);
     const canonicalUser = canonicalUsername(socket.username);
     const bannedSet = roomBans.get(roomName);
     if (bannedSet && bannedSet.has(canonicalUser)) {
@@ -1487,6 +1552,14 @@ io.on('connection', socket => {
     socket.join(roomName);
     registerSocketInRoom(socket, roomName);
     console.log(`User joined room: ${roomName} as ${socket.username}`);
+
+    if (adminSession) {
+      socket.emit('admin status', {
+        isAdmin: true,
+        token: adminSession.token,
+        expiresAt: adminSession.expiresAt,
+      });
+    }
 
     // Emit successful room join
     socket.emit('join room success');  // Added this line!
@@ -1549,10 +1622,17 @@ io.on('connection', socket => {
       const resolvedAdmin = resolveAdminCredential(candidateUser, adminPassword);
       if (resolvedAdmin) {
         socket.isAdmin = true;
-        socket.emit('admin status', { isAdmin: true });
+        socket.username = resolvedAdmin.username;
+        const session = issueAdminSession(resolvedAdmin.username);
+        socket.emit('admin status', {
+          isAdmin: true,
+          token: session?.token || null,
+          expiresAt: session?.expiresAt || null,
+        });
         console.log('[Admin] Authenticated', resolvedAdmin.username);
       } else {
         socket.isAdmin = false;
+        revokeAdminSessionForUser(candidateUser);
         socket.emit('admin status', { isAdmin: false });
       }
       refreshSocketPresence(socket);
