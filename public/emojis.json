@@ -22,11 +22,11 @@
   { "char": null, "name": "Doge Mining", "url": "/emojis/custom/doge-mining.gif"},
   { "char": null, "name": "Titty Explosion", "url": "/emojis/custom/titty-explosion.gif"},
   { "char": null, "name": "Illusion Mario", "url": "/emojis/custom/illusion-animation1.gif"},
-  { "char": null, "name": "Illusion Spiral", "url": "/emojis/custom/illusion-animation2.gif"}
-  { "char": null, "name": "America Flag", "url": "/emojis/custom/americaflag.gif"}
-  { "char": null, "name": "Black Think", "url": "/emojis/custom/blackthink.gif"}
-  { "char": null, "name": "Cat Typing", "url": "/emojis/custom/cattyping.gif"}
-  { "char": null, "name": "Rick Roll 1", "url": "/emojis/custom/rickroll.gif"}
+  { "char": null, "name": "Illusion Spiral", "url": "/emojis/custom/illusion-animation2.gif"},
+  { "char": null, "name": "America Flag", "url": "/emojis/custom/americaflag.gif"},
+  { "char": null, "name": "Black Think", "url": "/emojis/custom/blackthink.gif"},
+  { "char": null, "name": "Cat Typing", "url": "/emojis/custom/cattyping.gif"},
+  { "char": null, "name": "Rick Roll 1", "url": "/emojis/custom/rickroll.gif"},
   { "char": null, "name": "Peanut Butter Jelly Dance", "url": "/emojis/custom/peanut-butter-jelly.gif"}
   
   ],  
@@ -290,11 +290,11 @@
     { "char": "💡", "name": "idea" },
     { "char": "🔑", "name": "key" },
     { "char": "📌", "name": "pin" },
-    { "char": "💀️", "name": "skull" }
-	{ "char": "🎃️", "name": "pumpkin" }
-	{ "char": "🤡️", "name": "clown" }
-	{ "char": "💩️", "name": "poo" }
-	{ "char": "👾️", "name": "gameghost" }
+    { "char": "💀️", "name": "skull" },
+    { "char": "🎃️", "name": "pumpkin" },
+    { "char": "🤡️", "name": "clown" },
+    { "char": "💩️", "name": "poo" },
+    { "char": "👾️", "name": "gameghost" }
   ]
 }
 
