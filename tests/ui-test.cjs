@@ -7,7 +7,10 @@ const fs = require('fs');
 const path = require('path');
 
 // ✅ Config
-const SITE = "https://dizychat-server.onrender.com";
+const BASE_URL = process.env.DEPLOY_URL
+  ? String(process.env.DEPLOY_URL).replace(/\/$/, "")
+  : "https://dizychat-server.onrender.com";
+const SITE = `${BASE_URL}/login.html`;
 const ARTIFACT_DIR = path.join(process.cwd(), 'ui-test-artifacts');
 const VIDEO_DIR = path.join(ARTIFACT_DIR, 'playwright_videos');
 if (!fs.existsSync(VIDEO_DIR)) fs.mkdirSync(VIDEO_DIR, { recursive: true });
@@ -102,6 +105,8 @@ async function runPlaywrightTest() {
     const messageCount = await page.locator('#messages .message.self').count();
     if (messageCount === 0) throw new Error("❌ Sent message not found in chat");
 
+    await verifyUiFeatures(page);
+
     const screenshotPath = path.join(ARTIFACT_DIR, `playwright-room-${TIMESTAMP}.png`);
     await page.screenshot({ path: screenshotPath, fullPage: true });
     console.log(`📸 Playwright screenshot saved at ${screenshotPath}`);
@@ -130,6 +135,49 @@ async function runPlaywrightTest() {
       console.error("⚠️ Could not rename video file:", e.message);
     }
   }
+}
+
+// ==============================
+// Feature checks after joining
+// ==============================
+async function verifyUiFeatures(page) {
+  console.log('🔎 Verifying chat feature surface...');
+
+  // Search and filter controls
+  await page.waitForSelector('#message-search', { timeout: 15000 });
+  await page.waitForSelector('#message-search-filter', { timeout: 15000 });
+  const filterOptions = await page.$$eval('#message-search-filter option', (opts) => opts.map((o) => o.value));
+  if (!filterOptions.includes('pinned') || !filterOptions.includes('starred')) {
+    throw new Error('❌ Missing search filter options for pinned/starred messages');
+  }
+
+  // Layout density toggle
+  const compactBefore = await page.evaluate(() => document.body.classList.contains('compact-mode'));
+  await page.click('#toggle-density');
+  const compactAfter = await page.evaluate(() => document.body.classList.contains('compact-mode'));
+  if (compactBefore === compactAfter) {
+    throw new Error('❌ Compact mode did not toggle');
+  }
+  await page.click('#toggle-density');
+
+  // Sound notification toggle
+  const soundBefore = await page.getAttribute('#toggle-sounds', 'aria-pressed');
+  await page.click('#toggle-sounds');
+  const soundAfter = await page.getAttribute('#toggle-sounds', 'aria-pressed');
+  if (soundBefore === soundAfter) {
+    throw new Error('❌ Sound toggle did not update state');
+  }
+  await page.click('#toggle-sounds');
+
+  // Quick access controls and media widgets
+  await page.waitForSelector('#copy-join-link', { timeout: 10000 });
+  await page.waitForSelector('#scroll-to-latest', { state: 'attached', timeout: 10000 });
+  await page.waitForSelector('#gif-btn', { timeout: 10000 });
+  await page.waitForSelector('#file-attach', { timeout: 10000 });
+  await page.waitForSelector('#quick-emoji-panel', { state: 'attached', timeout: 10000 });
+  await page.waitForSelector('#psybin-player', { state: 'attached', timeout: 10000 });
+
+  console.log('✅ Verified search, layout, audio, and utility controls');
 }
 
 // ==============================
