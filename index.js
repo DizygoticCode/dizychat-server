@@ -982,7 +982,20 @@ app.post('/upload', uploadSingleMiddleware, async (req, res) => {
 app.get('/link-preview', async (req, res) => {
   let { url } = req.query;
   if (!url) return res.status(400).json({ error: 'No URL provided' });
-  if (!/^https?:\/\//i.test(url)) url = 'http://' + url;
+
+  if (!/^https?:\/\//i.test(url)) {
+    url = 'http://' + url;
+  } else {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === 'https:' && parsed.port && parsed.port !== '443') {
+        parsed.protocol = 'http:';
+        url = parsed.toString();
+      }
+    } catch (_err) {
+      /* fall back to original url */
+    }
+  }
 
   try {
     const response = await fetch(url, {
