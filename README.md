@@ -188,6 +188,8 @@ node scripts/download-101-soundboard.js --board https://www.101soundboards.com/b
 
 The script downloads every clip from the target board into `public/soundboards/<board-slug>/` and updates the JSON catalog in `data/soundboards`. The `public/soundboards` directory is intentionally gitignored so the repo stays binary-free—commit only the JSON definitions. If you need to distribute the audio assets, publish them through your own storage or an artifact bundle instead of checking the binaries into source control.
 
+Some boards now require a browser cookie to bypass anti-bot checks. Set `SB_101SOUNDBOARDS_COOKIE` to the cookie you see after loading a board in your browser (for example, `user_session_id=<value>`). You can paste just the value—the importer will prefix the cookie name for you.
+
 All marketing routes serve the hero experience from `public/index.html`; the chat client now lives at `/login.html` (also aliased to `/login`, `/chat`, and `/app`).
 
 ## Socket.IO events (highlights)

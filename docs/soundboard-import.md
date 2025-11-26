@@ -5,7 +5,7 @@ This guide walks through downloading entire boards from [101soundboards.com](htt
 ## Prerequisites
 
 - Node.js 16+ installed locally.
-- Network access to `www.101soundboards.com` (some corporate VPNs block media domains—disable them if the script reports `ENOTFOUND` or `ECONNRESET`). If the site shows a bot-check page in your browser, copy the resulting cookie into `SB_101SOUNDBOARDS_COOKIE` before running the importer.
+- Network access to `www.101soundboards.com` (some corporate VPNs block media domains—disable them if the script reports `ENOTFOUND` or `ECONNRESET`). If the site shows a bot-check page in your browser, copy the resulting cookie into `SB_101SOUNDBOARDS_COOKIE` before running the importer. You can paste either the full `user_session_id=<value>` string or just the cookie value; the importer will prefix it for you if needed.
 - A populated board list under `data/soundboards/board.txt` or another list file you plan to pass to the importer.
 
 ## 1. Review or curate your board list
