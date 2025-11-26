@@ -27,9 +27,10 @@
   { "char": null, "name": "Black Think", "url": "/emojis/custom/blackthink.gif"},
   { "char": null, "name": "Cat Typing", "url": "/emojis/custom/cattyping.gif"},
   { "char": null, "name": "Rick Roll 1", "url": "/emojis/custom/rickroll.gif"},
-  { "char": null, "name": "Peanut Butter Jelly Dance", "url": "/emojis/custom/peanut-butter-jelly.gif"}
-  
-  ],  
+  { "char": null, "name": "Flaming Elmo", "url": "/emojis/custom/flamingelmo.gif"}
+  { "char": null, "name": "Cat Jam 1", "url": "/emojis/custom/catjam1.gif"}
+  { "char": null, "name": "Leo Toast", "url": "/emojis/custom/leotoast.gif"}
+    ],  
   "DERP": [
     { "char": null, "name": "Derp Pepsi", "url": "/emojis/custom/pepsi1.gif"},
     { "char": null, "name": "Derpbob", "url": "/emojis/custom/derpbob.gif"},
@@ -77,7 +78,6 @@
   { "char": null, "name": "Shaq Wiggle", "url": "/emojis/custom/cat-shaq-wiggle.gif"},
   { "char": null, "name": "Cat Sabbath", "url": "/emojis/custom/cat-sabbath.gif"},
   { "char": null, "name": "Stare", "url": "/emojis/custom/cat-stare.gif"}
-
   ],  
   "Cannibal Fruit": [
   { "char": null, "name": "Cannibal Banana", "url": "/emojis/custom/cannibal-banana.gif"},
@@ -89,6 +89,10 @@
   { "char": null, "name": "Alex 1", "url": "/emojis/custom/alex1.gif"},
   { "char": null, "name": "Alex 2", "url": "/emojis/custom/alex2.gif"},
   { "char": null, "name": "Alex 3", "url": "/emojis/custom/alex3.gif"}
+  { "char": null, "name": "Alex Tinfoil", "url": "/emojis/custom/tinfoil.png"}
+  { "char": null, "name": "Alex Happy Thumbs Up", "url": "/emojis/custom/alexhappythumbsup.png"}
+  { "char": null, "name": "Alex Smile", "url": "/emojis/custom/alexsmile.png"}
+  { "char": null, "name": "Alex Censored", "url": "/emojis/custom/censored.png"}
   ],  
   "Trippy": [
   { "char": null, "name": "Trippy 1", "url": "/emojis/custom/trippy1.gif"},
