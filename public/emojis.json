@@ -48,6 +48,7 @@
   { "char": null, "name": "Shroom 12", "url": "/emojis/custom/mushroom12.gif"}
   ],  
   "Cats": [
+  { "char": null, "name": "Cat Happy", "url": "/emojis/custom/cat-happy.gif"},
   { "char": null, "name": "Acid 1", "url": "/emojis/custom/cat-acid.gif"},
   { "char": null, "name": "Acid 2", "url": "/emojis/custom/cat-acid2.gif"},
   { "char": null, "name": "Acid 3", "url": "/emojis/custom/cat-acid3.gif"},
