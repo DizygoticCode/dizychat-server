@@ -18,7 +18,14 @@ const USER_AGENT =
 
 // Some boards are now fronted by stricter bot protection; allow users to pass a
 // cookie copied from a real browser session to bypass the challenge locally.
-const COOKIE_HEADER = process.env.SB_101SOUNDBOARDS_COOKIE;
+// Accept either the full "key=value" cookie string or a bare value (we'll
+// default it to the typical `user_session_id` name for convenience).
+const COOKIE_HEADER = (() => {
+  const raw = process.env.SB_101SOUNDBOARDS_COOKIE || '';
+  const value = raw.trim();
+  if (!value) return null;
+  return value.includes('=') ? value : `user_session_id=${value}`;
+})();
 
 const BASE_HEADERS = {
   'User-Agent': USER_AGENT,
