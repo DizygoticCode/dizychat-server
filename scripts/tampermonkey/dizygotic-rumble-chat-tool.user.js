@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dizygotic Rumble Chat Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.6
+// @version      1.7
 // @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.
 // @author       Dizygotic
 // @match        https://rumble.com/*
@@ -41,8 +41,42 @@
         notificationSound: "",
         notificationVolume: 1,
         highlightNotificationSoundEnabled: false,
-        myNickname: ""
+        myNickname: "",
+        autoBurnEnabled: false,
+        autoBurnCooldownSeconds: 45,
+        autoBurnEngine: "builtin"
     };
+
+    const burnEngineRecommendations = [
+        {
+            key: "builtin",
+            label: "Built-in quips (no dependency)",
+            note: "Tiny set of baked-in playful replies."
+        },
+        {
+            key: "compromise",
+            label: "compromise (NLP)",
+            cdn: "https://unpkg.com/compromise@14.7.0/builds/compromise.min.js",
+            note: "Good for lightweight verb/noun flips; exposes global `nlp`."
+        },
+        {
+            key: "rita",
+            label: "RiTa (creative writing)",
+            cdn: "https://cdnjs.cloudflare.com/ajax/libs/rita/2.0.2/rita.min.js",
+            note: "Useful for alliteration or syllable-count-aware burns; exposes global `RiTa`."
+        },
+        {
+            key: "markov",
+            label: "markov-strings (Markov chains)",
+            cdn: "https://unpkg.com/markov-strings@2.0.0/dist/markov-strings.js",
+            note: "Feed your own corpus via `window.rumbleBlocker.burnMarkovSource` for randomized replies."
+        },
+        {
+            key: "custom",
+            label: "Custom hook",
+            note: "Attach `window.rumbleBlocker.customBurnGenerator(ctx)` to return your own message string."
+        }
+    ];
 
     settings = Object.assign({}, defaultSettings, settings);
 
@@ -182,6 +216,12 @@
                 console.log("💾 Auto-backup created");
             }, settings.autoBackupMinutes * 60 * 1000);
         }
+    }
+
+    const escapeRegexPattern = /[\\^$.*+?()[\]{}|]/g;
+
+    function escapeRegex(value) {
+        return value.replace(escapeRegexPattern, "\\$&");
     }
 
     /***********************
@@ -353,6 +393,33 @@
 
             <div style="height:14px"></div>
 
+            <b>Auto-burn bot</b>
+            <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;font-size:13px">
+                <label><input type="checkbox" id="autoBurnToggle"${settings.autoBurnEnabled ? " checked" : ""}> Reply when someone tags me</label>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <label>Cooldown (seconds)</label>
+                    <input type="number" id="autoBurnCooldownInput" value="${settings.autoBurnCooldownSeconds}" style="width:80px">
+                    <label>Engine</label>
+                    <select id="autoBurnEngineSelect" style="flex:1;min-width:180px">
+                        ${burnEngineRecommendations
+                            .map((rec) => `<option value="${rec.key}"${settings.autoBurnEngine === rec.key ? " selected" : ""}>${rec.label}</option>`)
+                            .join("")}
+                    </select>
+                </div>
+                <div style="font-size:12px;color:gray;line-height:1.5">
+                    Quick inject suggestions for Tampermonkey:
+                    <ul style="margin:6px 0 0 16px;padding:0">
+                        ${burnEngineRecommendations
+                            .filter((rec) => rec.cdn)
+                            .map((rec) => `<li><code>${rec.cdn}</code> — ${rec.note}</li>`)
+                            .join("")}
+                        <li>Custom hook: set <code>window.rumbleBlocker.customBurnGenerator = (ctx) =&gt; "@" + ctx.target + " ..."</code></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div style="height:14px"></div>
+
             <b>Other</b>
             <div style="margin-top:6px;font-size:13px">
               <label><input type="checkbox" id="darkModeInput"${settings.darkMode ? " checked" : ""}> Dark mode</label>
@@ -416,6 +483,12 @@
             settings.notifyOnKeyword = !!panel.querySelector("#notifyOnKeywordInput").checked;
             settings.notifyOnHighlight = !!panel.querySelector("#notifyOnHighlightInput").checked;
             settings.highlightNotificationSoundEnabled = !!panel.querySelector("#highlightSoundInput").checked;
+            settings.autoBurnEnabled = !!panel.querySelector("#autoBurnToggle")?.checked;
+            settings.autoBurnCooldownSeconds = Math.max(
+                5,
+                parseInt(panel.querySelector("#autoBurnCooldownInput")?.value, 10) || 0
+            );
+            settings.autoBurnEngine = panel.querySelector("#autoBurnEngineSelect")?.value || "builtin";
             const volumeSlider = panel.querySelector("#notificationVolumeInput");
             const parsedVolume = volumeSlider ? parseInt(volumeSlider.value, 10) : NaN;
             const normalizedVolume = Number.isFinite(parsedVolume)
@@ -652,6 +725,228 @@
     }
 
     /***********************
+     * Auto-burn bot helpers
+     ***********************/
+    const builtInBurns = [
+        ({ target }) => `@${target} you just pinged the wrong dojo.`,
+        ({ target }) => `@${target} that's a bold take for someone typing with mittens.`,
+        ({ target, snippet }) => `@${target} ${snippet ? `cool story about “${snippet}”` : "appreciate the shout"}, but the jury is still out.`,
+        ({ target }) => `@${target} you rang? I brought receipts and a thesaurus.`,
+        ({ target }) => `@${target} touch grass, clear cache, try again.`,
+        ({ target, snippet }) => `@${target} ${snippet ? `that “${snippet}” line` : "that take"} needs a patch note.`,
+        ({ target }) => `@${target} noted. Filing under 'draft tweets'.`
+    ];
+
+    let lastBurnTimestamp = 0;
+
+    function getMessageSnippetForBurn(text) {
+        if (!text) return "";
+        const trimmed = text.replace(/\s+/g, " ").trim();
+        return trimmed.slice(0, 110);
+    }
+
+    function tryCustomBurn(ctx) {
+        const generator = window.rumbleBlocker?.customBurnGenerator;
+        if (typeof generator === "function") {
+            try {
+                return generator(ctx);
+            } catch (err) {
+                console.warn("Custom burn generator threw", err);
+            }
+        }
+        return null;
+    }
+
+    function tryCompromiseBurn(ctx) {
+        try {
+            const nlp = window.nlp;
+            if (!nlp) return null;
+            const doc = nlp(ctx.message || "");
+            const verbs = doc.verbs().toInfinitive().out("array");
+            const nouns = doc.nouns().out("array");
+            const chosenVerb = verbs[0] || "ping";
+            const chosenNoun = nouns[0] || "take";
+            return `@${ctx.target} bold ${chosenVerb} on that ${chosenNoun}. Wanna run that again?`;
+        } catch (err) {
+            console.warn("Compromise burn failed", err);
+            return null;
+        }
+    }
+
+    function tryRiTaBurn(ctx) {
+        try {
+            const RiTa = window.RiTa;
+            if (!RiTa) return null;
+            const allit = `${RiTa.randomWord({ numSyllables: 1 })} ${RiTa.randomWord({ startsWith: ctx.target?.[0] || "b" })}`;
+            const verb = RiTa.conjugate("roast", { tense: "present" });
+            return `@${ctx.target} ${allit.trim()} just ${verb}ed that take.`;
+        } catch (err) {
+            console.warn("RiTa burn failed", err);
+            return null;
+        }
+    }
+
+    function tryMarkovBurn(ctx) {
+        const MarkovStrings = window.Markov || window.markovStrings;
+        const seed = window.rumbleBlocker?.burnMarkovSource;
+        if (!MarkovStrings || !Array.isArray(seed) || seed.length === 0) return null;
+        try {
+            const markov = new MarkovStrings(seed);
+            if (typeof markov.buildCorpus === "function") {
+                markov.buildCorpus();
+            }
+            const generated = markov.generate?.({ maxTries: 20, filter: (res) => res && res.string });
+            const phrase = generated?.string || "ran out of spice";
+            return `@${ctx.target} ${phrase}`;
+        } catch (err) {
+            console.warn("Markov burn failed", err);
+            return null;
+        }
+    }
+
+    function pickBurnLine(ctx) {
+        const template = builtInBurns[Math.floor(Math.random() * builtInBurns.length)];
+        return template(ctx);
+    }
+
+    function generateBurnResponse(ctx) {
+        const normalizedCtx = {
+            target: ctx.target || "there",
+            message: getMessageSnippetForBurn(ctx.message || ""),
+            snippet: getMessageSnippetForBurn(ctx.message || "")
+        };
+
+        if (settings.autoBurnEngine === "custom") {
+            const fromCustom = tryCustomBurn(normalizedCtx);
+            if (fromCustom) return fromCustom;
+        }
+
+        if (settings.autoBurnEngine === "compromise") {
+            const compromiseResult = tryCompromiseBurn(normalizedCtx);
+            if (compromiseResult) return compromiseResult;
+        }
+
+        if (settings.autoBurnEngine === "rita") {
+            const ritaResult = tryRiTaBurn(normalizedCtx);
+            if (ritaResult) return ritaResult;
+        }
+
+        if (settings.autoBurnEngine === "markov") {
+            const markovResult = tryMarkovBurn(normalizedCtx);
+            if (markovResult) return markovResult;
+        }
+
+        const customFallback = tryCustomBurn(normalizedCtx);
+        if (customFallback) return customFallback;
+
+        return pickBurnLine(normalizedCtx);
+    }
+
+    function findChatComposer() {
+        const selectors = [
+            "textarea.chat-input",
+            "textarea.chat-textarea",
+            "textarea.chat-input__textarea",
+            "textarea#chat-message-text",
+            "textarea[name='chat']",
+            "textarea[data-role='chat-input']",
+            "textarea[data-qa='live-chat-input']",
+            "input.chat-input",
+            "input[name='chat']",
+            "div[contenteditable='true'][data-placeholder*='message' i]",
+            "div[contenteditable='true'][aria-label*='message' i]"
+        ];
+
+        for (const selector of selectors) {
+            const el = document.querySelector(selector);
+            if (el) return el;
+        }
+        return null;
+    }
+
+    function findSendButton() {
+        const selectors = [
+            "button.chat-send",
+            "button.send-message",
+            "button[type='submit'][aria-label*='send' i]",
+            "button[aria-label='Send message']",
+            "button[aria-label='Send']",
+            "button.chat__send",
+            "button[data-role='send-button']"
+        ];
+
+        for (const selector of selectors) {
+            const btn = document.querySelector(selector);
+            if (btn) return btn;
+        }
+        return null;
+    }
+
+    function setComposerValue(composer, value) {
+        if (!composer) return;
+        if (typeof composer.value === "string") {
+            composer.focus();
+            composer.value = value;
+            composer.dispatchEvent(new Event("input", { bubbles: true }));
+            composer.dispatchEvent(new Event("change", { bubbles: true }));
+            return;
+        }
+
+        if (composer.isContentEditable) {
+            composer.focus();
+            composer.textContent = value;
+            composer.dispatchEvent(new Event("input", { bubbles: true }));
+            return;
+        }
+    }
+
+    function triggerSendAction(composer) {
+        const sendButton = findSendButton();
+        if (sendButton) {
+            sendButton.click();
+            return true;
+        }
+
+        if (composer) {
+            const enterEvent = new KeyboardEvent("keydown", {
+                key: "Enter",
+                code: "Enter",
+                bubbles: true,
+                cancelable: true
+            });
+            composer.dispatchEvent(enterEvent);
+            return !enterEvent.defaultPrevented;
+        }
+        return false;
+    }
+
+    function sendChatMessage(message) {
+        const composer = findChatComposer();
+        if (!composer) {
+            console.warn("Auto-burn bot could not find chat composer");
+            return false;
+        }
+
+        setComposerValue(composer, message);
+        return triggerSendAction(composer);
+    }
+
+    function maybeHandleAutoBurn(ctx) {
+        if (!settings.autoBurnEnabled) return;
+        const cooldownMs = Math.max(5, settings.autoBurnCooldownSeconds || 45) * 1000;
+        const now = Date.now();
+        if (now - lastBurnTimestamp < cooldownMs) return;
+
+        const response = generateBurnResponse(ctx);
+        if (!response) return;
+
+        const success = sendChatMessage(response);
+        if (success) {
+            lastBurnTimestamp = now;
+        }
+    }
+
+    /***********************
      * Core message refresh
      ***********************/
     function refreshBlockedMessages() {
@@ -664,6 +959,9 @@
                 chatContainer.scrollHeight - (chatContainer.scrollTop + chatContainer.clientHeight) < 40;
             userScrolledAway = !nearBottom;
         }
+
+        const selfHandle = sanitizeNickname(detectMyNickname()) || "";
+        const selfHandleLower = selfHandle.toLowerCase();
 
         document
             .querySelectorAll("li.chat-history--row.js-chat-history-item")
@@ -788,6 +1086,29 @@
                     ? rawOriginal.replace(/<\/?[^>]+(>|$)/g, "")
                     : msgEl.innerText || "";
                 const lowerText = plainOriginal.toLowerCase();
+                const userIsBlocked = username && blockedUsers.includes(username);
+
+                if (
+                    settings.autoBurnEnabled &&
+                    !el._autoBurnHandled &&
+                    el._recentlyAdded &&
+                    username &&
+                    selfHandleLower &&
+                    username !== selfHandleLower &&
+                    !userIsBlocked &&
+                    !isSystem
+                ) {
+                    const mentionRegex = new RegExp(`\\b@?${escapeRegex(selfHandleLower)}\\b`, "i");
+                    if (mentionRegex.test(lowerText)) {
+                        const targetName = displayName.replace(/^@+/, "");
+                        maybeHandleAutoBurn({
+                            target: targetName || displayName,
+                            message: plainOriginal,
+                            from: username
+                        });
+                        el._autoBurnHandled = true;
+                    }
+                }
                 let keywordMatched = null;
                 if (settings.blockedKeywords && settings.blockedKeywords.length > 0) {
                     for (const kw of settings.blockedKeywords) {
@@ -799,7 +1120,6 @@
                     }
                 }
 
-                const userIsBlocked = username && blockedUsers.includes(username);
                 const shouldAutoBlock = !!keywordMatched;
                 const shouldMask = shouldAutoBlock && settings.keywordAction === "mask" && !userIsBlocked;
                 const isBlocked = userIsBlocked || shouldAutoBlock;
