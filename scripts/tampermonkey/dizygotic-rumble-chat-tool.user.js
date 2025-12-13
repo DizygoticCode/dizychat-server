@@ -219,7 +219,7 @@
     }
 
     function escapeRegex(value) {
-        return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return value.replace(/[.*+?^${}()|[\]\]/g, "\$&");
     }
 
     /***********************
