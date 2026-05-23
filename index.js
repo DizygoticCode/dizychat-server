@@ -1222,7 +1222,7 @@ const roomMutes = new Map();
 
 const PERSISTENT_ROOMS = [
   'General Chat',
-  'InfoWars Chat',
+  'AJN Chat',
   'Drum & Bass Chat',
   'Psybin Radio',
 ];
