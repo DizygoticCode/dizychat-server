@@ -713,7 +713,7 @@ const psybinPlayerState = {
   coverBuster: null,
 };
 
-const INFOWARS_ROOM_KEYWORD = "infowars";
+const INFOWARS_ROOM_KEYWORDS = ["ajn", "infowars"];
 const INFOWARS_MODAL_MIN_WIDTH = 320;
 const INFOWARS_MODAL_MIN_HEIGHT = 180;
 const INFOWARS_MODAL_MARGIN = 12;
@@ -4343,7 +4343,8 @@ function setPsybinPlayerRoom(roomName) {
 function isInfowarsRoom(roomName) {
   if (!roomName) return false;
   try {
-    return String(roomName).toLowerCase().includes(INFOWARS_ROOM_KEYWORD);
+    const normalized = String(roomName).toLowerCase();
+    return INFOWARS_ROOM_KEYWORDS.some((keyword) => normalized.includes(keyword));
   } catch {
     return false;
   }
