@@ -1149,8 +1149,19 @@ function restoreFavicon() {
   setFaviconHref(chromeToolbarState.originalFaviconHref);
 }
 
+
+function sanitizeChromeBaseTitle(title) {
+  let normalized = typeof title === "string" ? title.trim() : "";
+  if (!normalized) return "DizyChat";
+
+  normalized = normalized.replace(/^\((?:\d+|\d+\+)\)\s+/g, "");
+  normalized = normalized.replace(/^🟢\s+New\s+user\s+joined\s+—\s+/g, "");
+
+  return normalized || "DizyChat";
+}
+
 function rememberOriginalTitle() {
-  const title = document.title;
+  const title = sanitizeChromeBaseTitle(document.title);
   if (title && title !== chromeToolbarState.originalTitle) {
     chromeToolbarState.originalTitle = title;
   } else if (!title && !chromeToolbarState.originalTitle) {
