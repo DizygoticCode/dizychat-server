@@ -4915,7 +4915,9 @@ function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
     return;
   }
 
-  const data = Array.isArray(rooms) ? rooms.filter(Boolean) : [];
+  const data = Array.isArray(rooms)
+    ? rooms.filter((room) => room && !room.requiresPassword)
+    : [];
   latestPublicRooms = data;
 
   if (!data.length) {
@@ -4931,8 +4933,6 @@ function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
     if (!roomNameValue) return;
 
     const occupants = Number(room?.occupants || 0);
-    const requiresPassword = Boolean(room?.requiresPassword);
-
     const item = document.createElement("li");
     item.className = "public-room-item";
     item.dataset.room = roomNameValue;
@@ -4944,54 +4944,33 @@ function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
     const metaEl = document.createElement("span");
     metaEl.className = "room-meta";
     const peopleLabel = occupants === 1 ? "1 online" : `${occupants} online`;
-    metaEl.textContent = requiresPassword ? `${peopleLabel} • 🔒` : peopleLabel;
+    metaEl.textContent = peopleLabel;
 
     item.appendChild(nameEl);
     item.appendChild(metaEl);
     item.tabIndex = 0;
 
-    if (requiresPassword) {
-      item.classList.add("locked");
-      item.title = "Password required";
-      const handleLocked = () => {
-        if (roomInput) roomInput.value = roomNameValue;
-        showToast("Enter your username and the room password to join.", "info");
-        if (!usernameInput?.value.trim()) {
-          usernameInput?.focus();
-        } else {
-          passwordInput?.focus();
-        }
-      };
-      item.addEventListener("click", handleLocked);
-      item.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          handleLocked();
-        }
-      });
-    } else {
-      item.classList.add("clickable");
-      item.title = "Join this room";
-      const attemptJoin = () => {
-        if (!usernameInput?.value.trim()) {
-          showToast("Enter your username first", "error");
-          usernameInput?.focus();
-          return;
-        }
+    item.classList.add("clickable");
+    item.title = "Join this room";
+    const attemptJoin = () => {
+      if (!usernameInput?.value.trim()) {
+        showToast("Enter your username first", "error");
+        usernameInput?.focus();
+        return;
+      }
 
-        if (roomInput) roomInput.value = roomNameValue;
-        if (passwordInput) passwordInput.value = "";
-        emitJoinRequest();
-      };
+      if (roomInput) roomInput.value = roomNameValue;
+      if (passwordInput) passwordInput.value = "";
+      emitJoinRequest();
+    };
 
-      item.addEventListener("click", attemptJoin);
-      item.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          attemptJoin();
-        }
-      });
-    }
+    item.addEventListener("click", attemptJoin);
+    item.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        attemptJoin();
+      }
+    });
 
     publicRoomList.appendChild(item);
   });
@@ -5034,10 +5013,6 @@ if (copyJoinLinkBtn) {
 
     const params = new URLSearchParams();
     params.set("room", window.currentRoom);
-    if (window.currentPassword) {
-      params.set("password", window.currentPassword);
-    }
-
     const shareQuery = params.toString();
     const shareUrl = `${window.location.origin}${window.location.pathname}${
       shareQuery ? `?${shareQuery}` : ""

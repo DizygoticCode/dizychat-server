@@ -1409,10 +1409,12 @@ const getPublicRoomsSnapshot = () => {
 
   PERSISTENT_ROOMS.forEach((room) => {
     const members = roomMembers.get(room);
+    const requiresPassword = Boolean(roomPasswords.get(room));
+    if (requiresPassword) return;
     rooms.set(room, {
       name: room,
       occupants: members ? members.size : 0,
-      requiresPassword: Boolean(roomPasswords.get(room)),
+      requiresPassword,
     });
   });
 
@@ -1421,15 +1423,20 @@ const getPublicRoomsSnapshot = () => {
       const entry = rooms.get(room);
       entry.occupants = members ? members.size : 0;
       entry.requiresPassword = Boolean(roomPasswords.get(room));
+      if (entry.requiresPassword) {
+        rooms.delete(room);
+      }
       continue;
     }
 
     if (!members || !members.size) continue;
+    const requiresPassword = Boolean(roomPasswords.get(room));
+    if (requiresPassword) continue;
 
     rooms.set(room, {
       name: room,
       occupants: members.size,
-      requiresPassword: Boolean(roomPasswords.get(room)),
+      requiresPassword,
     });
   }
 
