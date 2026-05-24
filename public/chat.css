@@ -1828,6 +1828,7 @@ body:not(.dark) .message.self .meta .meta-status[data-status="delivered"]::after
 
 #reply-preview .reply-preview-content {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1838,6 +1839,9 @@ body:not(.dark) .message.self .meta .meta-status[data-status="delivered"]::after
   font-size: 0.85em;
   color: var(--accent);
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 #reply-preview .reply-preview-text {
@@ -1958,6 +1962,8 @@ body:not(.dark) .message.self .meta .meta-status[data-status="delivered"]::after
   top: 28px;
   right: 8px;
   min-width: 160px;
+  max-height: min(280px, calc(100vh - 24px));
+  overflow-y: auto;
   background: var(--surface);
   border: 1px solid var(--border-color);
   border-radius: 10px;
