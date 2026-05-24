@@ -2673,6 +2673,7 @@ function toggleMenu(menu, toggle) {
   closeActiveMenu();
   if (!isOpen) {
     menu.classList.add("open");
+    positionMessageActionsMenu(menu);
     const messageNode = menu.closest(".message");
     if (messageNode) {
       messageNode.classList.add("menu-open");
@@ -2680,6 +2681,21 @@ function toggleMenu(menu, toggle) {
     if (toggle) toggle.setAttribute("aria-expanded", "true");
     appState.activeMenu = menu;
   }
+}
+
+function positionMessageActionsMenu(menu) {
+  if (!menu || menu === userContextMenu) return;
+  menu.style.top = "";
+  menu.style.bottom = "";
+
+  const viewportPadding = 8;
+  const preferredTop = 28;
+  const rect = menu.getBoundingClientRect();
+  const overflowBottom = rect.bottom - (window.innerHeight - viewportPadding);
+  if (overflowBottom <= 0) return;
+
+  const adjustedTop = Math.max(viewportPadding, preferredTop - overflowBottom);
+  menu.style.top = `${adjustedTop}px`;
 }
 
 function closeActiveMenu(options = {}) {
