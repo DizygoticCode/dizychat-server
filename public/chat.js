@@ -121,6 +121,7 @@ const userSidebar = document.getElementById("user-sidebar");
 const userList = document.getElementById("user-list");
 const userCount = document.getElementById("user-count");
 const userListEmpty = document.getElementById("user-list-empty");
+const userSidebarToggle = document.getElementById("user-sidebar-toggle");
 const userContextMenu = document.getElementById("user-context-menu");
 const toolbar = document.querySelector("#chat-container > header");
 const psybinPlayer = document.getElementById("psybin-player");
@@ -146,6 +147,45 @@ function setViewMode(mode) {
 
 if (pageBody) {
   setViewMode(pageBody.classList.contains("view-chat") ? "chat" : "landing");
+}
+
+const mobileSidebarQuery =
+  typeof window !== "undefined" && typeof window.matchMedia === "function"
+    ? window.matchMedia("(max-width: 768px)")
+    : null;
+
+const setMobileSidebarExpanded = (expanded) => {
+  if (!userSidebar) return;
+  userSidebar.classList.toggle("is-expanded", Boolean(expanded));
+  if (userSidebarToggle) {
+    userSidebarToggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+  }
+};
+
+if (userSidebar && userSidebarToggle) {
+  setMobileSidebarExpanded(false);
+
+  userSidebarToggle.addEventListener("click", () => {
+    const nextExpanded = !userSidebar.classList.contains("is-expanded");
+    setMobileSidebarExpanded(nextExpanded);
+  });
+
+  if (mobileSidebarQuery) {
+    const syncMobileSidebarState = () => {
+      if (!mobileSidebarQuery.matches) {
+        setMobileSidebarExpanded(true);
+      } else {
+        setMobileSidebarExpanded(false);
+      }
+    };
+
+    syncMobileSidebarState();
+    if (typeof mobileSidebarQuery.addEventListener === "function") {
+      mobileSidebarQuery.addEventListener("change", syncMobileSidebarState);
+    } else if (typeof mobileSidebarQuery.addListener === "function") {
+      mobileSidebarQuery.addListener(syncMobileSidebarState);
+    }
+  }
 }
 
 // ------------------- Emoji Usage Tracking -------------------
