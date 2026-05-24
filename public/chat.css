@@ -79,7 +79,7 @@ body:not(.dark) {
   --bg: #f5f7fb;
   --surface: rgba(255, 255, 255, 0.9);
   --surface-alt: #ffffff;
-  --bubble-self: #20c373;
+  --bubble-self: #17a85f;
   --bubble-other: #e9edf2;
   --text-primary: #1f2933;
   --text-muted: #5f6368;
@@ -1721,6 +1721,15 @@ body:not(.dark) .scroll-to-latest.has-new {
 .message .meta .meta-status[data-status="sent"]::before {
   color: rgba(255, 255, 255, 0.75);
   right: 0;
+}
+
+
+body:not(.dark) .message.self {
+  color: #0f2d1f;
+}
+
+body:not(.dark) .message.self .meta {
+  color: rgba(15, 45, 31, 0.72);
 }
 
 body:not(.dark) .message.self .meta .meta-status[data-status="sent"]::before {
