@@ -20,13 +20,65 @@ const nodeFetchModulePromise = import('node-fetch');
 const fetch = (...args) =>
   nodeFetchModulePromise.then(({ default: fetch }) => fetch(...args));
 
+const parseSocketCorsOrigins = () => {
+  const raw =
+    process.env.SOCKET_IO_CORS_ORIGINS ||
+    process.env.SOCKET_IO_CORS_ORIGIN ||
+    process.env.CORS_ORIGINS ||
+    process.env.CORS_ORIGIN ||
+    '';
+
+  if (!raw.trim()) {
+    console.warn('[Socket.IO] CORS origin allowlist not configured; defaulting to "*" (not recommended for public deployments).');
+    return '*';
+  }
+
+  const origins = raw
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (!origins.length) {
+    console.warn('[Socket.IO] CORS origin allowlist was empty after parsing; defaulting to "*" (not recommended for public deployments).');
+    return '*';
+  }
+
+  return origins;
+};
+
 // ---------------- App Setup ----------------
 const app = express();
 const server = http.createServer(app);
+const SOCKET_IO_CORS_ORIGIN = parseSocketCorsOrigins();
 const io = new Server(server, {
-  cors: { origin: "*", methods: ["GET","POST"] }
+  cors: { origin: SOCKET_IO_CORS_ORIGIN, methods: ["GET", "POST"] }
 });
 const PORT = process.env.PORT || 10000;
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' https://cdn.socket.io",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+  "connect-src 'self' ws: wss: https:",
+  "media-src 'self' blob: https:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors 'none'",
+].join('; ');
+
+const normaliseAllowedOrigins = (value) => {
+  if (value === '*') return null;
+  if (!Array.isArray(value)) return null;
+  const set = new Set(
+    value
+      .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+      .filter(Boolean)
+  );
+  return set.size ? set : null;
+};
+
+const ALLOWED_SOCKET_IO_ORIGINS = normaliseAllowedOrigins(SOCKET_IO_CORS_ORIGIN);
 
 // ---------------- Admin ----------------
 const normaliseAdminUsername = (value) =>
@@ -46,22 +98,88 @@ const parseAdminSessionTtlMs = () => {
 };
 
 const ADMIN_SESSION_TTL_MS = parseAdminSessionTtlMs();
+const parsePositiveIntegerEnv = (name, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) => {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(String(raw).trim(), 10);
+  if (!Number.isFinite(parsed) || parsed < min) return fallback;
+  return Math.min(parsed, max);
+};
+
+const ADMIN_AUTH_WINDOW_MS = parsePositiveIntegerEnv('ADMIN_AUTH_WINDOW_MS', 10 * 60 * 1000, { min: 1000, max: 24 * 60 * 60 * 1000 });
+const ADMIN_AUTH_MAX_FAILURES = parsePositiveIntegerEnv('ADMIN_AUTH_MAX_FAILURES', 5, { min: 2, max: 20 });
+const ADMIN_AUTH_LOCK_MS = parsePositiveIntegerEnv('ADMIN_AUTH_LOCK_MS', 15 * 60 * 1000, { min: 5000, max: 24 * 60 * 60 * 1000 });
+const ADMIN_AUTH_MIN_RETRY_DELAY_MS = 750;
+const ADMIN_AUTH_MAX_RETRY_DELAY_MS = 5000;
+const SECURITY_ROTATION_REMINDER_DAYS = parsePositiveIntegerEnv('SECURITY_ROTATION_REMINDER_DAYS', 90, { min: 30, max: 365 });
+const SECURITY_LOG_PREFIX = '[SecurityEvent]';
+
+const SCRYPT_HASH_PREFIX = 'scrypt';
+
+const parseScryptParams = (raw, fallback) => {
+  const numeric = Number.parseInt(String(raw ?? '').trim(), 10);
+  if (!Number.isFinite(numeric) || numeric <= 0) return fallback;
+  return numeric;
+};
+
+const verifyScryptPassword = (password, encodedHash) => {
+  if (typeof password !== 'string' || typeof encodedHash !== 'string') return false;
+  const parts = encodedHash.split('$');
+  if (parts.length !== 7) return false;
+  const [algorithm, rawN, rawR, rawP, saltBase64, keyBase64, rawKeyLength] = parts;
+  if (algorithm !== SCRYPT_HASH_PREFIX) return false;
+
+  const N = parseScryptParams(rawN, 16384);
+  const r = parseScryptParams(rawR, 8);
+  const p = parseScryptParams(rawP, 1);
+  const keyLength = parseScryptParams(rawKeyLength, 64);
+
+  let salt;
+  let expectedKey;
+  try {
+    salt = Buffer.from(saltBase64, 'base64');
+    expectedKey = Buffer.from(keyBase64, 'base64');
+  } catch (_err) {
+    return false;
+  }
+
+  if (!salt.length || !expectedKey.length || expectedKey.length !== keyLength) return false;
+
+  const actualKey = crypto.scryptSync(password, salt, keyLength, { N, r, p });
+  return crypto.timingSafeEqual(actualKey, expectedKey);
+};
 
 const buildAdminCredentials = () => {
   const entries = new Map();
 
-  const addCredential = (username, password) => {
-    if (typeof username !== 'string' || typeof password !== 'string') return;
+  const addCredential = (username, credentialValue, kind) => {
+    if (typeof username !== 'string' || typeof credentialValue !== 'string') return;
     const trimmedUsername = username.trim();
-    const trimmedPassword = password.trim();
-    if (!trimmedUsername || !trimmedPassword) return;
+    const trimmedCredential = credentialValue.trim();
+    if (!trimmedUsername || !trimmedCredential) return;
     const key = normaliseAdminUsername(trimmedUsername);
     if (!key) return;
     entries.set(key, {
       username: trimmedUsername,
-      password: trimmedPassword,
+      kind,
+      credential: trimmedCredential,
     });
   };
+
+  // ADMIN_CREDENTIALS_HASHED format: "username:scrypt$N$r$p$salt$key$length,OtherUser:scrypt$..."
+  const rawHashedList = process.env.ADMIN_CREDENTIALS_HASHED;
+  if (typeof rawHashedList === 'string' && rawHashedList.trim()) {
+    rawHashedList
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .forEach((entry) => {
+        const [rawUsername, ...rest] = entry.split(':');
+        if (!rawUsername || rest.length === 0) return;
+        const candidateHash = rest.join(':');
+        addCredential(rawUsername, candidateHash, 'scrypt');
+      });
+  }
 
   // ADMIN_CREDENTIALS format: "username:password,OtherUser:otherPassword"
   const rawList = process.env.ADMIN_CREDENTIALS;
@@ -74,24 +192,107 @@ const buildAdminCredentials = () => {
         const [rawUsername, ...rest] = entry.split(':');
         if (!rawUsername || rest.length === 0) return;
         const candidatePassword = rest.join(':');
-        addCredential(rawUsername, candidatePassword);
+        addCredential(rawUsername, candidatePassword, 'plaintext');
       });
   }
 
   const envAdminUsername = process.env.ADMIN_USERNAME;
+  const envAdminPasswordHash = process.env.ADMIN_PASSWORD_HASH;
+  if (envAdminUsername && envAdminPasswordHash) {
+    addCredential(envAdminUsername, envAdminPasswordHash, 'scrypt');
+  }
+
   const envAdminPassword = process.env.ADMIN_PASSWORD;
   if (envAdminUsername && envAdminPassword) {
-    addCredential(envAdminUsername, envAdminPassword);
+    addCredential(envAdminUsername, envAdminPassword, 'plaintext');
   }
 
   if (!entries.size && envAdminPassword) {
-    addCredential(envAdminUsername || 'Dizygotic', envAdminPassword);
+    addCredential(envAdminUsername || 'Dizygotic', envAdminPassword, 'plaintext');
   }
 
   return entries;
 };
 
 const adminCredentials = buildAdminCredentials();
+const plaintextAdminCredentialCount = [...adminCredentials.values()].filter((item) => item.kind === 'plaintext').length;
+if (plaintextAdminCredentialCount > 0) {
+  console.warn(`[Admin] ${plaintextAdminCredentialCount} plaintext admin credential(s) detected. Migrate to ADMIN_PASSWORD_HASH / ADMIN_CREDENTIALS_HASHED.`);
+}
+console.warn(`[Security] Rotate admin credentials and scanner API keys at least every ${SECURITY_ROTATION_REMINDER_DAYS} days.`);
+const adminAuthFailures = new Map();
+
+const getSocketRemoteAddress = (socket) => {
+  const forwardedFor = socket?.handshake?.headers?.['x-forwarded-for'];
+  if (typeof forwardedFor === 'string' && forwardedFor.trim()) {
+    return forwardedFor.split(',')[0].trim();
+  }
+  return socket?.handshake?.address || socket?.conn?.remoteAddress || 'unknown';
+};
+
+const getAdminAuthAttemptKey = (socket, username) => {
+  const remoteAddress = getSocketRemoteAddress(socket);
+  const canonicalUser = normaliseAdminUsername(username || '');
+  return `${remoteAddress}::${canonicalUser || '*'}`;
+};
+
+const getAdminAuthState = (attemptKey) => {
+  const now = Date.now();
+  const existing = adminAuthFailures.get(attemptKey);
+  if (!existing) return { count: 0, windowStart: now, lockUntil: 0, lastFailedAt: 0 };
+
+  if (existing.lockUntil && existing.lockUntil > now) return existing;
+  if (existing.windowStart + ADMIN_AUTH_WINDOW_MS <= now) {
+    const reset = { count: 0, windowStart: now, lockUntil: 0, lastFailedAt: 0 };
+    adminAuthFailures.set(attemptKey, reset);
+    return reset;
+  }
+  return existing;
+};
+
+const computeAdminAuthRetryDelayMs = (state) => {
+  const failures = Number.isFinite(state?.count) ? state.count : 0;
+  const exponent = Math.max(0, failures - 1);
+  const delay = ADMIN_AUTH_MIN_RETRY_DELAY_MS * (2 ** exponent);
+  return Math.min(delay, ADMIN_AUTH_MAX_RETRY_DELAY_MS);
+};
+
+const registerAdminAuthFailure = (attemptKey) => {
+  const now = Date.now();
+  const state = getAdminAuthState(attemptKey);
+  const nextCount = state.count + 1;
+  const lockUntil = nextCount >= ADMIN_AUTH_MAX_FAILURES ? now + ADMIN_AUTH_LOCK_MS : 0;
+  const updated = {
+    count: nextCount,
+    windowStart: state.windowStart || now,
+    lockUntil,
+    lastFailedAt: now,
+  };
+  adminAuthFailures.set(attemptKey, updated);
+  return updated;
+};
+
+const clearAdminAuthFailures = (attemptKey) => {
+  adminAuthFailures.delete(attemptKey);
+};
+
+const logSecurityEvent = (event, details = {}, level = 'warn') => {
+  const payload = {
+    ts: new Date().toISOString(),
+    event,
+    ...details,
+  };
+  const line = `${SECURITY_LOG_PREFIX} ${JSON.stringify(payload)}`;
+  if (level === 'error') {
+    console.error(line);
+    return;
+  }
+  if (level === 'info') {
+    console.log(line);
+    return;
+  }
+  console.warn(line);
+};
 
 const adminSessionsByToken = new Map();
 const adminSessionsByUser = new Map();
@@ -143,9 +344,10 @@ const resolveAdminCredential = (username, password) => {
   const key = normaliseAdminUsername(username);
   if (!key) return null;
   const entry = adminCredentials.get(key);
-  if (entry && entry.password === password.trim()) {
-    return entry;
-  }
+  if (!entry) return null;
+
+  if (entry.kind === 'scrypt' && verifyScryptPassword(password.trim(), entry.credential)) return entry;
+  if (entry.kind === 'plaintext' && entry.credential === password.trim()) return entry;
   return null;
 };
 
@@ -160,6 +362,15 @@ mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
   .catch(err => { console.error("[Mongo] Error:", err); process.exit(1); });
 
 // ---------------- Static Files ----------------
+app.disable('x-powered-by');
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()');
+  res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ---------------- Version endpoint ----------------
@@ -173,6 +384,64 @@ app.get('/version', (req, res) => {
 const uploadDir = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 const fsPromises = fs.promises;
+const ALLOWED_UPLOAD_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'audio/mpeg',
+  'audio/mp4',
+  'audio/wav',
+  'audio/ogg',
+  'audio/webm',
+  'video/mp4',
+  'video/webm',
+  'application/pdf',
+  'text/plain',
+]);
+
+const ALLOWED_UPLOAD_EXTENSIONS = new Set([
+  '.jpg', '.jpeg', '.png', '.gif', '.webp',
+  '.mp3', '.m4a', '.wav', '.ogg', '.webm',
+  '.mp4', '.pdf', '.txt',
+]);
+
+const isAllowedUploadType = (mimeType, originalName) => {
+  const mime = String(mimeType || '').toLowerCase().trim();
+  const ext = path.extname(String(originalName || '')).toLowerCase().trim();
+  return ALLOWED_UPLOAD_MIME_TYPES.has(mime) && ALLOWED_UPLOAD_EXTENSIONS.has(ext);
+};
+
+const detectFileKindByMagicBytes = async (filePath) => {
+  const handle = await fsPromises.open(filePath, 'r');
+  try {
+    const { buffer } = await handle.read(Buffer.alloc(32), 0, 32, 0);
+    const bytes = buffer;
+    if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) return 'image/jpeg';
+    if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) return 'image/png';
+    if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) return 'image/gif';
+    if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return 'image/webp';
+    if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) return 'application/pdf';
+    if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) return 'audio/mpeg';
+    if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) return 'mp4-family';
+    return 'unknown';
+  } finally {
+    await handle.close();
+  }
+};
+
+const validateUploadOrigin = (req, res, next) => {
+  if (!ALLOWED_SOCKET_IO_ORIGINS) return next();
+  const originHeader = req.headers.origin;
+  if (!originHeader) return next();
+  if (ALLOWED_SOCKET_IO_ORIGINS.has(originHeader)) return next();
+  logSecurityEvent('upload_origin_rejected', {
+    origin: originHeader,
+    ip: req.ip || req.socket?.remoteAddress || 'unknown',
+    path: req.path || '/upload',
+  });
+  return res.status(403).json({ error: 'Origin not allowed' });
+};
 
 const parseHistoryChunkSize = () => {
   const rawValue = process.env.MESSAGE_HISTORY_CHUNK_SIZE;
@@ -237,6 +506,11 @@ app.use(
   express.static(path.resolve("public/uploads"), {
     maxAge: "30d",
     immutable: true,
+    setHeaders: (res) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Disposition', 'inline');
+      res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
+    },
   })
 );
 
@@ -919,7 +1193,14 @@ console.log(`[Upload] File size limit: ${UPLOAD_LIMIT_LABEL}`);
 const upload = multer({
   storage,
   limits: Object.keys(uploadLimits).length ? uploadLimits : undefined,
-  fileFilter: (_req, _file, cb) => cb(null, true), // accept any file type (mp3, archives, etc.)
+  fileFilter: (_req, file, cb) => {
+    if (!isAllowedUploadType(file?.mimetype, file?.originalname)) {
+      const err = new Error('File type not allowed');
+      err.code = 'INVALID_FILE_TYPE';
+      return cb(err);
+    }
+    return cb(null, true);
+  },
 });
 
 const uploadSingleMiddleware = (req, res, next) => {
@@ -933,18 +1214,35 @@ const uploadSingleMiddleware = (req, res, next) => {
           : `File too large. Maximum upload size is ${UPLOAD_LIMIT_LABEL}.`,
       });
     }
+    if (err.code === 'INVALID_FILE_TYPE') {
+      logSecurityEvent('upload_type_rejected', {
+        ip: req.ip || req.socket?.remoteAddress || 'unknown',
+        mimeType: req.file?.mimetype || req.body?.mimetype || 'unknown',
+      });
+      return res.status(415).json({ error: 'Unsupported file type' });
+    }
 
     console.error('[Upload] Error:', err);
     return res.status(400).json({ error: err.message || 'Upload failed' });
   });
 };
 
-app.post('/upload', uploadSingleMiddleware, async (req, res) => {
+app.post('/upload', validateUploadOrigin, uploadSingleMiddleware, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
   const filePath = path.join(uploadDir, req.file.filename);
 
   try {
+    const detectedKind = await detectFileKindByMagicBytes(filePath);
+    if (detectedKind === 'unknown') {
+      await removeFileSilently(filePath);
+      logSecurityEvent('upload_magic_bytes_rejected', {
+        ip: req.ip || req.socket?.remoteAddress || 'unknown',
+        fileName: req.file?.originalname || '',
+        mimeType: req.file?.mimetype || '',
+      });
+      return res.status(415).json({ error: 'Unable to verify uploaded file type' });
+    }
     const scanResult = await scanFileWithMetaDefender(filePath);
     if (!scanResult.clean) {
       await removeFileSilently(filePath);
@@ -958,15 +1256,18 @@ app.post('/upload', uploadSingleMiddleware, async (req, res) => {
 
     if (err && ['SCANNER_NOT_CONFIGURED', 'SCANNER_UNAVAILABLE'].includes(err.code)) {
       console.error('[Upload] Antivirus scanner unavailable:', err);
+      logSecurityEvent('scanner_unavailable', { code: err.code, message: err.message }, 'error');
       return res.status(500).json({ error: 'Antivirus scanner unavailable' });
     }
 
     if (err && err.code === 'SCANNER_TIMEOUT') {
       console.error('[Upload] Antivirus scan timed out:', err);
+      logSecurityEvent('scanner_timeout', { message: err.message }, 'warn');
       return res.status(504).json({ error: 'Antivirus scan timed out' });
     }
 
     console.error('[Upload] Antivirus scan error:', err);
+    logSecurityEvent('scanner_error', { message: err?.message || 'unknown' }, 'error');
     return res.status(500).json({ error: 'Antivirus scan failed' });
   }
 
@@ -1533,6 +1834,11 @@ io.on('connection', socket => {
     const providedPassword = normalisePassword(password);
     const storedPassword = roomPasswords.get(roomName);
     if (storedPassword !== undefined && storedPassword !== providedPassword) {
+      logSecurityEvent('room_password_mismatch', {
+        room: roomName,
+        ip: getSocketRemoteAddress(socket),
+        socketId: socket.id,
+      });
       sendJoinError(socket, 'Incorrect room password');
       return;
     }
@@ -1557,6 +1863,11 @@ io.on('connection', socket => {
     const canonicalUser = canonicalUsername(socket.username);
     const bannedSet = roomBans.get(roomName);
     if (bannedSet && bannedSet.has(canonicalUser)) {
+      logSecurityEvent('banned_user_join_attempt', {
+        room: roomName,
+        username: socket.username,
+        ip: getSocketRemoteAddress(socket),
+      });
       sendJoinError(socket, 'You are banned from this room.');
       socket.currentRoom = null;
       return;
@@ -1639,8 +1950,26 @@ io.on('connection', socket => {
   socket.on('admin auth', ({ room, username, adminPassword }) => {
     try {
       const candidateUser = username || socket.username;
+      const attemptKey = getAdminAuthAttemptKey(socket, candidateUser);
+      const authState = getAdminAuthState(attemptKey);
+      const now = Date.now();
+
+      if (authState.lockUntil && authState.lockUntil > now) {
+        socket.emit('toast', { type: 'warn', text: 'Too many admin login attempts. Please wait before trying again.' });
+        socket.emit('admin status', { isAdmin: false });
+        return;
+      }
+
+      const retryDelayMs = computeAdminAuthRetryDelayMs(authState);
+      if (authState.lastFailedAt && now - authState.lastFailedAt < retryDelayMs) {
+        socket.emit('toast', { type: 'warn', text: 'Please wait a moment before trying admin login again.' });
+        socket.emit('admin status', { isAdmin: false });
+        return;
+      }
+
       const resolvedAdmin = resolveAdminCredential(candidateUser, adminPassword);
       if (resolvedAdmin) {
+        clearAdminAuthFailures(attemptKey);
         socket.isAdmin = true;
         socket.username = resolvedAdmin.username;
         const session = issueAdminSession(resolvedAdmin.username);
@@ -1651,6 +1980,15 @@ io.on('connection', socket => {
         });
         console.log('[Admin] Authenticated', resolvedAdmin.username);
       } else {
+        const failedState = registerAdminAuthFailure(attemptKey);
+        if (failedState.lockUntil && failedState.lockUntil > Date.now()) {
+          logSecurityEvent('admin_auth_locked', {
+            key: attemptKey,
+            until: new Date(failedState.lockUntil).toISOString(),
+          });
+        } else {
+          logSecurityEvent('admin_auth_failed', { key: attemptKey, failureCount: failedState.count });
+        }
         socket.isAdmin = false;
         revokeAdminSessionForUser(candidateUser);
         socket.emit('admin status', { isAdmin: false });
