@@ -67,19 +67,6 @@ const CONTENT_SECURITY_POLICY = [
   "frame-ancestors 'none'",
 ].join('; ');
 
-const normaliseAllowedOrigins = (value) => {
-  if (value === '*') return null;
-  if (!Array.isArray(value)) return null;
-  const set = new Set(
-    value
-      .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
-      .filter(Boolean)
-  );
-  return set.size ? set : null;
-};
-
-const ALLOWED_SOCKET_IO_ORIGINS = normaliseAllowedOrigins(SOCKET_IO_CORS_ORIGIN);
-
 // ---------------- Admin ----------------
 const normaliseAdminUsername = (value) =>
   typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -111,7 +98,6 @@ const ADMIN_AUTH_MAX_FAILURES = parsePositiveIntegerEnv('ADMIN_AUTH_MAX_FAILURES
 const ADMIN_AUTH_LOCK_MS = parsePositiveIntegerEnv('ADMIN_AUTH_LOCK_MS', 15 * 60 * 1000, { min: 5000, max: 24 * 60 * 60 * 1000 });
 const ADMIN_AUTH_MIN_RETRY_DELAY_MS = 750;
 const ADMIN_AUTH_MAX_RETRY_DELAY_MS = 5000;
-const SECURITY_ROTATION_REMINDER_DAYS = parsePositiveIntegerEnv('SECURITY_ROTATION_REMINDER_DAYS', 90, { min: 30, max: 365 });
 
 const SCRYPT_HASH_PREFIX = 'scrypt';
 
@@ -218,7 +204,6 @@ const plaintextAdminCredentialCount = [...adminCredentials.values()].filter((ite
 if (plaintextAdminCredentialCount > 0) {
   console.warn(`[Admin] ${plaintextAdminCredentialCount} plaintext admin credential(s) detected. Migrate to ADMIN_PASSWORD_HASH / ADMIN_CREDENTIALS_HASHED.`);
 }
-console.warn(`[Security] Rotate admin credentials and scanner API keys at least every ${SECURITY_ROTATION_REMINDER_DAYS} days.`);
 const adminAuthFailures = new Map();
 
 const getSocketRemoteAddress = (socket) => {
