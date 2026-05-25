@@ -67,19 +67,6 @@ const CONTENT_SECURITY_POLICY = [
   "frame-ancestors 'none'",
 ].join('; ');
 
-const normaliseAllowedOrigins = (value) => {
-  if (value === '*') return null;
-  if (!Array.isArray(value)) return null;
-  const set = new Set(
-    value
-      .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
-      .filter(Boolean)
-  );
-  return set.size ? set : null;
-};
-
-const ALLOWED_SOCKET_IO_ORIGINS = normaliseAllowedOrigins(SOCKET_IO_CORS_ORIGIN);
-
 // ---------------- Admin ----------------
 const normaliseAdminUsername = (value) =>
   typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -111,8 +98,6 @@ const ADMIN_AUTH_MAX_FAILURES = parsePositiveIntegerEnv('ADMIN_AUTH_MAX_FAILURES
 const ADMIN_AUTH_LOCK_MS = parsePositiveIntegerEnv('ADMIN_AUTH_LOCK_MS', 15 * 60 * 1000, { min: 5000, max: 24 * 60 * 60 * 1000 });
 const ADMIN_AUTH_MIN_RETRY_DELAY_MS = 750;
 const ADMIN_AUTH_MAX_RETRY_DELAY_MS = 5000;
-const SECURITY_ROTATION_REMINDER_DAYS = parsePositiveIntegerEnv('SECURITY_ROTATION_REMINDER_DAYS', 90, { min: 30, max: 365 });
-const SECURITY_LOG_PREFIX = '[SecurityEvent]';
 
 const SCRYPT_HASH_PREFIX = 'scrypt';
 
@@ -219,7 +204,6 @@ const plaintextAdminCredentialCount = [...adminCredentials.values()].filter((ite
 if (plaintextAdminCredentialCount > 0) {
   console.warn(`[Admin] ${plaintextAdminCredentialCount} plaintext admin credential(s) detected. Migrate to ADMIN_PASSWORD_HASH / ADMIN_CREDENTIALS_HASHED.`);
 }
-console.warn(`[Security] Rotate admin credentials and scanner API keys at least every ${SECURITY_ROTATION_REMINDER_DAYS} days.`);
 const adminAuthFailures = new Map();
 
 const getSocketRemoteAddress = (socket) => {
@@ -274,24 +258,6 @@ const registerAdminAuthFailure = (attemptKey) => {
 
 const clearAdminAuthFailures = (attemptKey) => {
   adminAuthFailures.delete(attemptKey);
-};
-
-const logSecurityEvent = (event, details = {}, level = 'warn') => {
-  const payload = {
-    ts: new Date().toISOString(),
-    event,
-    ...details,
-  };
-  const line = `${SECURITY_LOG_PREFIX} ${JSON.stringify(payload)}`;
-  if (level === 'error') {
-    console.error(line);
-    return;
-  }
-  if (level === 'info') {
-    console.log(line);
-    return;
-  }
-  console.warn(line);
 };
 
 const adminSessionsByToken = new Map();
@@ -435,11 +401,6 @@ const validateUploadOrigin = (req, res, next) => {
   const originHeader = req.headers.origin;
   if (!originHeader) return next();
   if (ALLOWED_SOCKET_IO_ORIGINS.has(originHeader)) return next();
-  logSecurityEvent('upload_origin_rejected', {
-    origin: originHeader,
-    ip: req.ip || req.socket?.remoteAddress || 'unknown',
-    path: req.path || '/upload',
-  });
   return res.status(403).json({ error: 'Origin not allowed' });
 };
 
@@ -1215,10 +1176,6 @@ const uploadSingleMiddleware = (req, res, next) => {
       });
     }
     if (err.code === 'INVALID_FILE_TYPE') {
-      logSecurityEvent('upload_type_rejected', {
-        ip: req.ip || req.socket?.remoteAddress || 'unknown',
-        mimeType: req.file?.mimetype || req.body?.mimetype || 'unknown',
-      });
       return res.status(415).json({ error: 'Unsupported file type' });
     }
 
@@ -1236,11 +1193,6 @@ app.post('/upload', validateUploadOrigin, uploadSingleMiddleware, async (req, re
     const detectedKind = await detectFileKindByMagicBytes(filePath);
     if (detectedKind === 'unknown') {
       await removeFileSilently(filePath);
-      logSecurityEvent('upload_magic_bytes_rejected', {
-        ip: req.ip || req.socket?.remoteAddress || 'unknown',
-        fileName: req.file?.originalname || '',
-        mimeType: req.file?.mimetype || '',
-      });
       return res.status(415).json({ error: 'Unable to verify uploaded file type' });
     }
     const scanResult = await scanFileWithMetaDefender(filePath);
@@ -1982,12 +1934,12 @@ io.on('connection', socket => {
       } else {
         const failedState = registerAdminAuthFailure(attemptKey);
         if (failedState.lockUntil && failedState.lockUntil > Date.now()) {
-          logSecurityEvent('admin_auth_locked', {
+          console.warn('[Admin] Login temporarily locked', {
             key: attemptKey,
             until: new Date(failedState.lockUntil).toISOString(),
           });
         } else {
-          logSecurityEvent('admin_auth_failed', { key: attemptKey, failureCount: failedState.count });
+          console.warn('[Admin] Login failed', { key: attemptKey, failureCount: failedState.count });
         }
         socket.isAdmin = false;
         revokeAdminSessionForUser(candidateUser);

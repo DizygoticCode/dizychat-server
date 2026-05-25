@@ -92,7 +92,6 @@ Create a `.env` file in the project root with the following keys:
 | `ADMIN_AUTH_MAX_FAILURES` | (Optional) Failed admin auth attempts allowed per window before temporary lockout; defaults to `5`. |
 | `ADMIN_AUTH_WINDOW_MS` | (Optional) Rolling window in milliseconds for counting failed admin auth attempts; defaults to `600000` (10 minutes). |
 | `ADMIN_AUTH_LOCK_MS` | (Optional) Temporary lockout duration in milliseconds after too many failed admin auth attempts; defaults to `900000` (15 minutes). |
-| `SECURITY_ROTATION_REMINDER_DAYS` | (Optional) Days between credential-rotation reminders in logs; defaults to `90` (documentation/ops reminder only). |
 | `MESSAGE_HISTORY_CHUNK_SIZE` | Page size (25-500) for history fetches; defaults to 150. |
 | `MAX_UPLOAD_SIZE_MB` | File upload cap; accepts values like `50`, `50mb`, or `2gb`. Use `unlimited` to disable the limit. |
 | `METADEFENDER_API_KEY` | **Required for uploads.** OPSWAT MetaDefender Cloud API key used to scan files. |
@@ -221,13 +220,6 @@ All marketing routes serve the hero experience from `public/index.html`; the cha
 - Prefer hashed admin credentials (`ADMIN_PASSWORD_HASH` / `ADMIN_CREDENTIALS_HASHED`); plaintext admin passwords are still accepted for migration compatibility.
 - Admin authentication now includes anti-bruteforce controls (progressive retry delay + temporary lockout after repeated failures).
 - HTTP responses now include hardened security headers (CSP, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, and `Permissions-Policy`), and Express `x-powered-by` is disabled.
-- Uploads now enforce MIME+extension allowlisting and reject unknown magic-byte signatures before antivirus scan to reduce risky file handling.
-- Upload endpoint validates request origin against the same configured allowlist used for Socket.IO CORS when `SOCKET_IO_CORS_ORIGINS` is set.
-- Security-sensitive events are emitted as structured logs prefixed with `[SecurityEvent]` for SIEM/alerting ingestion (admin auth failures/lockouts, upload rejections, scanner outages, and suspicious join attempts).
-
-## Incident response runbook
-
-- Use `docs/security-runbook.md` as the operational checklist for triage, containment, recovery, and post-incident review.
 
 ## Deployment notes
 
