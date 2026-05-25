@@ -226,6 +226,7 @@ All marketing routes serve the hero experience from `public/index.html`; the cha
 - Behind a reverse proxy, ensure WebSocket upgrades are forwarded to the Node server.
 - Provision persistent storage for `public/uploads` if you need to retain files across deploys.
 - Configure process managers (PM2, systemd, Docker, etc.) to supply environment variables securely.
+- Rotate admin credentials and scanner API keys on a fixed cadence (for example every 60–90 days) and immediately after suspected exposure.
 - Scale horizontally by sharing the same MongoDB and enabling a Socket.IO adapter (e.g., Redis) if broadcasting across instances is required.
 
 ## Roadmap ideas

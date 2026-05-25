@@ -350,6 +350,59 @@ app.get('/version', (req, res) => {
 const uploadDir = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 const fsPromises = fs.promises;
+const ALLOWED_UPLOAD_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'audio/mpeg',
+  'audio/mp4',
+  'audio/wav',
+  'audio/ogg',
+  'audio/webm',
+  'video/mp4',
+  'video/webm',
+  'application/pdf',
+  'text/plain',
+]);
+
+const ALLOWED_UPLOAD_EXTENSIONS = new Set([
+  '.jpg', '.jpeg', '.png', '.gif', '.webp',
+  '.mp3', '.m4a', '.wav', '.ogg', '.webm',
+  '.mp4', '.pdf', '.txt',
+]);
+
+const isAllowedUploadType = (mimeType, originalName) => {
+  const mime = String(mimeType || '').toLowerCase().trim();
+  const ext = path.extname(String(originalName || '')).toLowerCase().trim();
+  return ALLOWED_UPLOAD_MIME_TYPES.has(mime) && ALLOWED_UPLOAD_EXTENSIONS.has(ext);
+};
+
+const detectFileKindByMagicBytes = async (filePath) => {
+  const handle = await fsPromises.open(filePath, 'r');
+  try {
+    const { buffer } = await handle.read(Buffer.alloc(32), 0, 32, 0);
+    const bytes = buffer;
+    if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) return 'image/jpeg';
+    if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) return 'image/png';
+    if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) return 'image/gif';
+    if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return 'image/webp';
+    if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) return 'application/pdf';
+    if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) return 'audio/mpeg';
+    if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) return 'mp4-family';
+    return 'unknown';
+  } finally {
+    await handle.close();
+  }
+};
+
+const validateUploadOrigin = (req, res, next) => {
+  if (!ALLOWED_SOCKET_IO_ORIGINS) return next();
+  const originHeader = req.headers.origin;
+  if (!originHeader) return next();
+  if (ALLOWED_SOCKET_IO_ORIGINS.has(originHeader)) return next();
+  return res.status(403).json({ error: 'Origin not allowed' });
+};
 
 const parseHistoryChunkSize = () => {
   const rawValue = process.env.MESSAGE_HISTORY_CHUNK_SIZE;
@@ -414,6 +467,11 @@ app.use(
   express.static(path.resolve("public/uploads"), {
     maxAge: "30d",
     immutable: true,
+    setHeaders: (res) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Disposition', 'inline');
+      res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
+    },
   })
 );
 
@@ -1096,7 +1154,14 @@ console.log(`[Upload] File size limit: ${UPLOAD_LIMIT_LABEL}`);
 const upload = multer({
   storage,
   limits: Object.keys(uploadLimits).length ? uploadLimits : undefined,
-  fileFilter: (_req, _file, cb) => cb(null, true), // accept any file type (mp3, archives, etc.)
+  fileFilter: (_req, file, cb) => {
+    if (!isAllowedUploadType(file?.mimetype, file?.originalname)) {
+      const err = new Error('File type not allowed');
+      err.code = 'INVALID_FILE_TYPE';
+      return cb(err);
+    }
+    return cb(null, true);
+  },
 });
 
 const uploadSingleMiddleware = (req, res, next) => {
@@ -1110,18 +1175,26 @@ const uploadSingleMiddleware = (req, res, next) => {
           : `File too large. Maximum upload size is ${UPLOAD_LIMIT_LABEL}.`,
       });
     }
+    if (err.code === 'INVALID_FILE_TYPE') {
+      return res.status(415).json({ error: 'Unsupported file type' });
+    }
 
     console.error('[Upload] Error:', err);
     return res.status(400).json({ error: err.message || 'Upload failed' });
   });
 };
 
-app.post('/upload', uploadSingleMiddleware, async (req, res) => {
+app.post('/upload', validateUploadOrigin, uploadSingleMiddleware, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
   const filePath = path.join(uploadDir, req.file.filename);
 
   try {
+    const detectedKind = await detectFileKindByMagicBytes(filePath);
+    if (detectedKind === 'unknown') {
+      await removeFileSilently(filePath);
+      return res.status(415).json({ error: 'Unable to verify uploaded file type' });
+    }
     const scanResult = await scanFileWithMetaDefender(filePath);
     if (!scanResult.clean) {
       await removeFileSilently(filePath);
