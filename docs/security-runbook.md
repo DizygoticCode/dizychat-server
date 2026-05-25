@@ -10,11 +10,9 @@ Monitor structured logs prefixed with `[SecurityEvent]` for:
 
 - `admin_auth_failed`
 - `admin_auth_locked`
-- `admin_auth_success`
 - `upload_origin_rejected`
 - `upload_type_rejected`
 - `upload_magic_bytes_rejected`
-- `upload_type_signature_mismatch`
 - `scanner_unavailable`
 - `scanner_timeout`
 - `scanner_error`
