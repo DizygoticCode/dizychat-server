@@ -6418,22 +6418,65 @@ const uploadFileAndSend = async (fileOrBlob, options = {}) => {
   }
 };
 
-// ------------------- File Uploads (paperclip) -------------------
+// ------------------- File Uploads (paperclip + drag/drop) -------------------
 if (attachBtn && fileInput) {
   fileInput.accept = "*/*";
   attachBtn.addEventListener("click", () => fileInput.click());
 
-  fileInput.addEventListener("change", async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const uploadDroppedFiles = async (fileList) => {
+    const files = Array.from(fileList || []).filter(Boolean);
+    if (!files.length) return;
 
-    try {
-      await uploadFileAndSend(file);
-      fileInput.value = "";
-    } catch {
-      /* handled in uploadFileAndSend */
+    for (const file of files) {
+      try {
+        await uploadFileAndSend(file);
+      } catch {
+        /* handled in uploadFileAndSend */
+      }
     }
+  };
+
+  fileInput.addEventListener("change", async (e) => {
+    const files = e.target.files;
+    if (!files?.length) return;
+
+    await uploadDroppedFiles(files);
+    fileInput.value = "";
   });
+
+  const dropZone = form;
+  if (dropZone) {
+    let dragDepth = 0;
+
+    const setDragState = (active) => {
+      dropZone.classList.toggle("drag-over", Boolean(active));
+    };
+
+    ["dragenter", "dragover", "dragleave", "drop"].forEach((eventName) => {
+      dropZone.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+    });
+
+    dropZone.addEventListener("dragenter", (event) => {
+      if (!event.dataTransfer?.types?.includes("Files")) return;
+      dragDepth += 1;
+      setDragState(true);
+    });
+
+    dropZone.addEventListener("dragleave", (event) => {
+      if (!event.dataTransfer?.types?.includes("Files")) return;
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (dragDepth === 0) setDragState(false);
+    });
+
+    dropZone.addEventListener("drop", async (event) => {
+      dragDepth = 0;
+      setDragState(false);
+      await uploadDroppedFiles(event.dataTransfer?.files);
+    });
+  }
 }
 
 // ------------------- Voice Messages (push-to-talk) -------------------
