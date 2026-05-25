@@ -84,8 +84,15 @@ Create a `.env` file in the project root with the following keys:
 | --- | --- |
 | `PORT` | (Optional) HTTP port, defaults to `10000`. |
 | `MONGO_URI` | **Required.** MongoDB connection string. Server exits if missing. |
+| `SOCKET_IO_CORS_ORIGINS` | (Recommended for public deployments) Comma-separated Socket.IO CORS origin allowlist (example: `https://chat.example.com,https://app.example.com`). |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Optional default admin credential pair. |
 | `ADMIN_CREDENTIALS` | Comma-separated list of `username:password` pairs for multiple admins. |
+| `ADMIN_PASSWORD_HASH` | Preferred hashed admin credential for `ADMIN_USERNAME`, encoded as `scrypt$N$r$p$saltBase64$keyBase64$keyLength`. |
+| `ADMIN_CREDENTIALS_HASHED` | Preferred comma-separated list of `username:scrypt$N$r$p$saltBase64$keyBase64$keyLength` pairs. |
+| `ADMIN_AUTH_MAX_FAILURES` | (Optional) Failed admin auth attempts allowed per window before temporary lockout; defaults to `5`. |
+| `ADMIN_AUTH_WINDOW_MS` | (Optional) Rolling window in milliseconds for counting failed admin auth attempts; defaults to `600000` (10 minutes). |
+| `ADMIN_AUTH_LOCK_MS` | (Optional) Temporary lockout duration in milliseconds after too many failed admin auth attempts; defaults to `900000` (15 minutes). |
+| `SECURITY_ROTATION_REMINDER_DAYS` | (Optional) Days between credential-rotation reminders in logs; defaults to `90` (documentation/ops reminder only). |
 | `MESSAGE_HISTORY_CHUNK_SIZE` | Page size (25-500) for history fetches; defaults to 150. |
 | `MAX_UPLOAD_SIZE_MB` | File upload cap; accepts values like `50`, `50mb`, or `2gb`. Use `unlimited` to disable the limit. |
 | `METADEFENDER_API_KEY` | **Required for uploads.** OPSWAT MetaDefender Cloud API key used to scan files. |
@@ -210,12 +217,19 @@ All marketing routes serve the hero experience from `public/index.html`; the cha
 - All user text and filenames are sanitized before persistence or broadcast to avoid XSS vectors.
 - Room passwords, admin credentials, and mute/block lists are normalized to avoid casing mismatches.
 - File uploads must pass antivirus checks; failure removes the file and notifies the client.
+- Restrict Socket.IO CORS origins with `SOCKET_IO_CORS_ORIGINS` before exposing the service publicly.
+- Prefer hashed admin credentials (`ADMIN_PASSWORD_HASH` / `ADMIN_CREDENTIALS_HASHED`); plaintext admin passwords are still accepted for migration compatibility.
+- Admin authentication now includes anti-bruteforce controls (progressive retry delay + temporary lockout after repeated failures).
+- HTTP responses now include hardened security headers (CSP, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, and `Permissions-Policy`), and Express `x-powered-by` is disabled.
+- Uploads now enforce MIME+extension allowlisting and reject unknown magic-byte signatures before antivirus scan to reduce risky file handling.
+- Upload endpoint validates request origin against the same configured allowlist used for Socket.IO CORS when `SOCKET_IO_CORS_ORIGINS` is set.
 
 ## Deployment notes
 
 - Behind a reverse proxy, ensure WebSocket upgrades are forwarded to the Node server.
 - Provision persistent storage for `public/uploads` if you need to retain files across deploys.
 - Configure process managers (PM2, systemd, Docker, etc.) to supply environment variables securely.
+- Rotate admin credentials and scanner API keys on a fixed cadence (for example every 60–90 days) and immediately after suspected exposure.
 - Scale horizontally by sharing the same MongoDB and enabling a Socket.IO adapter (e.g., Redis) if broadcasting across instances is required.
 
 ## Roadmap ideas
