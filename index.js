@@ -1931,6 +1931,11 @@ io.on('connection', socket => {
           expiresAt: session?.expiresAt || null,
         });
         console.log('[Admin] Authenticated', resolvedAdmin.username);
+        logSecurityEvent('admin_auth_success', {
+          username: resolvedAdmin.username,
+          key: attemptKey,
+          ip: getSocketRemoteAddress(socket),
+        }, 'info');
       } else {
         const failedState = registerAdminAuthFailure(attemptKey);
         if (failedState.lockUntil && failedState.lockUntil > Date.now()) {
