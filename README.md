@@ -10,7 +10,7 @@ DizyChat is a Socket.IO and Express-powered real-time chat backend designed for 
 - Provides paginated history fetching so clients can lazy-load older messages without over-fetching.
 
 ### Media uploads with antivirus scanning
-- Accepts any file type via `/upload`, stores assets under `public/uploads`, and advertises the configured size limit in logs.
+- Accepts an allowlisted set of common image/audio/video/document formats via `/upload`, stores assets under `public/uploads`, and advertises the configured size limit in logs.
 - Streams uploads to OPSWAT MetaDefender Cloud; rejects infected files and cleans up temporary artifacts automatically.
 - Supports configurable size caps (including "unlimited") through `MAX_UPLOAD_SIZE_MB`.
 

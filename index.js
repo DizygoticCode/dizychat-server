@@ -1208,15 +1208,18 @@ app.post('/upload', validateUploadOrigin, uploadSingleMiddleware, async (req, re
 
     if (err && ['SCANNER_NOT_CONFIGURED', 'SCANNER_UNAVAILABLE'].includes(err.code)) {
       console.error('[Upload] Antivirus scanner unavailable:', err);
+      logSecurityEvent('scanner_unavailable', { code: err.code, message: err.message }, 'error');
       return res.status(500).json({ error: 'Antivirus scanner unavailable' });
     }
 
     if (err && err.code === 'SCANNER_TIMEOUT') {
       console.error('[Upload] Antivirus scan timed out:', err);
+      logSecurityEvent('scanner_timeout', { message: err.message }, 'warn');
       return res.status(504).json({ error: 'Antivirus scan timed out' });
     }
 
     console.error('[Upload] Antivirus scan error:', err);
+    logSecurityEvent('scanner_error', { message: err?.message || 'unknown' }, 'error');
     return res.status(500).json({ error: 'Antivirus scan failed' });
   }
 
@@ -1783,6 +1786,11 @@ io.on('connection', socket => {
     const providedPassword = normalisePassword(password);
     const storedPassword = roomPasswords.get(roomName);
     if (storedPassword !== undefined && storedPassword !== providedPassword) {
+      logSecurityEvent('room_password_mismatch', {
+        room: roomName,
+        ip: getSocketRemoteAddress(socket),
+        socketId: socket.id,
+      });
       sendJoinError(socket, 'Incorrect room password');
       return;
     }
@@ -1807,6 +1815,11 @@ io.on('connection', socket => {
     const canonicalUser = canonicalUsername(socket.username);
     const bannedSet = roomBans.get(roomName);
     if (bannedSet && bannedSet.has(canonicalUser)) {
+      logSecurityEvent('banned_user_join_attempt', {
+        room: roomName,
+        username: socket.username,
+        ip: getSocketRemoteAddress(socket),
+      });
       sendJoinError(socket, 'You are banned from this room.');
       socket.currentRoom = null;
       return;
