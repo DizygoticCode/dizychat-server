@@ -20,13 +20,52 @@ const nodeFetchModulePromise = import('node-fetch');
 const fetch = (...args) =>
   nodeFetchModulePromise.then(({ default: fetch }) => fetch(...args));
 
+const parseSocketCorsOrigins = () => {
+  const raw =
+    process.env.SOCKET_IO_CORS_ORIGINS ||
+    process.env.SOCKET_IO_CORS_ORIGIN ||
+    process.env.CORS_ORIGINS ||
+    process.env.CORS_ORIGIN ||
+    '';
+
+  if (!raw.trim()) {
+    console.warn('[Socket.IO] CORS origin allowlist not configured; defaulting to "*" (not recommended for public deployments).');
+    return '*';
+  }
+
+  const origins = raw
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (!origins.length) {
+    console.warn('[Socket.IO] CORS origin allowlist was empty after parsing; defaulting to "*" (not recommended for public deployments).');
+    return '*';
+  }
+
+  return origins;
+};
+
 // ---------------- App Setup ----------------
 const app = express();
 const server = http.createServer(app);
+const SOCKET_IO_CORS_ORIGIN = parseSocketCorsOrigins();
 const io = new Server(server, {
-  cors: { origin: "*", methods: ["GET","POST"] }
+  cors: { origin: SOCKET_IO_CORS_ORIGIN, methods: ["GET", "POST"] }
 });
 const PORT = process.env.PORT || 10000;
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' https://cdn.socket.io",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+  "connect-src 'self' ws: wss: https:",
+  "media-src 'self' blob: https:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors 'none'",
+].join('; ');
 
 // ---------------- Admin ----------------
 const normaliseAdminUsername = (value) =>
@@ -46,22 +85,86 @@ const parseAdminSessionTtlMs = () => {
 };
 
 const ADMIN_SESSION_TTL_MS = parseAdminSessionTtlMs();
+const parsePositiveIntegerEnv = (name, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) => {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(String(raw).trim(), 10);
+  if (!Number.isFinite(parsed) || parsed < min) return fallback;
+  return Math.min(parsed, max);
+};
+
+const ADMIN_AUTH_WINDOW_MS = parsePositiveIntegerEnv('ADMIN_AUTH_WINDOW_MS', 10 * 60 * 1000, { min: 1000, max: 24 * 60 * 60 * 1000 });
+const ADMIN_AUTH_MAX_FAILURES = parsePositiveIntegerEnv('ADMIN_AUTH_MAX_FAILURES', 5, { min: 2, max: 20 });
+const ADMIN_AUTH_LOCK_MS = parsePositiveIntegerEnv('ADMIN_AUTH_LOCK_MS', 15 * 60 * 1000, { min: 5000, max: 24 * 60 * 60 * 1000 });
+const ADMIN_AUTH_MIN_RETRY_DELAY_MS = 750;
+const ADMIN_AUTH_MAX_RETRY_DELAY_MS = 5000;
+
+const SCRYPT_HASH_PREFIX = 'scrypt';
+
+const parseScryptParams = (raw, fallback) => {
+  const numeric = Number.parseInt(String(raw ?? '').trim(), 10);
+  if (!Number.isFinite(numeric) || numeric <= 0) return fallback;
+  return numeric;
+};
+
+const verifyScryptPassword = (password, encodedHash) => {
+  if (typeof password !== 'string' || typeof encodedHash !== 'string') return false;
+  const parts = encodedHash.split('$');
+  if (parts.length !== 7) return false;
+  const [algorithm, rawN, rawR, rawP, saltBase64, keyBase64, rawKeyLength] = parts;
+  if (algorithm !== SCRYPT_HASH_PREFIX) return false;
+
+  const N = parseScryptParams(rawN, 16384);
+  const r = parseScryptParams(rawR, 8);
+  const p = parseScryptParams(rawP, 1);
+  const keyLength = parseScryptParams(rawKeyLength, 64);
+
+  let salt;
+  let expectedKey;
+  try {
+    salt = Buffer.from(saltBase64, 'base64');
+    expectedKey = Buffer.from(keyBase64, 'base64');
+  } catch (_err) {
+    return false;
+  }
+
+  if (!salt.length || !expectedKey.length || expectedKey.length !== keyLength) return false;
+
+  const actualKey = crypto.scryptSync(password, salt, keyLength, { N, r, p });
+  return crypto.timingSafeEqual(actualKey, expectedKey);
+};
 
 const buildAdminCredentials = () => {
   const entries = new Map();
 
-  const addCredential = (username, password) => {
-    if (typeof username !== 'string' || typeof password !== 'string') return;
+  const addCredential = (username, credentialValue, kind) => {
+    if (typeof username !== 'string' || typeof credentialValue !== 'string') return;
     const trimmedUsername = username.trim();
-    const trimmedPassword = password.trim();
-    if (!trimmedUsername || !trimmedPassword) return;
+    const trimmedCredential = credentialValue.trim();
+    if (!trimmedUsername || !trimmedCredential) return;
     const key = normaliseAdminUsername(trimmedUsername);
     if (!key) return;
     entries.set(key, {
       username: trimmedUsername,
-      password: trimmedPassword,
+      kind,
+      credential: trimmedCredential,
     });
   };
+
+  // ADMIN_CREDENTIALS_HASHED format: "username:scrypt$N$r$p$salt$key$length,OtherUser:scrypt$..."
+  const rawHashedList = process.env.ADMIN_CREDENTIALS_HASHED;
+  if (typeof rawHashedList === 'string' && rawHashedList.trim()) {
+    rawHashedList
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .forEach((entry) => {
+        const [rawUsername, ...rest] = entry.split(':');
+        if (!rawUsername || rest.length === 0) return;
+        const candidateHash = rest.join(':');
+        addCredential(rawUsername, candidateHash, 'scrypt');
+      });
+  }
 
   // ADMIN_CREDENTIALS format: "username:password,OtherUser:otherPassword"
   const rawList = process.env.ADMIN_CREDENTIALS;
@@ -74,24 +177,88 @@ const buildAdminCredentials = () => {
         const [rawUsername, ...rest] = entry.split(':');
         if (!rawUsername || rest.length === 0) return;
         const candidatePassword = rest.join(':');
-        addCredential(rawUsername, candidatePassword);
+        addCredential(rawUsername, candidatePassword, 'plaintext');
       });
   }
 
   const envAdminUsername = process.env.ADMIN_USERNAME;
+  const envAdminPasswordHash = process.env.ADMIN_PASSWORD_HASH;
+  if (envAdminUsername && envAdminPasswordHash) {
+    addCredential(envAdminUsername, envAdminPasswordHash, 'scrypt');
+  }
+
   const envAdminPassword = process.env.ADMIN_PASSWORD;
   if (envAdminUsername && envAdminPassword) {
-    addCredential(envAdminUsername, envAdminPassword);
+    addCredential(envAdminUsername, envAdminPassword, 'plaintext');
   }
 
   if (!entries.size && envAdminPassword) {
-    addCredential(envAdminUsername || 'Dizygotic', envAdminPassword);
+    addCredential(envAdminUsername || 'Dizygotic', envAdminPassword, 'plaintext');
   }
 
   return entries;
 };
 
 const adminCredentials = buildAdminCredentials();
+const plaintextAdminCredentialCount = [...adminCredentials.values()].filter((item) => item.kind === 'plaintext').length;
+if (plaintextAdminCredentialCount > 0) {
+  console.warn(`[Admin] ${plaintextAdminCredentialCount} plaintext admin credential(s) detected. Migrate to ADMIN_PASSWORD_HASH / ADMIN_CREDENTIALS_HASHED.`);
+}
+const adminAuthFailures = new Map();
+
+const getSocketRemoteAddress = (socket) => {
+  const forwardedFor = socket?.handshake?.headers?.['x-forwarded-for'];
+  if (typeof forwardedFor === 'string' && forwardedFor.trim()) {
+    return forwardedFor.split(',')[0].trim();
+  }
+  return socket?.handshake?.address || socket?.conn?.remoteAddress || 'unknown';
+};
+
+const getAdminAuthAttemptKey = (socket, username) => {
+  const remoteAddress = getSocketRemoteAddress(socket);
+  const canonicalUser = normaliseAdminUsername(username || '');
+  return `${remoteAddress}::${canonicalUser || '*'}`;
+};
+
+const getAdminAuthState = (attemptKey) => {
+  const now = Date.now();
+  const existing = adminAuthFailures.get(attemptKey);
+  if (!existing) return { count: 0, windowStart: now, lockUntil: 0, lastFailedAt: 0 };
+
+  if (existing.lockUntil && existing.lockUntil > now) return existing;
+  if (existing.windowStart + ADMIN_AUTH_WINDOW_MS <= now) {
+    const reset = { count: 0, windowStart: now, lockUntil: 0, lastFailedAt: 0 };
+    adminAuthFailures.set(attemptKey, reset);
+    return reset;
+  }
+  return existing;
+};
+
+const computeAdminAuthRetryDelayMs = (state) => {
+  const failures = Number.isFinite(state?.count) ? state.count : 0;
+  const exponent = Math.max(0, failures - 1);
+  const delay = ADMIN_AUTH_MIN_RETRY_DELAY_MS * (2 ** exponent);
+  return Math.min(delay, ADMIN_AUTH_MAX_RETRY_DELAY_MS);
+};
+
+const registerAdminAuthFailure = (attemptKey) => {
+  const now = Date.now();
+  const state = getAdminAuthState(attemptKey);
+  const nextCount = state.count + 1;
+  const lockUntil = nextCount >= ADMIN_AUTH_MAX_FAILURES ? now + ADMIN_AUTH_LOCK_MS : 0;
+  const updated = {
+    count: nextCount,
+    windowStart: state.windowStart || now,
+    lockUntil,
+    lastFailedAt: now,
+  };
+  adminAuthFailures.set(attemptKey, updated);
+  return updated;
+};
+
+const clearAdminAuthFailures = (attemptKey) => {
+  adminAuthFailures.delete(attemptKey);
+};
 
 const adminSessionsByToken = new Map();
 const adminSessionsByUser = new Map();
@@ -143,9 +310,10 @@ const resolveAdminCredential = (username, password) => {
   const key = normaliseAdminUsername(username);
   if (!key) return null;
   const entry = adminCredentials.get(key);
-  if (entry && entry.password === password.trim()) {
-    return entry;
-  }
+  if (!entry) return null;
+
+  if (entry.kind === 'scrypt' && verifyScryptPassword(password.trim(), entry.credential)) return entry;
+  if (entry.kind === 'plaintext' && entry.credential === password.trim()) return entry;
   return null;
 };
 
@@ -160,6 +328,15 @@ mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
   .catch(err => { console.error("[Mongo] Error:", err); process.exit(1); });
 
 // ---------------- Static Files ----------------
+app.disable('x-powered-by');
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()');
+  res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ---------------- Version endpoint ----------------
@@ -1639,8 +1816,26 @@ io.on('connection', socket => {
   socket.on('admin auth', ({ room, username, adminPassword }) => {
     try {
       const candidateUser = username || socket.username;
+      const attemptKey = getAdminAuthAttemptKey(socket, candidateUser);
+      const authState = getAdminAuthState(attemptKey);
+      const now = Date.now();
+
+      if (authState.lockUntil && authState.lockUntil > now) {
+        socket.emit('toast', { type: 'warn', text: 'Too many admin login attempts. Please wait before trying again.' });
+        socket.emit('admin status', { isAdmin: false });
+        return;
+      }
+
+      const retryDelayMs = computeAdminAuthRetryDelayMs(authState);
+      if (authState.lastFailedAt && now - authState.lastFailedAt < retryDelayMs) {
+        socket.emit('toast', { type: 'warn', text: 'Please wait a moment before trying admin login again.' });
+        socket.emit('admin status', { isAdmin: false });
+        return;
+      }
+
       const resolvedAdmin = resolveAdminCredential(candidateUser, adminPassword);
       if (resolvedAdmin) {
+        clearAdminAuthFailures(attemptKey);
         socket.isAdmin = true;
         socket.username = resolvedAdmin.username;
         const session = issueAdminSession(resolvedAdmin.username);
@@ -1651,6 +1846,15 @@ io.on('connection', socket => {
         });
         console.log('[Admin] Authenticated', resolvedAdmin.username);
       } else {
+        const failedState = registerAdminAuthFailure(attemptKey);
+        if (failedState.lockUntil && failedState.lockUntil > Date.now()) {
+          console.warn('[Admin] Login temporarily locked', {
+            key: attemptKey,
+            until: new Date(failedState.lockUntil).toISOString(),
+          });
+        } else {
+          console.warn('[Admin] Login failed', { key: attemptKey, failureCount: failedState.count });
+        }
         socket.isAdmin = false;
         revokeAdminSessionForUser(candidateUser);
         socket.emit('admin status', { isAdmin: false });
