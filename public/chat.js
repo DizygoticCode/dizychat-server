@@ -697,6 +697,7 @@ const appState = {
   activeMenu: null,
   highlightTimeout: null,
   users: [],
+  userVisibility: new Map(),
   moderationNotices: new Map(),
   contextMenuTrigger: null,
   toolbarFlashTimer: null,
@@ -1801,8 +1802,56 @@ if (roomPlaceholder && roomInput) {
 
 // ------------------- State Helpers -------------------
 const hiddenStoragePrefix = "dizychat-hidden-";
+const userVisibilityStoragePrefix = "dizychat-user-visibility-";
 
 const hiddenKeyForRoom = (room) => `${hiddenStoragePrefix}${room || ""}`;
+const visibilityKeyForRoom = (room) => `${userVisibilityStoragePrefix}${room || ""}`;
+
+function loadUserVisibilityForRoom(room) {
+  appState.userVisibility.clear();
+  if (!room) return;
+  try {
+    const raw = localStorage.getItem(visibilityKeyForRoom(room));
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+    Object.entries(parsed).forEach(([username, hidden]) => {
+      if (typeof username !== "string" || !username.trim()) return;
+      appState.userVisibility.set(username, Boolean(hidden));
+    });
+  } catch (err) {
+    console.warn("[UserVisibility] Failed to load user visibility state", err);
+  }
+}
+
+function persistUserVisibility(room = window.currentRoom) {
+  if (!room) return;
+  try {
+    const payload = {};
+    appState.userVisibility.forEach((hidden, username) => {
+      if (hidden) payload[username] = true;
+    });
+    localStorage.setItem(visibilityKeyForRoom(room), JSON.stringify(payload));
+  } catch (err) {
+    console.warn("[UserVisibility] Failed to persist user visibility state", err);
+  }
+}
+
+function shouldShowUserMessages(username) {
+  if (!username || username === window.currentUser) return true;
+  return !appState.userVisibility.get(username);
+}
+
+function applyMessageVisibilityFilter() {
+  if (!messages) return;
+  messages.querySelectorAll(".message").forEach((node) => {
+    const id = node.dataset.id;
+    if (!id) return;
+    const data = appState.messages.get(id);
+    if (!data) return;
+    node.style.display = shouldShowUserMessages(data.user) ? "" : "none";
+  });
+}
 
 function loadHiddenMessagesForRoom(room) {
   appState.hidden.clear();
@@ -2361,6 +2410,26 @@ function renderUserSidebar(users = []) {
     }
 
     item.appendChild(name);
+    if (!isSelf) {
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "user-filter-toggle";
+      const hidden = Boolean(appState.userVisibility.get(username));
+      toggle.classList.toggle("hidden", hidden);
+      toggle.textContent = hidden ? "Hidden" : "Visible";
+      toggle.setAttribute("aria-pressed", String(hidden));
+      toggle.setAttribute("aria-label", `${hidden ? "Show" : "Hide"} ${username} messages`);
+      toggle.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const nextHidden = !Boolean(appState.userVisibility.get(username));
+        appState.userVisibility.set(username, nextHidden);
+        persistUserVisibility();
+        renderUserSidebar(appState.users);
+        applyMessageVisibilityFilter();
+      });
+      item.appendChild(toggle);
+    }
 
     if (isMuted) {
       item.dataset.mutedUntil = String(mutedUntil);
@@ -4856,6 +4925,7 @@ function completeRoomJoin(username, room, password) {
 
   appState.isAdmin = false;
   loadHiddenMessagesForRoom(room);
+  loadUserVisibilityForRoom(room);
   appState.messages.clear();
   appState.pinned.clear();
   hideSearchResults();
@@ -6024,6 +6094,7 @@ function renderMessage(
   if (!isViewingChat || !messages) return;
   const data = storeMessageData(msg);
   if (!data) return;
+  if (!shouldShowUserMessages(data.user)) return;
   if (appState.hidden.has(data.id)) {
     appState.pinned.delete(data.id);
     updatePinnedBanner();

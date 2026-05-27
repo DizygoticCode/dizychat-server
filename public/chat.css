@@ -1545,6 +1545,21 @@ body:not(.dark) .scroll-to-latest.has-new {
   color: #f6c343;
 }
 
+.user-entry .user-filter-toggle {
+  border: 1px solid rgba(187, 134, 252, 0.35);
+  background: rgba(187, 134, 252, 0.15);
+  color: var(--text-primary);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.user-entry .user-filter-toggle.hidden {
+  border-color: rgba(255, 107, 107, 0.45);
+  background: rgba(255, 107, 107, 0.14);
+}
+
 .user-entry.actionable {
   cursor: pointer;
 }
