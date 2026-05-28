@@ -10,7 +10,7 @@ DizyChat is a Socket.IO and Express-powered real-time chat backend designed for 
 - Provides paginated history fetching so clients can lazy-load older messages without over-fetching.
 
 ### Media uploads with antivirus scanning
-- Accepts an allowlisted set of common image/audio/video/document formats via `/upload`, stores assets under `public/uploads`, and advertises the configured size limit in logs.
+- Accepts an allowlisted set of common image/audio/video/document formats via `/upload` (JPEG/JPG, PNG, GIF, WebP, HEIC/HEIF, MP3, M4A, WAV, OGG/Opus, WebM, MP4/M4V/MOV, PDF, text/CSV/JSON/Markdown, ZIP, and Office documents), stores assets under `public/uploads`, and advertises the configured size limit in logs.
 - Streams uploads to OPSWAT MetaDefender Cloud; rejects infected files and cleans up temporary artifacts automatically.
 - Supports configurable size caps (including "unlimited") through `MAX_UPLOAD_SIZE_MB`.
 
@@ -177,7 +177,7 @@ Artifacts are written to `ui-test-artifacts/` and include timestamped screenshot
 Returns JSON containing `{ version, build, time }` for client diagnostics.
 
 ### `POST /upload`
-Accepts multipart form field `file`. Returns `{ url, name, type, size }` for clean files; otherwise reports validation or antivirus failures.
+Accepts multipart form field `file`. Supported uploads include JPEG/JPG, PNG, GIF, WebP, HEIC/HEIF, MP3, M4A, WAV, OGG/Opus, WebM voice clips, MP4/M4V/MOV videos, PDF, text/CSV/JSON/Markdown, ZIP, and Office documents. Returns `{ url, name, type, size }` for clean files; otherwise reports validation or antivirus failures.
 
 ### `GET /link-preview?url=...`
 Fetches metadata for an absolute URL and responds with normalized preview attributes. Non-HTML content returns empty fields.
