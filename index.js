@@ -1504,46 +1504,12 @@ app.get('/soundboard-clips', (req, res) => {
   }
 });
 
-const validateCallTokenMembership = ({ room, username, socketId, token }) => {
-  if (!socketId || !token) {
-    return { ok: false, status: 401, error: 'Call token proof is required.' };
-  }
-
-  const socket = io.of('/').sockets.get(String(socketId));
-  if (!socket || socket.currentRoom !== room) {
-    return { ok: false, status: 403, error: 'Join the chat room before starting a call.' };
-  }
-
-  if (socket.callTokenNonce !== token) {
-    return { ok: false, status: 403, error: 'Call token proof is invalid.' };
-  }
-
-  if (String(socket.username || '').trim().toLowerCase() !== String(username || '').trim().toLowerCase()) {
-    return { ok: false, status: 403, error: 'Call username does not match the active chat session.' };
-  }
-
-  const bannedSet = roomBans.get(room);
-  if (bannedSet && bannedSet.has(String(username || '').trim().toLowerCase())) {
-    return { ok: false, status: 403, error: 'You are banned from this room.' };
-  }
-
-  return { ok: true };
-};
-
 app.post('/api/calls/token', express.json(), (req, res) => {
   if (!ensureCallsEnabled(res)) return;
   const room = normaliseRoomName(req.body?.room);
   const username = normaliseUsername(req.body?.username, '');
-  const socketId = typeof req.body?.socketId === 'string' ? req.body.socketId : '';
-  const callToken = typeof req.body?.callToken === 'string' ? req.body.callToken : '';
   if (!room || !username) {
     res.status(400).json({ error: 'room and username are required.' });
-    return;
-  }
-
-  const membership = validateCallTokenMembership({ room, username, socketId, token: callToken });
-  if (!membership.ok) {
-    res.status(membership.status).json({ error: membership.error });
     return;
   }
 
@@ -1551,7 +1517,7 @@ app.post('/api/calls/token', express.json(), (req, res) => {
     const token = createLivekitToken({
       room,
       username,
-      metadata: { room, username, issuedAt: new Date().toISOString(), voiceOnly: false, videoEnabled: true },
+      metadata: { room, username, issuedAt: new Date().toISOString(), voiceOnly: true },
     });
     const active = getActiveCallSnapshot(room);
     res.json({
@@ -1560,8 +1526,7 @@ app.post('/api/calls/token', express.json(), (req, res) => {
       room,
       callId: active?.callId || null,
       expiresAt: Date.now() + (CALL_TOKEN_TTL_SECONDS * 1000),
-      voiceOnly: false,
-      videoEnabled: true,
+      voiceOnly: true,
     });
   } catch (err) {
     console.error('[Calls] Failed to issue token:', err.message);
@@ -1873,21 +1838,8 @@ const getActiveCallSnapshot = (room) => {
     callId: state.callId,
     startedAt: state.startedAt,
     startedBy: state.startedBy,
-    voiceOnly: false,
-    videoEnabled: true,
+    voiceOnly: true,
   };
-};
-
-const ensureActiveRoomCall = (room, startedBy = 'system') => {
-  const existing = activeRoomCalls.get(room);
-  if (existing) return { state: existing, created: false };
-  const state = {
-    callId: buildCallId(),
-    startedAt: Date.now(),
-    startedBy,
-  };
-  activeRoomCalls.set(room, state);
-  return { state, created: true };
 };
 
 const ensureCallsEnabled = (resOrSocket) => {
@@ -2092,7 +2044,11 @@ io.on('connection', socket => {
       socket.emit('call:error', { room: roomName, message: 'A call is already active.' });
       return;
     }
-    ensureActiveRoomCall(roomName, socket.username || 'admin');
+    activeRoomCalls.set(roomName, {
+      callId: buildCallId(),
+      startedAt: Date.now(),
+      startedBy: socket.username || 'admin',
+    });
     io.to(roomName).emit('call:started', getActiveCallSnapshot(roomName));
   });
 
@@ -2100,10 +2056,10 @@ io.on('connection', socket => {
     if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id)) return;
     const roomName = normaliseRoomName(room || socket.currentRoom);
     if (!roomName || roomName !== socket.currentRoom) return;
-    const { created } = ensureActiveRoomCall(roomName, socket.username || 'participant');
     const active = getActiveCallSnapshot(roomName);
-    if (created) {
-      io.to(roomName).emit('call:started', active);
+    if (!active) {
+      socket.emit('call:error', { room: roomName, message: 'No active call in this room.' });
+      return;
     }
     socket.emit('call:joined', active);
     socket.to(roomName).emit('call:participant-joined', { room: roomName, username: socket.username });
@@ -2130,22 +2086,6 @@ io.on('connection', socket => {
     const cleanedTarget = normaliseUsername(target, '');
     if (!roomName || roomName !== socket.currentRoom || !cleanedTarget) return;
     io.to(roomName).emit('call:user-kicked', { room: roomName, target: cleanedTarget, by: socket.username });
-  });
-
-  socket.on('call:disable-video-user', ({ room, target } = {}) => {
-    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id) || !requireAdmin(socket)) return;
-    const roomName = normaliseRoomName(room || socket.currentRoom);
-    const cleanedTarget = normaliseUsername(target, '');
-    if (!roomName || roomName !== socket.currentRoom || !cleanedTarget) return;
-    io.to(roomName).emit('call:user-video-disabled', { room: roomName, target: cleanedTarget, by: socket.username });
-  });
-
-  socket.on('call:enable-video-user', ({ room, target } = {}) => {
-    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id) || !requireAdmin(socket)) return;
-    const roomName = normaliseRoomName(room || socket.currentRoom);
-    const cleanedTarget = normaliseUsername(target, '');
-    if (!roomName || roomName !== socket.currentRoom || !cleanedTarget) return;
-    io.to(roomName).emit('call:user-video-enabled', { room: roomName, target: cleanedTarget, by: socket.username });
   });
 
   socket.on('call:end', ({ room } = {}) => {
