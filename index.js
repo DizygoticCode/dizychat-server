@@ -98,6 +98,13 @@ const ADMIN_AUTH_MAX_FAILURES = parsePositiveIntegerEnv('ADMIN_AUTH_MAX_FAILURES
 const ADMIN_AUTH_LOCK_MS = parsePositiveIntegerEnv('ADMIN_AUTH_LOCK_MS', 15 * 60 * 1000, { min: 5000, max: 24 * 60 * 60 * 1000 });
 const ADMIN_AUTH_MIN_RETRY_DELAY_MS = 750;
 const ADMIN_AUTH_MAX_RETRY_DELAY_MS = 5000;
+const ENABLE_VOICE_CALLS = String(process.env.ENABLE_VOICE_CALLS || '').trim().toLowerCase() === 'true';
+const LIVEKIT_URL = (process.env.LIVEKIT_URL || '').trim();
+const LIVEKIT_API_KEY = (process.env.LIVEKIT_API_KEY || '').trim();
+const LIVEKIT_API_SECRET = (process.env.LIVEKIT_API_SECRET || '').trim();
+const CALL_TOKEN_TTL_SECONDS = 10 * 60;
+const CALL_EVENT_WINDOW_MS = 4000;
+const CALL_EVENT_MAX_PER_WINDOW = 12;
 
 const SCRYPT_HASH_PREFIX = 'scrypt';
 
@@ -323,9 +330,44 @@ if (!mongoUri) {
   console.error("[Mongo] MONGO_URI missing");
   process.exit(1);
 }
-mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => console.log("[Mongo] Connected"))
-  .catch(err => { console.error("[Mongo] Error:", err); process.exit(1); });
+const MONGO_RETRY_BASE_MS = 3000;
+let mongoReconnectTimer = null;
+let mongoConnectInFlight = false;
+
+const scheduleMongoReconnect = (delayMs = MONGO_RETRY_BASE_MS) => {
+  if (mongoReconnectTimer) return;
+  const safeDelay = Math.max(1000, Number(delayMs) || MONGO_RETRY_BASE_MS);
+  mongoReconnectTimer = setTimeout(() => {
+    mongoReconnectTimer = null;
+    connectMongoWithRetry();
+  }, safeDelay);
+};
+
+const connectMongoWithRetry = async () => {
+  if (mongoConnectInFlight || mongoose.connection.readyState === 1) return;
+  mongoConnectInFlight = true;
+  try {
+    await mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true });
+    console.log("[Mongo] Connected");
+  } catch (err) {
+    console.error("[Mongo] Initial connect failed, retrying:", err?.message || err);
+    scheduleMongoReconnect();
+  } finally {
+    mongoConnectInFlight = false;
+  }
+};
+
+mongoose.connection.on('disconnected', () => {
+  console.warn("[Mongo] Disconnected, attempting reconnect.");
+  scheduleMongoReconnect();
+});
+
+mongoose.connection.on('error', (err) => {
+  console.error("[Mongo] Connection error:", err?.message || err);
+  scheduleMongoReconnect();
+});
+
+connectMongoWithRetry();
 
 // ---------------- Static Files ----------------
 app.disable('x-powered-by');
@@ -333,7 +375,7 @@ app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()');
+  res.setHeader('Permissions-Policy', 'camera=(self), microphone=(self), geolocation=()');
   res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
   next();
 });
@@ -1462,6 +1504,36 @@ app.get('/soundboard-clips', (req, res) => {
   }
 });
 
+app.post('/api/calls/token', express.json(), (req, res) => {
+  if (!ensureCallsEnabled(res)) return;
+  const room = normaliseRoomName(req.body?.room);
+  const username = normaliseUsername(req.body?.username, '');
+  if (!room || !username) {
+    res.status(400).json({ error: 'room and username are required.' });
+    return;
+  }
+
+  try {
+    const token = createLivekitToken({
+      room,
+      username,
+      metadata: { room, username, issuedAt: new Date().toISOString(), voiceOnly: true },
+    });
+    const active = getActiveCallSnapshot(room);
+    res.json({
+      token,
+      url: LIVEKIT_URL,
+      room,
+      callId: active?.callId || null,
+      expiresAt: Date.now() + (CALL_TOKEN_TTL_SECONDS * 1000),
+      voiceOnly: true,
+    });
+  } catch (err) {
+    console.error('[Calls] Failed to issue token:', err.message);
+    res.status(503).json({ error: 'Unable to issue call token.' });
+  }
+});
+
 
 // ---------------- Socket.IO ----------------
 const typingUsersByRoom = new Map();
@@ -1742,6 +1814,70 @@ const MAX_TYPING_EVENTS_PER_WINDOW = 5;
 
 const messageTimestamps = new Map();
 const typingTimestamps = new Map();
+const callEventTimestamps = new Map();
+const activeRoomCalls = new Map();
+
+const canSendCallEvent = (socketId) => {
+  const now = Date.now();
+  if (!callEventTimestamps.has(socketId)) callEventTimestamps.set(socketId, []);
+  const ts = callEventTimestamps.get(socketId);
+  while (ts.length && now - ts[0] > CALL_EVENT_WINDOW_MS) ts.shift();
+  if (ts.length >= CALL_EVENT_MAX_PER_WINDOW) return false;
+  ts.push(now);
+  return true;
+};
+
+const buildCallId = () => crypto.randomBytes(8).toString('hex');
+
+const getActiveCallSnapshot = (room) => {
+  const state = activeRoomCalls.get(room);
+  if (!state) return null;
+  return {
+    room,
+    callId: state.callId,
+    startedAt: state.startedAt,
+    startedBy: state.startedBy,
+    voiceOnly: true,
+  };
+};
+
+const ensureCallsEnabled = (resOrSocket) => {
+  if (!ENABLE_VOICE_CALLS) {
+    if (typeof resOrSocket?.status === 'function') {
+      resOrSocket.status(404).json({ error: 'Voice calls are disabled.' });
+    } else {
+      resOrSocket.emit('toast', { type: 'warn', text: 'Voice calls are disabled.' });
+    }
+    return false;
+  }
+  return true;
+};
+
+const createLivekitToken = ({ room, username, metadata }) => {
+  if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
+    throw new Error('LiveKit credentials are not configured.');
+  }
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const payload = {
+    iss: LIVEKIT_API_KEY,
+    sub: username,
+    nbf: nowSeconds - 5,
+    exp: nowSeconds + CALL_TOKEN_TTL_SECONDS,
+    video: {
+      roomJoin: true,
+      room,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true,
+    },
+    metadata: JSON.stringify(metadata || {}),
+  };
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
+  const unsigned = `${encode(header)}.${encode(payload)}`;
+  const signature = crypto.createHmac('sha256', LIVEKIT_API_SECRET).update(unsigned).digest('base64url');
+  return `${unsigned}.${signature}`;
+};
 
 function canSendMessage(socketId) {
   const now = Date.now();
@@ -1895,6 +2031,68 @@ io.on('connection', socket => {
 
   socket.on('request rooms', () => {
     socket.emit('room list', getPublicRoomsSnapshot());
+  });
+
+  socket.on('call:start', ({ room } = {}) => {
+    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id) || !requireAdmin(socket)) return;
+    const roomName = normaliseRoomName(room || socket.currentRoom);
+    if (!roomName || roomName !== socket.currentRoom) return;
+    if (activeRoomCalls.has(roomName)) {
+      socket.emit('call:error', { room: roomName, message: 'A call is already active.' });
+      return;
+    }
+    activeRoomCalls.set(roomName, {
+      callId: buildCallId(),
+      startedAt: Date.now(),
+      startedBy: socket.username || 'admin',
+    });
+    io.to(roomName).emit('call:started', getActiveCallSnapshot(roomName));
+  });
+
+  socket.on('call:join', ({ room } = {}) => {
+    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id)) return;
+    const roomName = normaliseRoomName(room || socket.currentRoom);
+    if (!roomName || roomName !== socket.currentRoom) return;
+    const active = getActiveCallSnapshot(roomName);
+    if (!active) {
+      socket.emit('call:error', { room: roomName, message: 'No active call in this room.' });
+      return;
+    }
+    socket.emit('call:joined', active);
+    socket.to(roomName).emit('call:participant-joined', { room: roomName, username: socket.username });
+  });
+
+  socket.on('call:leave', ({ room } = {}) => {
+    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id)) return;
+    const roomName = normaliseRoomName(room || socket.currentRoom);
+    if (!roomName || roomName !== socket.currentRoom) return;
+    socket.to(roomName).emit('call:participant-left', { room: roomName, username: socket.username });
+  });
+
+  socket.on('call:mute-user', ({ room, target } = {}) => {
+    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id) || !requireAdmin(socket)) return;
+    const roomName = normaliseRoomName(room || socket.currentRoom);
+    const cleanedTarget = normaliseUsername(target, '');
+    if (!roomName || roomName !== socket.currentRoom || !cleanedTarget) return;
+    io.to(roomName).emit('call:user-muted', { room: roomName, target: cleanedTarget, by: socket.username });
+  });
+
+  socket.on('call:kick-user', ({ room, target } = {}) => {
+    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id) || !requireAdmin(socket)) return;
+    const roomName = normaliseRoomName(room || socket.currentRoom);
+    const cleanedTarget = normaliseUsername(target, '');
+    if (!roomName || roomName !== socket.currentRoom || !cleanedTarget) return;
+    io.to(roomName).emit('call:user-kicked', { room: roomName, target: cleanedTarget, by: socket.username });
+  });
+
+  socket.on('call:end', ({ room } = {}) => {
+    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id) || !requireAdmin(socket)) return;
+    const roomName = normaliseRoomName(room || socket.currentRoom);
+    if (!roomName || roomName !== socket.currentRoom) return;
+    const active = activeRoomCalls.get(roomName);
+    if (!active) return;
+    activeRoomCalls.delete(roomName);
+    io.to(roomName).emit('call:ended', { room: roomName, callId: active.callId, endedBy: socket.username, endedAt: Date.now() });
   });
 
 
