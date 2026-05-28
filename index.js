@@ -1517,7 +1517,7 @@ app.post('/api/calls/token', express.json(), (req, res) => {
     const token = createLivekitToken({
       room,
       username,
-      metadata: { room, username, issuedAt: new Date().toISOString(), voiceOnly: false, videoEnabled: true },
+      metadata: { room, username, issuedAt: new Date().toISOString(), voiceOnly: true },
     });
     const active = getActiveCallSnapshot(room);
     res.json({
@@ -1526,8 +1526,7 @@ app.post('/api/calls/token', express.json(), (req, res) => {
       room,
       callId: active?.callId || null,
       expiresAt: Date.now() + (CALL_TOKEN_TTL_SECONDS * 1000),
-      voiceOnly: false,
-      videoEnabled: true,
+      voiceOnly: true,
     });
   } catch (err) {
     console.error('[Calls] Failed to issue token:', err.message);
@@ -1838,21 +1837,8 @@ const getActiveCallSnapshot = (room) => {
     callId: state.callId,
     startedAt: state.startedAt,
     startedBy: state.startedBy,
-    voiceOnly: false,
-    videoEnabled: true,
+    voiceOnly: true,
   };
-};
-
-const ensureActiveRoomCall = (room, startedBy = 'system') => {
-  const existing = activeRoomCalls.get(room);
-  if (existing) return { state: existing, created: false };
-  const state = {
-    callId: buildCallId(),
-    startedAt: Date.now(),
-    startedBy,
-  };
-  activeRoomCalls.set(room, state);
-  return { state, created: true };
 };
 
 const ensureCallsEnabled = (resOrSocket) => {
@@ -2055,7 +2041,11 @@ io.on('connection', socket => {
       socket.emit('call:error', { room: roomName, message: 'A call is already active.' });
       return;
     }
-    ensureActiveRoomCall(roomName, socket.username || 'admin');
+    activeRoomCalls.set(roomName, {
+      callId: buildCallId(),
+      startedAt: Date.now(),
+      startedBy: socket.username || 'admin',
+    });
     io.to(roomName).emit('call:started', getActiveCallSnapshot(roomName));
   });
 
@@ -2063,10 +2053,10 @@ io.on('connection', socket => {
     if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id)) return;
     const roomName = normaliseRoomName(room || socket.currentRoom);
     if (!roomName || roomName !== socket.currentRoom) return;
-    const { created } = ensureActiveRoomCall(roomName, socket.username || 'participant');
     const active = getActiveCallSnapshot(roomName);
-    if (created) {
-      io.to(roomName).emit('call:started', active);
+    if (!active) {
+      socket.emit('call:error', { room: roomName, message: 'No active call in this room.' });
+      return;
     }
     socket.emit('call:joined', active);
     socket.to(roomName).emit('call:participant-joined', { room: roomName, username: socket.username });
@@ -2093,22 +2083,6 @@ io.on('connection', socket => {
     const cleanedTarget = normaliseUsername(target, '');
     if (!roomName || roomName !== socket.currentRoom || !cleanedTarget) return;
     io.to(roomName).emit('call:user-kicked', { room: roomName, target: cleanedTarget, by: socket.username });
-  });
-
-  socket.on('call:disable-video-user', ({ room, target } = {}) => {
-    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id) || !requireAdmin(socket)) return;
-    const roomName = normaliseRoomName(room || socket.currentRoom);
-    const cleanedTarget = normaliseUsername(target, '');
-    if (!roomName || roomName !== socket.currentRoom || !cleanedTarget) return;
-    io.to(roomName).emit('call:user-video-disabled', { room: roomName, target: cleanedTarget, by: socket.username });
-  });
-
-  socket.on('call:enable-video-user', ({ room, target } = {}) => {
-    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id) || !requireAdmin(socket)) return;
-    const roomName = normaliseRoomName(room || socket.currentRoom);
-    const cleanedTarget = normaliseUsername(target, '');
-    if (!roomName || roomName !== socket.currentRoom || !cleanedTarget) return;
-    io.to(roomName).emit('call:user-video-enabled', { room: roomName, target: cleanedTarget, by: socket.username });
   });
 
   socket.on('call:end', ({ room } = {}) => {
