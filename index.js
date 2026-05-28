@@ -128,13 +128,20 @@ const ADMIN_AUTH_MAX_FAILURES = parsePositiveIntegerEnv('ADMIN_AUTH_MAX_FAILURES
 const ADMIN_AUTH_LOCK_MS = parsePositiveIntegerEnv('ADMIN_AUTH_LOCK_MS', 15 * 60 * 1000, { min: 5000, max: 24 * 60 * 60 * 1000 });
 const ADMIN_AUTH_MIN_RETRY_DELAY_MS = 750;
 const ADMIN_AUTH_MAX_RETRY_DELAY_MS = 5000;
-const ENABLE_VOICE_CALLS = String(process.env.ENABLE_VOICE_CALLS || '').trim().toLowerCase() === 'true';
 const LIVEKIT_URL = (process.env.LIVEKIT_URL || '').trim();
 const LIVEKIT_API_KEY = (process.env.LIVEKIT_API_KEY || '').trim();
 const LIVEKIT_API_SECRET = (process.env.LIVEKIT_API_SECRET || '').trim();
+const hasLivekitCredentials = () => Boolean(LIVEKIT_URL && LIVEKIT_API_KEY && LIVEKIT_API_SECRET);
+const parseVoiceCallsEnabled = () => {
+  const raw = String(process.env.ENABLE_VOICE_CALLS || '').trim().toLowerCase();
+  if (['false', '0', 'no', 'off', 'disabled'].includes(raw)) return false;
+  if (['true', '1', 'yes', 'on', 'enabled'].includes(raw)) return true;
+  return hasLivekitCredentials();
+};
+const ENABLE_VOICE_CALLS = parseVoiceCallsEnabled();
 const CALL_TOKEN_TTL_SECONDS = 10 * 60;
 const CALL_EVENT_WINDOW_MS = 4000;
-const CALL_EVENT_MAX_PER_WINDOW = 12;
+const CALL_EVENT_MAX_PER_WINDOW = 30;
 
 const SCRYPT_HASH_PREFIX = 'scrypt';
 
@@ -405,7 +412,7 @@ app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', 'camera=(self), microphone=(self), geolocation=()');
+  res.setHeader('Permissions-Policy', 'camera=*, microphone=*, geolocation=()');
   res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
   next();
 });
@@ -433,9 +440,9 @@ const UPLOAD_EXTENSION_CONFIG = new Map([
   ['.mp3', { family: 'audio/mpeg', mimeTypes: ['audio/mpeg', 'audio/mp3', 'audio/x-mpeg', 'audio/x-mp3'] }],
   ['.m4a', { family: 'mp4-family', mimeTypes: ['audio/mp4', 'audio/x-m4a', 'audio/m4a'] }],
   ['.wav', { family: 'audio/wav', mimeTypes: ['audio/wav', 'audio/wave', 'audio/x-wav'] }],
-  ['.ogg', { family: 'ogg-family', mimeTypes: ['audio/ogg', 'video/ogg', 'application/ogg'] }],
-  ['.opus', { family: 'ogg-family', mimeTypes: ['audio/ogg', 'audio/opus', 'application/ogg'] }],
-  ['.webm', { family: 'webm-family', mimeTypes: ['audio/webm', 'video/webm', 'application/webm'] }],
+  ['.ogg', { family: 'ogg-family', mimeTypes: ['audio/ogg', 'audio/x-ogg', 'video/ogg', 'application/ogg'] }],
+  ['.opus', { family: 'ogg-family', mimeTypes: ['audio/ogg', 'audio/opus', 'audio/x-opus', 'application/ogg'] }],
+  ['.webm', { family: 'webm-family', mimeTypes: ['audio/webm', 'audio/x-webm', 'video/webm', 'video/x-webm', 'application/webm', 'application/octet-stream'] }],
   ['.mp4', { family: 'mp4-family', mimeTypes: ['video/mp4', 'audio/mp4', 'application/mp4'] }],
   ['.m4v', { family: 'mp4-family', mimeTypes: ['video/mp4', 'video/x-m4v'] }],
   ['.mov', { family: 'mp4-family', mimeTypes: ['video/quicktime', 'video/mp4'] }],
@@ -591,7 +598,7 @@ app.use(
     setHeaders: (res) => {
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Content-Disposition', 'inline');
-      res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     },
   })
 );
@@ -1960,7 +1967,7 @@ const ensureCallsEnabled = (resOrSocket) => {
 };
 
 const createLivekitToken = ({ room, username, metadata }) => {
-  if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
+  if (!hasLivekitCredentials()) {
     throw new Error('LiveKit credentials are not configured.');
   }
   const nowSeconds = Math.floor(Date.now() / 1000);
@@ -2142,7 +2149,7 @@ io.on('connection', socket => {
   });
 
   socket.on('call:start', ({ room } = {}) => {
-    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id) || !requireAdmin(socket)) return;
+    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id)) return;
     const roomName = normaliseRoomName(room || socket.currentRoom);
     if (!roomName || roomName !== socket.currentRoom) return;
     if (activeRoomCalls.has(roomName)) {
@@ -2161,11 +2168,15 @@ io.on('connection', socket => {
     if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id)) return;
     const roomName = normaliseRoomName(room || socket.currentRoom);
     if (!roomName || roomName !== socket.currentRoom) return;
-    const active = getActiveCallSnapshot(roomName);
-    if (!active) {
-      socket.emit('call:error', { room: roomName, message: 'No active call in this room.' });
-      return;
+    if (!activeRoomCalls.has(roomName)) {
+      activeRoomCalls.set(roomName, {
+        callId: buildCallId(),
+        startedAt: Date.now(),
+        startedBy: socket.username || 'participant',
+      });
+      io.to(roomName).emit('call:started', getActiveCallSnapshot(roomName));
     }
+    const active = getActiveCallSnapshot(roomName);
     socket.emit('call:joined', active);
     socket.to(roomName).emit('call:participant-joined', { room: roomName, username: socket.username });
   });
@@ -2194,7 +2205,7 @@ io.on('connection', socket => {
   });
 
   socket.on('call:end', ({ room } = {}) => {
-    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id) || !requireAdmin(socket)) return;
+    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id)) return;
     const roomName = normaliseRoomName(room || socket.currentRoom);
     if (!roomName || roomName !== socket.currentRoom) return;
     const active = activeRoomCalls.get(roomName);
