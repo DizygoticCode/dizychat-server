@@ -56,7 +56,7 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 10000;
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' https://cdn.socket.io",
+  "script-src 'self' 'unsafe-inline' https://cdn.socket.io https://cdn.jsdelivr.net",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
