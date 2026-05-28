@@ -1799,6 +1799,7 @@ const removeSocketFromRoom = (socket, targetRoom) => {
   socket.leave(room);
   if (socket.currentRoom === room) {
     socket.currentRoom = null;
+    socket.callTokenNonce = null;
   }
 
   emitRoomUsers(room);
@@ -1970,6 +1971,8 @@ io.on('connection', socket => {
 
     socket.join(roomName);
     registerSocketInRoom(socket, roomName);
+    socket.callTokenNonce = crypto.randomBytes(24).toString('base64url');
+    socket.emit('call token nonce', { room: roomName, token: socket.callTokenNonce, socketId: socket.id });
     console.log(`User joined room: ${roomName} as ${socket.username}`);
 
     if (adminSession) {

@@ -62,6 +62,10 @@ if (socketUrl && socketOptions) {
   socket = io();
 }
 window.socket = socket;
+window.dizyCallTokenProof = window.dizyCallTokenProof || null;
+socket.on("call token nonce", (data = {}) => {
+  window.dizyCallTokenProof = data;
+});
 
 // ------------------- Globals -------------------
 let typingTimeout;
