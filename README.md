@@ -213,6 +213,8 @@ All marketing routes serve the hero experience from `public/index.html`; the cha
 | `message status` | Server → Client | Update delivery/read receipts when status changes. |
 | `pin message`, `star message`, `react message`, etc. | Bidirectional | Manage message metadata actions. |
 | `moderate` | Client → Server | Admin actions for mute/block/ban/unban with notifications. |
+| `call:start`, `call:join`, `call:leave`, `call:end` | Bidirectional | Manage optional LiveKit-backed voice/video call lifecycle. |
+| `call:mute-user`, `call:kick-user`, `call:disable-video-user`, `call:enable-video-user` | Client → Server | Admin-only call moderation actions for audio, removal, and camera access. |
 | `room list` | Server → Client | Broadcasts current public rooms and occupant counts. |
 
 ## Security considerations

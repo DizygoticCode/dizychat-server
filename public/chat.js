@@ -2538,6 +2538,10 @@ function openUserContextMenu(trigger, user) {
       options.push({ action: "block", label: "Block" });
     }
     options.push({ action: "ban", label: "Ban & remove", dangerous: true });
+    options.push({ action: "call:mute-user", label: "Mute in call", socketEvent: "call:mute-user" });
+    options.push({ action: "call:kick-user", label: "Remove from call", socketEvent: "call:kick-user" });
+    options.push({ action: "call:disable-video-user", label: "Disable camera", socketEvent: "call:disable-video-user" });
+    options.push({ action: "call:enable-video-user", label: "Allow camera", socketEvent: "call:enable-video-user" });
   }
 
   if (!options.length) {
@@ -2569,7 +2573,11 @@ function openUserContextMenu(trigger, user) {
         action: option.action,
       };
       if (option.duration) payload.duration = option.duration;
-      socket.emit("moderate user", payload);
+      if (option.socketEvent) {
+        socket.emit(option.socketEvent, { room: window.currentRoom, target: user.username });
+      } else {
+        socket.emit("moderate user", payload);
+      }
       closeActiveMenu();
     });
     userContextMenu.appendChild(button);
