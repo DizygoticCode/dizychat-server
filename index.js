@@ -72,7 +72,7 @@ const CONTENT_SECURITY_POLICY = [
 
 const logSecurityEvent = (eventName, details = {}, level = 'warn') => {
   const logger = typeof console[level] === 'function' ? console[level] : console.warn;
-  logger(`[SecurityEvent] ${eventName}`, {
+  logger(`[Security] ${eventName}`, {
     ...details,
     at: new Date().toISOString(),
   });
@@ -406,11 +406,9 @@ const fsPromises = fs.promises;
 const UPLOAD_EXTENSION_CONFIG = new Map([
   ['.jpg', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'] }],
   ['.jpeg', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'] }],
-  ['.jfif', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'] }],
   ['.png', { family: 'image/png', mimeTypes: ['image/png'] }],
   ['.gif', { family: 'image/gif', mimeTypes: ['image/gif'] }],
   ['.webp', { family: 'image/webp', mimeTypes: ['image/webp'] }],
-  ['.avif', { family: 'avif-family', mimeTypes: ['image/avif'] }],
   ['.heic', { family: 'heif-family', mimeTypes: ['image/heic', 'image/heif'] }],
   ['.heif', { family: 'heif-family', mimeTypes: ['image/heic', 'image/heif'] }],
   ['.mp3', { family: 'audio/mpeg', mimeTypes: ['audio/mpeg', 'audio/mp3', 'audio/x-mpeg', 'audio/x-mp3'] }],
@@ -481,7 +479,6 @@ const detectFileKindByMagicBytes = async (filePath) => {
     if (bytes[0] === 0x1A && bytes[1] === 0x45 && bytes[2] === 0xDF && bytes[3] === 0xA3) return 'webm-family';
     if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
       const brand = bytes.subarray(8, 12).toString('ascii').toLowerCase();
-      if (['avif', 'avis'].includes(brand)) return 'avif-family';
       if (['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1'].includes(brand)) return 'heif-family';
       return 'mp4-family';
     }
