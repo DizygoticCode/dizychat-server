@@ -6008,10 +6008,17 @@ function fetchTenorPreview(link, node) {
     });
 }
 
+
+function isLikelyVoiceWebmUrl(url = "", name = "") {
+  const target = `${String(url || "")} ${String(name || "")}`.trim();
+  return /\.webm(?:[\s?].*)?$/i.test(target) && /(?:^|[\/_-])voice(?:[\/_-]|%20|$)/i.test(target);
+}
+
 function appendAttachmentFromMessage(node, msg) {
   if (!node || !msg?.fileUrl) return;
   const url = msg.fileUrl;
   const typeHint = (msg.fileType || "").toLowerCase();
+  const fileNameHint = msg.fileName || "";
   const isTenor = /tenor\.com/i.test(url);
   if (
     isTenor &&
@@ -6025,10 +6032,10 @@ function appendAttachmentFromMessage(node, msg) {
   const imagePattern = /\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?.*)?$/i;
   if (typeHint.startsWith("image/") || imagePattern.test(url)) {
     previewType = "image";
+  } else if (typeHint.startsWith("audio/") || /\.(mp3|wav|ogg|opus)(\?.*)?$/i.test(url) || isLikelyVoiceWebmUrl(url, fileNameHint)) {
+    previewType = "audio";
   } else if (typeHint.startsWith("video/") || /\.(mp4|webm|mov)(\?.*)?$/i.test(url)) {
     previewType = "video";
-  } else if (typeHint.startsWith("audio/") || /\.(mp3|wav|ogg)(\?.*)?$/i.test(url)) {
-    previewType = "audio";
   } else if (typeHint.includes("pdf") || /\.(pdf)(\?.*)?$/i.test(url)) {
     previewType = "pdf";
   } else if (url) {
@@ -7887,12 +7894,17 @@ function autoEmbed(node, providedLinks = null) {
         el = createInlinePreview(link, "image");
       }
     }
+    if (!el && isLikelyVoiceWebmUrl(link)) {
+      if (!hasInlinePreview(wrap, link)) {
+        el = createInlinePreview(link, "audio");
+      }
+    }
     if (!el && /\.(mp4|webm|mov)(\?.*)?$/i.test(link)) {
       if (!hasInlinePreview(wrap, link)) {
         el = createInlinePreview(link, "video");
       }
     }
-    if (!el && /\.(mp3|wav|ogg)(\?.*)?$/i.test(link)) {
+    if (!el && /\.(mp3|wav|ogg|opus)(\?.*)?$/i.test(link)) {
       if (!hasInlinePreview(wrap, link)) {
         el = createInlinePreview(link, "audio");
       }
@@ -7997,7 +8009,7 @@ function autoEmbed(node, providedLinks = null) {
   (async () => {
     const previewable = links.filter(
       (u) =>
-        !/(youtube|youtu\.be|open\.spotify|soundcloud|rumble\.com|tenor\.com|\.mp4|\.webm|\.mov|\.mp3|\.wav|\.ogg|\.png|\.jpg|\.jpeg|\.gif|\.webp|\.pdf|\.zip|\.rar|\.7z|\.tar|\.gz)/i.test(
+        !/(youtube|youtu\.be|open\.spotify|soundcloud|rumble\.com|tenor\.com|\.mp4|\.webm|\.mov|\.mp3|\.wav|\.ogg|\.opus|\.png|\.jpg|\.jpeg|\.gif|\.webp|\.pdf|\.zip|\.rar|\.7z|\.tar|\.gz)/i.test(
           u
         )
     );
