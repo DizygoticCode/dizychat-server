@@ -98,6 +98,10 @@ Create a `.env` file in the project root with the following keys:
 | `METADEFENDER_BASE_URL` | (Optional) Override the MetaDefender API origin. Defaults to `https://api.metadefender.com/v4`. |
 | `METADEFENDER_POLL_INTERVAL_MS` | (Optional) Milliseconds between status polls; defaults to 1500 (bounded between 250-15000). |
 | `METADEFENDER_MAX_POLL_ATTEMPTS` | (Optional) Maximum polling attempts before timing out; defaults to 10 (bounded between 1-40). |
+| `ENABLE_VOICE_CALLS` | (Optional) Set to `true` to enable Sprint A voice-call control plane + token minting endpoint. |
+| `LIVEKIT_URL` | Required when voice calls are enabled. LiveKit Cloud/server WebSocket URL (for example `wss://<project>.livekit.cloud`). |
+| `LIVEKIT_API_KEY` | Required when voice calls are enabled. LiveKit API key used by the backend to issue room-scoped access tokens. |
+| `LIVEKIT_API_SECRET` | Required when voice calls are enabled. LiveKit API secret paired with `LIVEKIT_API_KEY`. |
 
 ## Running locally
 
