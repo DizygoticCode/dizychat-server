@@ -2372,6 +2372,38 @@ body:not(.dark) #voice-btn.recording {
   cursor: not-allowed;
 }
 
+#voice-call-btn.call-active {
+  background: #1f9d55;
+  border-color: #43d17a;
+  color: #fff;
+}
+
+#voice-call-btn.call-muted {
+  background: #8a2d2d;
+  border-color: #d65b5b;
+}
+
+.voice-call-panel {
+  position: fixed;
+  right: 14px;
+  bottom: 92px;
+  z-index: 13000;
+  width: min(320px, calc(100vw - 24px));
+  background: rgba(18, 22, 28, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  padding: 10px;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.35);
+}
+
+.voice-call-panel[hidden] { display: none !important; }
+.voice-call-title { font-weight: 700; font-size: 0.92rem; margin-bottom: 6px; }
+.voice-call-status { font-size: 0.84rem; opacity: 0.9; margin-bottom: 8px; }
+.voice-call-controls { display: flex; gap: 8px; flex-wrap: wrap; }
+.voice-call-controls button { flex: 1 1 30%; min-width: 88px; }
+.voice-call-peers { margin-top: 8px; max-height: 120px; overflow: auto; font-size: 0.8rem; }
+.voice-peer-row { padding: 4px 6px; border-radius: 6px; background: rgba(255,255,255,0.06); margin-top: 4px; }
+
 @keyframes voice-btn-pulse {
   0% {
     transform: scale(1);
