@@ -226,7 +226,7 @@ All marketing routes serve the hero experience from `public/index.html`; the cha
 - Restrict Socket.IO CORS origins with `SOCKET_IO_CORS_ORIGINS` before exposing the service publicly.
 - Prefer hashed admin credentials (`ADMIN_PASSWORD_HASH` / `ADMIN_CREDENTIALS_HASHED`); plaintext admin passwords are still accepted for migration compatibility.
 - Admin authentication now includes anti-bruteforce controls (progressive retry delay + temporary lockout after repeated failures).
-- HTTP responses now include hardened security headers (CSP, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, and `Permissions-Policy`), and Express `x-powered-by` is disabled.
+- HTTP responses include hardened security headers (CSP, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, and `Permissions-Policy`) while allowing trusted inline media frames from YouTube, Spotify, SoundCloud, and Rumble so chat link embeds keep working; Express `x-powered-by` is disabled.
 
 ## Deployment notes
 

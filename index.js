@@ -57,14 +57,33 @@ const io = new Server(server, {
   cors: { origin: SOCKET_IO_CORS_ORIGIN, methods: ["GET", "POST"] }
 });
 const PORT = process.env.PORT || 10000;
+const TRUSTED_SCRIPT_SOURCES = [
+  "'self'",
+  "'unsafe-inline'",
+  "https://cdn.socket.io",
+  "https://cdn.jsdelivr.net",
+  "https://rumble.com",
+  "https://w.soundcloud.com",
+];
+const TRUSTED_FRAME_SOURCES = [
+  "'self'",
+  "https://www.youtube.com",
+  "https://www.youtube-nocookie.com",
+  "https://open.spotify.com",
+  "https://w.soundcloud.com",
+  "https://rumble.com",
+  "https://*.rumble.com",
+];
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' https://cdn.socket.io https://cdn.jsdelivr.net",
+  `script-src ${TRUSTED_SCRIPT_SOURCES.join(' ')}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
   "connect-src 'self' ws: wss: https:",
   "media-src 'self' blob: https:",
+  `frame-src ${TRUSTED_FRAME_SOURCES.join(' ')}`,
+  `child-src ${TRUSTED_FRAME_SOURCES.join(' ')}`,
   "object-src 'none'",
   "base-uri 'self'",
   "frame-ancestors 'none'",
