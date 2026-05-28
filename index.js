@@ -50,6 +50,9 @@ const parseSocketCorsOrigins = () => {
 const app = express();
 const server = http.createServer(app);
 const SOCKET_IO_CORS_ORIGIN = parseSocketCorsOrigins();
+const ALLOWED_SOCKET_IO_ORIGINS = Array.isArray(SOCKET_IO_CORS_ORIGIN)
+  ? new Set(SOCKET_IO_CORS_ORIGIN)
+  : null;
 const io = new Server(server, {
   cors: { origin: SOCKET_IO_CORS_ORIGIN, methods: ["GET", "POST"] }
 });
@@ -66,6 +69,14 @@ const CONTENT_SECURITY_POLICY = [
   "base-uri 'self'",
   "frame-ancestors 'none'",
 ].join('; ');
+
+const logSecurityEvent = (eventName, details = {}, level = 'warn') => {
+  const logger = typeof console[level] === 'function' ? console[level] : console.warn;
+  logger(`[SecurityEvent] ${eventName}`, {
+    ...details,
+    at: new Date().toISOString(),
+  });
+};
 
 // ---------------- Admin ----------------
 const normaliseAdminUsername = (value) =>
@@ -392,50 +403,102 @@ app.get('/version', (req, res) => {
 const uploadDir = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 const fsPromises = fs.promises;
-const ALLOWED_UPLOAD_MIME_TYPES = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'audio/mpeg',
-  'audio/mp4',
-  'audio/wav',
-  'audio/ogg',
-  'audio/webm',
-  'video/mp4',
-  'video/webm',
-  'application/pdf',
-  'text/plain',
+const UPLOAD_EXTENSION_CONFIG = new Map([
+  ['.jpg', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'] }],
+  ['.jpeg', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'] }],
+  ['.jfif', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'] }],
+  ['.png', { family: 'image/png', mimeTypes: ['image/png'] }],
+  ['.gif', { family: 'image/gif', mimeTypes: ['image/gif'] }],
+  ['.webp', { family: 'image/webp', mimeTypes: ['image/webp'] }],
+  ['.avif', { family: 'avif-family', mimeTypes: ['image/avif'] }],
+  ['.heic', { family: 'heif-family', mimeTypes: ['image/heic', 'image/heif'] }],
+  ['.heif', { family: 'heif-family', mimeTypes: ['image/heic', 'image/heif'] }],
+  ['.mp3', { family: 'audio/mpeg', mimeTypes: ['audio/mpeg', 'audio/mp3', 'audio/x-mpeg', 'audio/x-mp3'] }],
+  ['.m4a', { family: 'mp4-family', mimeTypes: ['audio/mp4', 'audio/x-m4a', 'audio/m4a'] }],
+  ['.wav', { family: 'audio/wav', mimeTypes: ['audio/wav', 'audio/wave', 'audio/x-wav'] }],
+  ['.ogg', { family: 'ogg-family', mimeTypes: ['audio/ogg', 'video/ogg', 'application/ogg'] }],
+  ['.opus', { family: 'ogg-family', mimeTypes: ['audio/ogg', 'audio/opus', 'application/ogg'] }],
+  ['.webm', { family: 'webm-family', mimeTypes: ['audio/webm', 'video/webm', 'application/webm'] }],
+  ['.mp4', { family: 'mp4-family', mimeTypes: ['video/mp4', 'audio/mp4', 'application/mp4'] }],
+  ['.m4v', { family: 'mp4-family', mimeTypes: ['video/mp4', 'video/x-m4v'] }],
+  ['.mov', { family: 'mp4-family', mimeTypes: ['video/quicktime', 'video/mp4'] }],
+  ['.pdf', { family: 'application/pdf', mimeTypes: ['application/pdf'] }],
+  ['.txt', { family: 'text', mimeTypes: ['text/plain'] }],
+  ['.md', { family: 'text', mimeTypes: ['text/markdown', 'text/plain'] }],
+  ['.csv', { family: 'text', mimeTypes: ['text/csv', 'application/csv', 'text/plain'] }],
+  ['.json', { family: 'text', mimeTypes: ['application/json', 'text/json', 'text/plain'] }],
+  ['.zip', { family: 'zip-family', mimeTypes: ['application/zip', 'application/x-zip-compressed'] }],
+  ['.doc', { family: 'ole-family', mimeTypes: ['application/msword'] }],
+  ['.xls', { family: 'ole-family', mimeTypes: ['application/vnd.ms-excel'] }],
+  ['.ppt', { family: 'ole-family', mimeTypes: ['application/vnd.ms-powerpoint'] }],
+  ['.docx', { family: 'zip-family', mimeTypes: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'] }],
+  ['.xlsx', { family: 'zip-family', mimeTypes: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'] }],
+  ['.pptx', { family: 'zip-family', mimeTypes: ['application/vnd.openxmlformats-officedocument.presentationml.presentation'] }],
 ]);
 
-const ALLOWED_UPLOAD_EXTENSIONS = new Set([
-  '.jpg', '.jpeg', '.png', '.gif', '.webp',
-  '.mp3', '.m4a', '.wav', '.ogg', '.webm',
-  '.mp4', '.pdf', '.txt',
-]);
+const BROWSER_FALLBACK_UPLOAD_MIME_TYPES = new Set(['application/octet-stream', 'binary/octet-stream']);
+
+const getUploadTypeInfo = (mimeType, originalName) => {
+  const mime = String(mimeType || '').toLowerCase().trim().split(';')[0];
+  const ext = path.extname(String(originalName || '')).toLowerCase().trim();
+  const config = UPLOAD_EXTENSION_CONFIG.get(ext);
+  return { mime, ext, config };
+};
 
 const isAllowedUploadType = (mimeType, originalName) => {
-  const mime = String(mimeType || '').toLowerCase().trim();
-  const ext = path.extname(String(originalName || '')).toLowerCase().trim();
-  return ALLOWED_UPLOAD_MIME_TYPES.has(mime) && ALLOWED_UPLOAD_EXTENSIONS.has(ext);
+  const { mime, config } = getUploadTypeInfo(mimeType, originalName);
+  if (!config) return false;
+  return config.mimeTypes.includes(mime) || BROWSER_FALLBACK_UPLOAD_MIME_TYPES.has(mime);
+};
+
+const isLikelyTextFile = (buffer, bytesRead) => {
+  if (bytesRead === 0) return true;
+  let suspiciousControlBytes = 0;
+  for (let i = 0; i < bytesRead; i += 1) {
+    const byte = buffer[i];
+    if (byte === 0) return false;
+    if (byte < 0x09 || (byte > 0x0D && byte < 0x20)) suspiciousControlBytes += 1;
+  }
+  return suspiciousControlBytes / bytesRead < 0.02;
 };
 
 const detectFileKindByMagicBytes = async (filePath) => {
   const handle = await fsPromises.open(filePath, 'r');
   try {
-    const { buffer } = await handle.read(Buffer.alloc(32), 0, 32, 0);
-    const bytes = buffer;
+    const readBuffer = Buffer.alloc(512);
+    const { bytesRead } = await handle.read(readBuffer, 0, readBuffer.length, 0);
+    const bytes = readBuffer;
+    if (bytesRead === 0) return 'empty';
     if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) return 'image/jpeg';
     if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) return 'image/png';
     if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) return 'image/gif';
     if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return 'image/webp';
     if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) return 'application/pdf';
     if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) return 'audio/mpeg';
-    if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) return 'mp4-family';
+    if (bytes[0] === 0xFF && (bytes[1] & 0xE0) === 0xE0) return 'audio/mpeg';
+    if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x41 && bytes[10] === 0x56 && bytes[11] === 0x45) return 'audio/wav';
+    if (bytes[0] === 0x4F && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) return 'ogg-family';
+    if (bytes[0] === 0x1A && bytes[1] === 0x45 && bytes[2] === 0xDF && bytes[3] === 0xA3) return 'webm-family';
+    if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
+      const brand = bytes.subarray(8, 12).toString('ascii').toLowerCase();
+      if (['avif', 'avis'].includes(brand)) return 'avif-family';
+      if (['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1'].includes(brand)) return 'heif-family';
+      return 'mp4-family';
+    }
+    if (bytes[0] === 0x50 && bytes[1] === 0x4B && [0x03, 0x05, 0x07].includes(bytes[2])) return 'zip-family';
+    if (bytes[0] === 0xD0 && bytes[1] === 0xCF && bytes[2] === 0x11 && bytes[3] === 0xE0) return 'ole-family';
+    if (isLikelyTextFile(bytes, bytesRead)) return 'text';
     return 'unknown';
   } finally {
     await handle.close();
   }
+};
+
+const isDetectedKindAllowedForUpload = (detectedKind, mimeType, originalName) => {
+  const { config } = getUploadTypeInfo(mimeType, originalName);
+  if (!config) return false;
+  if (detectedKind === 'empty') return config.family === 'text';
+  return detectedKind === config.family;
 };
 
 const validateUploadOrigin = (req, res, next) => {
@@ -518,6 +581,9 @@ app.use(
 );
 
 const METADEFENDER_API_KEY = process.env.METADEFENDER_API_KEY;
+const REQUIRE_UPLOAD_ANTIVIRUS_SCAN =
+  String(process.env.REQUIRE_UPLOAD_ANTIVIRUS_SCAN || '').trim().toLowerCase() === 'true';
+let warnedAboutDisabledUploadScanner = false;
 const METADEFENDER_BASE_URL =
   process.env.METADEFENDER_BASE_URL || 'https://api.metadefender.com/v4';
 const PSYBIN_STATUS_URL =
@@ -1073,6 +1139,20 @@ const scanFileWithMetaDefender = async (filePath) => {
   throw timeoutError;
 };
 
+const scanUploadedFileIfConfigured = async (filePath) => {
+  if (!METADEFENDER_API_KEY && !REQUIRE_UPLOAD_ANTIVIRUS_SCAN) {
+    if (!warnedAboutDisabledUploadScanner) {
+      warnedAboutDisabledUploadScanner = true;
+      logSecurityEvent('upload_scanner_disabled', {
+        message: 'METADEFENDER_API_KEY is not configured; uploads will skip antivirus scanning.',
+      }, 'warn');
+    }
+    return { clean: true, skipped: true };
+  }
+
+  return scanFileWithMetaDefender(filePath);
+};
+
 const removeFileSilently = async (filePath) => {
   try {
     await fsPromises.unlink(filePath);
@@ -1198,6 +1278,10 @@ const upload = multer({
   limits: Object.keys(uploadLimits).length ? uploadLimits : undefined,
   fileFilter: (_req, file, cb) => {
     if (!isAllowedUploadType(file?.mimetype, file?.originalname)) {
+      logSecurityEvent('upload_type_rejected', {
+        mimeType: file?.mimetype,
+        originalName: file?.originalname,
+      }, 'warn');
       const err = new Error('File type not allowed');
       err.code = 'INVALID_FILE_TYPE';
       return cb(err);
@@ -1233,11 +1317,16 @@ app.post('/upload', validateUploadOrigin, uploadSingleMiddleware, async (req, re
 
   try {
     const detectedKind = await detectFileKindByMagicBytes(filePath);
-    if (detectedKind === 'unknown') {
+    if (!isDetectedKindAllowedForUpload(detectedKind, req.file.mimetype, req.file.originalname)) {
       await removeFileSilently(filePath);
+      logSecurityEvent('upload_magic_bytes_rejected', {
+        detectedKind,
+        mimeType: req.file.mimetype,
+        originalName: req.file.originalname,
+      }, 'warn');
       return res.status(415).json({ error: 'Unable to verify uploaded file type' });
     }
-    const scanResult = await scanFileWithMetaDefender(filePath);
+    const scanResult = await scanUploadedFileIfConfigured(filePath);
     if (!scanResult.clean) {
       await removeFileSilently(filePath);
       return res.status(400).json({
