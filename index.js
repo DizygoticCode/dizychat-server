@@ -50,6 +50,9 @@ const parseSocketCorsOrigins = () => {
 const app = express();
 const server = http.createServer(app);
 const SOCKET_IO_CORS_ORIGIN = parseSocketCorsOrigins();
+const ALLOWED_SOCKET_IO_ORIGINS = Array.isArray(SOCKET_IO_CORS_ORIGIN)
+  ? new Set(SOCKET_IO_CORS_ORIGIN)
+  : null;
 const io = new Server(server, {
   cors: { origin: SOCKET_IO_CORS_ORIGIN, methods: ["GET", "POST"] }
 });
@@ -575,6 +578,9 @@ app.use(
 );
 
 const METADEFENDER_API_KEY = process.env.METADEFENDER_API_KEY;
+const REQUIRE_UPLOAD_ANTIVIRUS_SCAN =
+  String(process.env.REQUIRE_UPLOAD_ANTIVIRUS_SCAN || '').trim().toLowerCase() === 'true';
+let warnedAboutDisabledUploadScanner = false;
 const METADEFENDER_BASE_URL =
   process.env.METADEFENDER_BASE_URL || 'https://api.metadefender.com/v4';
 const PSYBIN_STATUS_URL =
@@ -1130,6 +1136,20 @@ const scanFileWithMetaDefender = async (filePath) => {
   throw timeoutError;
 };
 
+const scanUploadedFileIfConfigured = async (filePath) => {
+  if (!METADEFENDER_API_KEY && !REQUIRE_UPLOAD_ANTIVIRUS_SCAN) {
+    if (!warnedAboutDisabledUploadScanner) {
+      warnedAboutDisabledUploadScanner = true;
+      logSecurityEvent('upload_scanner_disabled', {
+        message: 'METADEFENDER_API_KEY is not configured; uploads will skip antivirus scanning.',
+      }, 'warn');
+    }
+    return { clean: true, skipped: true };
+  }
+
+  return scanFileWithMetaDefender(filePath);
+};
+
 const removeFileSilently = async (filePath) => {
   try {
     await fsPromises.unlink(filePath);
@@ -1303,7 +1323,7 @@ app.post('/upload', validateUploadOrigin, uploadSingleMiddleware, async (req, re
       }, 'warn');
       return res.status(415).json({ error: 'Unable to verify uploaded file type' });
     }
-    const scanResult = await scanFileWithMetaDefender(filePath);
+    const scanResult = await scanUploadedFileIfConfigured(filePath);
     if (!scanResult.clean) {
       await removeFileSilently(filePath);
       return res.status(400).json({

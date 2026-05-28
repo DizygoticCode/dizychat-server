@@ -13,6 +13,7 @@ Monitor structured logs prefixed with `[SecurityEvent]` for:
 - `upload_origin_rejected`
 - `upload_type_rejected`
 - `upload_magic_bytes_rejected`
+- `upload_scanner_disabled`
 - `scanner_unavailable`
 - `scanner_timeout`
 - `scanner_error`
@@ -36,7 +37,7 @@ Monitor structured logs prefixed with `[SecurityEvent]` for:
    - room joins
    - admin authentication
    - upload scan pipeline
-2. Confirm scanner availability and status latency.
+2. Confirm scanner availability and status latency, or confirm `REQUIRE_UPLOAD_ANTIVIRUS_SCAN` is intentionally unset/false for local-only type verification.
 3. Review room bans/blocks and moderation logs for follow-up cleanup.
 
 ## Post-incident actions

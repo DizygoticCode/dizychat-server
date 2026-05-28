@@ -94,7 +94,8 @@ Create a `.env` file in the project root with the following keys:
 | `ADMIN_AUTH_LOCK_MS` | (Optional) Temporary lockout duration in milliseconds after too many failed admin auth attempts; defaults to `900000` (15 minutes). |
 | `MESSAGE_HISTORY_CHUNK_SIZE` | Page size (25-500) for history fetches; defaults to 150. |
 | `MAX_UPLOAD_SIZE_MB` | File upload cap; accepts values like `50`, `50mb`, or `2gb`. Use `unlimited` to disable the limit. |
-| `METADEFENDER_API_KEY` | **Required for uploads.** OPSWAT MetaDefender Cloud API key used to scan files. |
+| `METADEFENDER_API_KEY` | OPSWAT MetaDefender Cloud API key used to scan files when configured. If unset, uploads still work after local type verification unless `REQUIRE_UPLOAD_ANTIVIRUS_SCAN=true`. |
+| `REQUIRE_UPLOAD_ANTIVIRUS_SCAN` | (Optional) Set to `true` to fail uploads when `METADEFENDER_API_KEY` is missing or rejected; defaults to allowing locally verified uploads without antivirus scanning. |
 | `METADEFENDER_BASE_URL` | (Optional) Override the MetaDefender API origin. Defaults to `https://api.metadefender.com/v4`. |
 | `METADEFENDER_POLL_INTERVAL_MS` | (Optional) Milliseconds between status polls; defaults to 1500 (bounded between 250-15000). |
 | `METADEFENDER_MAX_POLL_ATTEMPTS` | (Optional) Maximum polling attempts before timing out; defaults to 10 (bounded between 1-40). |
