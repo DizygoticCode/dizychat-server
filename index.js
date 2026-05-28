@@ -2085,22 +2085,6 @@ io.on('connection', socket => {
     io.to(roomName).emit('call:user-kicked', { room: roomName, target: cleanedTarget, by: socket.username });
   });
 
-  socket.on('call:disable-video-user', ({ room, target } = {}) => {
-    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id) || !requireAdmin(socket)) return;
-    const roomName = normaliseRoomName(room || socket.currentRoom);
-    const cleanedTarget = normaliseUsername(target, '');
-    if (!roomName || roomName !== socket.currentRoom || !cleanedTarget) return;
-    io.to(roomName).emit('call:user-video-disabled', { room: roomName, target: cleanedTarget, by: socket.username });
-  });
-
-  socket.on('call:enable-video-user', ({ room, target } = {}) => {
-    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id) || !requireAdmin(socket)) return;
-    const roomName = normaliseRoomName(room || socket.currentRoom);
-    const cleanedTarget = normaliseUsername(target, '');
-    if (!roomName || roomName !== socket.currentRoom || !cleanedTarget) return;
-    io.to(roomName).emit('call:user-video-enabled', { room: roomName, target: cleanedTarget, by: socket.username });
-  });
-
   socket.on('call:end', ({ room } = {}) => {
     if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id) || !requireAdmin(socket)) return;
     const roomName = normaliseRoomName(room || socket.currentRoom);
