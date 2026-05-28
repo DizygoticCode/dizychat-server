@@ -7087,9 +7087,6 @@ if (voiceBtn) {
     localTrack: null,
     muted: false,
     participants: new Map(),
-    localVideoTrack: null,
-    videoEnabled: false,
-    videoDisabledByAdmin: false,
   };
 
   const panel = document.createElement("div");
@@ -7101,10 +7098,8 @@ if (voiceBtn) {
     <div class="voice-call-controls">
       <button type="button" data-role="join">Join</button>
       <button type="button" data-role="mute">Mute</button>
-      <button type="button" data-role="video">Video On</button>
       <button type="button" data-role="leave">Leave</button>
     </div>
-    <div class="voice-call-videos" data-role="videos"></div>
     <div class="voice-call-peers" data-role="peers"></div>
   `;
   document.body.appendChild(panel);
@@ -7112,10 +7107,8 @@ if (voiceBtn) {
   const statusEl = panel.querySelector('[data-role="status"]');
   const joinControl = panel.querySelector('[data-role="join"]');
   const muteControl = panel.querySelector('[data-role="mute"]');
-  const videoControl = panel.querySelector('[data-role="video"]');
   const leaveControl = panel.querySelector('[data-role="leave"]');
   const peersEl = panel.querySelector('[data-role="peers"]');
-  const videosEl = panel.querySelector('[data-role="videos"]');
 
   const setStatus = (text) => { if (statusEl) statusEl.textContent = text; };
   const renderPeers = () => {
@@ -7130,37 +7123,15 @@ if (voiceBtn) {
       peersEl.appendChild(row);
     });
   };
-  const isVideoTrack = (track) => String(track?.kind || "").toLowerCase() === "video";
-
-  const ensureVideoTile = (id, label) => {
-    if (!videosEl) return null;
-    let tile = videosEl.querySelector(`[data-video-id="${id}"]`);
-    if (!tile) {
-      tile = document.createElement("div");
-      tile.className = "voice-video-tile";
-      tile.dataset.videoId = id;
-      tile.innerHTML = `<video autoplay playsinline></video><div class="voice-video-label"></div>`;
-      videosEl.appendChild(tile);
-    }
-    const labelEl = tile.querySelector(".voice-video-label");
-    if (labelEl) labelEl.textContent = label || "Participant";
-    return tile.querySelector("video");
-  };
 
   const setCallUiState = ({ inCall = false, muted = false } = {}) => {
     voiceCallBtn.classList.toggle("call-active", inCall);
     voiceCallBtn.classList.toggle("call-muted", inCall && muted);
     voiceCallBtn.textContent = inCall ? (muted ? "🔇" : "📞") : "📞";
     muteControl.disabled = !inCall;
-    videoControl.disabled = !inCall || callState.videoDisabledByAdmin;
     leaveControl.disabled = !inCall;
     joinControl.disabled = inCall;
     muteControl.textContent = muted ? "Unmute" : "Mute";
-    videoControl.textContent = callState.videoDisabledByAdmin
-      ? "Video Locked"
-      : callState.videoEnabled
-        ? "Video Off"
-        : "Video On";
   };
 
   const ensureSdk = async () => {
@@ -7193,17 +7164,12 @@ if (voiceBtn) {
   const leaveCall = async (silent = false) => {
     try {
       if (callState.localTrack) callState.localTrack.stop();
-      if (callState.localVideoTrack) callState.localVideoTrack.stop();
       if (callState.room) await callState.room.disconnect();
       callState.localTrack = null;
-      callState.localVideoTrack = null;
       callState.room = null;
       callState.muted = false;
-      callState.videoEnabled = false;
-      callState.videoDisabledByAdmin = false;
       callState.participants.clear();
       renderPeers();
-      if (videosEl) videosEl.innerHTML = "";
       setCallUiState({ inCall: false, muted: false });
       setStatus("Not connected.");
       if (!silent) socket.emit("call:leave", { room: window.currentRoom });
@@ -7234,19 +7200,6 @@ if (voiceBtn) {
     socket.emit("call:join", { room: window.currentRoom });
     room.on(LK.RoomEvent.Disconnected, () => {
       leaveCall(true);
-    });
-    room.on(LK.RoomEvent.TrackSubscribed, (trackRef, _publication, participant) => {
-      if (!isVideoTrack(trackRef)) return;
-      const key = participant?.sid || participant?.identity;
-      const videoEl = ensureVideoTile(key, participant?.identity || "Participant");
-      if (!videoEl) return;
-      trackRef.attach(videoEl);
-    });
-    room.on(LK.RoomEvent.TrackUnsubscribed, (trackRef, _publication, participant) => {
-      if (!isVideoTrack(trackRef)) return;
-      const key = participant?.sid || participant?.identity;
-      const tile = videosEl?.querySelector?.(`[data-video-id="${key}"]`);
-      if (tile) tile.remove();
     });
     room.on(LK.RoomEvent.ActiveSpeakersChanged, (speakers = []) => {
       const seen = new Set();
@@ -7297,51 +7250,9 @@ if (voiceBtn) {
     }
     setCallUiState({ inCall: true, muted: callState.muted });
   });
-  const disableLocalVideo = async ({ notify = true } = {}) => {
-    if (callState.localVideoTrack && callState.room) {
-      await callState.room.localParticipant.unpublishTrack(callState.localVideoTrack);
-      callState.localVideoTrack.stop();
-      callState.localVideoTrack = null;
-    }
-    callState.videoEnabled = false;
-    const selfTile = videosEl?.querySelector?.('[data-video-id="self"]');
-    if (selfTile) selfTile.remove();
-    setCallUiState({ inCall: Boolean(callState.room), muted: callState.muted });
-    if (notify) showToast("Video disabled", "info");
-  };
-
   leaveControl.addEventListener("click", async () => {
     await leaveCall();
     showToast("Left voice call", "info");
-  });
-  videoControl.addEventListener("click", async () => {
-    if (!callState.room) return;
-    if (callState.videoDisabledByAdmin) {
-      showToast("An admin has disabled your camera for this call.", "warn");
-      return;
-    }
-    const LK = window.LivekitClient;
-    try {
-      if (!callState.videoEnabled) {
-        const videoTrack = await LK.createLocalVideoTrack({
-          resolution: { width: 640, height: 360, frameRate: 24 },
-        });
-        await callState.room.localParticipant.publishTrack(videoTrack);
-        callState.localVideoTrack = videoTrack;
-        callState.videoEnabled = true;
-        const localVideoEl = ensureVideoTile("self", "You");
-        if (localVideoEl) videoTrack.attach(localVideoEl);
-        showToast("Video enabled", "success");
-      } else {
-        await disableLocalVideo();
-      }
-      setCallUiState({ inCall: true, muted: callState.muted });
-    } catch (error) {
-      console.error("[VoiceCall] video toggle failed", error);
-      showToast("Camera unavailable. Staying audio-only.", "warn");
-      callState.videoEnabled = false;
-      setCallUiState({ inCall: true, muted: callState.muted });
-    }
   });
 
   socket.on("call:user-muted", ({ room, target } = {}) => {
@@ -7362,25 +7273,6 @@ if (voiceBtn) {
       showToast("You were removed from the voice call.", "warn");
       setStatus("Removed by admin.");
     });
-  });
-
-  socket.on("call:user-video-disabled", ({ room, target } = {}) => {
-    if (!room || room !== window.currentRoom) return;
-    if (!target || target !== window.currentUser) return;
-    callState.videoDisabledByAdmin = true;
-    disableLocalVideo({ notify: false }).finally(() => {
-      setStatus("Camera disabled by admin. Audio is still connected.");
-      showToast("An admin disabled your camera.", "warn");
-    });
-  });
-
-  socket.on("call:user-video-enabled", ({ room, target } = {}) => {
-    if (!room || room !== window.currentRoom) return;
-    if (!target || target !== window.currentUser) return;
-    callState.videoDisabledByAdmin = false;
-    setCallUiState({ inCall: Boolean(callState.room), muted: callState.muted });
-    setStatus(callState.room ? `Connected to ${window.currentRoom}` : "Not connected.");
-    showToast("Your camera is allowed again.", "success");
   });
 
   const autoLeaveIfActive = () => {
