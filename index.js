@@ -330,9 +330,44 @@ if (!mongoUri) {
   console.error("[Mongo] MONGO_URI missing");
   process.exit(1);
 }
-mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => console.log("[Mongo] Connected"))
-  .catch(err => { console.error("[Mongo] Error:", err); process.exit(1); });
+const MONGO_RETRY_BASE_MS = 3000;
+let mongoReconnectTimer = null;
+let mongoConnectInFlight = false;
+
+const scheduleMongoReconnect = (delayMs = MONGO_RETRY_BASE_MS) => {
+  if (mongoReconnectTimer) return;
+  const safeDelay = Math.max(1000, Number(delayMs) || MONGO_RETRY_BASE_MS);
+  mongoReconnectTimer = setTimeout(() => {
+    mongoReconnectTimer = null;
+    connectMongoWithRetry();
+  }, safeDelay);
+};
+
+const connectMongoWithRetry = async () => {
+  if (mongoConnectInFlight || mongoose.connection.readyState === 1) return;
+  mongoConnectInFlight = true;
+  try {
+    await mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true });
+    console.log("[Mongo] Connected");
+  } catch (err) {
+    console.error("[Mongo] Initial connect failed, retrying:", err?.message || err);
+    scheduleMongoReconnect();
+  } finally {
+    mongoConnectInFlight = false;
+  }
+};
+
+mongoose.connection.on('disconnected', () => {
+  console.warn("[Mongo] Disconnected, attempting reconnect.");
+  scheduleMongoReconnect();
+});
+
+mongoose.connection.on('error', (err) => {
+  console.error("[Mongo] Connection error:", err?.message || err);
+  scheduleMongoReconnect();
+});
+
+connectMongoWithRetry();
 
 // ---------------- Static Files ----------------
 app.disable('x-powered-by');
