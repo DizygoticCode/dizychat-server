@@ -87,6 +87,7 @@ const messages = document.getElementById("messages");
 const fileInput = document.getElementById("file-input");
 const attachBtn = document.getElementById("file-attach");
 const voiceBtn = document.getElementById("voice-btn");
+const voiceCallBtn = document.getElementById("voice-call-btn");
 const emojiBtn = document.getElementById("emoji-btn");
 const pinnedContainer = document.getElementById("pinned-messages");
 const searchInput = document.getElementById("message-search");
@@ -2537,6 +2538,10 @@ function openUserContextMenu(trigger, user) {
       options.push({ action: "block", label: "Block" });
     }
     options.push({ action: "ban", label: "Ban & remove", dangerous: true });
+    options.push({ action: "call:mute-user", label: "Mute in call", socketEvent: "call:mute-user" });
+    options.push({ action: "call:kick-user", label: "Remove from call", socketEvent: "call:kick-user" });
+    options.push({ action: "call:disable-video-user", label: "Disable camera", socketEvent: "call:disable-video-user" });
+    options.push({ action: "call:enable-video-user", label: "Allow camera", socketEvent: "call:enable-video-user" });
   }
 
   if (!options.length) {
@@ -2568,7 +2573,11 @@ function openUserContextMenu(trigger, user) {
         action: option.action,
       };
       if (option.duration) payload.duration = option.duration;
-      socket.emit("moderate user", payload);
+      if (option.socketEvent) {
+        socket.emit(option.socketEvent, { room: window.currentRoom, target: user.username });
+      } else {
+        socket.emit("moderate user", payload);
+      }
       closeActiveMenu();
     });
     userContextMenu.appendChild(button);
@@ -7067,6 +7076,330 @@ if (voiceBtn) {
     });
   }
 }
+
+// ------------------- Live Voice Calls (Sprint B) -------------------
+(() => {
+  if (!voiceCallBtn) return;
+
+  const callState = {
+    sdkLoaded: false,
+    room: null,
+    localTrack: null,
+    muted: false,
+    participants: new Map(),
+    localVideoTrack: null,
+    videoEnabled: false,
+    videoDisabledByAdmin: false,
+  };
+
+  const panel = document.createElement("div");
+  panel.className = "voice-call-panel";
+  panel.hidden = true;
+  panel.innerHTML = `
+    <div class="voice-call-title">Voice Call</div>
+    <div class="voice-call-status" data-role="status">Not connected.</div>
+    <div class="voice-call-controls">
+      <button type="button" data-role="join">Join</button>
+      <button type="button" data-role="mute">Mute</button>
+      <button type="button" data-role="video">Video On</button>
+      <button type="button" data-role="leave">Leave</button>
+    </div>
+    <div class="voice-call-videos" data-role="videos"></div>
+    <div class="voice-call-peers" data-role="peers"></div>
+  `;
+  document.body.appendChild(panel);
+
+  const statusEl = panel.querySelector('[data-role="status"]');
+  const joinControl = panel.querySelector('[data-role="join"]');
+  const muteControl = panel.querySelector('[data-role="mute"]');
+  const videoControl = panel.querySelector('[data-role="video"]');
+  const leaveControl = panel.querySelector('[data-role="leave"]');
+  const peersEl = panel.querySelector('[data-role="peers"]');
+  const videosEl = panel.querySelector('[data-role="videos"]');
+
+  const setStatus = (text) => { if (statusEl) statusEl.textContent = text; };
+  const renderPeers = () => {
+    if (!peersEl) return;
+    const entries = Array.from(callState.participants.values());
+    peersEl.innerHTML = "";
+    if (!entries.length) return;
+    entries.forEach((entry) => {
+      const row = document.createElement("div");
+      row.className = "voice-peer-row";
+      row.textContent = `${entry.name}: ${entry.level > 0 ? `${Math.round(entry.level * 100)}%` : "silent"}`;
+      peersEl.appendChild(row);
+    });
+  };
+  const isVideoTrack = (track) => String(track?.kind || "").toLowerCase() === "video";
+
+  const ensureVideoTile = (id, label) => {
+    if (!videosEl) return null;
+    let tile = videosEl.querySelector(`[data-video-id="${id}"]`);
+    if (!tile) {
+      tile = document.createElement("div");
+      tile.className = "voice-video-tile";
+      tile.dataset.videoId = id;
+      tile.innerHTML = `<video autoplay playsinline></video><div class="voice-video-label"></div>`;
+      videosEl.appendChild(tile);
+    }
+    const labelEl = tile.querySelector(".voice-video-label");
+    if (labelEl) labelEl.textContent = label || "Participant";
+    return tile.querySelector("video");
+  };
+
+  const setCallUiState = ({ inCall = false, muted = false } = {}) => {
+    voiceCallBtn.classList.toggle("call-active", inCall);
+    voiceCallBtn.classList.toggle("call-muted", inCall && muted);
+    voiceCallBtn.textContent = inCall ? (muted ? "🔇" : "📞") : "📞";
+    muteControl.disabled = !inCall;
+    videoControl.disabled = !inCall || callState.videoDisabledByAdmin;
+    leaveControl.disabled = !inCall;
+    joinControl.disabled = inCall;
+    muteControl.textContent = muted ? "Unmute" : "Mute";
+    videoControl.textContent = callState.videoDisabledByAdmin
+      ? "Video Locked"
+      : callState.videoEnabled
+        ? "Video Off"
+        : "Video On";
+  };
+
+  const ensureSdk = async () => {
+    if (window.LivekitClient) {
+      callState.sdkLoaded = true;
+      return true;
+    }
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js";
+    script.async = true;
+    document.head.appendChild(script);
+    await new Promise((resolve, reject) => {
+      script.onload = resolve;
+      script.onerror = reject;
+    });
+    callState.sdkLoaded = Boolean(window.LivekitClient);
+    return callState.sdkLoaded;
+  };
+
+  const fetchToken = async () => {
+    const res = await fetch("/api/calls/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ room: window.currentRoom, username: window.currentUser }),
+    });
+    if (!res.ok) throw new Error(`Token request failed (${res.status})`);
+    return res.json();
+  };
+
+  const leaveCall = async (silent = false) => {
+    try {
+      if (callState.localTrack) callState.localTrack.stop();
+      if (callState.localVideoTrack) callState.localVideoTrack.stop();
+      if (callState.room) await callState.room.disconnect();
+      callState.localTrack = null;
+      callState.localVideoTrack = null;
+      callState.room = null;
+      callState.muted = false;
+      callState.videoEnabled = false;
+      callState.videoDisabledByAdmin = false;
+      callState.participants.clear();
+      renderPeers();
+      if (videosEl) videosEl.innerHTML = "";
+      setCallUiState({ inCall: false, muted: false });
+      setStatus("Not connected.");
+      if (!silent) socket.emit("call:leave", { room: window.currentRoom });
+    } catch (error) {
+      console.error("[VoiceCall] leave error", error);
+    }
+  };
+
+  const joinCall = async () => {
+    if (!window.currentRoom || !window.currentUser) {
+      showToast("Join a chat room first.", "warn");
+      return;
+    }
+    setStatus("Connecting…");
+    await ensureSdk();
+    const tokenPayload = await fetchToken();
+    if (!tokenPayload?.token || !tokenPayload?.url) throw new Error("Missing token/url");
+    const LK = window.LivekitClient;
+    const room = new LK.Room({ adaptiveStream: true, dynacast: true });
+    await room.connect(tokenPayload.url, tokenPayload.token);
+    const track = await LK.createLocalAudioTrack();
+    await room.localParticipant.publishTrack(track);
+    callState.localTrack = track;
+    callState.room = room;
+    callState.muted = false;
+    setCallUiState({ inCall: true, muted: false });
+    setStatus(`Connected to ${window.currentRoom}`);
+    socket.emit("call:join", { room: window.currentRoom });
+    room.on(LK.RoomEvent.Disconnected, () => {
+      leaveCall(true);
+    });
+    room.on(LK.RoomEvent.TrackSubscribed, (trackRef, _publication, participant) => {
+      if (!isVideoTrack(trackRef)) return;
+      const key = participant?.sid || participant?.identity;
+      const videoEl = ensureVideoTile(key, participant?.identity || "Participant");
+      if (!videoEl) return;
+      trackRef.attach(videoEl);
+    });
+    room.on(LK.RoomEvent.TrackUnsubscribed, (trackRef, _publication, participant) => {
+      if (!isVideoTrack(trackRef)) return;
+      const key = participant?.sid || participant?.identity;
+      const tile = videosEl?.querySelector?.(`[data-video-id="${key}"]`);
+      if (tile) tile.remove();
+    });
+    room.on(LK.RoomEvent.ActiveSpeakersChanged, (speakers = []) => {
+      const seen = new Set();
+      speakers.forEach((participant) => {
+        const sid = participant?.sid;
+        if (!sid || participant?.isLocal) return;
+        seen.add(sid);
+        callState.participants.set(sid, {
+          name: participant.identity || "Participant",
+          level: Number(participant.audioLevel || 0),
+        });
+      });
+      Array.from(callState.participants.keys()).forEach((sid) => {
+        if (!seen.has(sid)) {
+          const existing = callState.participants.get(sid);
+          if (existing) existing.level = 0;
+        }
+      });
+      renderPeers();
+    });
+  };
+
+  voiceCallBtn.hidden = false;
+  voiceCallBtn.removeAttribute("aria-hidden");
+  setCallUiState({ inCall: false, muted: false });
+
+  voiceCallBtn.addEventListener("click", () => {
+    panel.hidden = !panel.hidden;
+  });
+  joinControl.addEventListener("click", async () => {
+    try {
+      await joinCall();
+      showToast("Voice call connected", "success");
+    } catch (error) {
+      console.error("[VoiceCall] join failed", error);
+      showToast("Unable to join voice call.", "error");
+      setStatus("Connection failed.");
+      setCallUiState({ inCall: false, muted: false });
+    }
+  });
+  muteControl.addEventListener("click", async () => {
+    if (!callState.localTrack) return;
+    callState.muted = !callState.muted;
+    if (callState.muted) {
+      await callState.localTrack.mute();
+    } else {
+      await callState.localTrack.unmute();
+    }
+    setCallUiState({ inCall: true, muted: callState.muted });
+  });
+  const disableLocalVideo = async ({ notify = true } = {}) => {
+    if (callState.localVideoTrack && callState.room) {
+      await callState.room.localParticipant.unpublishTrack(callState.localVideoTrack);
+      callState.localVideoTrack.stop();
+      callState.localVideoTrack = null;
+    }
+    callState.videoEnabled = false;
+    const selfTile = videosEl?.querySelector?.('[data-video-id="self"]');
+    if (selfTile) selfTile.remove();
+    setCallUiState({ inCall: Boolean(callState.room), muted: callState.muted });
+    if (notify) showToast("Video disabled", "info");
+  };
+
+  leaveControl.addEventListener("click", async () => {
+    await leaveCall();
+    showToast("Left voice call", "info");
+  });
+  videoControl.addEventListener("click", async () => {
+    if (!callState.room) return;
+    if (callState.videoDisabledByAdmin) {
+      showToast("An admin has disabled your camera for this call.", "warn");
+      return;
+    }
+    const LK = window.LivekitClient;
+    try {
+      if (!callState.videoEnabled) {
+        const videoTrack = await LK.createLocalVideoTrack({
+          resolution: { width: 640, height: 360, frameRate: 24 },
+        });
+        await callState.room.localParticipant.publishTrack(videoTrack);
+        callState.localVideoTrack = videoTrack;
+        callState.videoEnabled = true;
+        const localVideoEl = ensureVideoTile("self", "You");
+        if (localVideoEl) videoTrack.attach(localVideoEl);
+        showToast("Video enabled", "success");
+      } else {
+        await disableLocalVideo();
+      }
+      setCallUiState({ inCall: true, muted: callState.muted });
+    } catch (error) {
+      console.error("[VoiceCall] video toggle failed", error);
+      showToast("Camera unavailable. Staying audio-only.", "warn");
+      callState.videoEnabled = false;
+      setCallUiState({ inCall: true, muted: callState.muted });
+    }
+  });
+
+  socket.on("call:user-muted", ({ room, target } = {}) => {
+    if (!room || room !== window.currentRoom) return;
+    if (!target || target !== window.currentUser) return;
+    if (callState.localTrack) {
+      callState.muted = true;
+      callState.localTrack.mute().catch(() => {});
+      setCallUiState({ inCall: true, muted: true });
+      showToast("You were muted by an admin.", "warn");
+    }
+  });
+
+  socket.on("call:user-kicked", ({ room, target } = {}) => {
+    if (!room || room !== window.currentRoom) return;
+    if (!target || target !== window.currentUser) return;
+    leaveCall(true).finally(() => {
+      showToast("You were removed from the voice call.", "warn");
+      setStatus("Removed by admin.");
+    });
+  });
+
+  socket.on("call:user-video-disabled", ({ room, target } = {}) => {
+    if (!room || room !== window.currentRoom) return;
+    if (!target || target !== window.currentUser) return;
+    callState.videoDisabledByAdmin = true;
+    disableLocalVideo({ notify: false }).finally(() => {
+      setStatus("Camera disabled by admin. Audio is still connected.");
+      showToast("An admin disabled your camera.", "warn");
+    });
+  });
+
+  socket.on("call:user-video-enabled", ({ room, target } = {}) => {
+    if (!room || room !== window.currentRoom) return;
+    if (!target || target !== window.currentUser) return;
+    callState.videoDisabledByAdmin = false;
+    setCallUiState({ inCall: Boolean(callState.room), muted: callState.muted });
+    setStatus(callState.room ? `Connected to ${window.currentRoom}` : "Not connected.");
+    showToast("Your camera is allowed again.", "success");
+  });
+
+  const autoLeaveIfActive = () => {
+    if (!callState.room) return;
+    leaveCall(true).catch(() => {});
+  };
+  if (leaveBtn) {
+    leaveBtn.addEventListener("click", autoLeaveIfActive);
+  }
+  if (joinBtn) {
+    joinBtn.addEventListener("click", () => {
+      const nextRoom = roomInput?.value.trim();
+      if (nextRoom && nextRoom !== window.currentRoom) {
+        autoLeaveIfActive();
+      }
+    });
+  }
+  window.addEventListener("beforeunload", autoLeaveIfActive);
+})();
 
 // ------------------- Tenor GIF Picker (beside emoji) -------------------
 (() => {
