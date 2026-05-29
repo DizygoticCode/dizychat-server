@@ -129,33 +129,7 @@ const ADMIN_AUTH_MAX_FAILURES = parsePositiveIntegerEnv('ADMIN_AUTH_MAX_FAILURES
 const ADMIN_AUTH_LOCK_MS = parsePositiveIntegerEnv('ADMIN_AUTH_LOCK_MS', 15 * 60 * 1000, { min: 5000, max: 24 * 60 * 60 * 1000 });
 const ADMIN_AUTH_MIN_RETRY_DELAY_MS = 750;
 const ADMIN_AUTH_MAX_RETRY_DELAY_MS = 5000;
-const normalizeLivekitUrl = (rawUrl) => {
-  const trimmed = String(rawUrl || '').trim().replace(/\/+$/, '');
-  if (!trimmed) {
-    return '';
-  }
-
-  const withProtocol = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
-    ? trimmed
-    : `wss://${trimmed}`;
-
-  const websocketUrl = withProtocol
-    .replace(/^https:\/\//i, 'wss://')
-    .replace(/^http:\/\//i, 'ws://');
-
-  try {
-    const parsed = new URL(websocketUrl);
-    if (!['ws:', 'wss:'].includes(parsed.protocol) || !parsed.hostname) {
-      return '';
-    }
-    return parsed.origin.replace(/\/+$/, '');
-  } catch (_err) {
-    return '';
-  }
-};
-
-const LIVEKIT_URL_RAW = (process.env.LIVEKIT_URL || '').trim();
-const LIVEKIT_URL = normalizeLivekitUrl(LIVEKIT_URL_RAW);
+const LIVEKIT_URL = (process.env.LIVEKIT_URL || '').trim();
 const LIVEKIT_API_KEY = (process.env.LIVEKIT_API_KEY || '').trim();
 const LIVEKIT_API_SECRET = (process.env.LIVEKIT_API_SECRET || '').trim();
 const hasLivekitCredentials = () => Boolean(LIVEKIT_URL && LIVEKIT_API_KEY && LIVEKIT_API_SECRET);
@@ -439,7 +413,7 @@ app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()');
+  res.setHeader('Permissions-Policy', 'camera=*, microphone=*, geolocation=()');
   res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
   next();
 });
