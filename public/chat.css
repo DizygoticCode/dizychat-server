@@ -2383,6 +2383,12 @@ body:not(.dark) #voice-btn.recording {
   border-color: #d65b5b;
 }
 
+#voice-call-btn.call-video-active {
+  background: #2563eb;
+  border-color: #60a5fa;
+  color: #fff;
+}
+
 .voice-call-panel {
   position: fixed;
   right: 14px;
@@ -2436,7 +2442,44 @@ body:not(.dark) #voice-btn.recording {
 .voice-call-title { font-weight: 700; font-size: 0.92rem; margin-bottom: 4px; }
 .voice-call-status { font-size: 0.84rem; opacity: 0.9; }
 .voice-call-controls { display: flex; gap: 8px; flex-wrap: wrap; }
-.voice-call-controls button { flex: 1 1 30%; min-width: 88px; }
+.voice-call-controls button { flex: 1 1 42%; min-width: 88px; }
+.call-video-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  margin-top: 10px;
+}
+.call-video-grid[hidden] { display: none !important; }
+.call-video-tile {
+  aspect-ratio: 16 / 9;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+}
+.call-video-tile-local { border-color: rgba(96, 165, 250, 0.72); }
+.call-video-element {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+.call-video-label {
+  background: linear-gradient(90deg, rgba(0,0,0,0.72), rgba(0,0,0,0.08));
+  bottom: 0;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 650;
+  left: 0;
+  overflow: hidden;
+  padding: 4px 6px;
+  position: absolute;
+  right: 0;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
 .voice-call-master-volume { align-items: center; display: flex; gap: 10px; margin-top: 10px; font-size: 0.8rem; }
 .voice-call-master-volume span { flex: 0 0 auto; opacity: 0.88; }
 .voice-call-master-volume input { flex: 1 1 auto; min-width: 0; }
