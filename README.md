@@ -100,9 +100,9 @@ Create a `.env` file in the project root with the following keys:
 | `METADEFENDER_POLL_INTERVAL_MS` | (Optional) Milliseconds between status polls; defaults to 1500 (bounded between 250-15000). |
 | `METADEFENDER_MAX_POLL_ATTEMPTS` | (Optional) Maximum polling attempts before timing out; defaults to 10 (bounded between 1-40). |
 | `ENABLE_VOICE_CALLS` | (Optional) Set to `true`/`false` to force voice-call availability. If unset, calls enable automatically when all LiveKit credentials are present. |
-| `LIVEKIT_URL` | Required when voice calls are enabled. LiveKit Cloud/server WebSocket URL (for example `wss://<project>.livekit.cloud`). `https://` LiveKit Cloud URLs are normalized to `wss://` at runtime. Aliases accepted for compatibility: `LIVEKIT_WS_URL`, `LIVEKIT_SERVER_URL`, `LIVEKIT_HOST`, `LIVE_KIT_URL`. |
-| `LIVEKIT_API_KEY` | Required when voice calls are enabled. LiveKit API key used by the backend to issue room-scoped access tokens. Aliases accepted for compatibility: `LIVEKIT_KEY`, `LK_API_KEY`, `LIVE_KIT_API_KEY`. |
-| `LIVEKIT_API_SECRET` | Required when voice calls are enabled. LiveKit API secret paired with `LIVEKIT_API_KEY`. Aliases accepted for compatibility: `LIVEKIT_SECRET`, `LK_API_SECRET`, `LIVE_KIT_API_SECRET`. |
+| `LIVEKIT_URL` | Required when voice calls are enabled. LiveKit Cloud/server WebSocket URL (for example `wss://<project>.livekit.cloud`). |
+| `LIVEKIT_API_KEY` | Required when voice calls are enabled. LiveKit API key used by the backend to issue room-scoped access tokens. |
+| `LIVEKIT_API_SECRET` | Required when voice calls are enabled. LiveKit API secret paired with `LIVEKIT_API_KEY`. |
 
 ## Running locally
 
@@ -228,7 +228,7 @@ All marketing routes serve the hero experience from `public/index.html`; the cha
 | `message status` | Server → Client | Update delivery/read receipts when status changes. |
 | `pin message`, `star message`, `react message`, etc. | Bidirectional | Manage message metadata actions. |
 | `moderate` | Client → Server | Admin actions for mute/block/ban/unban with notifications. |
-| `call:start`, `call:join`, `call:leave`, `call:end` | Bidirectional | Manage optional LiveKit-backed voice-only call lifecycle; the first participant can start a room call automatically. |
+| `call:start`, `call:join`, `call:leave`, `call:end` | Bidirectional | Manage optional LiveKit-backed voice/video call lifecycle; the first participant can start a room call automatically. |
 | `call:mute-user`, `call:kick-user`, `call:disable-video-user`, `call:enable-video-user` | Client → Server | Admin-only call moderation actions for audio, removal, and camera access. |
 | `room list` | Server → Client | Broadcasts current public rooms and occupant counts. |
 
