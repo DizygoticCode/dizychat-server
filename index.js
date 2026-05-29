@@ -1794,7 +1794,6 @@ app.post('/api/calls/token', express.json(), (req, res) => {
       voiceOnly: false,
       supportsAudio: true,
       supportsVideo: true,
-      cameraDisabled: isCallVideoBlocked(room, username),
       provider: status.provider,
       selfContained: status.selfContained,
     });
@@ -2156,7 +2155,6 @@ const getActiveCallSnapshot = (room) => {
     voiceOnly: false,
     supportsAudio: true,
     supportsVideo: true,
-    videoBlockedCount: activeRoomCallVideoBlocks.get(room)?.size || 0,
   };
 };
 

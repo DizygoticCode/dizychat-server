@@ -7106,7 +7106,6 @@ if (voiceBtn) {
     localMeter: null,
     muted: false,
     cameraEnabled: false,
-    cameraBlocked: false,
     localVideoTrack: null,
     localVideoTile: null,
     localVideoElement: null,
@@ -7320,23 +7319,17 @@ if (voiceBtn) {
     entries.forEach((entry) => peersEl.appendChild(createPeerRow(entry)));
   };
 
-  const setCallUiState = ({ inCall = false, muted = false, cameraEnabled = callState.cameraEnabled, cameraBlocked = callState.cameraBlocked } = {}) => {
-    const videoControlDisabled = !inCall || cameraBlocked;
+  const setCallUiState = ({ inCall = false, muted = false, cameraEnabled = callState.cameraEnabled } = {}) => {
     voiceCallBtn.classList.toggle("call-active", inCall);
     voiceCallBtn.classList.toggle("call-muted", inCall && muted);
     voiceCallBtn.classList.toggle("call-video-active", inCall && cameraEnabled);
-    voiceCallBtn.classList.toggle("call-video-blocked", inCall && cameraBlocked);
     voiceCallBtn.textContent = inCall ? (cameraEnabled ? "🎥" : (muted ? "🔇" : "📞")) : "📞";
     muteControl.disabled = !inCall;
-    cameraControl.disabled = videoControlDisabled;
+    cameraControl.disabled = !inCall;
     leaveControl.disabled = !inCall;
     joinControl.disabled = inCall;
     muteControl.textContent = muted ? "Unmute" : "Mute";
-    cameraControl.textContent = cameraBlocked ? "Video blocked" : (cameraEnabled ? "Stop video" : "Add video");
-    cameraControl.setAttribute("aria-pressed", String(Boolean(inCall && cameraEnabled)));
-    cameraControl.setAttribute("title", cameraBlocked ? "An admin disabled your camera for this call" : (cameraEnabled ? "Stop sharing camera video" : "Add camera video to this call"));
-    voiceCallBtn.setAttribute("title", inCall ? (cameraBlocked ? "Live call active; camera blocked" : (cameraEnabled ? "Live call with video active" : "Live call active")) : "Open live call");
-    voiceCallBtn.setAttribute("aria-label", inCall ? (cameraBlocked ? "Live call active; camera blocked" : (cameraEnabled ? "Live call with video active" : "Live call active")) : "Open live call");
+    cameraControl.textContent = cameraEnabled ? "Stop video" : "Add video";
   };
 
   const startPanelDrag = (event) => {
@@ -7405,13 +7398,10 @@ if (voiceBtn) {
     if (/notreadable|trackstarterror|in use/i.test(`${name} ${message}`)) {
       return "Your camera is already in use or cannot be read by the browser.";
     }
-    if (/only secure origins|secure context|https/i.test(`${name} ${message}`)) {
-      return "Camera video requires HTTPS or localhost. Open the deployed HTTPS site and try again.";
-    }
     return message || "Unable to start video.";
   };
 
-  const explainCallSetupError = (payload, fallback = "Call setup is incomplete.") => {
+  const explainCallSetupError = (payload, fallback = "Voice call setup is incomplete.") => {
     const status = payload?.status || payload;
     if (status?.livekitUrlPresent && status?.livekitUrlValid === false) {
       return "LIVEKIT_URL is not a valid LiveKit WebSocket URL. Use the LiveKit Cloud URL for the same project as your API key/secret.";
@@ -7554,7 +7544,6 @@ if (voiceBtn) {
     callState.localVideoTile = tile;
     videoGrid.prepend(tile);
     updateVideoGridVisibility();
-    renderPeers();
   };
 
   const detachLocalVideoTrack = async ({ stop = true } = {}) => {
@@ -7563,7 +7552,7 @@ if (voiceBtn) {
       try {
         await callState.room.localParticipant.unpublishTrack(track);
       } catch (error) {
-        console.warn("[LiveCall] camera unpublish warning", error);
+        console.warn("[VoiceCall] camera unpublish warning", error);
       }
     }
     if (track?.detach && callState.localVideoElement) {
@@ -7577,7 +7566,6 @@ if (voiceBtn) {
     callState.cameraEnabled = false;
     updateVideoGridVisibility();
     setCallUiState({ inCall: Boolean(callState.room), muted: callState.muted, cameraEnabled: false });
-    renderPeers();
   };
 
   const attachRemoteVideoTrack = (track, publication, participant) => {
@@ -7585,7 +7573,7 @@ if (voiceBtn) {
     const participantSid = participantKey(participant) || publication?.participantSid || "remote";
     const key = `${participantSid}:${publication?.trackSid || track.sid || "camera"}`;
     detachRemoteVideoTrack(track, publication, participant);
-    updateParticipant(participant, { sid: participantSid, hasVideo: true });
+    updateParticipant(participant, { sid: participantSid });
     const element = track.attach();
     const tile = createVideoTile({
       key,
@@ -7620,13 +7608,7 @@ if (voiceBtn) {
       entry?.element?.remove();
       callState.remoteVideoElements.delete(key);
     });
-    if (participantSid) {
-      const stillHasVideo = Array.from(callState.remoteVideoElements.values()).some((entry) => entry.participantSid === participantSid);
-      const participantEntry = callState.participants.get(participantSid);
-      if (participantEntry) participantEntry.hasVideo = stillHasVideo;
-    }
     updateVideoGridVisibility();
-    renderPeers();
   };
 
   const clearRemoteVideoTracks = () => {
@@ -7716,12 +7698,6 @@ if (voiceBtn) {
       showToast("Join the call before turning on video.", "warn");
       return;
     }
-    if (callState.cameraBlocked) {
-      showToast("An admin disabled your camera for this call.", "warn");
-      setStatus("Camera disabled by admin.");
-      setCallUiState({ inCall: true, muted: callState.muted, cameraEnabled: false, cameraBlocked: true });
-      return;
-    }
     if (callState.localVideoTrack) {
       await detachLocalVideoTrack();
       showToast("Video stopped", "info");
@@ -7760,13 +7736,12 @@ if (voiceBtn) {
       callState.room = null;
       callState.muted = false;
       callState.cameraEnabled = false;
-      callState.cameraBlocked = false;
       callState.participants.clear();
       callState.localLevel = 0;
       clearRemoteAudioTracks();
       clearRemoteVideoTracks();
       renderPeers();
-      setCallUiState({ inCall: false, muted: false, cameraEnabled: false, cameraBlocked: false });
+      setCallUiState({ inCall: false, muted: false, cameraEnabled: false });
       setStatus("Not connected.");
       if (!silent) socket.emit("call:leave", { room: window.currentRoom });
     } catch (error) {
@@ -7840,7 +7815,7 @@ if (voiceBtn) {
     callState.localTrack = track;
     callState.muted = false;
     startLocalMeter(track);
-    setCallUiState({ inCall: true, muted: false, cameraEnabled: false, cameraBlocked: callState.cameraBlocked });
+    setCallUiState({ inCall: true, muted: false, cameraEnabled: false });
     renderPeers();
     setStatus(callState.cameraBlocked ? `Connected to ${window.currentRoom}; camera disabled by admin.` : `Connected to ${window.currentRoom}`);
     socket.emit("call:join", { room: window.currentRoom });
@@ -7904,7 +7879,7 @@ if (voiceBtn) {
     try {
       await toggleLocalCamera();
     } catch (error) {
-      console.error("[LiveCall] camera toggle failed", error);
+      console.error("[VoiceCall] camera toggle failed", error);
       const message = normalizeCameraError(error);
       showToast(message, "error");
       setStatus(message);

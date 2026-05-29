@@ -131,7 +131,7 @@ Recommended options:
 3. **Use Render only if you can satisfy LiveKit's networking requirements with a Docker service and the required public ports.** DizyChat itself can stay on Render, but LiveKit media traffic is a separate realtime media service and should not be bundled into the same Node/Express process.
 4. **Use `livekit-server --dev` only for local testing.** The dev server uses the built-in `devkey` / `secret` credentials and is not a production deployment.
 
-For audio and optional camera video, configure only the LiveKit variables above. Issued LiveKit grants are scoped to the current room and restrict publishing to microphone and camera sources. DizyChat uses the same LiveKit room connection for microphone and camera tracks; users join with audio first and can press **Add video** in the live call panel to publish their camera. Browser camera access requires HTTPS or localhost, and the current server permissions policy allows both microphone and camera access.
+For audio and optional camera video, configure only the LiveKit variables above. DizyChat uses the same LiveKit room connection for microphone and camera tracks; users join with audio first and can press **Add video** in the live call panel to publish their camera. Browser camera access requires HTTPS or localhost, and the current server permissions policy allows both microphone and camera access.
 
 
 ### Configuring native/WebView builds
