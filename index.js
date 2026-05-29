@@ -1698,7 +1698,9 @@ const getCallServiceStatus = () => {
     configured,
     provider: 'livekit',
     selfContained: false,
-    voiceOnly: true,
+    voiceOnly: false,
+    supportsAudio: true,
+    supportsVideo: true,
     livekitHost: livekitUrlDetails.host,
     livekitUrlPresent,
     livekitUrlValid,
@@ -1734,7 +1736,9 @@ app.get('/api/calls/status', (_req, res) => {
       configured: false,
       provider: 'livekit',
       selfContained: false,
-      voiceOnly: true,
+      voiceOnly: false,
+      supportsAudio: true,
+      supportsVideo: true,
       livekitHost: '',
       livekitUrlPresent: Boolean(LIVEKIT_URL_RAW),
       livekitUrlValid: false,
@@ -1778,7 +1782,7 @@ app.post('/api/calls/token', express.json(), (req, res) => {
     const token = createLivekitToken({
       room,
       username,
-      metadata: { room, username, issuedAt: new Date().toISOString(), voiceOnly: true },
+      metadata: { room, username, issuedAt: new Date().toISOString(), supportsAudio: true, supportsVideo: true },
     });
     const active = getActiveCallSnapshot(room);
     res.json({
@@ -1787,7 +1791,9 @@ app.post('/api/calls/token', express.json(), (req, res) => {
       room,
       callId: active?.callId || null,
       expiresAt: Date.now() + (CALL_TOKEN_TTL_SECONDS * 1000),
-      voiceOnly: true,
+      voiceOnly: false,
+      supportsAudio: true,
+      supportsVideo: true,
       provider: status.provider,
       selfContained: status.selfContained,
     });
@@ -2101,7 +2107,9 @@ const getActiveCallSnapshot = (room) => {
     callId: state.callId,
     startedAt: state.startedAt,
     startedBy: state.startedBy,
-    voiceOnly: true,
+    voiceOnly: false,
+    supportsAudio: true,
+    supportsVideo: true,
   };
 };
 
