@@ -7326,10 +7326,6 @@ if (voiceBtn) {
     joinControl.disabled = inCall;
     muteControl.textContent = muted ? "Unmute" : "Mute";
     cameraControl.textContent = cameraEnabled ? "Stop video" : "Add video";
-    cameraControl.setAttribute("aria-pressed", String(Boolean(inCall && cameraEnabled)));
-    cameraControl.setAttribute("title", cameraEnabled ? "Stop sharing camera video" : "Add camera video to this call");
-    voiceCallBtn.setAttribute("title", inCall ? (cameraEnabled ? "Live call with video active" : "Live call active") : "Open live call");
-    voiceCallBtn.setAttribute("aria-label", inCall ? (cameraEnabled ? "Live call with video active" : "Live call active") : "Open live call");
   };
 
   const startPanelDrag = (event) => {
@@ -7398,13 +7394,10 @@ if (voiceBtn) {
     if (/notreadable|trackstarterror|in use/i.test(`${name} ${message}`)) {
       return "Your camera is already in use or cannot be read by the browser.";
     }
-    if (/only secure origins|secure context|https/i.test(`${name} ${message}`)) {
-      return "Camera video requires HTTPS or localhost. Open the deployed HTTPS site and try again.";
-    }
     return message || "Unable to start video.";
   };
 
-  const explainCallSetupError = (payload, fallback = "Call setup is incomplete.") => {
+  const explainCallSetupError = (payload, fallback = "Voice call setup is incomplete.") => {
     const status = payload?.status || payload;
     if (status?.livekitUrlPresent && status?.livekitUrlValid === false) {
       return "LIVEKIT_URL is not a valid LiveKit WebSocket URL. Use the LiveKit Cloud URL for the same project as your API key/secret.";
@@ -7547,7 +7540,6 @@ if (voiceBtn) {
     callState.localVideoTile = tile;
     videoGrid.prepend(tile);
     updateVideoGridVisibility();
-    renderPeers();
   };
 
   const detachLocalVideoTrack = async ({ stop = true } = {}) => {
@@ -7556,7 +7548,7 @@ if (voiceBtn) {
       try {
         await callState.room.localParticipant.unpublishTrack(track);
       } catch (error) {
-        console.warn("[LiveCall] camera unpublish warning", error);
+        console.warn("[VoiceCall] camera unpublish warning", error);
       }
     }
     if (track?.detach && callState.localVideoElement) {
@@ -7570,7 +7562,6 @@ if (voiceBtn) {
     callState.cameraEnabled = false;
     updateVideoGridVisibility();
     setCallUiState({ inCall: Boolean(callState.room), muted: callState.muted, cameraEnabled: false });
-    renderPeers();
   };
 
   const attachRemoteVideoTrack = (track, publication, participant) => {
@@ -7578,7 +7569,7 @@ if (voiceBtn) {
     const participantSid = participantKey(participant) || publication?.participantSid || "remote";
     const key = `${participantSid}:${publication?.trackSid || track.sid || "camera"}`;
     detachRemoteVideoTrack(track, publication, participant);
-    updateParticipant(participant, { sid: participantSid, hasVideo: true });
+    updateParticipant(participant, { sid: participantSid });
     const element = track.attach();
     const tile = createVideoTile({
       key,
@@ -7613,13 +7604,7 @@ if (voiceBtn) {
       entry?.element?.remove();
       callState.remoteVideoElements.delete(key);
     });
-    if (participantSid) {
-      const stillHasVideo = Array.from(callState.remoteVideoElements.values()).some((entry) => entry.participantSid === participantSid);
-      const participantEntry = callState.participants.get(participantSid);
-      if (participantEntry) participantEntry.hasVideo = stillHasVideo;
-    }
     updateVideoGridVisibility();
-    renderPeers();
   };
 
   const clearRemoteVideoTracks = () => {
@@ -7889,7 +7874,7 @@ if (voiceBtn) {
     try {
       await toggleLocalCamera();
     } catch (error) {
-      console.error("[LiveCall] camera toggle failed", error);
+      console.error("[VoiceCall] camera toggle failed", error);
       const message = normalizeCameraError(error);
       showToast(message, "error");
       setStatus(message);
