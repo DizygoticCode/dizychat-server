@@ -7169,20 +7169,34 @@ if (voiceBtn) {
   };
 
   const explainCallSetupError = (payload, fallback = "Voice call setup is incomplete.") => {
-    const status = payload?.status;
+    const status = payload?.status || payload;
     if (status?.livekitUrlPresent && status?.livekitUrlValid === false) {
       return "LIVEKIT_URL is not a valid LiveKit WebSocket URL. Use the LiveKit Cloud URL for the same project as your API key/secret.";
     }
+    if (Array.isArray(status?.missingRequiredEnv) && status.missingRequiredEnv.length) {
+      return `Voice provider is not configured. Missing server environment variables: ${status.missingRequiredEnv.join(", ")}.`;
+    }
     if (status?.configured === false) {
-      return "Voice provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET on the server.";
+      return status?.reason || "Voice provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET on the server.";
     }
     return payload?.error || status?.reason || fallback;
   };
 
   const ensureCallServiceReady = async () => {
-    const res = await fetch("/api/calls/status", { cache: "no-store" });
+    let res;
+    try {
+      res = await fetch("/api/calls/status", { cache: "no-store" });
+    } catch (error) {
+      throw new Error(`Voice call status check failed: ${error?.message || error}`);
+    }
     const payload = await res.json().catch(() => ({}));
-    if (!res.ok || !payload?.enabled || !payload?.configured) {
+    if (!res.ok) {
+      throw new Error(explainCallSetupError(payload, `Voice call status check failed (${res.status}).`));
+    }
+    if (!payload || typeof payload !== "object" || !("enabled" in payload) || !("configured" in payload)) {
+      throw new Error("Voice call status endpoint returned an unexpected response. Redeploy the latest server build.");
+    }
+    if (!payload.enabled || !payload.configured) {
       throw new Error(explainCallSetupError(payload));
     }
     return payload;

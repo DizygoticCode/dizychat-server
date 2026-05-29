@@ -154,10 +154,23 @@ const normalizeLivekitUrl = (rawUrl) => {
   }
 };
 
-const LIVEKIT_URL_RAW = (process.env.LIVEKIT_URL || '').trim();
+const LIVEKIT_URL_ENV_NAMES = ['LIVEKIT_URL', 'LIVEKIT_WS_URL', 'LIVEKIT_SERVER_URL', 'LIVEKIT_HOST', 'LIVE_KIT_URL'];
+const LIVEKIT_API_KEY_ENV_NAMES = ['LIVEKIT_API_KEY', 'LIVEKIT_KEY', 'LK_API_KEY', 'LIVE_KIT_API_KEY'];
+const LIVEKIT_API_SECRET_ENV_NAMES = ['LIVEKIT_API_SECRET', 'LIVEKIT_SECRET', 'LK_API_SECRET', 'LIVE_KIT_API_SECRET'];
+const readFirstEnvironmentValue = (names) => {
+  for (const name of names) {
+    const value = String(process.env[name] || '').trim();
+    if (value) return { name, value };
+  }
+  return { name: '', value: '' };
+};
+const LIVEKIT_URL_ENV = readFirstEnvironmentValue(LIVEKIT_URL_ENV_NAMES);
+const LIVEKIT_API_KEY_ENV = readFirstEnvironmentValue(LIVEKIT_API_KEY_ENV_NAMES);
+const LIVEKIT_API_SECRET_ENV = readFirstEnvironmentValue(LIVEKIT_API_SECRET_ENV_NAMES);
+const LIVEKIT_URL_RAW = LIVEKIT_URL_ENV.value;
 const LIVEKIT_URL = normalizeLivekitUrl(LIVEKIT_URL_RAW);
-const LIVEKIT_API_KEY = (process.env.LIVEKIT_API_KEY || '').trim();
-const LIVEKIT_API_SECRET = (process.env.LIVEKIT_API_SECRET || '').trim();
+const LIVEKIT_API_KEY = LIVEKIT_API_KEY_ENV.value;
+const LIVEKIT_API_SECRET = LIVEKIT_API_SECRET_ENV.value;
 const hasLivekitCredentials = () => Boolean(LIVEKIT_URL && LIVEKIT_API_KEY && LIVEKIT_API_SECRET);
 const parseVoiceCallsEnabled = () => {
   const raw = String(process.env.ENABLE_VOICE_CALLS || '').trim().toLowerCase();
@@ -434,6 +447,9 @@ mongoose.connection.on('error', (err) => {
 connectMongoWithRetry();
 
 // ---------------- Static Files ----------------
+const uploadDir = path.join(__dirname, 'public', 'uploads');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
 app.disable('x-powered-by');
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -443,6 +459,18 @@ app.use((req, res, next) => {
   res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
   next();
 });
+app.use(
+  '/uploads',
+  express.static(uploadDir, {
+    maxAge: '30d',
+    immutable: true,
+    setHeaders: (res) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Disposition', 'inline');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    },
+  })
+);
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ---------------- Version endpoint ----------------
@@ -453,8 +481,6 @@ app.get('/version', (req, res) => {
 });
 
 // ---------------- File Uploads ----------------
-const uploadDir = path.join(__dirname, 'public', 'uploads');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 const fsPromises = fs.promises;
 const UPLOAD_EXTENSION_CONFIG = new Map([
   ['.jpg', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'] }],
@@ -617,19 +643,6 @@ const fetchMessageHistoryChunk = async (roomName, { beforeId } = {}) => {
     cursor: hasMore && oldestDoc ? String(oldestDoc._id) : null,
   };
 };
-app.use(
-  "/uploads",
-  express.static(path.resolve("public/uploads"), {
-    maxAge: "30d",
-    immutable: true,
-    setHeaders: (res) => {
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-      res.setHeader('Content-Disposition', 'inline');
-      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    },
-  })
-);
-
 const METADEFENDER_API_KEY = process.env.METADEFENDER_API_KEY;
 const REQUIRE_UPLOAD_ANTIVIRUS_SCAN =
   String(process.env.REQUIRE_UPLOAD_ANTIVIRUS_SCAN || '').trim().toLowerCase() === 'true';
@@ -1657,6 +1670,24 @@ const getCallServiceStatus = () => {
       return '';
     }
   })();
+  const missingRequiredEnv = [
+    !livekitUrlPresent ? 'LIVEKIT_URL' : '',
+    !LIVEKIT_API_KEY ? 'LIVEKIT_API_KEY' : '',
+    !LIVEKIT_API_SECRET ? 'LIVEKIT_API_SECRET' : '',
+  ].filter(Boolean);
+  const acceptedEnvironmentVariables = {
+    LIVEKIT_URL: LIVEKIT_URL_ENV_NAMES,
+    LIVEKIT_API_KEY: LIVEKIT_API_KEY_ENV_NAMES,
+    LIVEKIT_API_SECRET: LIVEKIT_API_SECRET_ENV_NAMES,
+  };
+  const detectedEnvironmentVariables = {
+    LIVEKIT_URL: LIVEKIT_URL_ENV.name || '',
+    LIVEKIT_API_KEY: LIVEKIT_API_KEY_ENV.name || '',
+    LIVEKIT_API_SECRET: LIVEKIT_API_SECRET_ENV.name || '',
+  };
+  const missingDetails = missingRequiredEnv.length
+    ? ` Missing: ${missingRequiredEnv.join(', ')}.`
+    : '';
   return {
     enabled: ENABLE_VOICE_CALLS,
     configured,
@@ -1667,6 +1698,9 @@ const getCallServiceStatus = () => {
     livekitUrlPresent,
     livekitUrlValid,
     livekitUrlProtocol: LIVEKIT_URL ? new URL(LIVEKIT_URL).protocol : '',
+    acceptedEnvironmentVariables,
+    detectedEnvironmentVariables,
+    missingRequiredEnv,
     missing: {
       LIVEKIT_URL: !livekitUrlPresent,
       LIVEKIT_API_KEY: !LIVEKIT_API_KEY,
@@ -1675,12 +1709,12 @@ const getCallServiceStatus = () => {
     reason: forcedOff
       ? 'Voice calls are disabled by ENABLE_VOICE_CALLS=false.'
       : !livekitUrlPresent
-        ? 'LiveKit voice provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.'
+        ? `LiveKit voice provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.${missingDetails}`
         : !livekitUrlValid
           ? 'LIVEKIT_URL must be a valid ws://, wss://, http://, or https:// URL. LiveKit Cloud URLs are usually wss://<project>.livekit.cloud.'
           : configured
             ? 'LiveKit voice provider is configured.'
-            : 'LiveKit voice provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.',
+            : `LiveKit voice provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.${missingDetails}`,
   };
 };
 
