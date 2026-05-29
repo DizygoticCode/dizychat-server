@@ -131,23 +131,14 @@ const ADMIN_AUTH_MIN_RETRY_DELAY_MS = 750;
 const ADMIN_AUTH_MAX_RETRY_DELAY_MS = 5000;
 const LIVEKIT_URL_RAW = (process.env.LIVEKIT_URL || '').trim();
 const normalizeLivekitUrl = (rawUrl) => {
-  const trimmed = String(rawUrl || '')
-    .trim()
-    .replace(/^['"`]+|['"`]+$/g, '')
-    .replace(/\/+$/, '');
-  if (!trimmed) return '';
-
-  const withProtocol = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
-    ? trimmed
-    : `wss://${trimmed}`;
-  const websocketUrl = withProtocol
-    .replace(/^https:\/\//i, 'wss://')
-    .replace(/^http:\/\//i, 'ws://');
-
+  if (!rawUrl) return '';
   try {
-    const parsed = new URL(websocketUrl);
-    if (!['ws:', 'wss:'].includes(parsed.protocol) || !parsed.hostname) return '';
-    return `${parsed.protocol}//${parsed.host}`;
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol === 'https:') parsed.protocol = 'wss:';
+    if (parsed.protocol === 'http:') parsed.protocol = 'ws:';
+    if (!['ws:', 'wss:'].includes(parsed.protocol)) return '';
+    parsed.hash = '';
+    return parsed.toString().replace(/\/$/, '');
   } catch (_err) {
     return '';
   }
@@ -431,6 +422,9 @@ mongoose.connection.on('error', (err) => {
 connectMongoWithRetry();
 
 // ---------------- Static Files ----------------
+const uploadDir = path.join(__dirname, 'public', 'uploads');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
 app.disable('x-powered-by');
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -440,6 +434,18 @@ app.use((req, res, next) => {
   res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
   next();
 });
+app.use(
+  '/uploads',
+  express.static(uploadDir, {
+    maxAge: '30d',
+    immutable: true,
+    setHeaders: (res) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Disposition', 'inline');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    },
+  })
+);
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ---------------- Version endpoint ----------------
@@ -450,8 +456,6 @@ app.get('/version', (req, res) => {
 });
 
 // ---------------- File Uploads ----------------
-const uploadDir = path.join(__dirname, 'public', 'uploads');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 const fsPromises = fs.promises;
 const UPLOAD_EXTENSION_CONFIG = new Map([
   ['.jpg', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'] }],
@@ -614,19 +618,6 @@ const fetchMessageHistoryChunk = async (roomName, { beforeId } = {}) => {
     cursor: hasMore && oldestDoc ? String(oldestDoc._id) : null,
   };
 };
-app.use(
-  "/uploads",
-  express.static(path.resolve("public/uploads"), {
-    maxAge: "30d",
-    immutable: true,
-    setHeaders: (res) => {
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-      res.setHeader('Content-Disposition', 'inline');
-      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    },
-  })
-);
-
 const METADEFENDER_API_KEY = process.env.METADEFENDER_API_KEY;
 const REQUIRE_UPLOAD_ANTIVIRUS_SCAN =
   String(process.env.REQUIRE_UPLOAD_ANTIVIRUS_SCAN || '').trim().toLowerCase() === 'true';
@@ -1658,6 +1649,24 @@ const getCallServiceStatus = () => {
       return { host: '', protocol: '' };
     }
   })();
+  const missingRequiredEnv = [
+    !livekitUrlPresent ? 'LIVEKIT_URL' : '',
+    !LIVEKIT_API_KEY ? 'LIVEKIT_API_KEY' : '',
+    !LIVEKIT_API_SECRET ? 'LIVEKIT_API_SECRET' : '',
+  ].filter(Boolean);
+  const acceptedEnvironmentVariables = {
+    LIVEKIT_URL: LIVEKIT_URL_ENV_NAMES,
+    LIVEKIT_API_KEY: LIVEKIT_API_KEY_ENV_NAMES,
+    LIVEKIT_API_SECRET: LIVEKIT_API_SECRET_ENV_NAMES,
+  };
+  const detectedEnvironmentVariables = {
+    LIVEKIT_URL: LIVEKIT_URL_ENV.name || '',
+    LIVEKIT_API_KEY: LIVEKIT_API_KEY_ENV.name || '',
+    LIVEKIT_API_SECRET: LIVEKIT_API_SECRET_ENV.name || '',
+  };
+  const missingDetails = missingRequiredEnv.length
+    ? ` Missing: ${missingRequiredEnv.join(', ')}.`
+    : '';
   return {
     enabled: ENABLE_VOICE_CALLS,
     configured,
@@ -1667,7 +1676,10 @@ const getCallServiceStatus = () => {
     livekitHost: livekitUrlDetails.host,
     livekitUrlPresent,
     livekitUrlValid,
-    livekitUrlProtocol: livekitUrlDetails.protocol,
+    livekitUrlProtocol: LIVEKIT_URL ? new URL(LIVEKIT_URL).protocol : '',
+    acceptedEnvironmentVariables,
+    detectedEnvironmentVariables,
+    missingRequiredEnv,
     missing: {
       LIVEKIT_URL: !livekitUrlPresent,
       LIVEKIT_API_KEY: !LIVEKIT_API_KEY,
@@ -1676,12 +1688,12 @@ const getCallServiceStatus = () => {
     reason: forcedOff
       ? 'Voice calls are disabled by ENABLE_VOICE_CALLS=false.'
       : !livekitUrlPresent
-        ? 'LiveKit voice provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.'
+        ? `LiveKit voice provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.${missingDetails}`
         : !livekitUrlValid
           ? 'LIVEKIT_URL must be a valid ws://, wss://, http://, or https:// URL. LiveKit Cloud URLs are usually wss://<project>.livekit.cloud.'
           : configured
             ? 'LiveKit voice provider is configured.'
-            : 'LiveKit voice provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.',
+            : `LiveKit voice provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.${missingDetails}`,
   };
 };
 
