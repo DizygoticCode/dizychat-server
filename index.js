@@ -62,6 +62,7 @@ const TRUSTED_SCRIPT_SOURCES = [
   "'unsafe-inline'",
   "https://cdn.socket.io",
   "https://cdn.jsdelivr.net",
+  "https://unpkg.com",
   "https://rumble.com",
   "https://w.soundcloud.com",
 ];
@@ -128,13 +129,46 @@ const ADMIN_AUTH_MAX_FAILURES = parsePositiveIntegerEnv('ADMIN_AUTH_MAX_FAILURES
 const ADMIN_AUTH_LOCK_MS = parsePositiveIntegerEnv('ADMIN_AUTH_LOCK_MS', 15 * 60 * 1000, { min: 5000, max: 24 * 60 * 60 * 1000 });
 const ADMIN_AUTH_MIN_RETRY_DELAY_MS = 750;
 const ADMIN_AUTH_MAX_RETRY_DELAY_MS = 5000;
-const ENABLE_VOICE_CALLS = String(process.env.ENABLE_VOICE_CALLS || '').trim().toLowerCase() === 'true';
-const LIVEKIT_URL = (process.env.LIVEKIT_URL || '').trim();
+const normalizeLivekitUrl = (rawUrl) => {
+  const trimmed = String(rawUrl || '').trim().replace(/\/+$/, '');
+  if (!trimmed) {
+    return '';
+  }
+
+  const withProtocol = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
+    ? trimmed
+    : `wss://${trimmed}`;
+
+  const websocketUrl = withProtocol
+    .replace(/^https:\/\//i, 'wss://')
+    .replace(/^http:\/\//i, 'ws://');
+
+  try {
+    const parsed = new URL(websocketUrl);
+    if (!['ws:', 'wss:'].includes(parsed.protocol) || !parsed.hostname) {
+      return '';
+    }
+    return parsed.origin.replace(/\/+$/, '');
+  } catch (_err) {
+    return '';
+  }
+};
+
+const LIVEKIT_URL_RAW = (process.env.LIVEKIT_URL || '').trim();
+const LIVEKIT_URL = normalizeLivekitUrl(LIVEKIT_URL_RAW);
 const LIVEKIT_API_KEY = (process.env.LIVEKIT_API_KEY || '').trim();
 const LIVEKIT_API_SECRET = (process.env.LIVEKIT_API_SECRET || '').trim();
+const hasLivekitCredentials = () => Boolean(LIVEKIT_URL && LIVEKIT_API_KEY && LIVEKIT_API_SECRET);
+const parseVoiceCallsEnabled = () => {
+  const raw = String(process.env.ENABLE_VOICE_CALLS || '').trim().toLowerCase();
+  if (['false', '0', 'no', 'off', 'disabled'].includes(raw)) return false;
+  if (['true', '1', 'yes', 'on', 'enabled'].includes(raw)) return true;
+  return hasLivekitCredentials();
+};
+const ENABLE_VOICE_CALLS = parseVoiceCallsEnabled();
 const CALL_TOKEN_TTL_SECONDS = 10 * 60;
 const CALL_EVENT_WINDOW_MS = 4000;
-const CALL_EVENT_MAX_PER_WINDOW = 12;
+const CALL_EVENT_MAX_PER_WINDOW = 30;
 
 const SCRYPT_HASH_PREFIX = 'scrypt';
 
@@ -405,7 +439,7 @@ app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', 'camera=(self), microphone=(self), geolocation=()');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()');
   res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
   next();
 });
@@ -433,9 +467,9 @@ const UPLOAD_EXTENSION_CONFIG = new Map([
   ['.mp3', { family: 'audio/mpeg', mimeTypes: ['audio/mpeg', 'audio/mp3', 'audio/x-mpeg', 'audio/x-mp3'] }],
   ['.m4a', { family: 'mp4-family', mimeTypes: ['audio/mp4', 'audio/x-m4a', 'audio/m4a'] }],
   ['.wav', { family: 'audio/wav', mimeTypes: ['audio/wav', 'audio/wave', 'audio/x-wav'] }],
-  ['.ogg', { family: 'ogg-family', mimeTypes: ['audio/ogg', 'video/ogg', 'application/ogg'] }],
-  ['.opus', { family: 'ogg-family', mimeTypes: ['audio/ogg', 'audio/opus', 'application/ogg'] }],
-  ['.webm', { family: 'webm-family', mimeTypes: ['audio/webm', 'video/webm', 'application/webm'] }],
+  ['.ogg', { family: 'ogg-family', mimeTypes: ['audio/ogg', 'audio/x-ogg', 'video/ogg', 'application/ogg'] }],
+  ['.opus', { family: 'ogg-family', mimeTypes: ['audio/ogg', 'audio/opus', 'audio/x-opus', 'application/ogg'] }],
+  ['.webm', { family: 'webm-family', mimeTypes: ['audio/webm', 'audio/x-webm', 'video/webm', 'video/x-webm', 'application/webm', 'application/octet-stream'] }],
   ['.mp4', { family: 'mp4-family', mimeTypes: ['video/mp4', 'audio/mp4', 'application/mp4'] }],
   ['.m4v', { family: 'mp4-family', mimeTypes: ['video/mp4', 'video/x-m4v'] }],
   ['.mov', { family: 'mp4-family', mimeTypes: ['video/quicktime', 'video/mp4'] }],
@@ -591,7 +625,7 @@ app.use(
     setHeaders: (res) => {
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Content-Disposition', 'inline');
-      res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     },
   })
 );
@@ -1609,8 +1643,63 @@ app.get('/soundboard-clips', (req, res) => {
   }
 });
 
+const getCallServiceStatus = () => {
+  const livekitUrlPresent = Boolean(LIVEKIT_URL_RAW);
+  const livekitUrlValid = Boolean(LIVEKIT_URL);
+  const configured = hasLivekitCredentials();
+  const forcedOff = ['false', '0', 'no', 'off', 'disabled'].includes(
+    String(process.env.ENABLE_VOICE_CALLS || '').trim().toLowerCase()
+  );
+  const livekitHost = (() => {
+    try {
+      return LIVEKIT_URL ? new URL(LIVEKIT_URL).host : '';
+    } catch (_err) {
+      return '';
+    }
+  })();
+  return {
+    enabled: ENABLE_VOICE_CALLS,
+    configured,
+    provider: 'livekit',
+    selfContained: false,
+    voiceOnly: true,
+    livekitHost,
+    livekitUrlPresent,
+    livekitUrlValid,
+    livekitUrlProtocol: LIVEKIT_URL ? new URL(LIVEKIT_URL).protocol : '',
+    missing: {
+      LIVEKIT_URL: !livekitUrlPresent,
+      LIVEKIT_API_KEY: !LIVEKIT_API_KEY,
+      LIVEKIT_API_SECRET: !LIVEKIT_API_SECRET,
+    },
+    reason: forcedOff
+      ? 'Voice calls are disabled by ENABLE_VOICE_CALLS=false.'
+      : !livekitUrlPresent
+        ? 'LiveKit voice provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.'
+        : !livekitUrlValid
+          ? 'LIVEKIT_URL must be a valid ws://, wss://, http://, or https:// URL. LiveKit Cloud URLs are usually wss://<project>.livekit.cloud.'
+          : configured
+            ? 'LiveKit voice provider is configured.'
+            : 'LiveKit voice provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.',
+  };
+};
+
+app.get('/api/calls/status', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(getCallServiceStatus());
+});
+
 app.post('/api/calls/token', express.json(), (req, res) => {
-  if (!ensureCallsEnabled(res)) return;
+  const status = getCallServiceStatus();
+  if (!status.enabled) {
+    res.status(404).json({ error: 'Voice calls are disabled.', status });
+    return;
+  }
+  if (!status.configured) {
+    res.status(503).json({ error: status.reason, status });
+    return;
+  }
+
   const room = normaliseRoomName(req.body?.room);
   const username = normaliseUsername(req.body?.username, '');
   if (!room || !username) {
@@ -1632,10 +1721,12 @@ app.post('/api/calls/token', express.json(), (req, res) => {
       callId: active?.callId || null,
       expiresAt: Date.now() + (CALL_TOKEN_TTL_SECONDS * 1000),
       voiceOnly: true,
+      provider: status.provider,
+      selfContained: status.selfContained,
     });
   } catch (err) {
     console.error('[Calls] Failed to issue token:', err.message);
-    res.status(503).json({ error: 'Unable to issue call token.' });
+    res.status(503).json({ error: 'Unable to issue call token.', status });
   }
 });
 
@@ -1960,7 +2051,7 @@ const ensureCallsEnabled = (resOrSocket) => {
 };
 
 const createLivekitToken = ({ room, username, metadata }) => {
-  if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
+  if (!hasLivekitCredentials()) {
     throw new Error('LiveKit credentials are not configured.');
   }
   const nowSeconds = Math.floor(Date.now() / 1000);
@@ -2142,7 +2233,7 @@ io.on('connection', socket => {
   });
 
   socket.on('call:start', ({ room } = {}) => {
-    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id) || !requireAdmin(socket)) return;
+    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id)) return;
     const roomName = normaliseRoomName(room || socket.currentRoom);
     if (!roomName || roomName !== socket.currentRoom) return;
     if (activeRoomCalls.has(roomName)) {
@@ -2161,11 +2252,15 @@ io.on('connection', socket => {
     if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id)) return;
     const roomName = normaliseRoomName(room || socket.currentRoom);
     if (!roomName || roomName !== socket.currentRoom) return;
-    const active = getActiveCallSnapshot(roomName);
-    if (!active) {
-      socket.emit('call:error', { room: roomName, message: 'No active call in this room.' });
-      return;
+    if (!activeRoomCalls.has(roomName)) {
+      activeRoomCalls.set(roomName, {
+        callId: buildCallId(),
+        startedAt: Date.now(),
+        startedBy: socket.username || 'participant',
+      });
+      io.to(roomName).emit('call:started', getActiveCallSnapshot(roomName));
     }
+    const active = getActiveCallSnapshot(roomName);
     socket.emit('call:joined', active);
     socket.to(roomName).emit('call:participant-joined', { room: roomName, username: socket.username });
   });
@@ -2194,7 +2289,7 @@ io.on('connection', socket => {
   });
 
   socket.on('call:end', ({ room } = {}) => {
-    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id) || !requireAdmin(socket)) return;
+    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id)) return;
     const roomName = normaliseRoomName(room || socket.currentRoom);
     if (!roomName || roomName !== socket.currentRoom) return;
     const active = activeRoomCalls.get(roomName);

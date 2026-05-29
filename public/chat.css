@@ -2397,6 +2397,16 @@ body:not(.dark) #voice-btn.recording {
 }
 
 .voice-call-panel[hidden] { display: none !important; }
+
+.voice-call-remote-audio {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  pointer-events: none;
+}
+
 .voice-call-title { font-weight: 700; font-size: 0.92rem; margin-bottom: 6px; }
 .voice-call-status { font-size: 0.84rem; opacity: 0.9; margin-bottom: 8px; }
 .voice-call-controls { display: flex; gap: 8px; flex-wrap: wrap; }

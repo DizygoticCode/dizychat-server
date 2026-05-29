@@ -99,8 +99,8 @@ Create a `.env` file in the project root with the following keys:
 | `METADEFENDER_BASE_URL` | (Optional) Override the MetaDefender API origin. Defaults to `https://api.metadefender.com/v4`. |
 | `METADEFENDER_POLL_INTERVAL_MS` | (Optional) Milliseconds between status polls; defaults to 1500 (bounded between 250-15000). |
 | `METADEFENDER_MAX_POLL_ATTEMPTS` | (Optional) Maximum polling attempts before timing out; defaults to 10 (bounded between 1-40). |
-| `ENABLE_VOICE_CALLS` | (Optional) Set to `true` to enable Sprint A voice-call control plane + token minting endpoint. |
-| `LIVEKIT_URL` | Required when voice calls are enabled. LiveKit Cloud/server WebSocket URL (for example `wss://<project>.livekit.cloud`). |
+| `ENABLE_VOICE_CALLS` | (Optional) Set to `true`/`false` to force voice-call availability. If unset, calls enable automatically when all LiveKit credentials are present. |
+| `LIVEKIT_URL` | Required when voice calls are enabled. LiveKit Cloud/server WebSocket URL (for example `wss://<project>.livekit.cloud`). `https://` LiveKit Cloud URLs are normalized to `wss://` at runtime. |
 | `LIVEKIT_API_KEY` | Required when voice calls are enabled. LiveKit API key used by the backend to issue room-scoped access tokens. |
 | `LIVEKIT_API_SECRET` | Required when voice calls are enabled. LiveKit API secret paired with `LIVEKIT_API_KEY`. |
 
@@ -119,6 +119,20 @@ npm start
 ```
 
 The server will log the active port, build/version information, and upload limit during boot.
+
+### Voice-call provider setup
+
+Voice calls are **not self-contained inside the DizyChat server**. The chat server provides the UI, room lifecycle events, and LiveKit access-token minting, but real-time audio transport still requires a LiveKit Cloud project or a self-hosted LiveKit server. Until `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` are configured, `/api/calls/status` reports `configured: false` and the client shows a setup error instead of a generic connection failure.
+
+Recommended options:
+
+1. **Use LiveKit Cloud** for the fastest production path. Create a LiveKit Cloud project, copy its project URL plus API key/secret, then set those values as `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` in the DizyChat deployment environment. If LiveKit shows the project URL as `https://...`, paste it as-is or change it to `wss://...`; DizyChat normalizes it before sending it to the browser.
+2. **Self-host LiveKit on infrastructure that supports WebRTC networking** if you need full control. A production LiveKit server needs a trusted TLS certificate, public DNS such as `wss://livekit.example.com`, TCP signaling, and exposed ICE UDP/TCP ports. This usually fits a VM, Kubernetes cluster, or LiveKit-focused host better than a standard single-port app service.
+3. **Use Render only if you can satisfy LiveKit's networking requirements with a Docker service and the required public ports.** DizyChat itself can stay on Render, but LiveKit media traffic is a separate realtime media service and should not be bundled into the same Node/Express process.
+4. **Use `livekit-server --dev` only for local testing.** The dev server uses the built-in `devkey` / `secret` credentials and is not a production deployment.
+
+For voice-only calls, configure only the LiveKit variables above. Webcam/video work is intentionally not enabled yet; the current browser permissions policy allows microphone access and denies camera access.
+
 
 ### Configuring native/WebView builds
 Capacitor and similar wrappers load the web bundle from a non-HTTP origin (`capacitor://localhost`).
@@ -214,7 +228,7 @@ All marketing routes serve the hero experience from `public/index.html`; the cha
 | `message status` | Server → Client | Update delivery/read receipts when status changes. |
 | `pin message`, `star message`, `react message`, etc. | Bidirectional | Manage message metadata actions. |
 | `moderate` | Client → Server | Admin actions for mute/block/ban/unban with notifications. |
-| `call:start`, `call:join`, `call:leave`, `call:end` | Bidirectional | Manage optional LiveKit-backed voice/video call lifecycle. |
+| `call:start`, `call:join`, `call:leave`, `call:end` | Bidirectional | Manage optional LiveKit-backed voice-only call lifecycle; the first participant can start a room call automatically. |
 | `call:mute-user`, `call:kick-user`, `call:disable-video-user`, `call:enable-video-user` | Client → Server | Admin-only call moderation actions for audio, removal, and camera access. |
 | `room list` | Server → Client | Broadcasts current public rooms and occupant counts. |
 
