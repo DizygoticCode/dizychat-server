@@ -229,7 +229,8 @@ All marketing routes serve the hero experience from `public/index.html`; the cha
 | `pin message`, `star message`, `react message`, etc. | Bidirectional | Manage message metadata actions. |
 | `moderate` | Client → Server | Admin actions for mute/block/ban/unban with notifications. |
 | `call:start`, `call:join`, `call:leave`, `call:end` | Bidirectional | Manage optional LiveKit-backed voice/video call lifecycle; the first participant can start a room call automatically. |
-| `call:mute-user`, `call:kick-user`, `call:disable-video-user`, `call:enable-video-user` | Client → Server | Admin-only call moderation actions for audio, removal, and camera access. |
+| `call:mute-user`, `call:kick-user`, `call:disable-video-user`, `call:enable-video-user` | Client → Server | Admin-only call moderation actions for audio, removal, and camera access. Camera disables are remembered for the active room call until an admin allows the camera again or the call ends. |
+| `call:user-muted`, `call:user-kicked`, `call:user-video-disabled`, `call:user-video-enabled` | Server → Client | Targeted room call moderation notifications; affected clients mute audio, leave, stop camera video, or re-enable their camera control. |
 | `room list` | Server → Client | Broadcasts current public rooms and occupant counts. |
 
 ## Security considerations

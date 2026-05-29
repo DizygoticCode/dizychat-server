@@ -7159,6 +7159,10 @@ if (voiceBtn) {
   const participantKey = (participant) => participant?.sid || participant?.identity || "";
   const getDisplayName = (participant) => participant?.identity || "Participant";
 
+  const isCurrentCallTarget = (target) => Boolean(
+    target && window.currentUser && String(target).trim().toLowerCase() === String(window.currentUser).trim().toLowerCase()
+  );
+
   const setStatus = (text) => { if (statusEl) statusEl.textContent = text; };
 
   const updateVideoGridVisibility = () => {
@@ -7757,6 +7761,7 @@ if (voiceBtn) {
     setStatus("Requesting call token…");
     const tokenPayload = await fetchToken();
     if (!tokenPayload?.token || !tokenPayload?.url) throw new Error("Missing LiveKit token or URL from server.");
+    callState.cameraBlocked = Boolean(tokenPayload.cameraDisabled);
     const LK = getLiveKitClient();
     const room = new LK.Room({ adaptiveStream: true, dynacast: true });
     callState.room = room;
@@ -7812,7 +7817,7 @@ if (voiceBtn) {
     startLocalMeter(track);
     setCallUiState({ inCall: true, muted: false, cameraEnabled: false });
     renderPeers();
-    setStatus(`Connected to ${window.currentRoom}`);
+    setStatus(callState.cameraBlocked ? `Connected to ${window.currentRoom}; camera disabled by admin.` : `Connected to ${window.currentRoom}`);
     socket.emit("call:join", { room: window.currentRoom });
     room.on(LK.RoomEvent.ActiveSpeakersChanged, (speakers = []) => {
       const seen = new Set();
@@ -7839,7 +7844,7 @@ if (voiceBtn) {
 
   voiceCallBtn.hidden = false;
   voiceCallBtn.removeAttribute("aria-hidden");
-  setCallUiState({ inCall: false, muted: false });
+  setCallUiState({ inCall: false, muted: false, cameraBlocked: false });
   renderPeers();
 
   dragHandle?.addEventListener("pointerdown", startPanelDrag);
@@ -7866,7 +7871,7 @@ if (voiceBtn) {
       const message = normalizeCallError(error);
       showToast(message, "error");
       setStatus(message);
-      setCallUiState({ inCall: false, muted: false });
+      setCallUiState({ inCall: false, muted: false, cameraBlocked: false });
     }
   });
   muteControl.addEventListener("click", toggleLocalMute);
@@ -7917,12 +7922,12 @@ if (voiceBtn) {
 
   socket.on("call:user-muted", ({ room, target } = {}) => {
     if (!room || room !== window.currentRoom) return;
-    if (!target || target !== window.currentUser) return;
+    if (!isCurrentCallTarget(target)) return;
     if (callState.localTrack) {
       callState.muted = true;
       callState.localLevel = 0;
       callState.localTrack.mute().catch(() => {});
-      setCallUiState({ inCall: true, muted: true });
+      setCallUiState({ inCall: true, muted: true, cameraBlocked: callState.cameraBlocked });
       renderPeers();
       showToast("You were muted by an admin.", "warn");
     }
@@ -7930,11 +7935,31 @@ if (voiceBtn) {
 
   socket.on("call:user-kicked", ({ room, target } = {}) => {
     if (!room || room !== window.currentRoom) return;
-    if (!target || target !== window.currentUser) return;
+    if (!isCurrentCallTarget(target)) return;
     leaveCall(true).finally(() => {
       showToast("You were removed from the call.", "warn");
       setStatus("Removed by admin.");
     });
+  });
+
+  socket.on("call:user-video-disabled", ({ room, target } = {}) => {
+    if (!room || room !== window.currentRoom) return;
+    if (!isCurrentCallTarget(target)) return;
+    callState.cameraBlocked = true;
+    detachLocalVideoTrack().finally(() => {
+      showToast("Your camera was disabled by an admin.", "warn");
+      setStatus("Camera disabled by admin.");
+      setCallUiState({ inCall: Boolean(callState.room), muted: callState.muted, cameraEnabled: false, cameraBlocked: true });
+    });
+  });
+
+  socket.on("call:user-video-enabled", ({ room, target } = {}) => {
+    if (!room || room !== window.currentRoom) return;
+    if (!isCurrentCallTarget(target)) return;
+    callState.cameraBlocked = false;
+    showToast("Your camera is allowed again.", "success");
+    setStatus(callState.room ? `Connected to ${window.currentRoom}` : "Not connected.");
+    setCallUiState({ inCall: Boolean(callState.room), muted: callState.muted, cameraEnabled: callState.cameraEnabled, cameraBlocked: false });
   });
 
   const autoLeaveIfActive = () => {

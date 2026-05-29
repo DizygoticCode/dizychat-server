@@ -2061,6 +2061,8 @@ const removeSocketFromRoom = (socket, targetRoom) => {
     presence.delete(socket.id);
     if (!presence.size) {
       roomPresence.delete(room);
+      activeRoomCalls.delete(room);
+      activeRoomCallVideoBlocks.delete(room);
     }
   }
 
@@ -2086,6 +2088,7 @@ const messageTimestamps = new Map();
 const typingTimestamps = new Map();
 const callEventTimestamps = new Map();
 const activeRoomCalls = new Map();
+const activeRoomCallVideoBlocks = new Map();
 
 const canSendCallEvent = (socketId) => {
   const now = Date.now();
@@ -2098,6 +2101,48 @@ const canSendCallEvent = (socketId) => {
 };
 
 const buildCallId = () => crypto.randomBytes(8).toString('hex');
+
+const isCallVideoBlocked = (room, username) => {
+  const blocked = activeRoomCallVideoBlocks.get(room);
+  return blocked ? blocked.has(canonicalUsername(username)) : false;
+};
+
+const setCallVideoBlocked = (room, username, blocked) => {
+  const canonical = canonicalUsername(username);
+  if (!room || !canonical) return false;
+  if (blocked) {
+    ensureSet(activeRoomCallVideoBlocks, room).add(canonical);
+    return true;
+  }
+  const blockedSet = activeRoomCallVideoBlocks.get(room);
+  if (!blockedSet) return false;
+  const removed = blockedSet.delete(canonical);
+  if (!blockedSet.size) activeRoomCallVideoBlocks.delete(room);
+  return removed;
+};
+
+const validateCallModerationTarget = (socket, roomName, target) => {
+  const cleanedTarget = normaliseUsername(target, '');
+  if (!roomName || roomName !== socket.currentRoom || !cleanedTarget) return null;
+  const canonicalTarget = canonicalUsername(cleanedTarget);
+  if (canonicalTarget === canonicalUsername(socket.username)) {
+    socket.emit('toast', { type: 'warn', text: 'You cannot perform that call action on yourself.' });
+    return null;
+  }
+  const presence = roomPresence.get(roomName);
+  const targetInfo = presence
+    ? Array.from(presence.values()).find((entry) => canonicalUsername(entry.username) === canonicalTarget)
+    : null;
+  if (!targetInfo) {
+    socket.emit('toast', { type: 'warn', text: 'That user is no longer online.' });
+    return null;
+  }
+  if (targetInfo.isAdmin) {
+    socket.emit('toast', { type: 'warn', text: 'You cannot perform that call action on an admin.' });
+    return null;
+  }
+  return { cleanedTarget, canonicalTarget };
+};
 
 const getActiveCallSnapshot = (room) => {
   const state = activeRoomCalls.get(room);
@@ -2139,6 +2184,7 @@ const createLivekitToken = ({ room, username, metadata }) => {
       roomJoin: true,
       room,
       canPublish: true,
+      canPublishSources: ['microphone', 'camera'],
       canSubscribe: true,
       canPublishData: true,
     },
@@ -2363,6 +2409,26 @@ io.on('connection', socket => {
     io.to(roomName).emit('call:user-kicked', { room: roomName, target: cleanedTarget, by: socket.username });
   });
 
+  socket.on('call:disable-video-user', ({ room, target } = {}) => {
+    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id) || !requireAdmin(socket)) return;
+    const roomName = normaliseRoomName(room || socket.currentRoom);
+    const targetInfo = validateCallModerationTarget(socket, roomName, target);
+    if (!targetInfo) return;
+    setCallVideoBlocked(roomName, targetInfo.cleanedTarget, true);
+    io.to(roomName).emit('call:user-video-disabled', { room: roomName, target: targetInfo.cleanedTarget, by: socket.username });
+    socket.emit('toast', { type: 'info', text: `${targetInfo.cleanedTarget}'s camera was disabled for this call.` });
+  });
+
+  socket.on('call:enable-video-user', ({ room, target } = {}) => {
+    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id) || !requireAdmin(socket)) return;
+    const roomName = normaliseRoomName(room || socket.currentRoom);
+    const targetInfo = validateCallModerationTarget(socket, roomName, target);
+    if (!targetInfo) return;
+    setCallVideoBlocked(roomName, targetInfo.cleanedTarget, false);
+    io.to(roomName).emit('call:user-video-enabled', { room: roomName, target: targetInfo.cleanedTarget, by: socket.username });
+    socket.emit('toast', { type: 'info', text: `${targetInfo.cleanedTarget}'s camera is allowed again.` });
+  });
+
   socket.on('call:end', ({ room } = {}) => {
     if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id)) return;
     const roomName = normaliseRoomName(room || socket.currentRoom);
@@ -2370,6 +2436,7 @@ io.on('connection', socket => {
     const active = activeRoomCalls.get(roomName);
     if (!active) return;
     activeRoomCalls.delete(roomName);
+    activeRoomCallVideoBlocks.delete(roomName);
     io.to(roomName).emit('call:ended', { room: roomName, callId: active.callId, endedBy: socket.username, endedAt: Date.now() });
   });
 
