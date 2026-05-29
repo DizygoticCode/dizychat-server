@@ -7088,7 +7088,7 @@ if (voiceBtn) {
   }
 }
 
-// ------------------- Live Voice Calls (Sprint B) -------------------
+// ------------------- Live Calls (audio + video) -------------------
 (() => {
   if (!voiceCallBtn) return;
 
@@ -7105,9 +7105,14 @@ if (voiceBtn) {
     localLevel: 0,
     localMeter: null,
     muted: false,
+    cameraEnabled: false,
+    localVideoTrack: null,
+    localVideoTile: null,
+    localVideoElement: null,
     masterVolume: 1,
     participants: new Map(),
     remoteAudioElements: new Map(),
+    remoteVideoElements: new Map(),
   };
 
   const panel = document.createElement("div");
@@ -7116,7 +7121,7 @@ if (voiceBtn) {
   panel.innerHTML = `
     <div class="voice-call-header" data-role="drag-handle">
       <div>
-        <div class="voice-call-title">Voice Call</div>
+        <div class="voice-call-title">Live Call</div>
         <div class="voice-call-status" data-role="status">Not connected.</div>
       </div>
       <span class="voice-call-drag-hint" aria-hidden="true">↕</span>
@@ -7124,8 +7129,10 @@ if (voiceBtn) {
     <div class="voice-call-controls">
       <button type="button" data-role="join">Join</button>
       <button type="button" data-role="mute">Mute</button>
+      <button type="button" data-role="camera">Add video</button>
       <button type="button" data-role="leave">Leave</button>
     </div>
+    <div class="call-video-grid" data-role="video-grid" hidden aria-label="Call video feeds"></div>
     <label class="voice-call-master-volume">
       <span>Call volume</span>
       <input type="range" min="0" max="100" value="100" data-role="master-volume" aria-label="Call output volume">
@@ -7143,8 +7150,10 @@ if (voiceBtn) {
   const dragHandle = panel.querySelector('[data-role="drag-handle"]');
   const joinControl = panel.querySelector('[data-role="join"]');
   const muteControl = panel.querySelector('[data-role="mute"]');
+  const cameraControl = panel.querySelector('[data-role="camera"]');
   const leaveControl = panel.querySelector('[data-role="leave"]');
   const masterVolumeControl = panel.querySelector('[data-role="master-volume"]');
+  const videoGrid = panel.querySelector('[data-role="video-grid"]');
   const peersEl = panel.querySelector('[data-role="peers"]');
 
   const participantKey = (participant) => participant?.sid || participant?.identity || "";
@@ -7152,12 +7161,36 @@ if (voiceBtn) {
 
   const setStatus = (text) => { if (statusEl) statusEl.textContent = text; };
 
+  const updateVideoGridVisibility = () => {
+    if (!videoGrid) return;
+    videoGrid.hidden = videoGrid.childElementCount === 0;
+  };
+
+  const createVideoTile = ({ key, label, local = false, element }) => {
+    const tile = document.createElement("div");
+    tile.className = `call-video-tile${local ? " call-video-tile-local" : ""}`;
+    tile.dataset.videoKey = key;
+
+    element.autoplay = true;
+    element.playsInline = true;
+    if (local) element.muted = true;
+    element.classList.add("call-video-element");
+
+    const name = document.createElement("span");
+    name.className = "call-video-label";
+    name.textContent = label;
+
+    tile.append(element, name);
+    return tile;
+  };
+
   const getLocalEntry = () => ({
     sid: "local",
     name: window.currentUser ? `${window.currentUser} (you)` : "You",
     level: callState.localLevel,
     muted: callState.muted,
     volume: 1,
+    hasVideo: callState.cameraEnabled,
     local: true,
   });
 
@@ -7201,16 +7234,28 @@ if (voiceBtn) {
     const header = document.createElement("div");
     header.className = "voice-peer-header";
 
+    const nameGroup = document.createElement("span");
+    nameGroup.className = "voice-peer-name-group";
+
     const name = document.createElement("span");
     name.className = "voice-peer-name";
     name.textContent = entry.name;
+    nameGroup.appendChild(name);
+
+    if (entry.hasVideo) {
+      const videoBadge = document.createElement("span");
+      videoBadge.className = "voice-peer-video-badge";
+      videoBadge.textContent = "🎥 Video";
+      videoBadge.setAttribute("aria-label", `${entry.name} has camera video on`);
+      nameGroup.appendChild(videoBadge);
+    }
 
     const level = document.createElement("span");
     level.className = "voice-peer-level";
     level.dataset.meterValue = entry.sid;
     level.textContent = entry.muted ? "muted" : `${Math.round((entry.level || 0) * 100)}%`;
 
-    header.append(name, level);
+    header.append(nameGroup, level);
 
     const meter = document.createElement("div");
     meter.className = "voice-peer-meter";
@@ -7270,14 +7315,21 @@ if (voiceBtn) {
     entries.forEach((entry) => peersEl.appendChild(createPeerRow(entry)));
   };
 
-  const setCallUiState = ({ inCall = false, muted = false } = {}) => {
+  const setCallUiState = ({ inCall = false, muted = false, cameraEnabled = callState.cameraEnabled } = {}) => {
     voiceCallBtn.classList.toggle("call-active", inCall);
     voiceCallBtn.classList.toggle("call-muted", inCall && muted);
-    voiceCallBtn.textContent = inCall ? (muted ? "🔇" : "📞") : "📞";
+    voiceCallBtn.classList.toggle("call-video-active", inCall && cameraEnabled);
+    voiceCallBtn.textContent = inCall ? (cameraEnabled ? "🎥" : (muted ? "🔇" : "📞")) : "📞";
     muteControl.disabled = !inCall;
+    cameraControl.disabled = !inCall;
     leaveControl.disabled = !inCall;
     joinControl.disabled = inCall;
     muteControl.textContent = muted ? "Unmute" : "Mute";
+    cameraControl.textContent = cameraEnabled ? "Stop video" : "Add video";
+    cameraControl.setAttribute("aria-pressed", String(Boolean(inCall && cameraEnabled)));
+    cameraControl.setAttribute("title", cameraEnabled ? "Stop sharing camera video" : "Add camera video to this call");
+    voiceCallBtn.setAttribute("title", inCall ? (cameraEnabled ? "Live call with video active" : "Live call active") : "Open live call");
+    voiceCallBtn.setAttribute("aria-label", inCall ? (cameraEnabled ? "Live call with video active" : "Live call active") : "Open live call");
   };
 
   const startPanelDrag = (event) => {
@@ -7319,7 +7371,7 @@ if (voiceBtn) {
 
   const getLiveKitClient = () => window.LivekitClient || window.LiveKitClient || null;
 
-  const normalizeCallError = (error, fallback = "Unable to join voice call.") => {
+  const normalizeCallError = (error, fallback = "Unable to join call.") => {
     const message = error?.message || String(error || "");
     if (!message) return fallback;
     if (/permission|notallowed|denied/i.test(message)) {
@@ -7334,16 +7386,34 @@ if (voiceBtn) {
     return message || fallback;
   };
 
-  const explainCallSetupError = (payload, fallback = "Voice call setup is incomplete.") => {
+  const normalizeCameraError = (error) => {
+    const name = error?.name || "";
+    const message = error?.message || String(error || "");
+    if (/notallowed|permission|denied|security/i.test(`${name} ${message}`)) {
+      return "Camera permission was denied. Allow camera access in your browser, then try again.";
+    }
+    if (/notfound|devicesnotfound/i.test(`${name} ${message}`)) {
+      return "No camera was found. Connect a camera or choose a camera in your browser settings.";
+    }
+    if (/notreadable|trackstarterror|in use/i.test(`${name} ${message}`)) {
+      return "Your camera is already in use or cannot be read by the browser.";
+    }
+    if (/only secure origins|secure context|https/i.test(`${name} ${message}`)) {
+      return "Camera video requires HTTPS or localhost. Open the deployed HTTPS site and try again.";
+    }
+    return message || "Unable to start video.";
+  };
+
+  const explainCallSetupError = (payload, fallback = "Call setup is incomplete.") => {
     const status = payload?.status || payload;
     if (status?.livekitUrlPresent && status?.livekitUrlValid === false) {
       return "LIVEKIT_URL is not a valid LiveKit WebSocket URL. Use the LiveKit Cloud URL for the same project as your API key/secret.";
     }
     if (Array.isArray(status?.missingRequiredEnv) && status.missingRequiredEnv.length) {
-      return `Voice provider is not configured. Missing server environment variables: ${status.missingRequiredEnv.join(", ")}.`;
+      return `Call provider is not configured. Missing server environment variables: ${status.missingRequiredEnv.join(", ")}.`;
     }
     if (status?.configured === false) {
-      return status?.reason || "Voice provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET on the server.";
+      return status?.reason || "Call provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET on the server.";
     }
     return payload?.error || status?.reason || fallback;
   };
@@ -7353,14 +7423,14 @@ if (voiceBtn) {
     try {
       res = await fetch("/api/calls/status", { cache: "no-store" });
     } catch (error) {
-      throw new Error(`Voice call status check failed: ${error?.message || error}`);
+      throw new Error(`Call status check failed: ${error?.message || error}`);
     }
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(explainCallSetupError(payload, `Voice call status check failed (${res.status}).`));
+      throw new Error(explainCallSetupError(payload, `Call status check failed (${res.status}).`));
     }
     if (!payload || typeof payload !== "object" || !("enabled" in payload) || !("configured" in payload)) {
-      throw new Error("Voice call status endpoint returned an unexpected response. Redeploy the latest server build.");
+      throw new Error("Call status endpoint returned an unexpected response. Redeploy the latest server build.");
     }
     if (!payload.enabled || !payload.configured) {
       throw new Error(explainCallSetupError(payload));
@@ -7407,6 +7477,7 @@ if (voiceBtn) {
       name: values.name || existing.name || getDisplayName(participant),
       level: values.level ?? existing.level ?? Number(participant?.audioLevel || 0),
       muted: values.muted ?? existing.muted ?? false,
+      hasVideo: values.hasVideo ?? existing.hasVideo ?? false,
       volume: clampVolume(values.volume ?? existing.volume ?? 1),
       local: false,
     };
@@ -7458,6 +7529,111 @@ if (voiceBtn) {
     });
   };
 
+  const attachLocalVideoTrack = (track) => {
+    if (!track?.attach || !videoGrid) return;
+    if (callState.localVideoTile) {
+      callState.localVideoTile.remove();
+      callState.localVideoTile = null;
+      callState.localVideoElement = null;
+    }
+    const element = track.attach();
+    const tile = createVideoTile({
+      key: "local",
+      label: window.currentUser ? `${window.currentUser} (you)` : "You",
+      local: true,
+      element,
+    });
+    callState.localVideoElement = element;
+    callState.localVideoTile = tile;
+    videoGrid.prepend(tile);
+    updateVideoGridVisibility();
+    renderPeers();
+  };
+
+  const detachLocalVideoTrack = async ({ stop = true } = {}) => {
+    const track = callState.localVideoTrack;
+    if (track && callState.room?.localParticipant?.unpublishTrack) {
+      try {
+        await callState.room.localParticipant.unpublishTrack(track);
+      } catch (error) {
+        console.warn("[LiveCall] camera unpublish warning", error);
+      }
+    }
+    if (track?.detach && callState.localVideoElement) {
+      track.detach(callState.localVideoElement);
+    }
+    if (stop) track?.stop?.();
+    callState.localVideoTile?.remove();
+    callState.localVideoTrack = null;
+    callState.localVideoElement = null;
+    callState.localVideoTile = null;
+    callState.cameraEnabled = false;
+    updateVideoGridVisibility();
+    setCallUiState({ inCall: Boolean(callState.room), muted: callState.muted, cameraEnabled: false });
+    renderPeers();
+  };
+
+  const attachRemoteVideoTrack = (track, publication, participant) => {
+    if (!track?.attach || !videoGrid) return;
+    const participantSid = participantKey(participant) || publication?.participantSid || "remote";
+    const key = `${participantSid}:${publication?.trackSid || track.sid || "camera"}`;
+    detachRemoteVideoTrack(track, publication, participant);
+    updateParticipant(participant, { sid: participantSid, hasVideo: true });
+    const element = track.attach();
+    const tile = createVideoTile({
+      key,
+      label: getDisplayName(participant),
+      element,
+    });
+    callState.remoteVideoElements.set(key, {
+      participantSid,
+      track,
+      element,
+      tile,
+    });
+    videoGrid.appendChild(tile);
+    updateVideoGridVisibility();
+    renderPeers();
+  };
+
+  const detachRemoteVideoTrack = (track, publication, participant) => {
+    const participantSid = participantKey(participant) || publication?.participantSid || "";
+    const trackKey = publication?.trackSid || track?.sid || "";
+    const fullKey = participantSid && trackKey ? `${participantSid}:${trackKey}` : "";
+    const entries = Array.from(callState.remoteVideoElements.entries()).filter(([key, entry]) => {
+      if (fullKey && key === fullKey) return true;
+      if (track && entry.track === track) return true;
+      return participantSid && entry.participantSid === participantSid && !trackKey;
+    });
+    entries.forEach(([key, entry]) => {
+      if (entry?.track?.detach) {
+        entry.track.detach(entry.element);
+      }
+      entry?.tile?.remove();
+      entry?.element?.remove();
+      callState.remoteVideoElements.delete(key);
+    });
+    if (participantSid) {
+      const stillHasVideo = Array.from(callState.remoteVideoElements.values()).some((entry) => entry.participantSid === participantSid);
+      const participantEntry = callState.participants.get(participantSid);
+      if (participantEntry) participantEntry.hasVideo = stillHasVideo;
+    }
+    updateVideoGridVisibility();
+    renderPeers();
+  };
+
+  const clearRemoteVideoTracks = () => {
+    Array.from(callState.remoteVideoElements.entries()).forEach(([key, entry]) => {
+      if (entry?.track?.detach) {
+        entry.track.detach(entry.element);
+      }
+      entry?.tile?.remove();
+      entry?.element?.remove();
+      callState.remoteVideoElements.delete(key);
+    });
+    updateVideoGridVisibility();
+  };
+
   const stopLocalMeter = () => {
     const meter = callState.localMeter;
     if (!meter) return;
@@ -7499,7 +7675,7 @@ if (voiceBtn) {
       };
       callState.localMeter = { context, analyser, source, frame: requestAnimationFrame(tick) };
     } catch (error) {
-      console.warn("[VoiceCall] local meter unavailable", error);
+      console.warn("[LiveCall] local meter unavailable", error);
     }
   };
 
@@ -7528,23 +7704,59 @@ if (voiceBtn) {
     updatePeerMeters();
   };
 
+  const toggleLocalCamera = async () => {
+    if (!callState.room) {
+      showToast("Join the call before turning on video.", "warn");
+      return;
+    }
+    if (callState.localVideoTrack) {
+      await detachLocalVideoTrack();
+      showToast("Video stopped", "info");
+      return;
+    }
+
+    const LK = getLiveKitClient();
+    if (!LK?.createLocalVideoTrack) {
+      throw new Error("LiveKit video support is not available in this browser SDK.");
+    }
+    setStatus("Requesting camera…");
+    const track = await LK.createLocalVideoTrack({
+      facingMode: "user",
+      resolution: LK.VideoPresets?.h540?.resolution,
+    });
+    callState.localVideoTrack = track;
+    setStatus("Publishing camera…");
+    await callState.room.localParticipant.publishTrack(track, {
+      source: LK.Track?.Source?.Camera,
+      simulcast: true,
+    });
+    callState.cameraEnabled = true;
+    attachLocalVideoTrack(track);
+    setCallUiState({ inCall: true, muted: callState.muted, cameraEnabled: true });
+    setStatus(`Connected to ${window.currentRoom}`);
+    showToast("Video started", "success");
+  };
+
   const leaveCall = async (silent = false) => {
     try {
       stopLocalMeter();
+      await detachLocalVideoTrack();
       if (callState.localTrack) callState.localTrack.stop();
       if (callState.room) await callState.room.disconnect();
       callState.localTrack = null;
       callState.room = null;
       callState.muted = false;
+      callState.cameraEnabled = false;
       callState.participants.clear();
       callState.localLevel = 0;
       clearRemoteAudioTracks();
+      clearRemoteVideoTracks();
       renderPeers();
-      setCallUiState({ inCall: false, muted: false });
+      setCallUiState({ inCall: false, muted: false, cameraEnabled: false });
       setStatus("Not connected.");
       if (!silent) socket.emit("call:leave", { room: window.currentRoom });
     } catch (error) {
-      console.error("[VoiceCall] leave error", error);
+      console.error("[LiveCall] leave error", error);
     }
   };
 
@@ -7553,7 +7765,7 @@ if (voiceBtn) {
       showToast("Join a chat room first.", "warn");
       return;
     }
-    setStatus("Checking voice provider…");
+    setStatus("Checking call provider…");
     await ensureCallServiceReady();
     setStatus("Loading voice engine…");
     await ensureSdk();
@@ -7566,14 +7778,20 @@ if (voiceBtn) {
     room.on(LK.RoomEvent.Disconnected, () => {
       leaveCall(true);
     });
-    room.on(LK.RoomEvent.TrackSubscribed, (track, _publication, participant) => {
+    room.on(LK.RoomEvent.TrackSubscribed, (track, publication, participant) => {
       if (track?.kind === LK.Track?.Kind?.Audio) {
         attachRemoteAudioTrack(track, participant);
       }
+      if (track?.kind === LK.Track?.Kind?.Video) {
+        attachRemoteVideoTrack(track, publication, participant);
+      }
     });
-    room.on(LK.RoomEvent.TrackUnsubscribed, (track, _publication, participant) => {
+    room.on(LK.RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
       if (track?.kind === LK.Track?.Kind?.Audio) {
         detachRemoteAudioTrack(track, participant);
+      }
+      if (track?.kind === LK.Track?.Kind?.Video) {
+        detachRemoteVideoTrack(track, publication, participant);
       }
     });
     room.on(LK.RoomEvent.ParticipantConnected, (participant) => {
@@ -7582,6 +7800,7 @@ if (voiceBtn) {
     });
     room.on(LK.RoomEvent.ParticipantDisconnected, (participant) => {
       detachRemoteAudioTrack(null, participant);
+      detachRemoteVideoTrack(null, null, participant);
       const sid = participantKey(participant);
       if (sid) {
         callState.participants.delete(sid);
@@ -7594,7 +7813,7 @@ if (voiceBtn) {
     renderPeers();
     if (typeof room.startAudio === "function") {
       await room.startAudio().catch((error) => {
-        console.warn("[VoiceCall] remote audio start warning", error);
+        console.warn("[LiveCall] remote audio start warning", error);
       });
     }
     setStatus("Requesting microphone…");
@@ -7606,7 +7825,7 @@ if (voiceBtn) {
     callState.localTrack = track;
     callState.muted = false;
     startLocalMeter(track);
-    setCallUiState({ inCall: true, muted: false });
+    setCallUiState({ inCall: true, muted: false, cameraEnabled: false });
     renderPeers();
     setStatus(`Connected to ${window.currentRoom}`);
     socket.emit("call:join", { room: window.currentRoom });
@@ -7655,9 +7874,9 @@ if (voiceBtn) {
   joinControl.addEventListener("click", async () => {
     try {
       await joinCall();
-      showToast("Voice call connected", "success");
+      showToast("Call connected", "success");
     } catch (error) {
-      console.error("[VoiceCall] join failed", error);
+      console.error("[LiveCall] join failed", error);
       await leaveCall(true);
       const message = normalizeCallError(error);
       showToast(message, "error");
@@ -7666,9 +7885,20 @@ if (voiceBtn) {
     }
   });
   muteControl.addEventListener("click", toggleLocalMute);
+  cameraControl.addEventListener("click", async () => {
+    try {
+      await toggleLocalCamera();
+    } catch (error) {
+      console.error("[LiveCall] camera toggle failed", error);
+      const message = normalizeCameraError(error);
+      showToast(message, "error");
+      setStatus(message);
+      await detachLocalVideoTrack();
+    }
+  });
   leaveControl.addEventListener("click", async () => {
     await leaveCall();
-    showToast("Left voice call", "info");
+    showToast("Left call", "info");
   });
   masterVolumeControl?.addEventListener("input", () => {
     callState.masterVolume = clampVolume(Number(masterVolumeControl.value) / 100);
@@ -7717,7 +7947,7 @@ if (voiceBtn) {
     if (!room || room !== window.currentRoom) return;
     if (!target || target !== window.currentUser) return;
     leaveCall(true).finally(() => {
-      showToast("You were removed from the voice call.", "warn");
+      showToast("You were removed from the call.", "warn");
       setStatus("Removed by admin.");
     });
   });
