@@ -129,7 +129,27 @@ const ADMIN_AUTH_MAX_FAILURES = parsePositiveIntegerEnv('ADMIN_AUTH_MAX_FAILURES
 const ADMIN_AUTH_LOCK_MS = parsePositiveIntegerEnv('ADMIN_AUTH_LOCK_MS', 15 * 60 * 1000, { min: 5000, max: 24 * 60 * 60 * 1000 });
 const ADMIN_AUTH_MIN_RETRY_DELAY_MS = 750;
 const ADMIN_AUTH_MAX_RETRY_DELAY_MS = 5000;
-const LIVEKIT_URL = (process.env.LIVEKIT_URL || '').trim();
+const LIVEKIT_URL_RAW = (process.env.LIVEKIT_URL || '').trim();
+const normalizeLivekitUrl = (rawUrl) => {
+  const trimmed = String(rawUrl || '').trim().replace(/\/+$/, '');
+  if (!trimmed) return '';
+
+  const withProtocol = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
+    ? trimmed
+    : `wss://${trimmed}`;
+  const websocketUrl = withProtocol
+    .replace(/^https:\/\//i, 'wss://')
+    .replace(/^http:\/\//i, 'ws://');
+
+  try {
+    const parsed = new URL(websocketUrl);
+    if (!['ws:', 'wss:'].includes(parsed.protocol) || !parsed.hostname) return '';
+    return parsed.origin.replace(/\/+$/, '');
+  } catch (_err) {
+    return '';
+  }
+};
+const LIVEKIT_URL = normalizeLivekitUrl(LIVEKIT_URL_RAW);
 const LIVEKIT_API_KEY = (process.env.LIVEKIT_API_KEY || '').trim();
 const LIVEKIT_API_SECRET = (process.env.LIVEKIT_API_SECRET || '').trim();
 const hasLivekitCredentials = () => Boolean(LIVEKIT_URL && LIVEKIT_API_KEY && LIVEKIT_API_SECRET);
