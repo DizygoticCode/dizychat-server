@@ -7092,11 +7092,20 @@ if (voiceBtn) {
 (() => {
   if (!voiceCallBtn) return;
 
+  const clampVolume = (value) => {
+    const numeric = Number.parseFloat(value);
+    if (!Number.isFinite(numeric)) return 1;
+    return Math.min(1, Math.max(0, numeric));
+  };
+
   const callState = {
     sdkLoaded: false,
     room: null,
     localTrack: null,
+    localLevel: 0,
+    localMeter: null,
     muted: false,
+    masterVolume: 1,
     participants: new Map(),
     remoteAudioElements: new Map(),
   };
@@ -7105,14 +7114,23 @@ if (voiceBtn) {
   panel.className = "voice-call-panel";
   panel.hidden = true;
   panel.innerHTML = `
-    <div class="voice-call-title">Voice Call</div>
-    <div class="voice-call-status" data-role="status">Not connected.</div>
+    <div class="voice-call-header" data-role="drag-handle">
+      <div>
+        <div class="voice-call-title">Voice Call</div>
+        <div class="voice-call-status" data-role="status">Not connected.</div>
+      </div>
+      <span class="voice-call-drag-hint" aria-hidden="true">↕</span>
+    </div>
     <div class="voice-call-controls">
       <button type="button" data-role="join">Join</button>
       <button type="button" data-role="mute">Mute</button>
       <button type="button" data-role="leave">Leave</button>
     </div>
-    <div class="voice-call-peers" data-role="peers"></div>
+    <label class="voice-call-master-volume">
+      <span>Call volume</span>
+      <input type="range" min="0" max="100" value="100" data-role="master-volume" aria-label="Call output volume">
+    </label>
+    <div class="voice-call-peers" data-role="peers" aria-live="polite"></div>
   `;
   document.body.appendChild(panel);
 
@@ -7122,23 +7140,134 @@ if (voiceBtn) {
   document.body.appendChild(remoteAudioContainer);
 
   const statusEl = panel.querySelector('[data-role="status"]');
+  const dragHandle = panel.querySelector('[data-role="drag-handle"]');
   const joinControl = panel.querySelector('[data-role="join"]');
   const muteControl = panel.querySelector('[data-role="mute"]');
   const leaveControl = panel.querySelector('[data-role="leave"]');
+  const masterVolumeControl = panel.querySelector('[data-role="master-volume"]');
   const peersEl = panel.querySelector('[data-role="peers"]');
 
+  const participantKey = (participant) => participant?.sid || participant?.identity || "";
+  const getDisplayName = (participant) => participant?.identity || "Participant";
+
   const setStatus = (text) => { if (statusEl) statusEl.textContent = text; };
+
+  const getLocalEntry = () => ({
+    sid: "local",
+    name: window.currentUser ? `${window.currentUser} (you)` : "You",
+    level: callState.localLevel,
+    muted: callState.muted,
+    volume: 1,
+    local: true,
+  });
+
+  const syncRemoteAudioVolume = (sid) => {
+    const entry = callState.remoteAudioElements.get(sid);
+    if (!entry?.element) return;
+    const participant = callState.participants.get(sid);
+    const participantVolume = clampVolume(participant?.volume ?? entry.volume ?? 1);
+    const participantMuted = Boolean(participant?.muted ?? entry.muted);
+    entry.volume = participantVolume;
+    entry.muted = participantMuted;
+    entry.element.volume = participantMuted ? 0 : clampVolume(participantVolume * callState.masterVolume);
+    entry.element.muted = participantMuted || callState.masterVolume <= 0;
+  };
+
+  const syncAllRemoteAudioVolumes = () => {
+    Array.from(callState.remoteAudioElements.keys()).forEach(syncRemoteAudioVolume);
+  };
+
+  const updatePeerMeters = () => {
+    if (!peersEl) return;
+    const localMeter = peersEl.querySelector('[data-meter="local"]');
+    const localValue = peersEl.querySelector('[data-meter-value="local"]');
+    if (localMeter) localMeter.style.width = `${Math.round(callState.localLevel * 100)}%`;
+    if (localValue) localValue.textContent = callState.muted ? "muted" : `${Math.round(callState.localLevel * 100)}%`;
+    const meters = Array.from(peersEl.querySelectorAll("[data-meter]"));
+    const values = Array.from(peersEl.querySelectorAll("[data-meter-value]"));
+    callState.participants.forEach((entry, sid) => {
+      const meter = meters.find((el) => el.dataset.meter === String(sid));
+      const value = values.find((el) => el.dataset.meterValue === String(sid));
+      if (meter) meter.style.width = `${Math.round((entry.level || 0) * 100)}%`;
+      if (value) value.textContent = entry.muted ? "muted" : `${Math.round((entry.level || 0) * 100)}%`;
+    });
+  };
+
+  const createPeerRow = (entry) => {
+    const row = document.createElement("div");
+    row.className = `voice-peer-row${entry.local ? " voice-peer-row-local" : ""}`;
+    row.dataset.sid = entry.sid;
+
+    const header = document.createElement("div");
+    header.className = "voice-peer-header";
+
+    const name = document.createElement("span");
+    name.className = "voice-peer-name";
+    name.textContent = entry.name;
+
+    const level = document.createElement("span");
+    level.className = "voice-peer-level";
+    level.dataset.meterValue = entry.sid;
+    level.textContent = entry.muted ? "muted" : `${Math.round((entry.level || 0) * 100)}%`;
+
+    header.append(name, level);
+
+    const meter = document.createElement("div");
+    meter.className = "voice-peer-meter";
+    meter.setAttribute("aria-hidden", "true");
+    const meterFill = document.createElement("div");
+    meterFill.className = "voice-peer-meter-fill";
+    meterFill.dataset.meter = entry.sid;
+    meterFill.style.width = `${Math.round((entry.level || 0) * 100)}%`;
+    meter.appendChild(meterFill);
+
+    const controls = document.createElement("div");
+    controls.className = "voice-peer-controls";
+
+    const muteButton = document.createElement("button");
+    muteButton.type = "button";
+    muteButton.className = "voice-peer-mute";
+    muteButton.dataset.action = entry.local ? "toggle-local-mute" : "toggle-peer-mute";
+    muteButton.dataset.sid = entry.sid;
+    muteButton.textContent = entry.muted ? "Unmute" : "Mute";
+    muteButton.setAttribute("aria-label", `${entry.muted ? "Unmute" : "Mute"} ${entry.name}`);
+
+    controls.appendChild(muteButton);
+
+    if (!entry.local) {
+      const volumeLabel = document.createElement("label");
+      volumeLabel.className = "voice-peer-volume";
+      volumeLabel.textContent = "Vol";
+      const volumeInput = document.createElement("input");
+      volumeInput.type = "range";
+      volumeInput.min = "0";
+      volumeInput.max = "100";
+      volumeInput.value = String(Math.round(clampVolume(entry.volume ?? 1) * 100));
+      volumeInput.dataset.action = "peer-volume";
+      volumeInput.dataset.sid = entry.sid;
+      volumeInput.setAttribute("aria-label", `Volume for ${entry.name}`);
+      volumeLabel.appendChild(volumeInput);
+      controls.appendChild(volumeLabel);
+    }
+
+    row.append(header, meter, controls);
+    return row;
+  };
+
   const renderPeers = () => {
     if (!peersEl) return;
-    const entries = Array.from(callState.participants.values());
+    const entries = [];
+    if (callState.room || callState.localTrack) entries.push(getLocalEntry());
+    entries.push(...Array.from(callState.participants.values()).sort((a, b) => a.name.localeCompare(b.name)));
     peersEl.innerHTML = "";
-    if (!entries.length) return;
-    entries.forEach((entry) => {
-      const row = document.createElement("div");
-      row.className = "voice-peer-row";
-      row.textContent = `${entry.name}: ${entry.level > 0 ? `${Math.round(entry.level * 100)}%` : "silent"}`;
-      peersEl.appendChild(row);
-    });
+    if (!entries.length) {
+      const empty = document.createElement("div");
+      empty.className = "voice-peer-empty";
+      empty.textContent = "Join the call to see participants, volume controls, and meters.";
+      peersEl.appendChild(empty);
+      return;
+    }
+    entries.forEach((entry) => peersEl.appendChild(createPeerRow(entry)));
   };
 
   const setCallUiState = ({ inCall = false, muted = false } = {}) => {
@@ -7149,6 +7278,43 @@ if (voiceBtn) {
     leaveControl.disabled = !inCall;
     joinControl.disabled = inCall;
     muteControl.textContent = muted ? "Unmute" : "Mute";
+  };
+
+  const startPanelDrag = (event) => {
+    if (!dragHandle || (event.button !== undefined && event.button !== 0)) return;
+    const interactive = event.target.closest("button, input, label, a, select, textarea");
+    if (interactive) return;
+    event.preventDefault();
+    const rect = panel.getBoundingClientRect();
+    const offsetX = event.clientX - rect.left;
+    const offsetY = event.clientY - rect.top;
+    panel.classList.add("dragging");
+    panel.style.left = `${rect.left}px`;
+    panel.style.top = `${rect.top}px`;
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+
+    if (event.pointerId !== undefined) {
+      dragHandle.setPointerCapture?.(event.pointerId);
+    }
+
+    const onMove = (moveEvent) => {
+      const maxLeft = Math.max(8, window.innerWidth - rect.width - 8);
+      const maxTop = Math.max(8, window.innerHeight - rect.height - 8);
+      const nextLeft = Math.min(Math.max(8, moveEvent.clientX - offsetX), maxLeft);
+      const nextTop = Math.min(Math.max(8, moveEvent.clientY - offsetY), maxTop);
+      panel.style.left = `${nextLeft}px`;
+      panel.style.top = `${nextTop}px`;
+    };
+    const onUp = () => {
+      panel.classList.remove("dragging");
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onUp);
+    };
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointercancel", onUp);
   };
 
   const getLiveKitClient = () => window.LivekitClient || window.LiveKitClient || null;
@@ -7218,20 +7384,44 @@ if (voiceBtn) {
     throw new Error("LiveKit browser SDK could not be loaded from the configured CDNs.");
   };
 
+  const updateParticipant = (participant, values = {}) => {
+    const sid = participantKey(participant) || values.sid;
+    if (!sid || participant?.isLocal) return null;
+    const existing = callState.participants.get(sid) || {};
+    const next = {
+      sid,
+      name: values.name || existing.name || getDisplayName(participant),
+      level: values.level ?? existing.level ?? Number(participant?.audioLevel || 0),
+      muted: values.muted ?? existing.muted ?? false,
+      volume: clampVolume(values.volume ?? existing.volume ?? 1),
+      local: false,
+    };
+    callState.participants.set(sid, next);
+    return next;
+  };
+
   const attachRemoteAudioTrack = (track, participant) => {
     if (!track?.attach || !remoteAudioContainer) return;
-    const key = participant?.sid || participant?.identity || track.sid || String(Date.now());
+    const key = participantKey(participant) || track.sid || String(Date.now());
     detachRemoteAudioTrack(track, participant);
+    const participantEntry = updateParticipant(participant, { sid: key });
     const element = track.attach();
     element.autoplay = true;
     element.playsInline = true;
     element.dataset.participant = participant?.identity || key;
-    callState.remoteAudioElements.set(key, { track, element });
+    callState.remoteAudioElements.set(key, {
+      track,
+      element,
+      muted: Boolean(participantEntry?.muted),
+      volume: clampVolume(participantEntry?.volume ?? 1),
+    });
     remoteAudioContainer.appendChild(element);
+    syncRemoteAudioVolume(key);
+    renderPeers();
   };
 
   const detachRemoteAudioTrack = (track, participant) => {
-    const key = participant?.sid || participant?.identity || track?.sid;
+    const key = participantKey(participant) || track?.sid;
     const entries = key
       ? [[key, callState.remoteAudioElements.get(key)]].filter(([, entry]) => entry)
       : Array.from(callState.remoteAudioElements.entries()).filter(([, entry]) => !track || entry.track === track);
@@ -7254,6 +7444,51 @@ if (voiceBtn) {
     });
   };
 
+  const stopLocalMeter = () => {
+    const meter = callState.localMeter;
+    if (!meter) return;
+    if (meter.frame) cancelAnimationFrame(meter.frame);
+    try { meter.source?.disconnect(); } catch (_err) {}
+    try { meter.analyser?.disconnect(); } catch (_err) {}
+    if (meter.context?.state !== "closed") {
+      meter.context?.close().catch(() => {});
+    }
+    callState.localMeter = null;
+    callState.localLevel = 0;
+  };
+
+  const startLocalMeter = (track) => {
+    stopLocalMeter();
+    const mediaTrack = track?.mediaStreamTrack;
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!mediaTrack || !AudioContextCtor) return;
+    try {
+      const context = new AudioContextCtor();
+      context.resume?.().catch(() => {});
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.75;
+      const source = context.createMediaStreamSource(new MediaStream([mediaTrack]));
+      source.connect(analyser);
+      const samples = new Uint8Array(analyser.frequencyBinCount);
+      const tick = () => {
+        analyser.getByteTimeDomainData(samples);
+        let sum = 0;
+        samples.forEach((sample) => {
+          const centered = (sample - 128) / 128;
+          sum += centered * centered;
+        });
+        const rms = Math.sqrt(sum / samples.length);
+        callState.localLevel = callState.muted ? 0 : Math.min(1, rms * 5);
+        updatePeerMeters();
+        callState.localMeter.frame = requestAnimationFrame(tick);
+      };
+      callState.localMeter = { context, analyser, source, frame: requestAnimationFrame(tick) };
+    } catch (error) {
+      console.warn("[VoiceCall] local meter unavailable", error);
+    }
+  };
+
   const fetchToken = async () => {
     const res = await fetch("/api/calls/token", {
       method: "POST",
@@ -7265,14 +7500,30 @@ if (voiceBtn) {
     return data;
   };
 
+  const toggleLocalMute = async () => {
+    if (!callState.localTrack) return;
+    callState.muted = !callState.muted;
+    if (callState.muted) {
+      await callState.localTrack.mute();
+      callState.localLevel = 0;
+    } else {
+      await callState.localTrack.unmute();
+    }
+    setCallUiState({ inCall: true, muted: callState.muted });
+    renderPeers();
+    updatePeerMeters();
+  };
+
   const leaveCall = async (silent = false) => {
     try {
+      stopLocalMeter();
       if (callState.localTrack) callState.localTrack.stop();
       if (callState.room) await callState.room.disconnect();
       callState.localTrack = null;
       callState.room = null;
       callState.muted = false;
       callState.participants.clear();
+      callState.localLevel = 0;
       clearRemoteAudioTracks();
       renderPeers();
       setCallUiState({ inCall: false, muted: false });
@@ -7311,15 +7562,22 @@ if (voiceBtn) {
         detachRemoteAudioTrack(track, participant);
       }
     });
+    room.on(LK.RoomEvent.ParticipantConnected, (participant) => {
+      updateParticipant(participant);
+      renderPeers();
+    });
     room.on(LK.RoomEvent.ParticipantDisconnected, (participant) => {
       detachRemoteAudioTrack(null, participant);
-      if (participant?.sid) {
-        callState.participants.delete(participant.sid);
+      const sid = participantKey(participant);
+      if (sid) {
+        callState.participants.delete(sid);
         renderPeers();
       }
     });
     setStatus("Connecting to LiveKit…");
     await room.connect(tokenPayload.url, tokenPayload.token, { autoSubscribe: true });
+    room.remoteParticipants?.forEach((participant) => updateParticipant(participant));
+    renderPeers();
     if (typeof room.startAudio === "function") {
       await room.startAudio().catch((error) => {
         console.warn("[VoiceCall] remote audio start warning", error);
@@ -7333,19 +7591,23 @@ if (voiceBtn) {
     });
     callState.localTrack = track;
     callState.muted = false;
+    startLocalMeter(track);
     setCallUiState({ inCall: true, muted: false });
+    renderPeers();
     setStatus(`Connected to ${window.currentRoom}`);
     socket.emit("call:join", { room: window.currentRoom });
     room.on(LK.RoomEvent.ActiveSpeakersChanged, (speakers = []) => {
       const seen = new Set();
       speakers.forEach((participant) => {
-        const sid = participant?.sid;
-        if (!sid || participant?.isLocal) return;
+        const level = Number(participant?.audioLevel || 0);
+        if (participant?.isLocal) {
+          callState.localLevel = callState.muted ? 0 : level;
+          return;
+        }
+        const sid = participantKey(participant);
+        if (!sid) return;
         seen.add(sid);
-        callState.participants.set(sid, {
-          name: participant.identity || "Participant",
-          level: Number(participant.audioLevel || 0),
-        });
+        updateParticipant(participant, { level });
       });
       Array.from(callState.participants.keys()).forEach((sid) => {
         if (!seen.has(sid)) {
@@ -7353,13 +7615,25 @@ if (voiceBtn) {
           if (existing) existing.level = 0;
         }
       });
-      renderPeers();
+      updatePeerMeters();
     });
   };
 
   voiceCallBtn.hidden = false;
   voiceCallBtn.removeAttribute("aria-hidden");
   setCallUiState({ inCall: false, muted: false });
+  renderPeers();
+
+  dragHandle?.addEventListener("pointerdown", startPanelDrag);
+  window.addEventListener("resize", () => {
+    const rect = panel.getBoundingClientRect();
+    if (rect.right > window.innerWidth || rect.bottom > window.innerHeight) {
+      panel.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - rect.width - 8))}px`;
+      panel.style.top = `${Math.max(8, Math.min(rect.top, window.innerHeight - rect.height - 8))}px`;
+      panel.style.right = "auto";
+      panel.style.bottom = "auto";
+    }
+  });
 
   voiceCallBtn.addEventListener("click", () => {
     panel.hidden = !panel.hidden;
@@ -7377,19 +7651,39 @@ if (voiceBtn) {
       setCallUiState({ inCall: false, muted: false });
     }
   });
-  muteControl.addEventListener("click", async () => {
-    if (!callState.localTrack) return;
-    callState.muted = !callState.muted;
-    if (callState.muted) {
-      await callState.localTrack.mute();
-    } else {
-      await callState.localTrack.unmute();
-    }
-    setCallUiState({ inCall: true, muted: callState.muted });
-  });
+  muteControl.addEventListener("click", toggleLocalMute);
   leaveControl.addEventListener("click", async () => {
     await leaveCall();
     showToast("Left voice call", "info");
+  });
+  masterVolumeControl?.addEventListener("input", () => {
+    callState.masterVolume = clampVolume(Number(masterVolumeControl.value) / 100);
+    syncAllRemoteAudioVolumes();
+  });
+  peersEl?.addEventListener("click", async (event) => {
+    const button = event.target.closest("button[data-action]");
+    if (!button) return;
+    const { action, sid } = button.dataset;
+    if (action === "toggle-local-mute") {
+      await toggleLocalMute();
+      return;
+    }
+    if (action === "toggle-peer-mute" && sid) {
+      const entry = callState.participants.get(sid);
+      if (!entry) return;
+      entry.muted = !entry.muted;
+      syncRemoteAudioVolume(sid);
+      renderPeers();
+    }
+  });
+  peersEl?.addEventListener("input", (event) => {
+    const input = event.target.closest('input[data-action="peer-volume"]');
+    if (!input) return;
+    const { sid } = input.dataset;
+    const entry = callState.participants.get(sid);
+    if (!entry) return;
+    entry.volume = clampVolume(Number(input.value) / 100);
+    syncRemoteAudioVolume(sid);
   });
 
   socket.on("call:user-muted", ({ room, target } = {}) => {
@@ -7397,8 +7691,10 @@ if (voiceBtn) {
     if (!target || target !== window.currentUser) return;
     if (callState.localTrack) {
       callState.muted = true;
+      callState.localLevel = 0;
       callState.localTrack.mute().catch(() => {});
       setCallUiState({ inCall: true, muted: true });
+      renderPeers();
       showToast("You were muted by an admin.", "warn");
     }
   });
