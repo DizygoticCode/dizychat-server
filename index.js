@@ -1714,14 +1714,14 @@ const getCallServiceStatus = () => {
       LIVEKIT_API_SECRET: !LIVEKIT_API_SECRET,
     },
     reason: forcedOff
-      ? 'Voice calls are disabled by ENABLE_VOICE_CALLS=false.'
+      ? 'Live calls are disabled by ENABLE_VOICE_CALLS=false.'
       : !livekitUrlPresent
-        ? `LiveKit voice provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.${missingDetails}`
+        ? `LiveKit call provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.${missingDetails}`
         : !livekitUrlValid
           ? 'LIVEKIT_URL must be a valid ws://, wss://, http://, or https:// URL. LiveKit Cloud URLs are usually wss://<project>.livekit.cloud.'
           : configured
-            ? 'LiveKit voice provider is configured.'
-            : `LiveKit voice provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.${missingDetails}`,
+            ? 'LiveKit call provider is configured.'
+            : `LiveKit call provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.${missingDetails}`,
   };
 };
 
@@ -1748,7 +1748,7 @@ app.get('/api/calls/status', (_req, res) => {
         LIVEKIT_API_KEY: !LIVEKIT_API_KEY,
         LIVEKIT_API_SECRET: !LIVEKIT_API_SECRET,
       },
-      reason: 'Voice call status could not be checked safely. Verify LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.',
+      reason: 'Call status could not be checked safely. Verify LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.',
     });
   }
 });
@@ -1759,11 +1759,11 @@ app.post('/api/calls/token', express.json(), (req, res) => {
     status = getCallServiceStatus();
   } catch (err) {
     console.error('[Calls] Failed to check status before token:', err.message);
-    res.status(503).json({ error: 'Voice call status could not be checked safely.' });
+    res.status(503).json({ error: 'Call status could not be checked safely.' });
     return;
   }
   if (!status.enabled) {
-    res.status(404).json({ error: 'Voice calls are disabled.', status });
+    res.status(404).json({ error: 'Live calls are disabled.', status });
     return;
   }
   if (!status.configured) {
@@ -2116,9 +2116,9 @@ const getActiveCallSnapshot = (room) => {
 const ensureCallsEnabled = (resOrSocket) => {
   if (!ENABLE_VOICE_CALLS) {
     if (typeof resOrSocket?.status === 'function') {
-      resOrSocket.status(404).json({ error: 'Voice calls are disabled.' });
+      resOrSocket.status(404).json({ error: 'Live calls are disabled.' });
     } else {
-      resOrSocket.emit('toast', { type: 'warn', text: 'Voice calls are disabled.' });
+      resOrSocket.emit('toast', { type: 'warn', text: 'Live calls are disabled.' });
     }
     return false;
   }

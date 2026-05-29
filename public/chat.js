@@ -7088,7 +7088,7 @@ if (voiceBtn) {
   }
 }
 
-// ------------------- Live Voice Calls (Sprint B) -------------------
+// ------------------- Live Calls (audio + video) -------------------
 (() => {
   if (!voiceCallBtn) return;
 
@@ -7121,7 +7121,7 @@ if (voiceBtn) {
   panel.innerHTML = `
     <div class="voice-call-header" data-role="drag-handle">
       <div>
-        <div class="voice-call-title">Voice Call</div>
+        <div class="voice-call-title">Live Call</div>
         <div class="voice-call-status" data-role="status">Not connected.</div>
       </div>
       <span class="voice-call-drag-hint" aria-hidden="true">↕</span>
@@ -7190,6 +7190,7 @@ if (voiceBtn) {
     level: callState.localLevel,
     muted: callState.muted,
     volume: 1,
+    hasVideo: callState.cameraEnabled,
     local: true,
   });
 
@@ -7233,16 +7234,28 @@ if (voiceBtn) {
     const header = document.createElement("div");
     header.className = "voice-peer-header";
 
+    const nameGroup = document.createElement("span");
+    nameGroup.className = "voice-peer-name-group";
+
     const name = document.createElement("span");
     name.className = "voice-peer-name";
     name.textContent = entry.name;
+    nameGroup.appendChild(name);
+
+    if (entry.hasVideo) {
+      const videoBadge = document.createElement("span");
+      videoBadge.className = "voice-peer-video-badge";
+      videoBadge.textContent = "🎥 Video";
+      videoBadge.setAttribute("aria-label", `${entry.name} has camera video on`);
+      nameGroup.appendChild(videoBadge);
+    }
 
     const level = document.createElement("span");
     level.className = "voice-peer-level";
     level.dataset.meterValue = entry.sid;
     level.textContent = entry.muted ? "muted" : `${Math.round((entry.level || 0) * 100)}%`;
 
-    header.append(name, level);
+    header.append(nameGroup, level);
 
     const meter = document.createElement("div");
     meter.className = "voice-peer-meter";
@@ -7354,7 +7367,7 @@ if (voiceBtn) {
 
   const getLiveKitClient = () => window.LivekitClient || window.LiveKitClient || null;
 
-  const normalizeCallError = (error, fallback = "Unable to join voice call.") => {
+  const normalizeCallError = (error, fallback = "Unable to join call.") => {
     const message = error?.message || String(error || "");
     if (!message) return fallback;
     if (/permission|notallowed|denied/i.test(message)) {
@@ -7390,10 +7403,10 @@ if (voiceBtn) {
       return "LIVEKIT_URL is not a valid LiveKit WebSocket URL. Use the LiveKit Cloud URL for the same project as your API key/secret.";
     }
     if (Array.isArray(status?.missingRequiredEnv) && status.missingRequiredEnv.length) {
-      return `Voice provider is not configured. Missing server environment variables: ${status.missingRequiredEnv.join(", ")}.`;
+      return `Call provider is not configured. Missing server environment variables: ${status.missingRequiredEnv.join(", ")}.`;
     }
     if (status?.configured === false) {
-      return status?.reason || "Voice provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET on the server.";
+      return status?.reason || "Call provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET on the server.";
     }
     return payload?.error || status?.reason || fallback;
   };
@@ -7403,14 +7416,14 @@ if (voiceBtn) {
     try {
       res = await fetch("/api/calls/status", { cache: "no-store" });
     } catch (error) {
-      throw new Error(`Voice call status check failed: ${error?.message || error}`);
+      throw new Error(`Call status check failed: ${error?.message || error}`);
     }
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(explainCallSetupError(payload, `Voice call status check failed (${res.status}).`));
+      throw new Error(explainCallSetupError(payload, `Call status check failed (${res.status}).`));
     }
     if (!payload || typeof payload !== "object" || !("enabled" in payload) || !("configured" in payload)) {
-      throw new Error("Voice call status endpoint returned an unexpected response. Redeploy the latest server build.");
+      throw new Error("Call status endpoint returned an unexpected response. Redeploy the latest server build.");
     }
     if (!payload.enabled || !payload.configured) {
       throw new Error(explainCallSetupError(payload));
@@ -7457,6 +7470,7 @@ if (voiceBtn) {
       name: values.name || existing.name || getDisplayName(participant),
       level: values.level ?? existing.level ?? Number(participant?.audioLevel || 0),
       muted: values.muted ?? existing.muted ?? false,
+      hasVideo: values.hasVideo ?? existing.hasVideo ?? false,
       volume: clampVolume(values.volume ?? existing.volume ?? 1),
       local: false,
     };
@@ -7646,7 +7660,7 @@ if (voiceBtn) {
       };
       callState.localMeter = { context, analyser, source, frame: requestAnimationFrame(tick) };
     } catch (error) {
-      console.warn("[VoiceCall] local meter unavailable", error);
+      console.warn("[LiveCall] local meter unavailable", error);
     }
   };
 
@@ -7727,7 +7741,7 @@ if (voiceBtn) {
       setStatus("Not connected.");
       if (!silent) socket.emit("call:leave", { room: window.currentRoom });
     } catch (error) {
-      console.error("[VoiceCall] leave error", error);
+      console.error("[LiveCall] leave error", error);
     }
   };
 
@@ -7736,7 +7750,7 @@ if (voiceBtn) {
       showToast("Join a chat room first.", "warn");
       return;
     }
-    setStatus("Checking voice provider…");
+    setStatus("Checking call provider…");
     await ensureCallServiceReady();
     setStatus("Loading voice engine…");
     await ensureSdk();
@@ -7784,7 +7798,7 @@ if (voiceBtn) {
     renderPeers();
     if (typeof room.startAudio === "function") {
       await room.startAudio().catch((error) => {
-        console.warn("[VoiceCall] remote audio start warning", error);
+        console.warn("[LiveCall] remote audio start warning", error);
       });
     }
     setStatus("Requesting microphone…");
@@ -7796,7 +7810,7 @@ if (voiceBtn) {
     callState.localTrack = track;
     callState.muted = false;
     startLocalMeter(track);
-    setCallUiState({ inCall: true, muted: false });
+    setCallUiState({ inCall: true, muted: false, cameraEnabled: false });
     renderPeers();
     setStatus(`Connected to ${window.currentRoom}`);
     socket.emit("call:join", { room: window.currentRoom });
@@ -7845,9 +7859,9 @@ if (voiceBtn) {
   joinControl.addEventListener("click", async () => {
     try {
       await joinCall();
-      showToast("Voice call connected", "success");
+      showToast("Call connected", "success");
     } catch (error) {
-      console.error("[VoiceCall] join failed", error);
+      console.error("[LiveCall] join failed", error);
       await leaveCall(true);
       const message = normalizeCallError(error);
       showToast(message, "error");
@@ -7869,7 +7883,7 @@ if (voiceBtn) {
   });
   leaveControl.addEventListener("click", async () => {
     await leaveCall();
-    showToast("Left voice call", "info");
+    showToast("Left call", "info");
   });
   masterVolumeControl?.addEventListener("input", () => {
     callState.masterVolume = clampVolume(Number(masterVolumeControl.value) / 100);
@@ -7918,7 +7932,7 @@ if (voiceBtn) {
     if (!room || room !== window.currentRoom) return;
     if (!target || target !== window.currentUser) return;
     leaveCall(true).finally(() => {
-      showToast("You were removed from the voice call.", "warn");
+      showToast("You were removed from the call.", "warn");
       setStatus("Removed by admin.");
     });
   });

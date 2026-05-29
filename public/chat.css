@@ -2394,7 +2394,7 @@ body:not(.dark) #voice-btn.recording {
   right: 14px;
   bottom: 92px;
   z-index: 13000;
-  width: min(360px, calc(100vw - 24px));
+  width: min(420px, calc(100vw - 24px));
   background: rgba(18, 22, 28, 0.94);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 12px;
@@ -2488,7 +2488,19 @@ body:not(.dark) #voice-btn.recording {
 .voice-peer-row { padding: 7px 8px; border-radius: 8px; background: rgba(255,255,255,0.06); margin-top: 6px; }
 .voice-peer-row-local { background: rgba(124, 77, 255, 0.18); }
 .voice-peer-header { align-items: center; display: flex; justify-content: space-between; gap: 10px; margin-bottom: 5px; }
+.voice-peer-name-group { align-items: center; display: flex; gap: 6px; min-width: 0; }
 .voice-peer-name { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.voice-peer-video-badge {
+  background: rgba(37, 99, 235, 0.28);
+  border: 1px solid rgba(96, 165, 250, 0.58);
+  border-radius: 999px;
+  color: #dbeafe;
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 3px 6px;
+}
 .voice-peer-level { flex: 0 0 auto; font-variant-numeric: tabular-nums; opacity: 0.78; }
 .voice-peer-meter { background: rgba(255, 255, 255, 0.14); border-radius: 999px; height: 7px; overflow: hidden; }
 .voice-peer-meter-fill { background: linear-gradient(90deg, #45d483, #ffe066, #ff6b6b); border-radius: inherit; height: 100%; min-width: 0; transition: width 120ms ease; }
@@ -2496,6 +2508,17 @@ body:not(.dark) #voice-btn.recording {
 .voice-peer-controls button { flex: 0 0 auto; min-width: 74px; padding: 5px 8px; }
 .voice-peer-volume { align-items: center; display: flex; flex: 1 1 auto; gap: 6px; min-width: 0; opacity: 0.9; }
 .voice-peer-volume input { flex: 1 1 auto; min-width: 0; }
+
+@media (max-width: 480px) {
+  .voice-call-panel {
+    bottom: 76px;
+    width: calc(100vw - 20px);
+  }
+  .call-video-grid {
+    grid-template-columns: 1fr;
+    max-height: 36vh;
+  }
+}
 
 @keyframes voice-btn-pulse {
   0% {
