@@ -129,7 +129,34 @@ const ADMIN_AUTH_MAX_FAILURES = parsePositiveIntegerEnv('ADMIN_AUTH_MAX_FAILURES
 const ADMIN_AUTH_LOCK_MS = parsePositiveIntegerEnv('ADMIN_AUTH_LOCK_MS', 15 * 60 * 1000, { min: 5000, max: 24 * 60 * 60 * 1000 });
 const ADMIN_AUTH_MIN_RETRY_DELAY_MS = 750;
 const ADMIN_AUTH_MAX_RETRY_DELAY_MS = 5000;
-const LIVEKIT_URL = (process.env.LIVEKIT_URL || '').trim();
+const LIVEKIT_URL_RAW = (process.env.LIVEKIT_URL || '').trim();
+const normalizeLivekitUrl = (rawUrl) => {
+  const raw = String(rawUrl || '')
+    .trim()
+    .replace(/^['"`]+|['"`]+$/g, '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '');
+  if (!raw) return '';
+
+  const withoutAssignment = raw.replace(/^\s*(?:LIVEKIT_URL|url)\s*=\s*/i, '');
+  const explicitUrl = withoutAssignment.match(/(?:wss?|https?):\/\/[^\s'"`<>]+/i)?.[0];
+  const hostOnly = withoutAssignment.match(/[a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+(?::\d+)?/i)?.[0];
+  const candidate = (explicitUrl || hostOnly || withoutAssignment).replace(/\/+$/, '');
+  const withProtocol = /^[a-z][a-z0-9+.-]*:\/\//i.test(candidate)
+    ? candidate
+    : `wss://${candidate}`;
+  const websocketUrl = withProtocol
+    .replace(/^https:\/\//i, 'wss://')
+    .replace(/^http:\/\//i, 'ws://');
+
+  try {
+    const parsed = new URL(websocketUrl);
+    if (!['ws:', 'wss:'].includes(parsed.protocol) || !parsed.hostname) return '';
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch (_err) {
+    return '';
+  }
+};
+const LIVEKIT_URL = normalizeLivekitUrl(LIVEKIT_URL_RAW);
 const LIVEKIT_API_KEY = (process.env.LIVEKIT_API_KEY || '').trim();
 const LIVEKIT_API_SECRET = (process.env.LIVEKIT_API_SECRET || '').trim();
 const hasLivekitCredentials = () => Boolean(LIVEKIT_URL && LIVEKIT_API_KEY && LIVEKIT_API_SECRET);
@@ -1624,11 +1651,15 @@ const getCallServiceStatus = () => {
   const forcedOff = ['false', '0', 'no', 'off', 'disabled'].includes(
     String(process.env.ENABLE_VOICE_CALLS || '').trim().toLowerCase()
   );
-  const livekitHost = (() => {
+  const livekitUrlDetails = (() => {
     try {
-      return LIVEKIT_URL ? new URL(LIVEKIT_URL).host : '';
+      const parsed = LIVEKIT_URL ? new URL(LIVEKIT_URL) : null;
+      return {
+        host: parsed?.host || '',
+        protocol: parsed?.protocol || '',
+      };
     } catch (_err) {
-      return '';
+      return { host: '', protocol: '' };
     }
   })();
   return {
@@ -1637,10 +1668,10 @@ const getCallServiceStatus = () => {
     provider: 'livekit',
     selfContained: false,
     voiceOnly: true,
-    livekitHost,
+    livekitHost: livekitUrlDetails.host,
     livekitUrlPresent,
     livekitUrlValid,
-    livekitUrlProtocol: LIVEKIT_URL ? new URL(LIVEKIT_URL).protocol : '',
+    livekitUrlProtocol: livekitUrlDetails.protocol,
     missing: {
       LIVEKIT_URL: !livekitUrlPresent,
       LIVEKIT_API_KEY: !LIVEKIT_API_KEY,
@@ -1660,11 +1691,39 @@ const getCallServiceStatus = () => {
 
 app.get('/api/calls/status', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  res.json(getCallServiceStatus());
+  try {
+    res.json(getCallServiceStatus());
+  } catch (err) {
+    console.error('[Calls] Failed to report status:', err.message);
+    res.json({
+      enabled: false,
+      configured: false,
+      provider: 'livekit',
+      selfContained: false,
+      voiceOnly: true,
+      livekitHost: '',
+      livekitUrlPresent: Boolean(LIVEKIT_URL_RAW),
+      livekitUrlValid: false,
+      livekitUrlProtocol: '',
+      missing: {
+        LIVEKIT_URL: !LIVEKIT_URL_RAW,
+        LIVEKIT_API_KEY: !LIVEKIT_API_KEY,
+        LIVEKIT_API_SECRET: !LIVEKIT_API_SECRET,
+      },
+      reason: 'Voice call status could not be checked safely. Verify LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.',
+    });
+  }
 });
 
 app.post('/api/calls/token', express.json(), (req, res) => {
-  const status = getCallServiceStatus();
+  let status;
+  try {
+    status = getCallServiceStatus();
+  } catch (err) {
+    console.error('[Calls] Failed to check status before token:', err.message);
+    res.status(503).json({ error: 'Voice call status could not be checked safely.' });
+    return;
+  }
   if (!status.enabled) {
     res.status(404).json({ error: 'Voice calls are disabled.', status });
     return;
