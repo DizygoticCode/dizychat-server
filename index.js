@@ -1638,11 +1638,15 @@ const getCallServiceStatus = () => {
   const forcedOff = ['false', '0', 'no', 'off', 'disabled'].includes(
     String(process.env.ENABLE_VOICE_CALLS || '').trim().toLowerCase()
   );
-  const livekitHost = (() => {
+  const livekitUrlDetails = (() => {
     try {
-      return LIVEKIT_URL ? new URL(LIVEKIT_URL).host : '';
+      const parsed = LIVEKIT_URL ? new URL(LIVEKIT_URL) : null;
+      return {
+        host: parsed?.host || '',
+        protocol: parsed?.protocol || '',
+      };
     } catch (_err) {
-      return '';
+      return { host: '', protocol: '' };
     }
   })();
   const missingRequiredEnv = [
@@ -1669,7 +1673,7 @@ const getCallServiceStatus = () => {
     provider: 'livekit',
     selfContained: false,
     voiceOnly: true,
-    livekitHost,
+    livekitHost: livekitUrlDetails.host,
     livekitUrlPresent,
     livekitUrlValid,
     livekitUrlProtocol: LIVEKIT_URL ? new URL(LIVEKIT_URL).protocol : '',
@@ -1695,11 +1699,39 @@ const getCallServiceStatus = () => {
 
 app.get('/api/calls/status', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  res.json(getCallServiceStatus());
+  try {
+    res.json(getCallServiceStatus());
+  } catch (err) {
+    console.error('[Calls] Failed to report status:', err.message);
+    res.json({
+      enabled: false,
+      configured: false,
+      provider: 'livekit',
+      selfContained: false,
+      voiceOnly: true,
+      livekitHost: '',
+      livekitUrlPresent: Boolean(LIVEKIT_URL_RAW),
+      livekitUrlValid: false,
+      livekitUrlProtocol: '',
+      missing: {
+        LIVEKIT_URL: !LIVEKIT_URL_RAW,
+        LIVEKIT_API_KEY: !LIVEKIT_API_KEY,
+        LIVEKIT_API_SECRET: !LIVEKIT_API_SECRET,
+      },
+      reason: 'Voice call status could not be checked safely. Verify LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.',
+    });
+  }
 });
 
 app.post('/api/calls/token', express.json(), (req, res) => {
-  const status = getCallServiceStatus();
+  let status;
+  try {
+    status = getCallServiceStatus();
+  } catch (err) {
+    console.error('[Calls] Failed to check status before token:', err.message);
+    res.status(503).json({ error: 'Voice call status could not be checked safely.' });
+    return;
+  }
   if (!status.enabled) {
     res.status(404).json({ error: 'Voice calls are disabled.', status });
     return;
