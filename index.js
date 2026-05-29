@@ -1632,7 +1632,7 @@ app.get('/soundboard-clips', (req, res) => {
 });
 
 const getCallServiceStatus = () => {
-  const livekitUrlPresent = Boolean(LIVEKIT_URL_RAW);
+  const livekitUrlPresent = Boolean(LIVEKIT_URL_RAW || LIVEKIT_URL);
   const livekitUrlValid = Boolean(LIVEKIT_URL);
   const configured = hasLivekitCredentials();
   const forcedOff = ['false', '0', 'no', 'off', 'disabled'].includes(
