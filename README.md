@@ -120,6 +120,20 @@ npm start
 
 The server will log the active port, build/version information, and upload limit during boot.
 
+### Voice-call provider setup
+
+Voice calls are **not self-contained inside the DizyChat server**. The chat server provides the UI, room lifecycle events, and LiveKit access-token minting, but real-time audio transport still requires a LiveKit Cloud project or a self-hosted LiveKit server. Until `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` are configured, `/api/calls/status` reports `configured: false` and the client shows a setup error instead of a generic connection failure.
+
+Recommended options:
+
+1. **Use LiveKit Cloud** for the fastest production path. Create a LiveKit Cloud project, copy its project URL plus API key/secret, then set those values as `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` in the DizyChat deployment environment. If LiveKit shows the project URL as `https://...`, paste it as-is or change it to `wss://...`; DizyChat normalizes it before sending it to the browser.
+2. **Self-host LiveKit on infrastructure that supports WebRTC networking** if you need full control. A production LiveKit server needs a trusted TLS certificate, public DNS such as `wss://livekit.example.com`, TCP signaling, and exposed ICE UDP/TCP ports. This usually fits a VM, Kubernetes cluster, or LiveKit-focused host better than a standard single-port app service.
+3. **Use Render only if you can satisfy LiveKit's networking requirements with a Docker service and the required public ports.** DizyChat itself can stay on Render, but LiveKit media traffic is a separate realtime media service and should not be bundled into the same Node/Express process.
+4. **Use `livekit-server --dev` only for local testing.** The dev server uses the built-in `devkey` / `secret` credentials and is not a production deployment.
+
+For voice-only calls, configure only the LiveKit variables above. Webcam/video work is intentionally not enabled yet; the current browser permissions policy allows microphone access and denies camera access.
+
+
 ### Configuring native/WebView builds
 Capacitor and similar wrappers load the web bundle from a non-HTTP origin (`capacitor://localhost`).
 The default Socket.IO client assumes it can reuse the current origin, so the native shell

@@ -7098,6 +7098,7 @@ if (voiceBtn) {
     localTrack: null,
     muted: false,
     participants: new Map(),
+    remoteAudioElements: new Map(),
   };
 
   const panel = document.createElement("div");
@@ -7114,6 +7115,11 @@ if (voiceBtn) {
     <div class="voice-call-peers" data-role="peers"></div>
   `;
   document.body.appendChild(panel);
+
+  const remoteAudioContainer = document.createElement("div");
+  remoteAudioContainer.className = "voice-call-remote-audio";
+  remoteAudioContainer.setAttribute("aria-hidden", "true");
+  document.body.appendChild(remoteAudioContainer);
 
   const statusEl = panel.querySelector('[data-role="status"]');
   const joinControl = panel.querySelector('[data-role="join"]');
@@ -7145,21 +7151,107 @@ if (voiceBtn) {
     muteControl.textContent = muted ? "Unmute" : "Mute";
   };
 
+  const getLiveKitClient = () => window.LivekitClient || window.LiveKitClient || null;
+
+  const normalizeCallError = (error, fallback = "Unable to join voice call.") => {
+    const message = error?.message || String(error || "");
+    if (!message) return fallback;
+    if (/permission|notallowed|denied/i.test(message)) {
+      return "Microphone permission was denied. Allow microphone access in your browser, then try joining again.";
+    }
+    if (/device|notfound|notreadable/i.test(message)) {
+      return "No usable microphone was found. Check your microphone device and browser permissions.";
+    }
+    if (/websocket|signal|connect|timeout|network|region/i.test(message)) {
+      return `${message} Check that LIVEKIT_URL is the WebSocket URL from the same LiveKit Cloud project as the API key/secret.`;
+    }
+    return message || fallback;
+  };
+
+  const explainCallSetupError = (payload, fallback = "Voice call setup is incomplete.") => {
+    const status = payload?.status;
+    if (status?.livekitUrlPresent && status?.livekitUrlValid === false) {
+      return "LIVEKIT_URL is not a valid LiveKit WebSocket URL. Use the LiveKit Cloud URL for the same project as your API key/secret.";
+    }
+    if (status?.configured === false) {
+      return "Voice provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET on the server.";
+    }
+    return payload?.error || status?.reason || fallback;
+  };
+
+  const ensureCallServiceReady = async () => {
+    const res = await fetch("/api/calls/status", { cache: "no-store" });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok || !payload?.enabled || !payload?.configured) {
+      throw new Error(explainCallSetupError(payload));
+    }
+    return payload;
+  };
+
   const ensureSdk = async () => {
-    if (window.LivekitClient) {
+    if (getLiveKitClient()) {
       callState.sdkLoaded = true;
       return true;
     }
-    const script = document.createElement("script");
-    script.src = "https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js";
-    script.async = true;
-    document.head.appendChild(script);
-    await new Promise((resolve, reject) => {
-      script.onload = resolve;
-      script.onerror = reject;
+
+    const sdkSources = [
+      "https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js",
+      "https://unpkg.com/livekit-client/dist/livekit-client.umd.min.js",
+    ];
+
+    for (const src of sdkSources) {
+      const script = document.createElement("script");
+      script.src = src;
+      script.async = true;
+      document.head.appendChild(script);
+      const loaded = await new Promise((resolve) => {
+        script.onload = () => resolve(true);
+        script.onerror = () => resolve(false);
+      });
+      if (loaded && getLiveKitClient()) {
+        callState.sdkLoaded = true;
+        return true;
+      }
+      script.remove();
+    }
+
+    throw new Error("LiveKit browser SDK could not be loaded from the configured CDNs.");
+  };
+
+  const attachRemoteAudioTrack = (track, participant) => {
+    if (!track?.attach || !remoteAudioContainer) return;
+    const key = participant?.sid || participant?.identity || track.sid || String(Date.now());
+    detachRemoteAudioTrack(track, participant);
+    const element = track.attach();
+    element.autoplay = true;
+    element.playsInline = true;
+    element.dataset.participant = participant?.identity || key;
+    callState.remoteAudioElements.set(key, { track, element });
+    remoteAudioContainer.appendChild(element);
+  };
+
+  const detachRemoteAudioTrack = (track, participant) => {
+    const key = participant?.sid || participant?.identity || track?.sid;
+    const entries = key
+      ? [[key, callState.remoteAudioElements.get(key)]].filter(([, entry]) => entry)
+      : Array.from(callState.remoteAudioElements.entries()).filter(([, entry]) => !track || entry.track === track);
+    entries.forEach(([entryKey, entry]) => {
+      if (entry?.track?.detach) {
+        entry.track.detach(entry.element);
+      }
+      entry?.element?.remove();
+      callState.remoteAudioElements.delete(entryKey);
     });
-    callState.sdkLoaded = Boolean(window.LivekitClient);
-    return callState.sdkLoaded;
+  };
+
+  const clearRemoteAudioTracks = () => {
+    Array.from(callState.remoteAudioElements.entries()).forEach(([key, entry]) => {
+      if (entry?.track?.detach) {
+        entry.track.detach(entry.element);
+      }
+      entry?.element?.remove();
+      callState.remoteAudioElements.delete(key);
+    });
   };
 
   const fetchToken = async () => {
@@ -7168,8 +7260,9 @@ if (voiceBtn) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ room: window.currentRoom, username: window.currentUser }),
     });
-    if (!res.ok) throw new Error(`Token request failed (${res.status})`);
-    return res.json();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(explainCallSetupError(data, `Token request failed (${res.status})`));
+    return data;
   };
 
   const leaveCall = async (silent = false) => {
@@ -7180,6 +7273,7 @@ if (voiceBtn) {
       callState.room = null;
       callState.muted = false;
       callState.participants.clear();
+      clearRemoteAudioTracks();
       renderPeers();
       setCallUiState({ inCall: false, muted: false });
       setStatus("Not connected.");
@@ -7194,24 +7288,54 @@ if (voiceBtn) {
       showToast("Join a chat room first.", "warn");
       return;
     }
-    setStatus("Connecting…");
+    setStatus("Checking voice provider…");
+    await ensureCallServiceReady();
+    setStatus("Loading voice engine…");
     await ensureSdk();
+    setStatus("Requesting call token…");
     const tokenPayload = await fetchToken();
-    if (!tokenPayload?.token || !tokenPayload?.url) throw new Error("Missing token/url");
-    const LK = window.LivekitClient;
+    if (!tokenPayload?.token || !tokenPayload?.url) throw new Error("Missing LiveKit token or URL from server.");
+    const LK = getLiveKitClient();
     const room = new LK.Room({ adaptiveStream: true, dynacast: true });
-    await room.connect(tokenPayload.url, tokenPayload.token);
-    const track = await LK.createLocalAudioTrack();
-    await room.localParticipant.publishTrack(track);
-    callState.localTrack = track;
     callState.room = room;
+    room.on(LK.RoomEvent.Disconnected, () => {
+      leaveCall(true);
+    });
+    room.on(LK.RoomEvent.TrackSubscribed, (track, _publication, participant) => {
+      if (track?.kind === LK.Track?.Kind?.Audio) {
+        attachRemoteAudioTrack(track, participant);
+      }
+    });
+    room.on(LK.RoomEvent.TrackUnsubscribed, (track, _publication, participant) => {
+      if (track?.kind === LK.Track?.Kind?.Audio) {
+        detachRemoteAudioTrack(track, participant);
+      }
+    });
+    room.on(LK.RoomEvent.ParticipantDisconnected, (participant) => {
+      detachRemoteAudioTrack(null, participant);
+      if (participant?.sid) {
+        callState.participants.delete(participant.sid);
+        renderPeers();
+      }
+    });
+    setStatus("Connecting to LiveKit…");
+    await room.connect(tokenPayload.url, tokenPayload.token, { autoSubscribe: true });
+    if (typeof room.startAudio === "function") {
+      await room.startAudio().catch((error) => {
+        console.warn("[VoiceCall] remote audio start warning", error);
+      });
+    }
+    setStatus("Requesting microphone…");
+    const track = await LK.createLocalAudioTrack({ echoCancellation: true, noiseSuppression: true, autoGainControl: true });
+    setStatus("Publishing microphone…");
+    await room.localParticipant.publishTrack(track, {
+      source: LK.Track?.Source?.Microphone,
+    });
+    callState.localTrack = track;
     callState.muted = false;
     setCallUiState({ inCall: true, muted: false });
     setStatus(`Connected to ${window.currentRoom}`);
     socket.emit("call:join", { room: window.currentRoom });
-    room.on(LK.RoomEvent.Disconnected, () => {
-      leaveCall(true);
-    });
     room.on(LK.RoomEvent.ActiveSpeakersChanged, (speakers = []) => {
       const seen = new Set();
       speakers.forEach((participant) => {
@@ -7246,8 +7370,10 @@ if (voiceBtn) {
       showToast("Voice call connected", "success");
     } catch (error) {
       console.error("[VoiceCall] join failed", error);
-      showToast("Unable to join voice call.", "error");
-      setStatus("Connection failed.");
+      await leaveCall(true);
+      const message = normalizeCallError(error);
+      showToast(message, "error");
+      setStatus(message);
       setCallUiState({ inCall: false, muted: false });
     }
   });

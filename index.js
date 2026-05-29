@@ -62,6 +62,7 @@ const TRUSTED_SCRIPT_SOURCES = [
   "'unsafe-inline'",
   "https://cdn.socket.io",
   "https://cdn.jsdelivr.net",
+  "https://unpkg.com",
   "https://rumble.com",
   "https://w.soundcloud.com",
 ];
@@ -1616,8 +1617,63 @@ app.get('/soundboard-clips', (req, res) => {
   }
 });
 
+const getCallServiceStatus = () => {
+  const livekitUrlPresent = Boolean(LIVEKIT_URL_RAW);
+  const livekitUrlValid = Boolean(LIVEKIT_URL);
+  const configured = hasLivekitCredentials();
+  const forcedOff = ['false', '0', 'no', 'off', 'disabled'].includes(
+    String(process.env.ENABLE_VOICE_CALLS || '').trim().toLowerCase()
+  );
+  const livekitHost = (() => {
+    try {
+      return LIVEKIT_URL ? new URL(LIVEKIT_URL).host : '';
+    } catch (_err) {
+      return '';
+    }
+  })();
+  return {
+    enabled: ENABLE_VOICE_CALLS,
+    configured,
+    provider: 'livekit',
+    selfContained: false,
+    voiceOnly: true,
+    livekitHost,
+    livekitUrlPresent,
+    livekitUrlValid,
+    livekitUrlProtocol: LIVEKIT_URL ? new URL(LIVEKIT_URL).protocol : '',
+    missing: {
+      LIVEKIT_URL: !livekitUrlPresent,
+      LIVEKIT_API_KEY: !LIVEKIT_API_KEY,
+      LIVEKIT_API_SECRET: !LIVEKIT_API_SECRET,
+    },
+    reason: forcedOff
+      ? 'Voice calls are disabled by ENABLE_VOICE_CALLS=false.'
+      : !livekitUrlPresent
+        ? 'LiveKit voice provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.'
+        : !livekitUrlValid
+          ? 'LIVEKIT_URL must be a valid ws://, wss://, http://, or https:// URL. LiveKit Cloud URLs are usually wss://<project>.livekit.cloud.'
+          : configured
+            ? 'LiveKit voice provider is configured.'
+            : 'LiveKit voice provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.',
+  };
+};
+
+app.get('/api/calls/status', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(getCallServiceStatus());
+});
+
 app.post('/api/calls/token', express.json(), (req, res) => {
-  if (!ensureCallsEnabled(res)) return;
+  const status = getCallServiceStatus();
+  if (!status.enabled) {
+    res.status(404).json({ error: 'Voice calls are disabled.', status });
+    return;
+  }
+  if (!status.configured) {
+    res.status(503).json({ error: status.reason, status });
+    return;
+  }
+
   const room = normaliseRoomName(req.body?.room);
   const username = normaliseUsername(req.body?.username, '');
   if (!room || !username) {
@@ -1639,10 +1695,12 @@ app.post('/api/calls/token', express.json(), (req, res) => {
       callId: active?.callId || null,
       expiresAt: Date.now() + (CALL_TOKEN_TTL_SECONDS * 1000),
       voiceOnly: true,
+      provider: status.provider,
+      selfContained: status.selfContained,
     });
   } catch (err) {
     console.error('[Calls] Failed to issue token:', err.message);
-    res.status(503).json({ error: 'Unable to issue call token.' });
+    res.status(503).json({ error: 'Unable to issue call token.', status });
   }
 });
 
