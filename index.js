@@ -1698,7 +1698,9 @@ const getCallServiceStatus = () => {
     configured,
     provider: 'livekit',
     selfContained: false,
-    voiceOnly: true,
+    voiceOnly: false,
+    supportsAudio: true,
+    supportsVideo: true,
     livekitHost: livekitUrlDetails.host,
     livekitUrlPresent,
     livekitUrlValid,
@@ -1712,14 +1714,14 @@ const getCallServiceStatus = () => {
       LIVEKIT_API_SECRET: !LIVEKIT_API_SECRET,
     },
     reason: forcedOff
-      ? 'Voice calls are disabled by ENABLE_VOICE_CALLS=false.'
+      ? 'Live calls are disabled by ENABLE_VOICE_CALLS=false.'
       : !livekitUrlPresent
-        ? `LiveKit voice provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.${missingDetails}`
+        ? `LiveKit call provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.${missingDetails}`
         : !livekitUrlValid
           ? 'LIVEKIT_URL must be a valid ws://, wss://, http://, or https:// URL. LiveKit Cloud URLs are usually wss://<project>.livekit.cloud.'
           : configured
-            ? 'LiveKit voice provider is configured.'
-            : `LiveKit voice provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.${missingDetails}`,
+            ? 'LiveKit call provider is configured.'
+            : `LiveKit call provider is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.${missingDetails}`,
   };
 };
 
@@ -1734,7 +1736,9 @@ app.get('/api/calls/status', (_req, res) => {
       configured: false,
       provider: 'livekit',
       selfContained: false,
-      voiceOnly: true,
+      voiceOnly: false,
+      supportsAudio: true,
+      supportsVideo: true,
       livekitHost: '',
       livekitUrlPresent: Boolean(LIVEKIT_URL_RAW),
       livekitUrlValid: false,
@@ -1744,7 +1748,7 @@ app.get('/api/calls/status', (_req, res) => {
         LIVEKIT_API_KEY: !LIVEKIT_API_KEY,
         LIVEKIT_API_SECRET: !LIVEKIT_API_SECRET,
       },
-      reason: 'Voice call status could not be checked safely. Verify LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.',
+      reason: 'Call status could not be checked safely. Verify LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.',
     });
   }
 });
@@ -1755,11 +1759,11 @@ app.post('/api/calls/token', express.json(), (req, res) => {
     status = getCallServiceStatus();
   } catch (err) {
     console.error('[Calls] Failed to check status before token:', err.message);
-    res.status(503).json({ error: 'Voice call status could not be checked safely.' });
+    res.status(503).json({ error: 'Call status could not be checked safely.' });
     return;
   }
   if (!status.enabled) {
-    res.status(404).json({ error: 'Voice calls are disabled.', status });
+    res.status(404).json({ error: 'Live calls are disabled.', status });
     return;
   }
   if (!status.configured) {
@@ -1778,7 +1782,7 @@ app.post('/api/calls/token', express.json(), (req, res) => {
     const token = createLivekitToken({
       room,
       username,
-      metadata: { room, username, issuedAt: new Date().toISOString(), voiceOnly: true },
+      metadata: { room, username, issuedAt: new Date().toISOString(), supportsAudio: true, supportsVideo: true },
     });
     const active = getActiveCallSnapshot(room);
     res.json({
@@ -1787,7 +1791,10 @@ app.post('/api/calls/token', express.json(), (req, res) => {
       room,
       callId: active?.callId || null,
       expiresAt: Date.now() + (CALL_TOKEN_TTL_SECONDS * 1000),
-      voiceOnly: true,
+      voiceOnly: false,
+      supportsAudio: true,
+      supportsVideo: true,
+      cameraDisabled: isCallVideoBlocked(room, username),
       provider: status.provider,
       selfContained: status.selfContained,
     });
@@ -2055,6 +2062,8 @@ const removeSocketFromRoom = (socket, targetRoom) => {
     presence.delete(socket.id);
     if (!presence.size) {
       roomPresence.delete(room);
+      activeRoomCalls.delete(room);
+      activeRoomCallVideoBlocks.delete(room);
     }
   }
 
@@ -2080,6 +2089,7 @@ const messageTimestamps = new Map();
 const typingTimestamps = new Map();
 const callEventTimestamps = new Map();
 const activeRoomCalls = new Map();
+const activeRoomCallVideoBlocks = new Map();
 
 const canSendCallEvent = (socketId) => {
   const now = Date.now();
@@ -2093,6 +2103,48 @@ const canSendCallEvent = (socketId) => {
 
 const buildCallId = () => crypto.randomBytes(8).toString('hex');
 
+const isCallVideoBlocked = (room, username) => {
+  const blocked = activeRoomCallVideoBlocks.get(room);
+  return blocked ? blocked.has(canonicalUsername(username)) : false;
+};
+
+const setCallVideoBlocked = (room, username, blocked) => {
+  const canonical = canonicalUsername(username);
+  if (!room || !canonical) return false;
+  if (blocked) {
+    ensureSet(activeRoomCallVideoBlocks, room).add(canonical);
+    return true;
+  }
+  const blockedSet = activeRoomCallVideoBlocks.get(room);
+  if (!blockedSet) return false;
+  const removed = blockedSet.delete(canonical);
+  if (!blockedSet.size) activeRoomCallVideoBlocks.delete(room);
+  return removed;
+};
+
+const validateCallModerationTarget = (socket, roomName, target) => {
+  const cleanedTarget = normaliseUsername(target, '');
+  if (!roomName || roomName !== socket.currentRoom || !cleanedTarget) return null;
+  const canonicalTarget = canonicalUsername(cleanedTarget);
+  if (canonicalTarget === canonicalUsername(socket.username)) {
+    socket.emit('toast', { type: 'warn', text: 'You cannot perform that call action on yourself.' });
+    return null;
+  }
+  const presence = roomPresence.get(roomName);
+  const targetInfo = presence
+    ? Array.from(presence.values()).find((entry) => canonicalUsername(entry.username) === canonicalTarget)
+    : null;
+  if (!targetInfo) {
+    socket.emit('toast', { type: 'warn', text: 'That user is no longer online.' });
+    return null;
+  }
+  if (targetInfo.isAdmin) {
+    socket.emit('toast', { type: 'warn', text: 'You cannot perform that call action on an admin.' });
+    return null;
+  }
+  return { cleanedTarget, canonicalTarget };
+};
+
 const getActiveCallSnapshot = (room) => {
   const state = activeRoomCalls.get(room);
   if (!state) return null;
@@ -2101,16 +2153,19 @@ const getActiveCallSnapshot = (room) => {
     callId: state.callId,
     startedAt: state.startedAt,
     startedBy: state.startedBy,
-    voiceOnly: true,
+    voiceOnly: false,
+    supportsAudio: true,
+    supportsVideo: true,
+    videoBlockedCount: activeRoomCallVideoBlocks.get(room)?.size || 0,
   };
 };
 
 const ensureCallsEnabled = (resOrSocket) => {
   if (!ENABLE_VOICE_CALLS) {
     if (typeof resOrSocket?.status === 'function') {
-      resOrSocket.status(404).json({ error: 'Voice calls are disabled.' });
+      resOrSocket.status(404).json({ error: 'Live calls are disabled.' });
     } else {
-      resOrSocket.emit('toast', { type: 'warn', text: 'Voice calls are disabled.' });
+      resOrSocket.emit('toast', { type: 'warn', text: 'Live calls are disabled.' });
     }
     return false;
   }
@@ -2131,6 +2186,7 @@ const createLivekitToken = ({ room, username, metadata }) => {
       roomJoin: true,
       room,
       canPublish: true,
+      canPublishSources: ['microphone', 'camera'],
       canSubscribe: true,
       canPublishData: true,
     },
@@ -2355,6 +2411,26 @@ io.on('connection', socket => {
     io.to(roomName).emit('call:user-kicked', { room: roomName, target: cleanedTarget, by: socket.username });
   });
 
+  socket.on('call:disable-video-user', ({ room, target } = {}) => {
+    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id) || !requireAdmin(socket)) return;
+    const roomName = normaliseRoomName(room || socket.currentRoom);
+    const targetInfo = validateCallModerationTarget(socket, roomName, target);
+    if (!targetInfo) return;
+    setCallVideoBlocked(roomName, targetInfo.cleanedTarget, true);
+    io.to(roomName).emit('call:user-video-disabled', { room: roomName, target: targetInfo.cleanedTarget, by: socket.username });
+    socket.emit('toast', { type: 'info', text: `${targetInfo.cleanedTarget}'s camera was disabled for this call.` });
+  });
+
+  socket.on('call:enable-video-user', ({ room, target } = {}) => {
+    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id) || !requireAdmin(socket)) return;
+    const roomName = normaliseRoomName(room || socket.currentRoom);
+    const targetInfo = validateCallModerationTarget(socket, roomName, target);
+    if (!targetInfo) return;
+    setCallVideoBlocked(roomName, targetInfo.cleanedTarget, false);
+    io.to(roomName).emit('call:user-video-enabled', { room: roomName, target: targetInfo.cleanedTarget, by: socket.username });
+    socket.emit('toast', { type: 'info', text: `${targetInfo.cleanedTarget}'s camera is allowed again.` });
+  });
+
   socket.on('call:end', ({ room } = {}) => {
     if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id)) return;
     const roomName = normaliseRoomName(room || socket.currentRoom);
@@ -2362,6 +2438,7 @@ io.on('connection', socket => {
     const active = activeRoomCalls.get(roomName);
     if (!active) return;
     activeRoomCalls.delete(roomName);
+    activeRoomCallVideoBlocks.delete(roomName);
     io.to(roomName).emit('call:ended', { room: roomName, callId: active.callId, endedBy: socket.username, endedAt: Date.now() });
   });
 

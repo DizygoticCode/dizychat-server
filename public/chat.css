@@ -2383,12 +2383,24 @@ body:not(.dark) #voice-btn.recording {
   border-color: #d65b5b;
 }
 
+#voice-call-btn.call-video-active {
+  background: #2563eb;
+  border-color: #60a5fa;
+  color: #fff;
+}
+
+#voice-call-btn.call-video-blocked {
+  background: #6b4f1d;
+  border-color: #fbbf24;
+  color: #fff7ed;
+}
+
 .voice-call-panel {
   position: fixed;
   right: 14px;
   bottom: 92px;
   z-index: 13000;
-  width: min(360px, calc(100vw - 24px));
+  width: min(420px, calc(100vw - 24px));
   background: rgba(18, 22, 28, 0.94);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 12px;
@@ -2436,7 +2448,48 @@ body:not(.dark) #voice-btn.recording {
 .voice-call-title { font-weight: 700; font-size: 0.92rem; margin-bottom: 4px; }
 .voice-call-status { font-size: 0.84rem; opacity: 0.9; }
 .voice-call-controls { display: flex; gap: 8px; flex-wrap: wrap; }
-.voice-call-controls button { flex: 1 1 30%; min-width: 88px; }
+.voice-call-controls button { flex: 1 1 42%; min-width: 88px; }
+.call-video-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin-top: 10px;
+  max-height: min(42vh, 320px);
+  overflow: auto;
+  padding-right: 2px;
+}
+.call-video-grid[hidden] { display: none !important; }
+.call-video-tile {
+  aspect-ratio: 16 / 9;
+  background: radial-gradient(circle at top left, rgba(96, 165, 250, 0.18), rgba(0, 0, 0, 0.66));
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+  position: relative;
+}
+.call-video-tile-local { border-color: rgba(96, 165, 250, 0.72); }
+.call-video-element {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+.call-video-label {
+  background: linear-gradient(90deg, rgba(0,0,0,0.72), rgba(0,0,0,0.08));
+  bottom: 0;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 650;
+  left: 0;
+  overflow: hidden;
+  padding: 4px 6px;
+  position: absolute;
+  right: 0;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
 .voice-call-master-volume { align-items: center; display: flex; gap: 10px; margin-top: 10px; font-size: 0.8rem; }
 .voice-call-master-volume span { flex: 0 0 auto; opacity: 0.88; }
 .voice-call-master-volume input { flex: 1 1 auto; min-width: 0; }
@@ -2445,7 +2498,19 @@ body:not(.dark) #voice-btn.recording {
 .voice-peer-row { padding: 7px 8px; border-radius: 8px; background: rgba(255,255,255,0.06); margin-top: 6px; }
 .voice-peer-row-local { background: rgba(124, 77, 255, 0.18); }
 .voice-peer-header { align-items: center; display: flex; justify-content: space-between; gap: 10px; margin-bottom: 5px; }
+.voice-peer-name-group { align-items: center; display: flex; gap: 6px; min-width: 0; }
 .voice-peer-name { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.voice-peer-video-badge {
+  background: rgba(37, 99, 235, 0.28);
+  border: 1px solid rgba(96, 165, 250, 0.58);
+  border-radius: 999px;
+  color: #dbeafe;
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 3px 6px;
+}
 .voice-peer-level { flex: 0 0 auto; font-variant-numeric: tabular-nums; opacity: 0.78; }
 .voice-peer-meter { background: rgba(255, 255, 255, 0.14); border-radius: 999px; height: 7px; overflow: hidden; }
 .voice-peer-meter-fill { background: linear-gradient(90deg, #45d483, #ffe066, #ff6b6b); border-radius: inherit; height: 100%; min-width: 0; transition: width 120ms ease; }
@@ -2453,6 +2518,17 @@ body:not(.dark) #voice-btn.recording {
 .voice-peer-controls button { flex: 0 0 auto; min-width: 74px; padding: 5px 8px; }
 .voice-peer-volume { align-items: center; display: flex; flex: 1 1 auto; gap: 6px; min-width: 0; opacity: 0.9; }
 .voice-peer-volume input { flex: 1 1 auto; min-width: 0; }
+
+@media (max-width: 480px) {
+  .voice-call-panel {
+    bottom: 76px;
+    width: calc(100vw - 20px);
+  }
+  .call-video-grid {
+    grid-template-columns: 1fr;
+    max-height: 36vh;
+  }
+}
 
 @keyframes voice-btn-pulse {
   0% {
