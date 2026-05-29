@@ -129,7 +129,33 @@ const ADMIN_AUTH_MAX_FAILURES = parsePositiveIntegerEnv('ADMIN_AUTH_MAX_FAILURES
 const ADMIN_AUTH_LOCK_MS = parsePositiveIntegerEnv('ADMIN_AUTH_LOCK_MS', 15 * 60 * 1000, { min: 5000, max: 24 * 60 * 60 * 1000 });
 const ADMIN_AUTH_MIN_RETRY_DELAY_MS = 750;
 const ADMIN_AUTH_MAX_RETRY_DELAY_MS = 5000;
-const LIVEKIT_URL_RAW = (process.env.LIVEKIT_URL || '').trim();
+const LIVEKIT_URL_ENV_NAMES = [
+  'LIVEKIT_URL',
+  'LIVE_KIT_URL',
+  'LIVEKIT_WS_URL',
+  'LIVEKIT_SERVER_URL',
+];
+const LIVEKIT_API_KEY_ENV_NAMES = [
+  'LIVEKIT_API_KEY',
+  'LIVE_KIT_API_KEY',
+  'LIVEKIT_KEY',
+];
+const LIVEKIT_API_SECRET_ENV_NAMES = [
+  'LIVEKIT_API_SECRET',
+  'LIVE_KIT_API_SECRET',
+  'LIVEKIT_SECRET',
+];
+const readFirstConfiguredEnv = (names) => {
+  for (const name of names) {
+    const value = String(process.env[name] || '').trim();
+    if (value) return { name, value };
+  }
+  return { name: '', value: '' };
+};
+const LIVEKIT_URL_ENV = readFirstConfiguredEnv(LIVEKIT_URL_ENV_NAMES);
+const LIVEKIT_API_KEY_ENV = readFirstConfiguredEnv(LIVEKIT_API_KEY_ENV_NAMES);
+const LIVEKIT_API_SECRET_ENV = readFirstConfiguredEnv(LIVEKIT_API_SECRET_ENV_NAMES);
+const LIVEKIT_URL_RAW = LIVEKIT_URL_ENV.value;
 const normalizeLivekitUrl = (rawUrl) => {
   if (!rawUrl) return '';
   try {
@@ -144,8 +170,8 @@ const normalizeLivekitUrl = (rawUrl) => {
   }
 };
 const LIVEKIT_URL = normalizeLivekitUrl(LIVEKIT_URL_RAW);
-const LIVEKIT_API_KEY = (process.env.LIVEKIT_API_KEY || '').trim();
-const LIVEKIT_API_SECRET = (process.env.LIVEKIT_API_SECRET || '').trim();
+const LIVEKIT_API_KEY = LIVEKIT_API_KEY_ENV.value;
+const LIVEKIT_API_SECRET = LIVEKIT_API_SECRET_ENV.value;
 const hasLivekitCredentials = () => Boolean(LIVEKIT_URL && LIVEKIT_API_KEY && LIVEKIT_API_SECRET);
 const parseVoiceCallsEnabled = () => {
   const raw = String(process.env.ENABLE_VOICE_CALLS || '').trim().toLowerCase();
