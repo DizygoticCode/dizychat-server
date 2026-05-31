@@ -2389,6 +2389,15 @@ body:not(.dark) #voice-btn.recording {
   color: #fff;
 }
 
+#jam-session-btn {
+  border-color: rgba(250, 204, 21, 0.55);
+}
+
+#jam-session-btn:hover,
+#jam-session-btn:focus-visible {
+  background: rgba(250, 204, 21, 0.18);
+}
+
 .voice-call-panel {
   position: fixed;
   right: 14px;
@@ -2484,6 +2493,135 @@ body:not(.dark) #voice-btn.recording {
 .voice-call-master-volume span { flex: 0 0 auto; opacity: 0.88; }
 .voice-call-master-volume input { flex: 1 1 auto; min-width: 0; }
 .voice-call-peers { margin-top: 8px; max-height: 210px; overflow: auto; font-size: 0.8rem; }
+
+.jam-session-panel {
+  position: fixed;
+  right: 14px;
+  bottom: 92px;
+  z-index: 13001;
+  width: min(460px, calc(100vw - 24px));
+  max-height: min(78vh, 680px);
+  overflow: auto;
+  background: rgba(18, 22, 28, 0.96);
+  border: 1px solid rgba(250, 204, 21, 0.32);
+  border-radius: 14px;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.35);
+  color: #fff;
+  padding: 12px;
+}
+
+.jam-session-panel[hidden] { display: none !important; }
+
+.jam-session-header,
+.jam-provider-head {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.jam-session-title {
+  font-size: 1rem;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.jam-session-status {
+  font-size: 0.84rem;
+  opacity: 0.9;
+}
+
+.jam-session-close {
+  flex: 0 0 auto;
+  min-width: 34px;
+  padding: 5px 8px;
+}
+
+.jam-session-providers {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.jam-provider-card {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.jam-provider-head strong { font-size: 0.95rem; }
+.jam-provider-head span {
+  background: rgba(250, 204, 21, 0.18);
+  border: 1px solid rgba(250, 204, 21, 0.35);
+  border-radius: 999px;
+  color: #fde68a;
+  font-size: 0.7rem;
+  font-weight: 800;
+  padding: 3px 7px;
+  white-space: nowrap;
+}
+
+.jam-provider-card p,
+.jam-provider-card li,
+.jam-session-output li,
+.jam-session-result-meta {
+  font-size: 0.82rem;
+  line-height: 1.35;
+  opacity: 0.9;
+}
+
+.jam-provider-card ul,
+.jam-session-output ul {
+  margin: 8px 0;
+  padding-left: 18px;
+}
+
+.jam-provider-card button,
+.jam-session-open {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
+  margin-top: 4px;
+  text-decoration: none;
+}
+
+.jam-session-output {
+  background: rgba(250, 204, 21, 0.08);
+  border: 1px solid rgba(250, 204, 21, 0.22);
+  border-radius: 12px;
+  margin-top: 12px;
+  padding: 10px;
+}
+
+.jam-session-result-title { font-weight: 800; }
+
+.jam-session-code {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 72px 1fr auto;
+  margin-top: 8px;
+}
+
+.jam-session-code span { font-size: 0.78rem; opacity: 0.8; }
+.jam-session-code code {
+  background: rgba(0, 0, 0, 0.28);
+  border-radius: 8px;
+  overflow: hidden;
+  padding: 6px 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jam-session-open {
+  background: #facc15;
+  border-radius: 9px;
+  color: #1f2937;
+  font-weight: 800;
+  padding: 8px 10px;
+}
+
 .voice-peer-empty { opacity: 0.72; padding: 8px 4px 2px; }
 .voice-peer-row { padding: 7px 8px; border-radius: 8px; background: rgba(255,255,255,0.06); margin-top: 6px; }
 .voice-peer-row-local { background: rgba(124, 77, 255, 0.18); }
@@ -2510,7 +2648,8 @@ body:not(.dark) #voice-btn.recording {
 .voice-peer-volume input { flex: 1 1 auto; min-width: 0; }
 
 @media (max-width: 480px) {
-  .voice-call-panel {
+  .voice-call-panel,
+  .jam-session-panel {
     bottom: 76px;
     width: calc(100vw - 20px);
   }
