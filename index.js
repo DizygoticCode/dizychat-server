@@ -200,6 +200,12 @@ const W2G_REQUEST_TIMEOUT_MS = parsePositiveIntegerEnv('W2G_REQUEST_TIMEOUT_MS',
 const WATCH_PARTY_EVENT_WINDOW_MS = 60 * 1000;
 const WATCH_PARTY_MAX_CREATES_PER_WINDOW = 3;
 
+const JACKTRIP_STUDIO_CREATE_URL = String(process.env.JACKTRIP_STUDIO_CREATE_URL || 'https://app.jacktrip.org/studios/create').trim();
+const JACKTRIP_STUDIO_INVITE_URL = String(process.env.JACKTRIP_STUDIO_INVITE_URL || '').trim();
+const SONOBUS_DOWNLOAD_URL = String(process.env.SONOBUS_DOWNLOAD_URL || 'https://sonobus.net/index.html').trim();
+const JAM_SESSION_EVENT_WINDOW_MS = 60 * 1000;
+const JAM_SESSION_MAX_CREATES_PER_WINDOW = 12;
+
 const SCRYPT_HASH_PREFIX = 'scrypt';
 
 const parseScryptParams = (raw, fallback) => {
@@ -1686,6 +1692,133 @@ app.get('/api/watch-party/status', (_req, res) => {
       W2G_API_KEY: W2G_API_KEY_ENV.name || '',
     },
   });
+});
+
+const jamSessionTimestamps = new Map();
+
+const canCreateJamSession = (socketKey) => {
+  const key = socketKey || 'unknown';
+  const now = Date.now();
+  if (!jamSessionTimestamps.has(key)) jamSessionTimestamps.set(key, []);
+  const ts = jamSessionTimestamps.get(key).filter((time) => now - time < JAM_SESSION_EVENT_WINDOW_MS);
+  if (ts.length >= JAM_SESSION_MAX_CREATES_PER_WINDOW) {
+    jamSessionTimestamps.set(key, ts);
+    return false;
+  }
+  ts.push(now);
+  jamSessionTimestamps.set(key, ts);
+  return true;
+};
+
+const safeJamSlug = (value) => {
+  const cleaned = String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  return cleaned || 'dizychat-jam';
+};
+
+const getJamProviders = () => [
+  {
+    id: 'jacktrip',
+    name: 'JackTrip',
+    badge: 'Free test available',
+    bestFor: 'Highest-quality low-latency musician sessions with the JackTrip desktop app or browser studio.',
+    mode: JACKTRIP_STUDIO_INVITE_URL ? 'configured-link' : 'create-studio',
+    freeTier: true,
+    maxFreeMusicians: 5,
+    freeSessionMinutes: 30,
+    requiresInstallForBestAudio: true,
+    supportsBrowserJoin: true,
+    supportsAsioViaNativeApp: true,
+    url: JACKTRIP_STUDIO_INVITE_URL || JACKTRIP_STUDIO_CREATE_URL,
+    setupTips: [
+      'Create or open a free JackTrip Studio, then share its invite with the room.',
+      'Use the JackTrip desktop app for the best latency and audio-interface support.',
+      'Use wired Ethernet and headphones; avoid Wi-Fi and speakers for live instruments.',
+    ],
+  },
+  {
+    id: 'sonobus',
+    name: 'SonoBus',
+    badge: 'Free fallback',
+    bestFor: 'Open-source peer-to-peer audio groups with ASIO support on Windows and DAW plugin options.',
+    mode: 'external-app',
+    freeTier: true,
+    requiresInstallForBestAudio: true,
+    supportsBrowserJoin: false,
+    supportsAsioViaNativeApp: true,
+    url: SONOBUS_DOWNLOAD_URL,
+    setupTips: [
+      'Install SonoBus, choose the generated group name, and optionally set the generated password.',
+      'SonoBus does not use echo cancellation, so everyone should use headphones.',
+      'SonoBus notes that its audio/data communication is not currently encrypted.',
+    ],
+  },
+];
+
+app.get('/api/jam/status', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    enabled: true,
+    recommendedProvider: 'jacktrip',
+    providers: getJamProviders(),
+  });
+});
+
+app.post('/api/jam/session', express.json(), (req, res) => {
+  const remoteAddress = req.ip || req.headers?.['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
+  if (!canCreateJamSession(String(remoteAddress).split(',')[0].trim())) {
+    res.status(429).json({ error: 'Too many jam session requests. Please wait a minute and try again.' });
+    return;
+  }
+
+  const providers = getJamProviders();
+  const providerId = String(req.body?.provider || 'jacktrip').trim().toLowerCase();
+  const provider = providers.find((entry) => entry.id === providerId);
+  if (!provider) {
+    res.status(400).json({ error: 'Unsupported jam provider.', providers });
+    return;
+  }
+
+  const room = normaliseRoomName(req.body?.room) || 'DizyChat Jam';
+  const roomSlug = safeJamSlug(room);
+  const sessionId = `${roomSlug}-${crypto.randomBytes(3).toString('hex')}`;
+  const password = crypto.randomBytes(4).toString('hex');
+
+  const session = {
+    provider: provider.id,
+    providerName: provider.name,
+    room,
+    sessionId,
+    title: `${room} Jam`,
+    url: provider.url,
+    freeTier: provider.freeTier,
+    badge: provider.badge,
+    mode: provider.mode,
+    setupTips: provider.setupTips,
+  };
+
+  if (provider.id === 'jacktrip') {
+    session.freeSessionMinutes = provider.freeSessionMinutes;
+    session.maxFreeMusicians = provider.maxFreeMusicians;
+    session.instructions = [
+      'JackTrip has a free hosted-studio test path: up to 5 musicians for 30 minutes.',
+      'Open JackTrip, create/start a studio, then paste the JackTrip studio invite back into this DizyChat room.',
+      'For the best ASIO/audio-interface path, join through the JackTrip desktop app instead of only the browser.',
+    ];
+  } else if (provider.id === 'sonobus') {
+    session.groupName = sessionId;
+    session.password = password;
+    session.instructions = [
+      `Open SonoBus and join group ${sessionId}.`,
+      `Use password ${password} if you want a private group.`,
+      'Use headphones and wired Ethernet; SonoBus does not currently encrypt audio/data communication.',
+    ];
+  }
+
+  res.json({ session, providers });
 });
 
 const getCallServiceStatus = () => {
