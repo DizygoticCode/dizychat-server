@@ -3711,6 +3711,7 @@ function updateQueryParams(room, password) {
 
 function showLanding({ focusUsername = true } = {}) {
   isViewingChat = false;
+  closeWatchPartyModal();
   resetChromeToolbarAttention();
   appState.isAdmin = false;
   clearReplyTarget();
