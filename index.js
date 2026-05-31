@@ -65,6 +65,8 @@ const TRUSTED_SCRIPT_SOURCES = [
   "https://unpkg.com",
   "https://rumble.com",
   "https://w.soundcloud.com",
+  "https://w2g.tv",
+  "https://*.w2g.tv",
 ];
 const TRUSTED_FRAME_SOURCES = [
   "'self'",
@@ -74,6 +76,8 @@ const TRUSTED_FRAME_SOURCES = [
   "https://w.soundcloud.com",
   "https://rumble.com",
   "https://*.rumble.com",
+  "https://w2g.tv",
+  "https://*.w2g.tv",
 ];
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
@@ -183,6 +187,18 @@ const ENABLE_VOICE_CALLS = parseVoiceCallsEnabled();
 const CALL_TOKEN_TTL_SECONDS = 10 * 60;
 const CALL_EVENT_WINDOW_MS = 4000;
 const CALL_EVENT_MAX_PER_WINDOW = 30;
+const W2G_API_KEY_ENV_NAMES = [
+  'W2G_API_KEY',
+  'WATCH2GETHER_API_KEY',
+  'WATCH_2_GETHER_API_KEY',
+];
+const W2G_API_KEY_ENV = readFirstConfiguredEnv(W2G_API_KEY_ENV_NAMES);
+const W2G_API_KEY = W2G_API_KEY_ENV.value;
+const W2G_CREATE_ROOM_URL = process.env.W2G_CREATE_ROOM_URL || 'https://api.w2g.tv/rooms/create.json';
+const W2G_ROOM_BASE_URL = process.env.W2G_ROOM_BASE_URL || 'https://w2g.tv/rooms';
+const W2G_REQUEST_TIMEOUT_MS = parsePositiveIntegerEnv('W2G_REQUEST_TIMEOUT_MS', 10000, { min: 1000, max: 30000 });
+const WATCH_PARTY_EVENT_WINDOW_MS = 60 * 1000;
+const WATCH_PARTY_MAX_CREATES_PER_WINDOW = 3;
 
 const SCRYPT_HASH_PREFIX = 'scrypt';
 
@@ -1657,6 +1673,21 @@ app.get('/soundboard-clips', (req, res) => {
   }
 });
 
+app.get('/api/watch-party/status', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    provider: 'watch2gether',
+    configured: Boolean(W2G_API_KEY),
+    missingRequiredEnv: W2G_API_KEY ? [] : ['W2G_API_KEY'],
+    acceptedEnvironmentVariables: {
+      W2G_API_KEY: W2G_API_KEY_ENV_NAMES,
+    },
+    detectedEnvironmentVariables: {
+      W2G_API_KEY: W2G_API_KEY_ENV.name || '',
+    },
+  });
+});
+
 const getCallServiceStatus = () => {
   const livekitUrlPresent = Boolean(LIVEKIT_URL_RAW || LIVEKIT_URL);
   const livekitUrlValid = Boolean(LIVEKIT_URL);
@@ -2063,6 +2094,7 @@ const removeSocketFromRoom = (socket, targetRoom) => {
       roomPresence.delete(room);
       activeRoomCalls.delete(room);
       activeRoomCallVideoBlocks.delete(room);
+      activeExternalWatchParties.delete(room);
     }
   }
 
@@ -2087,8 +2119,10 @@ const MAX_TYPING_EVENTS_PER_WINDOW = 5;
 const messageTimestamps = new Map();
 const typingTimestamps = new Map();
 const callEventTimestamps = new Map();
+const watchPartyCreateTimestamps = new Map();
 const activeRoomCalls = new Map();
 const activeRoomCallVideoBlocks = new Map();
+const activeExternalWatchParties = new Map();
 
 const canSendCallEvent = (socketId) => {
   const now = Date.now();
@@ -2101,6 +2135,100 @@ const canSendCallEvent = (socketId) => {
 };
 
 const buildCallId = () => crypto.randomBytes(8).toString('hex');
+const buildWatchPartyId = () => crypto.randomBytes(8).toString('hex');
+
+const canCreateWatchParty = (socketId) => {
+  const now = Date.now();
+  if (!watchPartyCreateTimestamps.has(socketId)) watchPartyCreateTimestamps.set(socketId, []);
+  const ts = watchPartyCreateTimestamps.get(socketId);
+  while (ts.length && now - ts[0] > WATCH_PARTY_EVENT_WINDOW_MS) ts.shift();
+  if (ts.length >= WATCH_PARTY_MAX_CREATES_PER_WINDOW) return false;
+  ts.push(now);
+  return true;
+};
+
+const normaliseWatchPartyUrl = (value) => {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw || raw.length > 2048) return '';
+  try {
+    const parsed = new URL(raw);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return '';
+    parsed.username = '';
+    parsed.password = '';
+    parsed.hash = '';
+    return parsed.toString();
+  } catch (_err) {
+    return '';
+  }
+};
+
+const normaliseWatchPartyTitle = (value) =>
+  sanitizeHtml(String(value || ''), { allowedTags: [], allowedAttributes: {} }).trim().slice(0, 160);
+
+const buildW2gRoomUrl = (streamkey) => {
+  const cleanKey = String(streamkey || '').trim().replace(/[^a-z0-9_-]/gi, '');
+  if (!cleanKey) return '';
+  return `${W2G_ROOM_BASE_URL.replace(/\/+$/, '')}/${encodeURIComponent(cleanKey)}`;
+};
+
+const createWatch2GetherRoom = async ({ sourceUrl }) => {
+  if (!W2G_API_KEY) {
+    const error = new Error('Watch2Gether API key is not configured.');
+    error.code = 'W2G_NOT_CONFIGURED';
+    throw error;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), W2G_REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(W2G_CREATE_ROOM_URL, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        w2g_api_key: W2G_API_KEY,
+        share: sourceUrl || undefined,
+      }),
+      signal: controller.signal,
+    });
+
+    const bodyText = await response.text();
+    let payload = {};
+    if (bodyText) {
+      try {
+        payload = JSON.parse(bodyText);
+      } catch (_err) {
+        payload = { raw: bodyText };
+      }
+    }
+
+    if (!response.ok) {
+      const error = new Error(`Watch2Gether room creation failed (${response.status}).`);
+      error.code = 'W2G_REQUEST_FAILED';
+      error.status = response.status;
+      error.payload = payload;
+      throw error;
+    }
+
+    const streamkey = payload?.streamkey || payload?.streamKey || payload?.room?.streamkey || payload?.room?.streamKey || '';
+    const roomUrl = payload?.roomUrl || payload?.room_url || payload?.url || buildW2gRoomUrl(streamkey);
+    if (!roomUrl) {
+      const error = new Error('Watch2Gether response did not include a room URL or stream key.');
+      error.code = 'W2G_BAD_RESPONSE';
+      error.payload = payload;
+      throw error;
+    }
+
+    return {
+      streamkey: streamkey ? String(streamkey) : '',
+      roomUrl: String(roomUrl),
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+};
 
 const isCallVideoBlocked = (room, username) => {
   const blocked = activeRoomCallVideoBlocks.get(room);
@@ -2322,6 +2450,11 @@ io.on('connection', socket => {
       const pinned = await Message.find({ room: roomName, pinned: true, deleted: { $ne: true } }).sort({ timestamp: -1 }).limit(50);
       socket.emit('pinned messages', pinned);
     } catch (err) { console.error("[Pinned] Error:", err); }
+
+    const activeWatchParty = activeExternalWatchParties.get(roomName);
+    if (activeWatchParty) {
+      socket.emit('watch-party:external-active', activeWatchParty);
+    }
   });
 
   socket.on('request older messages', async ({ room, cursor } = {}) => {
@@ -2351,6 +2484,72 @@ io.on('connection', socket => {
 
   socket.on('request rooms', () => {
     socket.emit('room list', getPublicRoomsSnapshot());
+  });
+
+  socket.on('watch-party:w2g-create', async ({ room, url, title } = {}) => {
+    const roomName = normaliseRoomName(room || socket.currentRoom);
+    if (!roomName || roomName !== socket.currentRoom) return;
+
+    if (isUserBlocked(roomName, socket.username)) {
+      socket.emit('moderation notice', { type: 'blocked', room: roomName, reason: 'watch-party' });
+      return;
+    }
+
+    const muteUntil = getMuteExpiry(roomName, socket.username);
+    if (muteUntil) {
+      socket.emit('moderation notice', { type: 'muted', room: roomName, until: muteUntil, reason: 'watch-party' });
+      return;
+    }
+
+    if (!canCreateWatchParty(socket.id)) {
+      socket.emit('watch-party:error', { room: roomName, message: 'Please wait before creating another watch party.' });
+      return;
+    }
+
+    const sourceUrl = normaliseWatchPartyUrl(url);
+    if (!sourceUrl) {
+      socket.emit('watch-party:error', { room: roomName, message: 'Enter a valid http:// or https:// video URL.' });
+      return;
+    }
+
+    try {
+      const result = await createWatch2GetherRoom({ sourceUrl });
+      const safeTitle = normaliseWatchPartyTitle(title);
+      const payload = {
+        provider: 'watch2gether',
+        sessionId: buildWatchPartyId(),
+        room: roomName,
+        sourceUrl,
+        sourceTitle: safeTitle,
+        watchUrl: result.roomUrl,
+        streamkey: result.streamkey,
+        createdBy: socket.username || 'Someone',
+        createdAt: Date.now(),
+      };
+      activeExternalWatchParties.set(roomName, payload);
+      io.to(roomName).emit('watch-party:external-created', payload);
+    } catch (err) {
+      const message = err?.code === 'W2G_NOT_CONFIGURED'
+        ? 'Watch2Gether is not configured yet. Add W2G_API_KEY in Render.'
+        : err?.name === 'AbortError'
+          ? 'Watch2Gether took too long to respond. Try again shortly.'
+          : 'Could not create a Watch2Gether room right now.';
+      console.error('[WatchParty] Watch2Gether creation failed:', err?.message || err);
+      socket.emit('watch-party:error', { room: roomName, message });
+    }
+  });
+
+  socket.on('watch-party:external-clear', ({ room } = {}) => {
+    const roomName = normaliseRoomName(room || socket.currentRoom);
+    if (!roomName || roomName !== socket.currentRoom) return;
+    const active = activeExternalWatchParties.get(roomName);
+    if (!active) return;
+    if (!socket.isAdmin && canonicalUsername(active.createdBy) !== canonicalUsername(socket.username)) {
+      socket.emit('watch-party:error', { room: roomName, message: 'Only the host or an admin can clear this watch party.' });
+      return;
+    }
+    activeExternalWatchParties.delete(roomName);
+    io.to(roomName).emit('watch-party:external-cleared', { room: roomName, clearedBy: socket.username || 'Someone', sessionId: active.sessionId });
   });
 
   socket.on('call:start', ({ room } = {}) => {
