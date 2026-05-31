@@ -41,6 +41,7 @@ DizyChat is a Socket.IO and Express-powered real-time chat backend designed for 
 ### Live broadcast companions
 - The dedicated Psybin Radio room surfaces a mini audio player that streams the live station, polls `/api/psybin/now-playing` for metadata, and exposes play/pause, mute, and volume controls with resilient reconnect logic.
 - Rumble live streams pop into a draggable, resizable modal so viewers can park the broadcast alongside chat without losing context.
+- Watch2Gether watch-party launchers create synced W2G rooms from inside a DizyChat room while keeping the API key server-side and using W2G's embed URL for the in-chat modal.
 
 ### Recently added
 - **Push-to-talk voice notes** – the web client exposes a hold-to-record microphone button that uploads and posts audio clips with automatic cleanup and status toasts so moderators can manage voice memos alongside regular attachments.
@@ -103,6 +104,8 @@ Create a `.env` file in the project root with the following keys:
 | `LIVEKIT_URL` | Required when LiveKit calls are enabled. LiveKit Cloud/server WebSocket URL (for example `wss://<project>.livekit.cloud`). |
 | `LIVEKIT_API_KEY` | Required when LiveKit calls are enabled. LiveKit API key used by the backend to issue room-scoped access tokens. |
 | `LIVEKIT_API_SECRET` | Required when LiveKit calls are enabled. LiveKit API secret paired with `LIVEKIT_API_KEY`. |
+| `W2G_API_KEY` | Required for Watch2Gether watch-party room creation. Keep this server-side in Render environment variables; clients only see generated W2G room links. Aliases `WATCH2GETHER_API_KEY` and `WATCH_2_GETHER_API_KEY` are also accepted. |
+| `W2G_REQUEST_TIMEOUT_MS` | (Optional) Timeout for Watch2Gether API room creation; defaults to 10000 ms. |
 
 ## Running locally
 
@@ -231,6 +234,8 @@ All marketing routes serve the hero experience from `public/index.html`; the cha
 | `call:start`, `call:join`, `call:leave`, `call:end` | Bidirectional | Manage optional LiveKit-backed voice/video call lifecycle; the first participant can start a room call automatically. |
 | `call:mute-user`, `call:kick-user`, `call:disable-video-user`, `call:enable-video-user` | Client → Server | Admin-only call moderation actions for audio, removal, and camera access. Camera disables are remembered for the active room call until an admin allows the camera again or the call ends. |
 | `call:user-muted`, `call:user-kicked`, `call:user-video-disabled`, `call:user-video-enabled` | Server → Client | Targeted room call moderation notifications; affected clients mute audio, leave, stop camera video, or re-enable their camera control. |
+| `watch-party:w2g-create` | Client → Server | Creates a Watch2Gether room for the current DizyChat room using the server-side `W2G_API_KEY`. |
+| `watch-party:external-created`, `watch-party:external-active`, `watch-party:external-cleared`, `watch-party:error` | Server → Client | Broadcasts the current external Watch2Gether room card, clears it, or reports room-creation failures. |
 | `room list` | Server → Client | Broadcasts current public rooms and occupant counts. |
 
 ## Security considerations
