@@ -5480,36 +5480,24 @@ if (copyJoinLinkBtn) {
   };
 
   const setButtonState = () => {
-    const hasRoom = Boolean(window.currentRoom);
-    watchPartyBtn.disabled = !hasRoom || state.loading;
-    watchPartyBtn.classList.toggle("is-unconfigured", state.statusLoaded && !state.configured);
-    watchPartyBtn.title = !hasRoom
-      ? "Join a room to start a watch party"
-      : state.loading
-        ? "Creating Watch2Gether room…"
-        : !state.statusLoaded
-          ? "Start Watch2Gether watch party (server setup will be checked when opened)"
-          : !state.configured
-            ? "Watch2Gether API key was not detected; click to retry/check setup"
-            : "Start Watch2Gether watch party";
+    watchPartyBtn.disabled = !window.currentRoom || !state.configured || state.loading;
+    watchPartyBtn.title = !state.statusLoaded
+      ? "Checking Watch2Gether setup…"
+      : !state.configured
+        ? "Watch2Gether API key is not configured on the server"
+        : !window.currentRoom
+          ? "Join a room to start a watch party"
+          : "Start Watch2Gether watch party";
   };
 
-  const loadStatus = async ({ showErrors = false } = {}) => {
+  const loadStatus = async () => {
     try {
       const response = await fetch("/api/watch-party/status", { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error(`Watch party status failed: ${response.status}`);
-      }
       const data = await response.json().catch(() => ({}));
       state.configured = Boolean(data?.configured);
-      return data;
     } catch (err) {
       console.warn("[WatchParty] Unable to load status", err);
       state.configured = false;
-      if (showErrors) {
-        showToast("Could not check Watch2Gether setup. Try refreshing after Render redeploys.", "error");
-      }
-      return null;
     } finally {
       state.statusLoaded = true;
       setButtonState();
@@ -5577,17 +5565,12 @@ if (copyJoinLinkBtn) {
     const actions = document.createElement("div");
     actions.className = "watch-party-card-actions";
 
-    const join = document.createElement("button");
-    join.type = "button";
+    const join = document.createElement("a");
+    join.href = watchUrl;
+    join.target = "_blank";
+    join.rel = "noopener noreferrer";
     join.className = "watch-party-join";
-    join.textContent = "Open in chat";
-    join.addEventListener("click", () => openWatchPartyModal(payload));
-
-    const external = document.createElement("a");
-    external.href = watchUrl;
-    external.target = "_blank";
-    external.rel = "noopener noreferrer";
-    external.textContent = "New tab";
+    join.textContent = "Open Watch2Gether";
 
     const copy = document.createElement("button");
     copy.type = "button";
@@ -5605,7 +5588,6 @@ if (copyJoinLinkBtn) {
     });
 
     actions.appendChild(join);
-    actions.appendChild(external);
     actions.appendChild(copy);
     actions.appendChild(clear);
     card.appendChild(header);
@@ -5622,18 +5604,13 @@ if (copyJoinLinkBtn) {
     scrollMessagesToBottom({ behavior: "smooth", force: true });
   };
 
-  const createRoom = async () => {
+  const createRoom = () => {
     if (!window.currentRoom || !window.currentUser) {
       showToast("Join a room before starting a watch party.", "warn");
       return;
     }
-
     if (!state.configured) {
-      await loadStatus({ showErrors: true });
-    }
-
-    if (!state.configured) {
-      showToast("Watch2Gether is not configured yet. Verify W2G_API_KEY is saved and redeployed in Render.", "error");
+      showToast("Watch2Gether is not configured on the server yet.", "error");
       return;
     }
 
@@ -5663,9 +5640,6 @@ if (copyJoinLinkBtn) {
     if (!window.currentRoom) {
       showToast("Join a room before starting a watch party.", "warn");
       return;
-    }
-    if (!state.statusLoaded || !state.configured) {
-      loadStatus();
     }
     positionPanel();
     panel.style.display = "block";
@@ -5697,11 +5671,7 @@ if (copyJoinLinkBtn) {
     setButtonState();
     if (wasCreating) closePanel();
     renderCard(payload);
-    if (wasCreating) {
-      openWatchPartyModal(payload);
-    } else {
-      showToast("Watch party started", "success");
-    }
+    showToast(wasCreating ? "Watch2Gether room created" : "Watch party started", "success");
   });
 
   socket.on("watch-party:external-active", (payload = {}) => {
@@ -5713,7 +5683,6 @@ if (copyJoinLinkBtn) {
     if (room && room !== window.currentRoom) return;
     if (state.activeCard?.parentNode) state.activeCard.remove();
     state.activeCard = null;
-    closeWatchPartyModal();
     showToast("Watch party cleared", "info");
   });
 
@@ -5726,12 +5695,8 @@ if (copyJoinLinkBtn) {
     showToast(message || "Watch party error", "error");
   });
 
-  socket.on("join room success", () => {
-    setButtonState();
-    loadStatus();
-  });
+  socket.on("join room success", setButtonState);
   socket.on("disconnect", setButtonState);
-  setButtonState();
   loadStatus();
 })();
 

@@ -4108,11 +4108,6 @@ body:not(.dark) .soundboard-status--loading {
   opacity: 0.55;
 }
 
-.header-right button#watch-party-btn.is-unconfigured:not(:disabled) {
-  border-color: rgba(245, 158, 11, 0.55);
-  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.16);
-}
-
 body:not(.dark) .header-right button#watch-party-btn {
   background: linear-gradient(120deg, rgba(123, 47, 247, 0.12), rgba(236, 72, 153, 0.1));
   border-color: rgba(123, 47, 247, 0.24);
@@ -4221,36 +4216,6 @@ body:not(.dark) .header-right button#watch-party-btn {
 .watch-party-actions button:disabled {
   cursor: wait;
   opacity: 0.7;
-}
-
-
-.watch-party-modal {
-  z-index: 1200;
-}
-
-.watch-party-modal .stream-modal-title {
-  max-width: min(420px, 58vw);
-}
-
-.watch-party-modal-title-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.watch-party-modal-open {
-  min-width: 30px;
-}
-
-.watch-party-modal-body {
-  padding-bottom: 24px;
-}
-
-.watch-party-modal-frame {
-  width: 100%;
-  height: 100%;
-  border: 0;
-  background: #111;
 }
 
 .watch-party-card {
