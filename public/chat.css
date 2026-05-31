@@ -4108,11 +4108,6 @@ body:not(.dark) .soundboard-status--loading {
   opacity: 0.55;
 }
 
-.header-right button#watch-party-btn.is-unconfigured:not(:disabled) {
-  border-color: rgba(245, 158, 11, 0.55);
-  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.16);
-}
-
 body:not(.dark) .header-right button#watch-party-btn {
   background: linear-gradient(120deg, rgba(123, 47, 247, 0.12), rgba(236, 72, 153, 0.1));
   border-color: rgba(123, 47, 247, 0.24);
