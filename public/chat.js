@@ -120,6 +120,7 @@ const emojiPicker = document.getElementById("emoji-picker");
 let emojiPickerController = null;
 const leaveBtn = document.getElementById("leave-btn");
 const copyJoinLinkBtn = document.getElementById("copy-join-link");
+const watchPartyBtn = document.getElementById("watch-party-btn");
 const publicRoomList = document.getElementById("public-room-list");
 const themeLogos = Array.from(document.querySelectorAll("img.logo"));
 const userSidebar = document.getElementById("user-sidebar");
@@ -5125,6 +5126,282 @@ if (copyJoinLinkBtn) {
     }
   });
 }
+
+// ------------------- Watch2Gether Watch Parties -------------------
+(() => {
+  if (!watchPartyBtn) return;
+
+  const state = {
+    configured: false,
+    statusLoaded: false,
+    loading: false,
+    activeCard: null,
+  };
+
+  const panel = document.createElement("div");
+  panel.id = "watch-party-panel";
+  panel.innerHTML = `
+    <div class="watch-party-panel-header">
+      <div>
+        <strong>Start Watch2Gether</strong>
+        <p>Paste a video or music link and DizyChat will create a synced W2G room.</p>
+      </div>
+      <button type="button" class="watch-party-close" aria-label="Close watch party panel">✕</button>
+    </div>
+    <label class="watch-party-field">
+      <span>Video or audio URL</span>
+      <input type="url" id="watch-party-url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" />
+    </label>
+    <label class="watch-party-field">
+      <span>Optional title</span>
+      <input type="text" id="watch-party-title" maxlength="160" placeholder="Movie night / DJ set / stream title" autocomplete="off" />
+    </label>
+    <div class="watch-party-actions">
+      <button type="button" class="watch-party-create">Create W2G Room</button>
+      <button type="button" class="watch-party-cancel">Cancel</button>
+    </div>
+    <p class="watch-party-help">Your W2G API key stays on the server. Viewers open the generated Watch2Gether room link.</p>
+  `;
+  document.body.appendChild(panel);
+
+  const urlInput = panel.querySelector("#watch-party-url");
+  const titleInput = panel.querySelector("#watch-party-title");
+  const createBtn = panel.querySelector(".watch-party-create");
+  const closeBtns = panel.querySelectorAll(".watch-party-close, .watch-party-cancel");
+
+  const closePanel = () => {
+    panel.style.display = "none";
+    watchPartyBtn.focus();
+  };
+
+  const positionPanel = () => {
+    const rect = watchPartyBtn.getBoundingClientRect();
+    const width = Math.min(380, Math.max(300, window.innerWidth - 20));
+    panel.style.width = `${width}px`;
+    panel.style.left = `${Math.max(10, Math.min(rect.left, window.innerWidth - width - 10))}px`;
+    panel.style.top = `${Math.min(rect.bottom + 10, window.innerHeight - 20)}px`;
+  };
+
+  const setButtonState = () => {
+    watchPartyBtn.disabled = !window.currentRoom || !state.configured || state.loading;
+    watchPartyBtn.title = !state.statusLoaded
+      ? "Checking Watch2Gether setup…"
+      : !state.configured
+        ? "Watch2Gether API key is not configured on the server"
+        : !window.currentRoom
+          ? "Join a room to start a watch party"
+          : "Start Watch2Gether watch party";
+  };
+
+  const loadStatus = async () => {
+    try {
+      const response = await fetch("/api/watch-party/status", { cache: "no-store" });
+      const data = await response.json().catch(() => ({}));
+      state.configured = Boolean(data?.configured);
+    } catch (err) {
+      console.warn("[WatchParty] Unable to load status", err);
+      state.configured = false;
+    } finally {
+      state.statusLoaded = true;
+      setButtonState();
+    }
+  };
+
+  const normalizeUrl = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    try {
+      const parsed = new URL(raw);
+      if (!["http:", "https:"].includes(parsed.protocol)) return "";
+      return parsed.toString();
+    } catch {
+      return "";
+    }
+  };
+
+  const renderCard = (payload = {}, { active = false } = {}) => {
+    if (!messages || !isViewingChat) return;
+    const watchUrl = typeof payload.watchUrl === "string" ? payload.watchUrl : "";
+    if (!watchUrl) return;
+
+    if (state.activeCard?.parentNode) {
+      state.activeCard.remove();
+      state.activeCard = null;
+    }
+
+    const card = document.createElement("div");
+    card.className = "watch-party-card";
+    card.dataset.sessionId = payload.sessionId || "";
+
+    const title = payload.sourceTitle || "Watch2Gether room";
+    const sourceUrl = payload.sourceUrl || "";
+    const createdBy = payload.createdBy || "Someone";
+    const createdAt = payload.createdAt ? new Date(payload.createdAt).toLocaleTimeString() : "now";
+
+    const header = document.createElement("div");
+    header.className = "watch-party-card-header";
+    header.innerHTML = `<span aria-hidden="true">🎬</span><strong>${active ? "Active watch party" : "Watch party started"}</strong>`;
+
+    const body = document.createElement("div");
+    body.className = "watch-party-card-body";
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "watch-party-card-title";
+    titleEl.textContent = title;
+
+    const meta = document.createElement("div");
+    meta.className = "watch-party-card-meta";
+    meta.textContent = `${createdBy} • ${createdAt}`;
+
+    body.appendChild(titleEl);
+    body.appendChild(meta);
+    if (sourceUrl) {
+      const source = document.createElement("a");
+      source.href = sourceUrl;
+      source.target = "_blank";
+      source.rel = "noopener noreferrer";
+      source.className = "watch-party-source";
+      source.textContent = "Source link";
+      body.appendChild(source);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "watch-party-card-actions";
+
+    const join = document.createElement("a");
+    join.href = watchUrl;
+    join.target = "_blank";
+    join.rel = "noopener noreferrer";
+    join.className = "watch-party-join";
+    join.textContent = "Open Watch2Gether";
+
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.textContent = "Copy link";
+    copy.addEventListener("click", async () => {
+      const copied = await copyTextToClipboard(watchUrl);
+      showToast(copied ? "Watch party link copied" : "Unable to copy watch party link", copied ? "success" : "error");
+    });
+
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.textContent = "Clear";
+    clear.addEventListener("click", () => {
+      socket.emit("watch-party:external-clear", { room: window.currentRoom });
+    });
+
+    actions.appendChild(join);
+    actions.appendChild(copy);
+    actions.appendChild(clear);
+    card.appendChild(header);
+    card.appendChild(body);
+    card.appendChild(actions);
+
+    const sentinel = ensureMessagesEndSentinel();
+    if (sentinel) {
+      messages.insertBefore(card, sentinel);
+    } else {
+      messages.appendChild(card);
+    }
+    state.activeCard = card;
+    scrollMessagesToBottom({ behavior: "smooth", force: true });
+  };
+
+  const createRoom = () => {
+    if (!window.currentRoom || !window.currentUser) {
+      showToast("Join a room before starting a watch party.", "warn");
+      return;
+    }
+    if (!state.configured) {
+      showToast("Watch2Gether is not configured on the server yet.", "error");
+      return;
+    }
+
+    const url = normalizeUrl(urlInput?.value);
+    if (!url) {
+      showToast("Paste a valid http:// or https:// URL.", "warn");
+      urlInput?.focus();
+      return;
+    }
+
+    state.loading = true;
+    createBtn.disabled = true;
+    createBtn.textContent = "Creating…";
+    setButtonState();
+    socket.emit("watch-party:w2g-create", {
+      room: window.currentRoom,
+      url,
+      title: titleInput?.value || "",
+    });
+  };
+
+  watchPartyBtn.addEventListener("click", () => {
+    if (panel.style.display === "block") {
+      closePanel();
+      return;
+    }
+    if (!window.currentRoom) {
+      showToast("Join a room before starting a watch party.", "warn");
+      return;
+    }
+    positionPanel();
+    panel.style.display = "block";
+    urlInput?.focus();
+  });
+
+  createBtn?.addEventListener("click", createRoom);
+  [urlInput, titleInput].filter(Boolean).forEach((inputEl) => {
+    inputEl.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        createRoom();
+      } else if (event.key === "Escape") {
+        closePanel();
+      }
+    });
+  });
+  closeBtns.forEach((btn) => btn.addEventListener("click", closePanel));
+  window.addEventListener("resize", () => {
+    if (panel.style.display === "block") positionPanel();
+  });
+
+  socket.on("watch-party:external-created", (payload = {}) => {
+    if (payload.room && payload.room !== window.currentRoom) return;
+    const wasCreating = state.loading;
+    state.loading = false;
+    createBtn.disabled = false;
+    createBtn.textContent = "Create W2G Room";
+    setButtonState();
+    if (wasCreating) closePanel();
+    renderCard(payload);
+    showToast(wasCreating ? "Watch2Gether room created" : "Watch party started", "success");
+  });
+
+  socket.on("watch-party:external-active", (payload = {}) => {
+    if (payload.room && payload.room !== window.currentRoom) return;
+    renderCard(payload, { active: true });
+  });
+
+  socket.on("watch-party:external-cleared", ({ room } = {}) => {
+    if (room && room !== window.currentRoom) return;
+    if (state.activeCard?.parentNode) state.activeCard.remove();
+    state.activeCard = null;
+    showToast("Watch party cleared", "info");
+  });
+
+  socket.on("watch-party:error", ({ room, message } = {}) => {
+    if (room && room !== window.currentRoom) return;
+    state.loading = false;
+    createBtn.disabled = false;
+    createBtn.textContent = "Create W2G Room";
+    setButtonState();
+    showToast(message || "Watch party error", "error");
+  });
+
+  socket.on("join room success", setButtonState);
+  socket.on("disconnect", setButtonState);
+  loadStatus();
+})();
 
 // ------------------- Sound Notifications -------------------
 initSoundNotifications();
