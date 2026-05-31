@@ -547,6 +547,34 @@ const infowarsCollapseBtn = document.getElementById("infowars-stream-collapse");
 const infowarsResizeHandle = infowarsModal?.querySelector?.(".stream-resize-handle") || null;
 const infowarsStreamFrame = document.getElementById("infowars-stream-frame");
 let infowarsStreamObserver = null;
+const watchPartyModalState = {
+  modal: null,
+  header: null,
+  title: null,
+  frame: null,
+  resizeHandle: null,
+  collapseBtn: null,
+  openLink: null,
+  visible: false,
+  collapsed: false,
+  dragging: false,
+  resizing: false,
+  pointerId: null,
+  resizePointerId: null,
+  dragOffsetX: 0,
+  dragOffsetY: 0,
+  resizeStartWidth: 0,
+  resizeStartHeight: 0,
+  resizeStartX: 0,
+  resizeStartY: 0,
+  dragMoved: false,
+  ignoreHeaderClick: false,
+  width: 760,
+  height: 520,
+  left: null,
+  top: null,
+  url: "",
+};
 
 const chromeToolbarState = {
   originalTitle: document.title || "DizyChat",
@@ -4599,6 +4627,268 @@ function updateInfowarsCollapseButton() {
   infowarsCollapseBtn.title = collapsed ? "Expand stream" : "Minimize stream";
 }
 
+const WATCH_PARTY_MODAL_MIN_WIDTH = 360;
+const WATCH_PARTY_MODAL_MIN_HEIGHT = 260;
+const WATCH_PARTY_MODAL_MARGIN = 12;
+const WATCH_PARTY_MODAL_HEADER_HEIGHT = 58;
+
+function getWatchPartyToolbarBottom() {
+  const rect = toolbar?.getBoundingClientRect?.();
+  if (!rect) return WATCH_PARTY_MODAL_MARGIN;
+  return Math.max(WATCH_PARTY_MODAL_MARGIN, Math.ceil(rect.bottom) + WATCH_PARTY_MODAL_MARGIN);
+}
+
+function getWatchPartyActiveHeight() {
+  return watchPartyModalState.collapsed ? WATCH_PARTY_MODAL_HEADER_HEIGHT : watchPartyModalState.height;
+}
+
+function ensureWatchPartyModal() {
+  if (watchPartyModalState.modal) return watchPartyModalState.modal;
+
+  const modal = document.createElement("div");
+  modal.id = "watch-party-modal";
+  modal.className = "stream-modal watch-party-modal";
+  modal.hidden = true;
+  modal.setAttribute("aria-hidden", "true");
+  modal.innerHTML = `
+    <div class="stream-modal-header watch-party-modal-header">
+      <div class="stream-modal-title">
+        <span aria-hidden="true">🎬</span>
+        <span class="watch-party-modal-title-text">Watch2Gether Party</span>
+      </div>
+      <div class="stream-modal-controls">
+        <a class="stream-modal-button watch-party-modal-open" href="#" target="_blank" rel="noopener noreferrer" title="Open in new tab" aria-label="Open Watch2Gether in a new tab">↗</a>
+        <button type="button" class="stream-modal-button watch-party-modal-collapse" title="Minimize watch party" aria-label="Minimize watch party">▾</button>
+        <button type="button" class="stream-modal-button watch-party-modal-close" title="Close watch party" aria-label="Close watch party">✕</button>
+      </div>
+    </div>
+    <div class="stream-modal-body watch-party-modal-body">
+      <iframe class="watch-party-modal-frame" title="Watch2Gether watch party" loading="lazy" allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media" allowfullscreen></iframe>
+    </div>
+    <div class="stream-resize-handle" aria-hidden="true"></div>
+  `;
+  document.body.appendChild(modal);
+
+  watchPartyModalState.modal = modal;
+  watchPartyModalState.header = modal.querySelector(".watch-party-modal-header");
+  watchPartyModalState.title = modal.querySelector(".watch-party-modal-title-text");
+  watchPartyModalState.frame = modal.querySelector(".watch-party-modal-frame");
+  watchPartyModalState.resizeHandle = modal.querySelector(".stream-resize-handle");
+  watchPartyModalState.collapseBtn = modal.querySelector(".watch-party-modal-collapse");
+  watchPartyModalState.openLink = modal.querySelector(".watch-party-modal-open");
+
+  const closeBtn = modal.querySelector(".watch-party-modal-close");
+  closeBtn?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    closeWatchPartyModal();
+  });
+  watchPartyModalState.collapseBtn?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleWatchPartyModalCollapse();
+  });
+  watchPartyModalState.header?.addEventListener("pointerdown", startWatchPartyModalDrag);
+  watchPartyModalState.header?.addEventListener("click", () => {
+    if (watchPartyModalState.ignoreHeaderClick) {
+      watchPartyModalState.ignoreHeaderClick = false;
+      return;
+    }
+    toggleWatchPartyModalCollapse();
+  });
+  watchPartyModalState.resizeHandle?.addEventListener("pointerdown", startWatchPartyModalResize);
+  return modal;
+}
+
+function updateWatchPartyModalCollapseButton() {
+  const btn = watchPartyModalState.collapseBtn;
+  if (!btn) return;
+  const collapsed = Boolean(watchPartyModalState.collapsed);
+  btn.textContent = collapsed ? "▴" : "▾";
+  btn.setAttribute("aria-label", collapsed ? "Expand watch party" : "Minimize watch party");
+  btn.title = collapsed ? "Expand watch party" : "Minimize watch party";
+}
+
+function applyWatchPartyModalLayout({ clampPosition = true } = {}) {
+  const modal = watchPartyModalState.modal;
+  if (!modal) return;
+
+  const maxWidth = Math.max(WATCH_PARTY_MODAL_MIN_WIDTH, window.innerWidth - (WATCH_PARTY_MODAL_MARGIN * 2));
+  const maxHeight = Math.max(WATCH_PARTY_MODAL_MIN_HEIGHT, window.innerHeight - getWatchPartyToolbarBottom() - WATCH_PARTY_MODAL_MARGIN);
+  const width = clampNumber(watchPartyModalState.width, WATCH_PARTY_MODAL_MIN_WIDTH, maxWidth);
+  const height = clampNumber(watchPartyModalState.height, WATCH_PARTY_MODAL_MIN_HEIGHT, maxHeight);
+  const activeHeight = watchPartyModalState.collapsed ? WATCH_PARTY_MODAL_HEADER_HEIGHT : height;
+  let left = Number.isFinite(watchPartyModalState.left) ? watchPartyModalState.left : null;
+  let top = Number.isFinite(watchPartyModalState.top) ? watchPartyModalState.top : null;
+  const minLeft = WATCH_PARTY_MODAL_MARGIN;
+  const maxLeft = Math.max(minLeft, window.innerWidth - width - WATCH_PARTY_MODAL_MARGIN);
+  const minTop = Math.max(WATCH_PARTY_MODAL_MARGIN, getWatchPartyToolbarBottom());
+  const maxTop = Math.max(minTop, window.innerHeight - activeHeight - WATCH_PARTY_MODAL_MARGIN);
+
+  if (left === null) left = clampNumber(window.innerWidth - width - (WATCH_PARTY_MODAL_MARGIN * 1.5), minLeft, maxLeft);
+  if (top === null) top = clampNumber(minTop, minTop, maxTop);
+  if (clampPosition) {
+    left = clampNumber(left, minLeft, maxLeft);
+    top = clampNumber(top, minTop, maxTop);
+  }
+
+  watchPartyModalState.width = width;
+  watchPartyModalState.height = height;
+  watchPartyModalState.left = left;
+  watchPartyModalState.top = top;
+  modal.style.width = `${width}px`;
+  modal.style.height = `${height}px`;
+  modal.style.left = `${left}px`;
+  modal.style.top = `${top}px`;
+  modal.classList.toggle("collapsed", Boolean(watchPartyModalState.collapsed));
+  modal.classList.toggle("dragging", Boolean(watchPartyModalState.dragging));
+  modal.classList.toggle("resizing", Boolean(watchPartyModalState.resizing));
+}
+
+function openWatchPartyModal(payload = {}) {
+  const watchUrl = typeof payload.watchUrl === "string" ? payload.watchUrl : "";
+  if (!watchUrl) {
+    showToast("Watch party link is missing.", "error");
+    return;
+  }
+
+  const modal = ensureWatchPartyModal();
+  watchPartyModalState.visible = true;
+  watchPartyModalState.collapsed = false;
+  watchPartyModalState.url = watchUrl;
+  const label = payload.sourceTitle || "Watch2Gether Party";
+  if (watchPartyModalState.title) watchPartyModalState.title.textContent = label;
+  if (watchPartyModalState.openLink) watchPartyModalState.openLink.href = watchUrl;
+  if (watchPartyModalState.frame?.getAttribute("src") !== watchUrl) {
+    watchPartyModalState.frame.src = watchUrl;
+  }
+  updateWatchPartyModalCollapseButton();
+  applyWatchPartyModalLayout({ clampPosition: true });
+  modal.hidden = false;
+  modal.setAttribute("aria-hidden", "false");
+  showToast("Watch party opened in chat", "success");
+}
+
+function closeWatchPartyModal() {
+  const modal = watchPartyModalState.modal;
+  if (!modal) return;
+  watchPartyModalState.visible = false;
+  watchPartyModalState.dragging = false;
+  watchPartyModalState.resizing = false;
+  watchPartyModalState.pointerId = null;
+  watchPartyModalState.resizePointerId = null;
+  modal.hidden = true;
+  modal.setAttribute("aria-hidden", "true");
+  modal.classList.remove("dragging", "resizing", "collapsed");
+  if (watchPartyModalState.frame) {
+    watchPartyModalState.frame.src = "about:blank";
+  }
+}
+
+function toggleWatchPartyModalCollapse(force) {
+  if (!watchPartyModalState.visible) return;
+  const nextState = typeof force === "boolean" ? force : !watchPartyModalState.collapsed;
+  if (nextState === watchPartyModalState.collapsed) return;
+  watchPartyModalState.collapsed = nextState;
+  updateWatchPartyModalCollapseButton();
+  applyWatchPartyModalLayout();
+}
+
+function startWatchPartyModalDrag(event) {
+  if (!watchPartyModalState.visible) return;
+  const isTouch = event.pointerType === "touch";
+  if (!isTouch && event.button !== 0) return;
+  const modal = ensureWatchPartyModal();
+  const rect = modal.getBoundingClientRect();
+  watchPartyModalState.dragging = true;
+  watchPartyModalState.pointerId = event.pointerId;
+  watchPartyModalState.dragOffsetX = event.clientX - rect.left;
+  watchPartyModalState.dragOffsetY = event.clientY - rect.top;
+  watchPartyModalState.dragMoved = false;
+  watchPartyModalState.ignoreHeaderClick = false;
+  modal.classList.add("dragging");
+  watchPartyModalState.header?.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+}
+
+function startWatchPartyModalResize(event) {
+  if (!watchPartyModalState.visible || watchPartyModalState.collapsed) return;
+  const isTouch = event.pointerType === "touch";
+  if (!isTouch && event.button !== 0) return;
+  const modal = ensureWatchPartyModal();
+  const rect = modal.getBoundingClientRect();
+  watchPartyModalState.resizing = true;
+  watchPartyModalState.resizePointerId = event.pointerId;
+  watchPartyModalState.resizeStartWidth = rect.width;
+  watchPartyModalState.resizeStartHeight = rect.height;
+  watchPartyModalState.resizeStartX = event.clientX;
+  watchPartyModalState.resizeStartY = event.clientY;
+  modal.classList.add("resizing");
+  watchPartyModalState.resizeHandle?.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+}
+
+function handleWatchPartyPointerMove(event) {
+  const modal = watchPartyModalState.modal;
+  if (!watchPartyModalState.visible || !modal) return;
+
+  if (watchPartyModalState.dragging && event.pointerId === watchPartyModalState.pointerId) {
+    const nextLeft = clampNumber(
+      event.clientX - watchPartyModalState.dragOffsetX,
+      WATCH_PARTY_MODAL_MARGIN,
+      Math.max(WATCH_PARTY_MODAL_MARGIN, window.innerWidth - watchPartyModalState.width - WATCH_PARTY_MODAL_MARGIN)
+    );
+    const nextTop = clampNumber(
+      event.clientY - watchPartyModalState.dragOffsetY,
+      getWatchPartyToolbarBottom(),
+      Math.max(getWatchPartyToolbarBottom(), window.innerHeight - getWatchPartyActiveHeight() - WATCH_PARTY_MODAL_MARGIN)
+    );
+    if (Math.abs(nextLeft - watchPartyModalState.left) > 1 || Math.abs(nextTop - watchPartyModalState.top) > 1) {
+      watchPartyModalState.dragMoved = true;
+    }
+    watchPartyModalState.left = nextLeft;
+    watchPartyModalState.top = nextTop;
+    modal.style.left = `${nextLeft}px`;
+    modal.style.top = `${nextTop}px`;
+  } else if (watchPartyModalState.resizing && event.pointerId === watchPartyModalState.resizePointerId) {
+    const maxWidth = Math.max(WATCH_PARTY_MODAL_MIN_WIDTH, window.innerWidth - watchPartyModalState.left - WATCH_PARTY_MODAL_MARGIN);
+    const maxHeight = Math.max(WATCH_PARTY_MODAL_MIN_HEIGHT, window.innerHeight - watchPartyModalState.top - WATCH_PARTY_MODAL_MARGIN);
+    const width = clampNumber(
+      watchPartyModalState.resizeStartWidth + (event.clientX - watchPartyModalState.resizeStartX),
+      WATCH_PARTY_MODAL_MIN_WIDTH,
+      maxWidth
+    );
+    const height = clampNumber(
+      watchPartyModalState.resizeStartHeight + (event.clientY - watchPartyModalState.resizeStartY),
+      WATCH_PARTY_MODAL_MIN_HEIGHT,
+      maxHeight
+    );
+    watchPartyModalState.width = width;
+    watchPartyModalState.height = height;
+    modal.style.width = `${width}px`;
+    modal.style.height = `${height}px`;
+  }
+}
+
+function handleWatchPartyPointerUp(event) {
+  const modal = watchPartyModalState.modal;
+  if (!modal) return;
+  if (watchPartyModalState.dragging && event.pointerId === watchPartyModalState.pointerId) {
+    watchPartyModalState.header?.releasePointerCapture?.(event.pointerId);
+    watchPartyModalState.dragging = false;
+    watchPartyModalState.pointerId = null;
+    watchPartyModalState.ignoreHeaderClick = watchPartyModalState.dragMoved;
+    watchPartyModalState.dragMoved = false;
+    modal.classList.remove("dragging");
+    applyWatchPartyModalLayout();
+  }
+  if (watchPartyModalState.resizing && event.pointerId === watchPartyModalState.resizePointerId) {
+    watchPartyModalState.resizeHandle?.releasePointerCapture?.(event.pointerId);
+    watchPartyModalState.resizing = false;
+    watchPartyModalState.resizePointerId = null;
+    modal.classList.remove("resizing");
+    applyWatchPartyModalLayout();
+  }
+}
+
 function toggleInfowarsCollapse(force) {
   if (!infowarsModalState.visible) return;
   const nextState = typeof force === "boolean" ? force : !infowarsModalState.collapsed;
@@ -4889,12 +5179,18 @@ if (typeof document !== "undefined") {
   document.addEventListener("pointermove", handleInfowarsPointerMove, { passive: true });
   document.addEventListener("pointerup", handleInfowarsPointerUp, { passive: true });
   document.addEventListener("pointercancel", handleInfowarsPointerUp, { passive: true });
+  document.addEventListener("pointermove", handleWatchPartyPointerMove, { passive: true });
+  document.addEventListener("pointerup", handleWatchPartyPointerUp, { passive: true });
+  document.addEventListener("pointercancel", handleWatchPartyPointerUp, { passive: true });
 }
 
 if (typeof window !== "undefined") {
   window.addEventListener("resize", () => {
     if (infowarsModalState.visible) {
       applyInfowarsModalLayout();
+    }
+    if (watchPartyModalState.visible) {
+      applyWatchPartyModalLayout();
     }
   });
 
@@ -4936,6 +5232,7 @@ function completeRoomJoin(username, room, password) {
 
   setPsybinPlayerRoom(room);
   setInfowarsStreamRoom(room);
+  closeWatchPartyModal();
 
   appState.isAdmin = false;
   loadHiddenMessagesForRoom(room);
