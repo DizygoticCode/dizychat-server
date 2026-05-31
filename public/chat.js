@@ -120,6 +120,7 @@ const emojiPicker = document.getElementById("emoji-picker");
 let emojiPickerController = null;
 const leaveBtn = document.getElementById("leave-btn");
 const copyJoinLinkBtn = document.getElementById("copy-join-link");
+const watchPartyBtn = document.getElementById("watch-party-btn");
 const publicRoomList = document.getElementById("public-room-list");
 const themeLogos = Array.from(document.querySelectorAll("img.logo"));
 const userSidebar = document.getElementById("user-sidebar");
@@ -546,6 +547,34 @@ const infowarsCollapseBtn = document.getElementById("infowars-stream-collapse");
 const infowarsResizeHandle = infowarsModal?.querySelector?.(".stream-resize-handle") || null;
 const infowarsStreamFrame = document.getElementById("infowars-stream-frame");
 let infowarsStreamObserver = null;
+const watchPartyModalState = {
+  modal: null,
+  header: null,
+  title: null,
+  frame: null,
+  resizeHandle: null,
+  collapseBtn: null,
+  openLink: null,
+  visible: false,
+  collapsed: false,
+  dragging: false,
+  resizing: false,
+  pointerId: null,
+  resizePointerId: null,
+  dragOffsetX: 0,
+  dragOffsetY: 0,
+  resizeStartWidth: 0,
+  resizeStartHeight: 0,
+  resizeStartX: 0,
+  resizeStartY: 0,
+  dragMoved: false,
+  ignoreHeaderClick: false,
+  width: 760,
+  height: 520,
+  left: null,
+  top: null,
+  url: "",
+};
 
 const chromeToolbarState = {
   originalTitle: document.title || "DizyChat",
@@ -4598,6 +4627,268 @@ function updateInfowarsCollapseButton() {
   infowarsCollapseBtn.title = collapsed ? "Expand stream" : "Minimize stream";
 }
 
+const WATCH_PARTY_MODAL_MIN_WIDTH = 360;
+const WATCH_PARTY_MODAL_MIN_HEIGHT = 260;
+const WATCH_PARTY_MODAL_MARGIN = 12;
+const WATCH_PARTY_MODAL_HEADER_HEIGHT = 58;
+
+function getWatchPartyToolbarBottom() {
+  const rect = toolbar?.getBoundingClientRect?.();
+  if (!rect) return WATCH_PARTY_MODAL_MARGIN;
+  return Math.max(WATCH_PARTY_MODAL_MARGIN, Math.ceil(rect.bottom) + WATCH_PARTY_MODAL_MARGIN);
+}
+
+function getWatchPartyActiveHeight() {
+  return watchPartyModalState.collapsed ? WATCH_PARTY_MODAL_HEADER_HEIGHT : watchPartyModalState.height;
+}
+
+function ensureWatchPartyModal() {
+  if (watchPartyModalState.modal) return watchPartyModalState.modal;
+
+  const modal = document.createElement("div");
+  modal.id = "watch-party-modal";
+  modal.className = "stream-modal watch-party-modal";
+  modal.hidden = true;
+  modal.setAttribute("aria-hidden", "true");
+  modal.innerHTML = `
+    <div class="stream-modal-header watch-party-modal-header">
+      <div class="stream-modal-title">
+        <span aria-hidden="true">🎬</span>
+        <span class="watch-party-modal-title-text">Watch2Gether Party</span>
+      </div>
+      <div class="stream-modal-controls">
+        <a class="stream-modal-button watch-party-modal-open" href="#" target="_blank" rel="noopener noreferrer" title="Open in new tab" aria-label="Open Watch2Gether in a new tab">↗</a>
+        <button type="button" class="stream-modal-button watch-party-modal-collapse" title="Minimize watch party" aria-label="Minimize watch party">▾</button>
+        <button type="button" class="stream-modal-button watch-party-modal-close" title="Close watch party" aria-label="Close watch party">✕</button>
+      </div>
+    </div>
+    <div class="stream-modal-body watch-party-modal-body">
+      <iframe class="watch-party-modal-frame" title="Watch2Gether watch party" loading="lazy" allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media" allowfullscreen></iframe>
+    </div>
+    <div class="stream-resize-handle" aria-hidden="true"></div>
+  `;
+  document.body.appendChild(modal);
+
+  watchPartyModalState.modal = modal;
+  watchPartyModalState.header = modal.querySelector(".watch-party-modal-header");
+  watchPartyModalState.title = modal.querySelector(".watch-party-modal-title-text");
+  watchPartyModalState.frame = modal.querySelector(".watch-party-modal-frame");
+  watchPartyModalState.resizeHandle = modal.querySelector(".stream-resize-handle");
+  watchPartyModalState.collapseBtn = modal.querySelector(".watch-party-modal-collapse");
+  watchPartyModalState.openLink = modal.querySelector(".watch-party-modal-open");
+
+  const closeBtn = modal.querySelector(".watch-party-modal-close");
+  closeBtn?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    closeWatchPartyModal();
+  });
+  watchPartyModalState.collapseBtn?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleWatchPartyModalCollapse();
+  });
+  watchPartyModalState.header?.addEventListener("pointerdown", startWatchPartyModalDrag);
+  watchPartyModalState.header?.addEventListener("click", () => {
+    if (watchPartyModalState.ignoreHeaderClick) {
+      watchPartyModalState.ignoreHeaderClick = false;
+      return;
+    }
+    toggleWatchPartyModalCollapse();
+  });
+  watchPartyModalState.resizeHandle?.addEventListener("pointerdown", startWatchPartyModalResize);
+  return modal;
+}
+
+function updateWatchPartyModalCollapseButton() {
+  const btn = watchPartyModalState.collapseBtn;
+  if (!btn) return;
+  const collapsed = Boolean(watchPartyModalState.collapsed);
+  btn.textContent = collapsed ? "▴" : "▾";
+  btn.setAttribute("aria-label", collapsed ? "Expand watch party" : "Minimize watch party");
+  btn.title = collapsed ? "Expand watch party" : "Minimize watch party";
+}
+
+function applyWatchPartyModalLayout({ clampPosition = true } = {}) {
+  const modal = watchPartyModalState.modal;
+  if (!modal) return;
+
+  const maxWidth = Math.max(WATCH_PARTY_MODAL_MIN_WIDTH, window.innerWidth - (WATCH_PARTY_MODAL_MARGIN * 2));
+  const maxHeight = Math.max(WATCH_PARTY_MODAL_MIN_HEIGHT, window.innerHeight - getWatchPartyToolbarBottom() - WATCH_PARTY_MODAL_MARGIN);
+  const width = clampNumber(watchPartyModalState.width, WATCH_PARTY_MODAL_MIN_WIDTH, maxWidth);
+  const height = clampNumber(watchPartyModalState.height, WATCH_PARTY_MODAL_MIN_HEIGHT, maxHeight);
+  const activeHeight = watchPartyModalState.collapsed ? WATCH_PARTY_MODAL_HEADER_HEIGHT : height;
+  let left = Number.isFinite(watchPartyModalState.left) ? watchPartyModalState.left : null;
+  let top = Number.isFinite(watchPartyModalState.top) ? watchPartyModalState.top : null;
+  const minLeft = WATCH_PARTY_MODAL_MARGIN;
+  const maxLeft = Math.max(minLeft, window.innerWidth - width - WATCH_PARTY_MODAL_MARGIN);
+  const minTop = Math.max(WATCH_PARTY_MODAL_MARGIN, getWatchPartyToolbarBottom());
+  const maxTop = Math.max(minTop, window.innerHeight - activeHeight - WATCH_PARTY_MODAL_MARGIN);
+
+  if (left === null) left = clampNumber(window.innerWidth - width - (WATCH_PARTY_MODAL_MARGIN * 1.5), minLeft, maxLeft);
+  if (top === null) top = clampNumber(minTop, minTop, maxTop);
+  if (clampPosition) {
+    left = clampNumber(left, minLeft, maxLeft);
+    top = clampNumber(top, minTop, maxTop);
+  }
+
+  watchPartyModalState.width = width;
+  watchPartyModalState.height = height;
+  watchPartyModalState.left = left;
+  watchPartyModalState.top = top;
+  modal.style.width = `${width}px`;
+  modal.style.height = `${height}px`;
+  modal.style.left = `${left}px`;
+  modal.style.top = `${top}px`;
+  modal.classList.toggle("collapsed", Boolean(watchPartyModalState.collapsed));
+  modal.classList.toggle("dragging", Boolean(watchPartyModalState.dragging));
+  modal.classList.toggle("resizing", Boolean(watchPartyModalState.resizing));
+}
+
+function openWatchPartyModal(payload = {}) {
+  const watchUrl = typeof payload.watchUrl === "string" ? payload.watchUrl : "";
+  if (!watchUrl) {
+    showToast("Watch party link is missing.", "error");
+    return;
+  }
+
+  const modal = ensureWatchPartyModal();
+  watchPartyModalState.visible = true;
+  watchPartyModalState.collapsed = false;
+  watchPartyModalState.url = watchUrl;
+  const label = payload.sourceTitle || "Watch2Gether Party";
+  if (watchPartyModalState.title) watchPartyModalState.title.textContent = label;
+  if (watchPartyModalState.openLink) watchPartyModalState.openLink.href = watchUrl;
+  if (watchPartyModalState.frame?.getAttribute("src") !== watchUrl) {
+    watchPartyModalState.frame.src = watchUrl;
+  }
+  updateWatchPartyModalCollapseButton();
+  applyWatchPartyModalLayout({ clampPosition: true });
+  modal.hidden = false;
+  modal.setAttribute("aria-hidden", "false");
+  showToast("Watch party opened in chat", "success");
+}
+
+function closeWatchPartyModal() {
+  const modal = watchPartyModalState.modal;
+  if (!modal) return;
+  watchPartyModalState.visible = false;
+  watchPartyModalState.dragging = false;
+  watchPartyModalState.resizing = false;
+  watchPartyModalState.pointerId = null;
+  watchPartyModalState.resizePointerId = null;
+  modal.hidden = true;
+  modal.setAttribute("aria-hidden", "true");
+  modal.classList.remove("dragging", "resizing", "collapsed");
+  if (watchPartyModalState.frame) {
+    watchPartyModalState.frame.src = "about:blank";
+  }
+}
+
+function toggleWatchPartyModalCollapse(force) {
+  if (!watchPartyModalState.visible) return;
+  const nextState = typeof force === "boolean" ? force : !watchPartyModalState.collapsed;
+  if (nextState === watchPartyModalState.collapsed) return;
+  watchPartyModalState.collapsed = nextState;
+  updateWatchPartyModalCollapseButton();
+  applyWatchPartyModalLayout();
+}
+
+function startWatchPartyModalDrag(event) {
+  if (!watchPartyModalState.visible) return;
+  const isTouch = event.pointerType === "touch";
+  if (!isTouch && event.button !== 0) return;
+  const modal = ensureWatchPartyModal();
+  const rect = modal.getBoundingClientRect();
+  watchPartyModalState.dragging = true;
+  watchPartyModalState.pointerId = event.pointerId;
+  watchPartyModalState.dragOffsetX = event.clientX - rect.left;
+  watchPartyModalState.dragOffsetY = event.clientY - rect.top;
+  watchPartyModalState.dragMoved = false;
+  watchPartyModalState.ignoreHeaderClick = false;
+  modal.classList.add("dragging");
+  watchPartyModalState.header?.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+}
+
+function startWatchPartyModalResize(event) {
+  if (!watchPartyModalState.visible || watchPartyModalState.collapsed) return;
+  const isTouch = event.pointerType === "touch";
+  if (!isTouch && event.button !== 0) return;
+  const modal = ensureWatchPartyModal();
+  const rect = modal.getBoundingClientRect();
+  watchPartyModalState.resizing = true;
+  watchPartyModalState.resizePointerId = event.pointerId;
+  watchPartyModalState.resizeStartWidth = rect.width;
+  watchPartyModalState.resizeStartHeight = rect.height;
+  watchPartyModalState.resizeStartX = event.clientX;
+  watchPartyModalState.resizeStartY = event.clientY;
+  modal.classList.add("resizing");
+  watchPartyModalState.resizeHandle?.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+}
+
+function handleWatchPartyPointerMove(event) {
+  const modal = watchPartyModalState.modal;
+  if (!watchPartyModalState.visible || !modal) return;
+
+  if (watchPartyModalState.dragging && event.pointerId === watchPartyModalState.pointerId) {
+    const nextLeft = clampNumber(
+      event.clientX - watchPartyModalState.dragOffsetX,
+      WATCH_PARTY_MODAL_MARGIN,
+      Math.max(WATCH_PARTY_MODAL_MARGIN, window.innerWidth - watchPartyModalState.width - WATCH_PARTY_MODAL_MARGIN)
+    );
+    const nextTop = clampNumber(
+      event.clientY - watchPartyModalState.dragOffsetY,
+      getWatchPartyToolbarBottom(),
+      Math.max(getWatchPartyToolbarBottom(), window.innerHeight - getWatchPartyActiveHeight() - WATCH_PARTY_MODAL_MARGIN)
+    );
+    if (Math.abs(nextLeft - watchPartyModalState.left) > 1 || Math.abs(nextTop - watchPartyModalState.top) > 1) {
+      watchPartyModalState.dragMoved = true;
+    }
+    watchPartyModalState.left = nextLeft;
+    watchPartyModalState.top = nextTop;
+    modal.style.left = `${nextLeft}px`;
+    modal.style.top = `${nextTop}px`;
+  } else if (watchPartyModalState.resizing && event.pointerId === watchPartyModalState.resizePointerId) {
+    const maxWidth = Math.max(WATCH_PARTY_MODAL_MIN_WIDTH, window.innerWidth - watchPartyModalState.left - WATCH_PARTY_MODAL_MARGIN);
+    const maxHeight = Math.max(WATCH_PARTY_MODAL_MIN_HEIGHT, window.innerHeight - watchPartyModalState.top - WATCH_PARTY_MODAL_MARGIN);
+    const width = clampNumber(
+      watchPartyModalState.resizeStartWidth + (event.clientX - watchPartyModalState.resizeStartX),
+      WATCH_PARTY_MODAL_MIN_WIDTH,
+      maxWidth
+    );
+    const height = clampNumber(
+      watchPartyModalState.resizeStartHeight + (event.clientY - watchPartyModalState.resizeStartY),
+      WATCH_PARTY_MODAL_MIN_HEIGHT,
+      maxHeight
+    );
+    watchPartyModalState.width = width;
+    watchPartyModalState.height = height;
+    modal.style.width = `${width}px`;
+    modal.style.height = `${height}px`;
+  }
+}
+
+function handleWatchPartyPointerUp(event) {
+  const modal = watchPartyModalState.modal;
+  if (!modal) return;
+  if (watchPartyModalState.dragging && event.pointerId === watchPartyModalState.pointerId) {
+    watchPartyModalState.header?.releasePointerCapture?.(event.pointerId);
+    watchPartyModalState.dragging = false;
+    watchPartyModalState.pointerId = null;
+    watchPartyModalState.ignoreHeaderClick = watchPartyModalState.dragMoved;
+    watchPartyModalState.dragMoved = false;
+    modal.classList.remove("dragging");
+    applyWatchPartyModalLayout();
+  }
+  if (watchPartyModalState.resizing && event.pointerId === watchPartyModalState.resizePointerId) {
+    watchPartyModalState.resizeHandle?.releasePointerCapture?.(event.pointerId);
+    watchPartyModalState.resizing = false;
+    watchPartyModalState.resizePointerId = null;
+    modal.classList.remove("resizing");
+    applyWatchPartyModalLayout();
+  }
+}
+
 function toggleInfowarsCollapse(force) {
   if (!infowarsModalState.visible) return;
   const nextState = typeof force === "boolean" ? force : !infowarsModalState.collapsed;
@@ -4888,12 +5179,18 @@ if (typeof document !== "undefined") {
   document.addEventListener("pointermove", handleInfowarsPointerMove, { passive: true });
   document.addEventListener("pointerup", handleInfowarsPointerUp, { passive: true });
   document.addEventListener("pointercancel", handleInfowarsPointerUp, { passive: true });
+  document.addEventListener("pointermove", handleWatchPartyPointerMove, { passive: true });
+  document.addEventListener("pointerup", handleWatchPartyPointerUp, { passive: true });
+  document.addEventListener("pointercancel", handleWatchPartyPointerUp, { passive: true });
 }
 
 if (typeof window !== "undefined") {
   window.addEventListener("resize", () => {
     if (infowarsModalState.visible) {
       applyInfowarsModalLayout();
+    }
+    if (watchPartyModalState.visible) {
+      applyWatchPartyModalLayout();
     }
   });
 
@@ -4935,6 +5232,7 @@ function completeRoomJoin(username, room, password) {
 
   setPsybinPlayerRoom(room);
   setInfowarsStreamRoom(room);
+  closeWatchPartyModal();
 
   appState.isAdmin = false;
   loadHiddenMessagesForRoom(room);
@@ -5125,6 +5423,317 @@ if (copyJoinLinkBtn) {
     }
   });
 }
+
+// ------------------- Watch2Gether Watch Parties -------------------
+(() => {
+  if (!watchPartyBtn) return;
+
+  const state = {
+    configured: false,
+    statusLoaded: false,
+    loading: false,
+    activeCard: null,
+  };
+
+  const panel = document.createElement("div");
+  panel.id = "watch-party-panel";
+  panel.innerHTML = `
+    <div class="watch-party-panel-header">
+      <div>
+        <strong>Start Watch2Gether</strong>
+        <p>Paste a video or music link and DizyChat will create a synced W2G room.</p>
+      </div>
+      <button type="button" class="watch-party-close" aria-label="Close watch party panel">✕</button>
+    </div>
+    <label class="watch-party-field">
+      <span>Video or audio URL</span>
+      <input type="url" id="watch-party-url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" />
+    </label>
+    <label class="watch-party-field">
+      <span>Optional title</span>
+      <input type="text" id="watch-party-title" maxlength="160" placeholder="Movie night / DJ set / stream title" autocomplete="off" />
+    </label>
+    <div class="watch-party-actions">
+      <button type="button" class="watch-party-create">Create W2G Room</button>
+      <button type="button" class="watch-party-cancel">Cancel</button>
+    </div>
+    <p class="watch-party-help">Your W2G API key stays on the server. Viewers open the generated Watch2Gether room link.</p>
+  `;
+  document.body.appendChild(panel);
+
+  const urlInput = panel.querySelector("#watch-party-url");
+  const titleInput = panel.querySelector("#watch-party-title");
+  const createBtn = panel.querySelector(".watch-party-create");
+  const closeBtns = panel.querySelectorAll(".watch-party-close, .watch-party-cancel");
+
+  const closePanel = () => {
+    panel.style.display = "none";
+    watchPartyBtn.focus();
+  };
+
+  const positionPanel = () => {
+    const rect = watchPartyBtn.getBoundingClientRect();
+    const width = Math.min(380, Math.max(300, window.innerWidth - 20));
+    panel.style.width = `${width}px`;
+    panel.style.left = `${Math.max(10, Math.min(rect.left, window.innerWidth - width - 10))}px`;
+    panel.style.top = `${Math.min(rect.bottom + 10, window.innerHeight - 20)}px`;
+  };
+
+  const setButtonState = () => {
+    const hasRoom = Boolean(window.currentRoom);
+    watchPartyBtn.disabled = !hasRoom || state.loading;
+    watchPartyBtn.classList.toggle("is-unconfigured", state.statusLoaded && !state.configured);
+    watchPartyBtn.title = !hasRoom
+      ? "Join a room to start a watch party"
+      : state.loading
+        ? "Creating Watch2Gether room…"
+        : !state.statusLoaded
+          ? "Start Watch2Gether watch party (server setup will be checked when opened)"
+          : !state.configured
+            ? "Watch2Gether API key was not detected; click to retry/check setup"
+            : "Start Watch2Gether watch party";
+  };
+
+  const loadStatus = async ({ showErrors = false } = {}) => {
+    try {
+      const response = await fetch("/api/watch-party/status", { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`Watch party status failed: ${response.status}`);
+      }
+      const data = await response.json().catch(() => ({}));
+      state.configured = Boolean(data?.configured);
+      return data;
+    } catch (err) {
+      console.warn("[WatchParty] Unable to load status", err);
+      state.configured = false;
+      if (showErrors) {
+        showToast("Could not check Watch2Gether setup. Try refreshing after Render redeploys.", "error");
+      }
+      return null;
+    } finally {
+      state.statusLoaded = true;
+      setButtonState();
+    }
+  };
+
+  const normalizeUrl = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    try {
+      const parsed = new URL(raw);
+      if (!["http:", "https:"].includes(parsed.protocol)) return "";
+      return parsed.toString();
+    } catch {
+      return "";
+    }
+  };
+
+  const renderCard = (payload = {}, { active = false } = {}) => {
+    if (!messages || !isViewingChat) return;
+    const watchUrl = typeof payload.watchUrl === "string" ? payload.watchUrl : "";
+    if (!watchUrl) return;
+
+    if (state.activeCard?.parentNode) {
+      state.activeCard.remove();
+      state.activeCard = null;
+    }
+
+    const card = document.createElement("div");
+    card.className = "watch-party-card";
+    card.dataset.sessionId = payload.sessionId || "";
+
+    const title = payload.sourceTitle || "Watch2Gether room";
+    const sourceUrl = payload.sourceUrl || "";
+    const createdBy = payload.createdBy || "Someone";
+    const createdAt = payload.createdAt ? new Date(payload.createdAt).toLocaleTimeString() : "now";
+
+    const header = document.createElement("div");
+    header.className = "watch-party-card-header";
+    header.innerHTML = `<span aria-hidden="true">🎬</span><strong>${active ? "Active watch party" : "Watch party started"}</strong>`;
+
+    const body = document.createElement("div");
+    body.className = "watch-party-card-body";
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "watch-party-card-title";
+    titleEl.textContent = title;
+
+    const meta = document.createElement("div");
+    meta.className = "watch-party-card-meta";
+    meta.textContent = `${createdBy} • ${createdAt}`;
+
+    body.appendChild(titleEl);
+    body.appendChild(meta);
+    if (sourceUrl) {
+      const source = document.createElement("a");
+      source.href = sourceUrl;
+      source.target = "_blank";
+      source.rel = "noopener noreferrer";
+      source.className = "watch-party-source";
+      source.textContent = "Source link";
+      body.appendChild(source);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "watch-party-card-actions";
+
+    const join = document.createElement("button");
+    join.type = "button";
+    join.className = "watch-party-join";
+    join.textContent = "Open in chat";
+    join.addEventListener("click", () => openWatchPartyModal(payload));
+
+    const external = document.createElement("a");
+    external.href = watchUrl;
+    external.target = "_blank";
+    external.rel = "noopener noreferrer";
+    external.textContent = "New tab";
+
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.textContent = "Copy link";
+    copy.addEventListener("click", async () => {
+      const copied = await copyTextToClipboard(watchUrl);
+      showToast(copied ? "Watch party link copied" : "Unable to copy watch party link", copied ? "success" : "error");
+    });
+
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.textContent = "Clear";
+    clear.addEventListener("click", () => {
+      socket.emit("watch-party:external-clear", { room: window.currentRoom });
+    });
+
+    actions.appendChild(join);
+    actions.appendChild(external);
+    actions.appendChild(copy);
+    actions.appendChild(clear);
+    card.appendChild(header);
+    card.appendChild(body);
+    card.appendChild(actions);
+
+    const sentinel = ensureMessagesEndSentinel();
+    if (sentinel) {
+      messages.insertBefore(card, sentinel);
+    } else {
+      messages.appendChild(card);
+    }
+    state.activeCard = card;
+    scrollMessagesToBottom({ behavior: "smooth", force: true });
+  };
+
+  const createRoom = async () => {
+    if (!window.currentRoom || !window.currentUser) {
+      showToast("Join a room before starting a watch party.", "warn");
+      return;
+    }
+
+    if (!state.configured) {
+      await loadStatus({ showErrors: true });
+    }
+
+    if (!state.configured) {
+      showToast("Watch2Gether is not configured yet. Verify W2G_API_KEY is saved and redeployed in Render.", "error");
+      return;
+    }
+
+    const url = normalizeUrl(urlInput?.value);
+    if (!url) {
+      showToast("Paste a valid http:// or https:// URL.", "warn");
+      urlInput?.focus();
+      return;
+    }
+
+    state.loading = true;
+    createBtn.disabled = true;
+    createBtn.textContent = "Creating…";
+    setButtonState();
+    socket.emit("watch-party:w2g-create", {
+      room: window.currentRoom,
+      url,
+      title: titleInput?.value || "",
+    });
+  };
+
+  watchPartyBtn.addEventListener("click", () => {
+    if (panel.style.display === "block") {
+      closePanel();
+      return;
+    }
+    if (!window.currentRoom) {
+      showToast("Join a room before starting a watch party.", "warn");
+      return;
+    }
+    if (!state.statusLoaded || !state.configured) {
+      loadStatus();
+    }
+    positionPanel();
+    panel.style.display = "block";
+    urlInput?.focus();
+  });
+
+  createBtn?.addEventListener("click", createRoom);
+  [urlInput, titleInput].filter(Boolean).forEach((inputEl) => {
+    inputEl.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        createRoom();
+      } else if (event.key === "Escape") {
+        closePanel();
+      }
+    });
+  });
+  closeBtns.forEach((btn) => btn.addEventListener("click", closePanel));
+  window.addEventListener("resize", () => {
+    if (panel.style.display === "block") positionPanel();
+  });
+
+  socket.on("watch-party:external-created", (payload = {}) => {
+    if (payload.room && payload.room !== window.currentRoom) return;
+    const wasCreating = state.loading;
+    state.loading = false;
+    createBtn.disabled = false;
+    createBtn.textContent = "Create W2G Room";
+    setButtonState();
+    if (wasCreating) closePanel();
+    renderCard(payload);
+    if (wasCreating) {
+      openWatchPartyModal(payload);
+    } else {
+      showToast("Watch party started", "success");
+    }
+  });
+
+  socket.on("watch-party:external-active", (payload = {}) => {
+    if (payload.room && payload.room !== window.currentRoom) return;
+    renderCard(payload, { active: true });
+  });
+
+  socket.on("watch-party:external-cleared", ({ room } = {}) => {
+    if (room && room !== window.currentRoom) return;
+    if (state.activeCard?.parentNode) state.activeCard.remove();
+    state.activeCard = null;
+    closeWatchPartyModal();
+    showToast("Watch party cleared", "info");
+  });
+
+  socket.on("watch-party:error", ({ room, message } = {}) => {
+    if (room && room !== window.currentRoom) return;
+    state.loading = false;
+    createBtn.disabled = false;
+    createBtn.textContent = "Create W2G Room";
+    setButtonState();
+    showToast(message || "Watch party error", "error");
+  });
+
+  socket.on("join room success", () => {
+    setButtonState();
+    loadStatus();
+  });
+  socket.on("disconnect", setButtonState);
+  setButtonState();
+  loadStatus();
+})();
 
 // ------------------- Sound Notifications -------------------
 initSoundNotifications();
