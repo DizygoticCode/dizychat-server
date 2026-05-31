@@ -4078,3 +4078,193 @@ body:not(.dark) .soundboard-status--loading {
 .toast-container .toast:nth-child(5) {
   animation-delay: 0.6s;
 }
+
+/* Watch2Gether watch-party launcher */
+.header-right button#watch-party-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--toolbar-link-padding-y) var(--toolbar-link-padding-x);
+  background: linear-gradient(120deg, rgba(123, 47, 247, 0.22), rgba(236, 72, 153, 0.18));
+  border-color: rgba(187, 134, 252, 0.45);
+  color: var(--text-primary);
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  line-height: 1.1;
+}
+
+.header-right button#watch-party-btn .icon {
+  font-size: 1.1em;
+  line-height: 1;
+}
+
+.header-right button#watch-party-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(236, 72, 153, 0.25);
+}
+
+.header-right button#watch-party-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+body:not(.dark) .header-right button#watch-party-btn {
+  background: linear-gradient(120deg, rgba(123, 47, 247, 0.12), rgba(236, 72, 153, 0.1));
+  border-color: rgba(123, 47, 247, 0.24);
+  color: #3b0764;
+}
+
+#watch-party-panel {
+  position: fixed;
+  display: none;
+  max-width: calc(100vw - 20px);
+  padding: 14px;
+  border: 1px solid rgba(187, 134, 252, 0.35);
+  border-radius: 16px;
+  background: rgba(18, 18, 24, 0.96);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.35), 0 0 18px rgba(187, 134, 252, 0.24);
+  color: #f5f0ff;
+  z-index: 1700;
+}
+
+.watch-party-panel-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.watch-party-panel-header strong {
+  display: block;
+  font-size: 1rem;
+  margin-bottom: 4px;
+}
+
+.watch-party-panel-header p,
+.watch-party-help {
+  margin: 0;
+  color: rgba(245, 240, 255, 0.72);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.watch-party-close {
+  align-self: flex-start;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  width: 30px;
+  height: 30px;
+  cursor: pointer;
+}
+
+.watch-party-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+  color: rgba(245, 240, 255, 0.86);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.watch-party-field input {
+  width: 100%;
+  border: 1px solid rgba(187, 134, 252, 0.3);
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: rgba(0, 0, 0, 0.28);
+  color: #fff;
+  outline: none;
+}
+
+.watch-party-field input:focus {
+  border-color: rgba(236, 72, 153, 0.8);
+  box-shadow: 0 0 0 2px rgba(236, 72, 153, 0.16);
+}
+
+.watch-party-actions {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0 10px;
+}
+
+.watch-party-actions button,
+.watch-party-card-actions button,
+.watch-party-card-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(187, 134, 252, 0.35);
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.watch-party-actions .watch-party-create,
+.watch-party-card-actions .watch-party-join {
+  background: linear-gradient(120deg, #7b2ff7, #ec4899);
+  border-color: transparent;
+}
+
+.watch-party-actions button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.watch-party-card {
+  margin: 10px 0;
+  padding: 14px;
+  border: 1px solid rgba(236, 72, 153, 0.32);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(123, 47, 247, 0.18), rgba(236, 72, 153, 0.12));
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+  color: var(--text-primary);
+}
+
+.watch-party-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.watch-party-card-title {
+  font-weight: 700;
+  margin-bottom: 3px;
+}
+
+.watch-party-card-meta,
+.watch-party-source {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.watch-party-source {
+  display: inline-block;
+  margin-top: 6px;
+}
+
+.watch-party-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+@media (max-width: 640px) {
+  #chat-container .header-right #watch-party-btn .label {
+    display: none;
+  }
+
+  .watch-party-actions,
+  .watch-party-card-actions {
+    flex-direction: column;
+  }
+}
