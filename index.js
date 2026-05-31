@@ -2171,14 +2171,6 @@ const buildW2gRoomUrl = (streamkey) => {
   return `${W2G_ROOM_BASE_URL.replace(/\/+$/, '')}/${encodeURIComponent(cleanKey)}`;
 };
 
-const buildW2gEmbedUrl = (streamkey) => {
-  const cleanKey = String(streamkey || '').trim().replace(/[^a-z0-9_-]/gi, '');
-  if (!cleanKey) return '';
-  const embedUrl = new URL('https://w2g.tv/embed');
-  embedUrl.searchParams.set('room_id', cleanKey);
-  return embedUrl.toString();
-};
-
 const createWatch2GetherRoom = async ({ sourceUrl }) => {
   if (!W2G_API_KEY) {
     const error = new Error('Watch2Gether API key is not configured.');
@@ -2530,7 +2522,6 @@ io.on('connection', socket => {
         sourceUrl,
         sourceTitle: safeTitle,
         watchUrl: result.roomUrl,
-        embedUrl: buildW2gEmbedUrl(result.streamkey),
         streamkey: result.streamkey,
         createdBy: socket.username || 'Someone',
         createdAt: Date.now(),
