@@ -185,17 +185,16 @@ const parseVoiceCallsEnabled = () => {
 };
 const ENABLE_VOICE_CALLS = parseVoiceCallsEnabled();
 const CALL_TOKEN_TTL_SECONDS = 10 * 60;
-const MUSIC_MODE_AUDIO_BITRATE = 510000;
+const MUSIC_MODE_AUDIO_BITRATE = 320000;
 const MUSIC_MODE_AUDIO_SETTINGS = Object.freeze({
   channelCount: 2,
-  sampleRate: 48000,
-  sampleSize: 24,
   echoCancellation: false,
   noiseSuppression: false,
   autoGainControl: false,
   audioBitrate: MUSIC_MODE_AUDIO_BITRATE,
   dtx: false,
   red: false,
+  forceStereo: true,
 });
 const CALL_EVENT_WINDOW_MS = 4000;
 const CALL_EVENT_MAX_PER_WINDOW = 30;

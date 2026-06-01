@@ -7674,17 +7674,16 @@ if (voiceBtn) {
     return Math.min(1, Math.max(0, numeric));
   };
 
-  const MUSIC_MODE_AUDIO_BITRATE = 510000;
+  const MUSIC_MODE_AUDIO_BITRATE = 320000;
   const MUSIC_MODE_FALLBACK_AUDIO_SETTINGS = Object.freeze({
     channelCount: 2,
-    sampleRate: 48000,
-    sampleSize: 24,
     echoCancellation: false,
     noiseSuppression: false,
     autoGainControl: false,
     audioBitrate: MUSIC_MODE_AUDIO_BITRATE,
     dtx: false,
     red: false,
+    forceStereo: true,
   });
 
   const callState = {
@@ -7965,8 +7964,6 @@ if (voiceBtn) {
     if (musicSettings) {
       return {
         channelCount: musicSettings.channelCount,
-        sampleRate: musicSettings.sampleRate,
-        sampleSize: musicSettings.sampleSize,
         echoCancellation: musicSettings.echoCancellation,
         noiseSuppression: musicSettings.noiseSuppression,
         autoGainControl: musicSettings.autoGainControl,
@@ -7982,6 +7979,8 @@ if (voiceBtn) {
     options.audioBitrate = musicSettings.audioBitrate;
     options.dtx = Boolean(musicSettings.dtx);
     options.red = Boolean(musicSettings.red);
+    options.forceStereo = musicSettings.forceStereo !== false;
+    options.audioPreset = { maxBitrate: musicSettings.audioBitrate };
     return options;
   };
 
