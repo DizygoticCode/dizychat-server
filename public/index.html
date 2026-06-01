@@ -17,6 +17,10 @@
       box-sizing: border-box;
     }
 
+    html {
+      scroll-behavior: smooth;
+    }
+
     body {
       margin: 0;
       min-height: 100vh;
@@ -57,6 +61,8 @@
 
     .nav-links {
       display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
       gap: 20px;
       font-size: 0.95rem;
     }
@@ -79,11 +85,13 @@
       margin-top: clamp(48px, 9vw, 96px);
     }
 
-    .hero-eyebrow {
+    .hero-eyebrow,
+    .section-eyebrow {
       letter-spacing: 0.24em;
       text-transform: uppercase;
       color: rgba(248, 250, 252, 0.7);
       font-size: 0.8rem;
+      font-weight: 700;
     }
 
     h1 {
@@ -92,10 +100,14 @@
       color: #f8fafc;
     }
 
+    h2 {
+      color: #f8fafc;
+    }
+
     .lead {
       font-size: 1.1rem;
       line-height: 1.7;
-      max-width: 48ch;
+      max-width: 52ch;
       color: rgba(226, 232, 240, 0.9);
     }
 
@@ -148,7 +160,6 @@
 
     .hero-card h2 {
       margin: 0 0 16px;
-      color: #f8fafc;
     }
 
     .stats {
@@ -169,29 +180,189 @@
       color: #f8fafc;
     }
 
-    section.features {
+    .section-heading {
       margin-top: clamp(64px, 12vw, 120px);
+      max-width: 780px;
+    }
+
+    .section-heading h2 {
+      font-size: clamp(2rem, 4vw, 2.7rem);
+      margin: 12px 0 10px;
+    }
+
+    .section-heading p {
+      color: rgba(226, 232, 240, 0.84);
+      font-size: 1.05rem;
+      line-height: 1.7;
+      margin: 0;
+    }
+
+    section.features,
+    section.capabilities,
+    section.live-tools {
+      margin-top: 28px;
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 24px;
     }
 
-    .feature-card {
+    .feature-card,
+    .capability-card,
+    .live-tool-card,
+    .quickstart-card {
       background: rgba(15, 23, 42, 0.6);
       border: 1px solid rgba(148, 163, 184, 0.25);
       border-radius: 20px;
       padding: 20px;
+    }
+
+    .feature-card {
       min-height: 180px;
     }
 
-    .feature-card h3 {
+    .feature-card h3,
+    .capability-card h3,
+    .live-tool-card h3,
+    .quickstart-card h3 {
       margin-top: 0;
       color: #f8fafc;
     }
 
-    .feature-card p {
+    .feature-card p,
+    .capability-card p,
+    .live-tool-card p,
+    .quickstart-card p,
+    .quickstart-card li {
       color: rgba(226, 232, 240, 0.85);
       line-height: 1.5;
+    }
+
+    .capability-card,
+    .live-tool-card {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 210px;
+    }
+
+    .capability-icon {
+      display: inline-grid;
+      place-items: center;
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(168, 85, 247, 0.28), rgba(14, 165, 233, 0.18));
+      color: #f8fafc;
+      font-size: 1.35rem;
+    }
+
+    .capability-card p,
+    .live-tool-card p {
+      margin: 0;
+    }
+
+    .live-tools-heading {
+      margin-top: clamp(56px, 8vw, 96px);
+    }
+
+    .pill-badge,
+    .info-pill {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid rgba(125, 211, 252, 0.35);
+      border-radius: 999px;
+      background: rgba(14, 165, 233, 0.12);
+      color: #bae6fd;
+      font-size: 0.78rem;
+      font-weight: 800;
+    }
+
+    .pill-badge {
+      align-self: flex-start;
+      padding: 6px 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .info-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: auto;
+    }
+
+    .info-pill {
+      padding: 7px 10px;
+      color: rgba(226, 232, 240, 0.9);
+      background: rgba(15, 23, 42, 0.62);
+      border-color: rgba(148, 163, 184, 0.28);
+      font-weight: 700;
+    }
+
+    .quickstart {
+      margin-top: clamp(56px, 8vw, 96px);
+      display: grid;
+      grid-template-columns: minmax(240px, 0.85fr) minmax(280px, 1.15fr);
+      gap: 28px;
+      align-items: stretch;
+    }
+
+    .quickstart-intro {
+      background: linear-gradient(160deg, rgba(168, 85, 247, 0.2), rgba(14, 165, 233, 0.12));
+      border: 1px solid rgba(168, 85, 247, 0.3);
+      border-radius: 28px;
+      padding: clamp(24px, 5vw, 36px);
+    }
+
+    .quickstart-intro h2 {
+      font-size: clamp(2rem, 4vw, 2.6rem);
+      margin: 12px 0;
+    }
+
+    .quickstart-intro p {
+      color: rgba(226, 232, 240, 0.88);
+      line-height: 1.7;
+    }
+
+    .quickstart-steps {
+      display: grid;
+      gap: 16px;
+      counter-reset: quickstart;
+    }
+
+    .quickstart-card {
+      position: relative;
+      padding-left: 72px;
+      min-height: 136px;
+    }
+
+    .quickstart-card::before {
+      counter-increment: quickstart;
+      content: counter(quickstart);
+      position: absolute;
+      left: 20px;
+      top: 22px;
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(120deg, #a855f7, #ec4899);
+      color: #fff;
+      font-weight: 800;
+    }
+
+    .quickstart-card h3 {
+      margin-bottom: 8px;
+    }
+
+    .quickstart-card p,
+    .quickstart-card ul {
+      margin: 0;
+    }
+
+    .quickstart-card ul {
+      padding-left: 18px;
     }
 
     .cta-panel {
@@ -203,6 +374,13 @@
       text-align: center;
     }
 
+    .cta-panel p {
+      color: rgba(226, 232, 240, 0.85);
+      line-height: 1.6;
+      margin-inline: auto;
+      max-width: 62ch;
+    }
+
     footer {
       margin-top: auto;
       padding-top: 40px;
@@ -211,10 +389,27 @@
       text-align: center;
     }
 
+    code {
+      color: #fbcfe8;
+      background: rgba(236, 72, 153, 0.12);
+      border-radius: 6px;
+      padding: 2px 5px;
+    }
+
+    @media (max-width: 800px) {
+      .quickstart {
+        grid-template-columns: 1fr;
+      }
+    }
+
     @media (max-width: 600px) {
       header {
         flex-direction: column;
         align-items: flex-start;
+      }
+
+      .nav-links {
+        justify-content: flex-start;
       }
 
       .hero-actions {
@@ -227,6 +422,11 @@
         width: 100%;
         text-align: center;
       }
+
+      .quickstart-card {
+        padding-left: 20px;
+        padding-top: 70px;
+      }
     }
   </style>
 </head>
@@ -238,8 +438,10 @@
         <img src="/logo.svg" alt="DizyChat logo" />
         <span>DizyChat</span>
       </a>
-      <nav class="nav-links">
+      <nav class="nav-links" aria-label="Main navigation">
         <a href="#features">Features</a>
+        <a href="#live-tools">Live tools</a>
+        <a href="#quickstart">Quick start</a>
         <a href="https://github.com/DizygoticCode/dizychat-server" target="_blank" rel="noreferrer">GitHub</a>
       </nav>
     </header>
@@ -249,8 +451,9 @@
         <div class="hero-eyebrow">Curated real-time communities</div>
         <h1>Spin up private or public rooms with serious vibes.</h1>
         <p class="lead">
-          DizyChat keeps the chaos organized with live moderation tools, per-room audio streams,
-          and community-first controls. Give guests a branded entry point before they drop into the chat.
+          DizyChat keeps the chaos organized with live moderation tools, secure media sharing,
+          room-aware presence, and broadcast companions. Give guests a polished front door before
+          they drop into the chat, radio room, watch party, or community lobby.
         </p>
         <div class="hero-actions">
           <button class="primary-btn" type="button" onclick="window.location.href='/login'">
@@ -271,38 +474,181 @@
           </div>
           <div class="stat">
             <div class="stat-value">24/7</div>
-            <p>rooms stay live thanks to resilient socket infrastructure.</p>
+            <p>Rooms stay live with resilient sockets, persisted history, and presence updates.</p>
           </div>
           <div class="stat">
             <div class="stat-value">∞</div>
-            <p>emoji, GIF, and soundboard combos to keep energy up.</p>
+            <p>Emoji, GIF, voice note, upload, and soundboard combos keep the energy up.</p>
           </div>
         </div>
       </div>
     </main>
 
-    <section class="features" id="features">
+    <div class="section-heading" id="features">
+      <div class="section-eyebrow">Everything in one room</div>
+      <h2>More than chat: DizyChat is a community control panel.</h2>
+      <p>
+        The landing page still keeps the original dark, glowing style, but now it introduces the
+        richer experience waiting behind the lobby: media-safe uploads, live entertainment tools,
+        searchable history, and host-grade moderation.
+      </p>
+    </div>
+
+    <section class="features" aria-label="Core DizyChat feature highlights">
       <article class="feature-card">
         <h3>Instant onboarding</h3>
         <p>Create a lobby, set a password (or keep it public), and share the invite link—all without touching a dashboard.</p>
       </article>
       <article class="feature-card">
         <h3>Broadcast ready</h3>
-        <p>Drop in live streams or the Psybin Radio player so every room can vibe to the same soundtrack.</p>
+        <p>Drop in live streams, Rumble embeds, Watch2Gether rooms, or the Psybin Radio player so everyone can vibe together.</p>
       </article>
       <article class="feature-card">
         <h3>Moderator superpowers</h3>
-        <p>Star, pin, purge, or silence straight from the chat window. Role-aware tools keep chaos under control.</p>
+        <p>Announce, pin, purge, mute, block, ban, or silence straight from chat. Role-aware tools keep chaos under control.</p>
       </article>
       <article class="feature-card">
         <h3>Apps, desktop, mobile</h3>
-        <p>The login at <code>/login</code> works on every device—including the native builds driven by this server.</p>
+        <p>The login at <code>/login</code> works on every device—including native builds driven by this server.</p>
       </article>
+    </section>
+
+    <section class="capabilities" aria-label="Expanded DizyChat capabilities">
+      <article class="capability-card">
+        <span class="capability-icon" aria-hidden="true">💬</span>
+        <h3>Rich conversations</h3>
+        <p>Thread replies, edit or delete messages, react with emoji, star favorites, pin important posts, and search across history.</p>
+      </article>
+      <article class="capability-card">
+        <span class="capability-icon" aria-hidden="true">🛡️</span>
+        <h3>Safer uploads</h3>
+        <p>Share images, audio, video, documents, archives, and voice notes with type checks, cleanup, and optional antivirus scanning.</p>
+      </article>
+      <article class="capability-card">
+        <span class="capability-icon" aria-hidden="true">🎛️</span>
+        <h3>Room energy tools</h3>
+        <p>Open the Tenor GIF browser, searchable meme soundboard, quick emoji panel, and persistent sound alerts from the composer.</p>
+      </article>
+      <article class="capability-card">
+        <span class="capability-icon" aria-hidden="true">📻</span>
+        <h3>Live listening</h3>
+        <p>Psybin Radio shows now-playing metadata with play, pause, mute, volume, and reconnect controls right inside its room.</p>
+      </article>
+      <article class="capability-card">
+        <span class="capability-icon" aria-hidden="true">🎨</span>
+        <h3>Personal comfort</h3>
+        <p>Visitors can keep light or dark mode, compact or comfortable density, notification preferences, and room choices across sessions.</p>
+      </article>
+      <article class="capability-card">
+        <span class="capability-icon" aria-hidden="true">🔗</span>
+        <h3>Preview-friendly links</h3>
+        <p>OpenGraph previews, direct GIF conversion, and responsive Rumble embeds make shared links useful before anyone clicks away.</p>
+      </article>
+    </section>
+
+    <div class="section-heading live-tools-heading" id="live-tools">
+      <div class="section-eyebrow">Live together</div>
+      <h2>Jam, call, and watch without leaving the room.</h2>
+      <p>
+        DizyChat rooms double as a launchpad for live performance, webcam hangouts,
+        and synced watch parties—without introducing a second landing-page design.
+      </p>
+    </div>
+
+    <section class="live-tools" aria-label="Live room tools">
+      <article class="live-tool-card">
+        <span class="capability-icon" aria-hidden="true">🎸</span>
+        <span class="pill-badge">Jam band ready</span>
+        <h3>Low-latency live jam sessions</h3>
+        <p>
+          Launch room-based jam sessions with JackTrip for hosted musician studios or
+          SonoBus as a free peer-to-peer fallback, while keeping band coordination in chat.
+        </p>
+        <div class="info-pills" aria-label="Jam session highlights">
+          <span class="info-pill">Room session names</span>
+          <span class="info-pill">JackTrip + SonoBus</span>
+          <span class="info-pill">Headphone setup tips</span>
+          <span class="info-pill">Audio-interface friendly</span>
+        </div>
+      </article>
+
+      <article class="live-tool-card">
+        <span class="capability-icon" aria-hidden="true">🎥</span>
+        <span class="pill-badge">LiveKit calls</span>
+        <h3>Per-room voice and webcam conferencing</h3>
+        <p>
+          Start a LiveKit-powered call in the current room, add or stop webcam video,
+          and choose Music mode before joining for cleaner instrument and vocal audio.
+        </p>
+        <div class="info-pills" aria-label="LiveKit call highlights">
+          <span class="info-pill">Room-scoped tokens</span>
+          <span class="info-pill">Voice + webcam</span>
+          <span class="info-pill">Music mode toggle</span>
+          <span class="info-pill">Echo processing control</span>
+        </div>
+      </article>
+
+      <article class="live-tool-card">
+        <span class="capability-icon" aria-hidden="true">🍿</span>
+        <span class="pill-badge">Watch parties</span>
+        <h3>Watch2Gether rooms from chat</h3>
+        <p>
+          Paste a video URL to create a synced Watch2Gether room, share the join card
+          with everyone in the DizyChat room, and clear it when the host wraps up.
+        </p>
+        <div class="info-pills" aria-label="Watch2Gether highlights">
+          <span class="info-pill">Synced external room</span>
+          <span class="info-pill">Server-side API key</span>
+          <span class="info-pill">Late-joiner card</span>
+          <span class="info-pill">Host/admin cleanup</span>
+        </div>
+      </article>
+    </section>
+
+    <section class="quickstart" id="quickstart" aria-labelledby="quickstart-title">
+      <div class="quickstart-intro">
+        <div class="section-eyebrow">First visit?</div>
+        <h2 id="quickstart-title">Quick start for new users</h2>
+        <p>
+          DizyChat is designed to feel familiar in seconds. Pick a room, introduce yourself,
+          and use the composer tools as your community gets moving.
+        </p>
+        <div class="hero-actions">
+          <button class="primary-btn" type="button" onclick="window.location.href='/login'">
+            Start chatting
+          </button>
+        </div>
+      </div>
+      <div class="quickstart-steps">
+        <article class="quickstart-card">
+          <h3>Enter your name and room</h3>
+          <p>Head to <code>/login</code>, choose a display name, then join a public room or paste the room name your host shared.</p>
+        </article>
+        <article class="quickstart-card">
+          <h3>Set your vibe</h3>
+          <p>Toggle theme, density, and sound notifications so the chat feels right on desktop or mobile before the room gets busy.</p>
+        </article>
+        <article class="quickstart-card">
+          <h3>Share more than text</h3>
+          <ul>
+            <li>Attach files, images, clips, or push-to-talk voice notes.</li>
+            <li>Add GIFs, custom emoji, reactions, and soundboard hits.</li>
+            <li>Paste links for rich previews and inline media where supported.</li>
+          </ul>
+        </article>
+        <article class="quickstart-card">
+          <h3>Keep track of the good stuff</h3>
+          <p>Reply in threads, star messages for yourself, watch pinned posts from hosts, and use search filters when history grows.</p>
+        </article>
+      </div>
     </section>
 
     <section class="cta-panel">
       <h2>Ready to open the doors?</h2>
-      <p>Let the marketing splash greet your guests, then drop them into the battle-tested chat experience.</p>
+      <p>
+        Let the marketing splash greet your guests, then drop them into the battle-tested chat
+        experience with live rooms, secure sharing, moderation controls, and community-ready extras.
+      </p>
       <div class="hero-actions center">
         <button class="primary-btn" type="button" onclick="window.location.href='/login'">
           Join DizyChat
