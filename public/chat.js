@@ -7749,6 +7749,7 @@ if (voiceBtn) {
   );
 
   const setStatus = (text) => { if (statusEl) statusEl.textContent = text; };
+  const setMusicStatus = (text) => { if (musicStatusEl) musicStatusEl.textContent = text; };
 
   const updateVideoGridVisibility = () => {
     if (!videoGrid) return;
