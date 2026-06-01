@@ -2419,68 +2419,6 @@ body:not(.dark) #voice-btn.recording {
 
 .voice-call-panel[hidden] { display: none !important; }
 
-.livekit-music-panel {
-  position: fixed;
-  right: 14px;
-  bottom: 92px;
-  z-index: 13002;
-  width: min(380px, calc(100vw - 24px));
-  background: rgba(24, 18, 43, 0.96);
-  border: 1px solid rgba(196, 181, 253, 0.34);
-  border-radius: 14px;
-  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.35);
-  color: #fff;
-  padding: 12px;
-}
-
-.livekit-music-panel[hidden] { display: none !important; }
-
-.livekit-music-header {
-  align-items: flex-start;
-  display: flex;
-  gap: 12px;
-  justify-content: space-between;
-}
-
-.livekit-music-title {
-  font-size: 1rem;
-  font-weight: 800;
-  margin-bottom: 4px;
-}
-
-.livekit-music-status,
-.livekit-music-copy {
-  font-size: 0.84rem;
-  line-height: 1.35;
-  opacity: 0.92;
-}
-
-.livekit-music-copy {
-  background: rgba(124, 58, 237, 0.16);
-  border: 1px solid rgba(196, 181, 253, 0.26);
-  border-radius: 10px;
-  color: #ede9fe;
-  margin: 10px 0;
-  padding: 8px 10px;
-}
-
-.livekit-music-close {
-  flex: 0 0 auto;
-  min-width: 34px;
-  padding: 5px 8px;
-}
-
-.livekit-music-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.livekit-music-controls button {
-  flex: 1 1 44%;
-  min-width: 110px;
-}
-
 .voice-call-remote-audio {
   position: fixed;
   width: 1px;
@@ -2514,17 +2452,13 @@ body:not(.dark) #voice-btn.recording {
 .voice-call-status { font-size: 0.84rem; opacity: 0.9; }
 .voice-call-controls { display: flex; gap: 8px; flex-wrap: wrap; }
 .voice-call-controls button { flex: 1 1 42%; min-width: 88px; }
-.voice-call-music-hint {
-  background: rgba(124, 58, 237, 0.16);
-  border: 1px solid rgba(196, 181, 253, 0.34);
-  border-radius: 10px;
-  color: #ede9fe;
-  font-size: 0.8rem;
-  line-height: 1.35;
-  margin: 10px 0 0;
-  padding: 8px 10px;
+.voice-call-mode-controls { margin: 8px 0 0; }
+.voice-call-mode-controls button { width: 100%; }
+.voice-call-mode-controls button[aria-pressed="true"] {
+  background: linear-gradient(135deg, #7c3aed, #0ea5e9);
+  border-color: rgba(196, 181, 253, 0.7);
+  color: #fff;
 }
-.voice-call-music-hint[hidden] { display: none !important; }
 .call-video-grid {
   display: grid;
   gap: 8px;

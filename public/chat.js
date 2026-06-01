@@ -7698,22 +7698,20 @@ if (voiceBtn) {
   panel.innerHTML = `
     <div class="voice-call-header" data-role="drag-handle">
       <div>
-        <div class="voice-call-title" data-role="title">Live Call</div>
+        <div class="voice-call-title">Live Call</div>
         <div class="voice-call-status" data-role="status">Not connected.</div>
       </div>
       <span class="voice-call-drag-hint" aria-hidden="true">↕</span>
     </div>
     <div class="voice-call-controls">
-      <button type="button" data-role="join">Join voice</button>
-      <button type="button" data-role="music-join">Join music mode</button>
+      <button type="button" data-role="join">Join</button>
       <button type="button" data-role="mute">Mute</button>
       <button type="button" data-role="camera">Add video</button>
       <button type="button" data-role="leave">Leave</button>
     </div>
-    <p class="voice-call-music-hint" data-role="music-hint" hidden>
-      Music Mode keeps the jam inside DizyChat via LiveKit and disables browser echo cancellation,
-      noise suppression, and auto-gain so instruments sound more natural. Use headphones.
-    </p>
+    <div class="voice-call-mode-controls">
+      <button type="button" data-role="music-mode" aria-pressed="false">Music mode: Off</button>
+    </div>
     <div class="call-video-grid" data-role="video-grid" hidden aria-label="Call video feeds"></div>
     <label class="voice-call-master-volume">
       <span>Call volume</span>
@@ -7728,13 +7726,11 @@ if (voiceBtn) {
   remoteAudioContainer.setAttribute("aria-hidden", "true");
   document.body.appendChild(remoteAudioContainer);
 
-  const titleEl = panel.querySelector('[data-role="title"]');
   const statusEl = panel.querySelector('[data-role="status"]');
   const dragHandle = panel.querySelector('[data-role="drag-handle"]');
   const joinControl = panel.querySelector('[data-role="join"]');
-  const musicJoinControl = panel.querySelector('[data-role="music-join"]');
-  const musicHint = panel.querySelector('[data-role="music-hint"]');
   const muteControl = panel.querySelector('[data-role="mute"]');
+  const musicModeControl = panel.querySelector('[data-role="music-mode"]');
   const cameraControl = panel.querySelector('[data-role="camera"]');
   const leaveControl = panel.querySelector('[data-role="leave"]');
   const masterVolumeControl = panel.querySelector('[data-role="master-volume"]');
@@ -7749,7 +7745,6 @@ if (voiceBtn) {
   );
 
   const setStatus = (text) => { if (statusEl) statusEl.textContent = text; };
-  const setMusicStatus = (text) => { if (musicStatusEl) musicStatusEl.textContent = text; };
 
   const updateVideoGridVisibility = () => {
     if (!videoGrid) return;
@@ -7905,23 +7900,24 @@ if (voiceBtn) {
     entries.forEach((entry) => peersEl.appendChild(createPeerRow(entry)));
   };
 
-  const setCallUiState = ({ inCall = false, muted = false, cameraEnabled = callState.cameraEnabled, musicMode = callState.musicMode } = {}) => {
+  const updateMusicModeControl = () => {
+    if (!musicModeControl) return;
+    musicModeControl.textContent = callState.musicMode ? "Music mode: On" : "Music mode: Off";
+    musicModeControl.setAttribute("aria-pressed", callState.musicMode ? "true" : "false");
+  };
+
+  const setCallUiState = ({ inCall = false, muted = false, cameraEnabled = callState.cameraEnabled } = {}) => {
     voiceCallBtn.classList.toggle("call-active", inCall);
     voiceCallBtn.classList.toggle("call-muted", inCall && muted);
     voiceCallBtn.classList.toggle("call-video-active", inCall && cameraEnabled);
-    voiceCallBtn.classList.toggle("call-music-active", inCall && musicMode);
-    voiceCallBtn.textContent = inCall ? (cameraEnabled ? "🎥" : (musicMode ? "🎵" : (muted ? "🔇" : "📞"))) : "📞";
-    livekitMusicBtn?.classList.toggle("music-mode-active", inCall && musicMode);
-    livekitMusicBtn?.classList.toggle("call-active", inCall && musicMode);
-    if (livekitMusicBtn) livekitMusicBtn.textContent = inCall && musicMode ? "🎶" : "🎵";
-    if (titleEl) titleEl.textContent = musicMode ? "LiveKit Music Mode" : "Live Call";
-    if (musicHint) musicHint.hidden = !musicMode;
+    voiceCallBtn.textContent = inCall ? (cameraEnabled ? "🎥" : (muted ? "🔇" : "📞")) : "📞";
     muteControl.disabled = !inCall;
     cameraControl.disabled = !inCall;
     leaveControl.disabled = !inCall;
     joinControl.disabled = inCall;
-    if (musicJoinControl) musicJoinControl.disabled = inCall;
+    if (musicModeControl) musicModeControl.disabled = inCall;
     muteControl.textContent = muted ? "Unmute" : "Mute";
+    updateMusicModeControl();
     cameraControl.textContent = cameraEnabled ? "Stop video" : "Add video";
   };
 
@@ -8261,19 +8257,14 @@ if (voiceBtn) {
     }
   };
 
-  const getAudioCaptureOptions = (musicMode = false) => musicMode
+  const getAudioCaptureOptions = () => callState.musicMode
     ? {
         echoCancellation: false,
         noiseSuppression: false,
         autoGainControl: false,
         channelCount: 2,
-        sampleRate: 48000,
       }
     : { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
-
-  const confirmMusicMode = () => window.confirm(
-    "LiveKit Music Mode disables echo cancellation, noise suppression, and auto-gain so instruments sound more natural. Use headphones to prevent feedback. Continue?"
-  );
 
   const fetchToken = async () => {
     const res = await fetch("/api/calls/token", {
@@ -8328,8 +8319,8 @@ if (voiceBtn) {
     });
     callState.cameraEnabled = true;
     attachLocalVideoTrack(track);
-    setCallUiState({ inCall: true, muted: callState.muted, cameraEnabled: true, musicMode: callState.musicMode });
-    setStatus(callState.musicMode ? `Connected to ${window.currentRoom} in Music Mode; headphones recommended.` : `Connected to ${window.currentRoom}`);
+    setCallUiState({ inCall: true, muted: callState.muted, cameraEnabled: true });
+    setStatus(`Connected to ${window.currentRoom}`);
     showToast("Video started", "success");
   };
 
@@ -8343,13 +8334,12 @@ if (voiceBtn) {
       callState.room = null;
       callState.muted = false;
       callState.cameraEnabled = false;
-      callState.musicMode = false;
       callState.participants.clear();
       callState.localLevel = 0;
       clearRemoteAudioTracks();
       clearRemoteVideoTracks();
       renderPeers();
-      setCallUiState({ inCall: false, muted: false, cameraEnabled: false, musicMode: false });
+      setCallUiState({ inCall: false, muted: false, cameraEnabled: false });
       setStatus("Not connected.");
       if (!silent) socket.emit("call:leave", { room: window.currentRoom });
     } catch (error) {
@@ -8357,22 +8347,12 @@ if (voiceBtn) {
     }
   };
 
-  const joinCall = async ({ musicMode = false } = {}) => {
+  const joinCall = async () => {
     if (!window.currentRoom || !window.currentUser) {
       showToast("Join a chat room first.", "warn");
       return;
     }
-    if (callState.room) {
-      showToast("Leave the current call before switching modes.", "warn");
-      return;
-    }
-    if (musicMode && !confirmMusicMode()) {
-      setStatus("Music Mode canceled.");
-      return;
-    }
-    callState.musicMode = Boolean(musicMode);
-    setCallUiState({ inCall: false, muted: false, cameraEnabled: false, musicMode: callState.musicMode });
-    setStatus(musicMode ? "Checking LiveKit music provider…" : "Checking call provider…");
+    setStatus("Checking call provider…");
     await ensureCallServiceReady();
     setStatus("Loading voice engine…");
     await ensureSdk();
@@ -8424,22 +8404,19 @@ if (voiceBtn) {
         console.warn("[LiveCall] remote audio start warning", error);
       });
     }
-    setStatus(musicMode ? "Requesting microphone for Music Mode…" : "Requesting microphone…");
-    const track = await LK.createLocalAudioTrack(getAudioCaptureOptions(musicMode));
-    setStatus(musicMode ? "Publishing Music Mode microphone…" : "Publishing microphone…");
+    setStatus(callState.musicMode ? "Requesting microphone for music mode…" : "Requesting microphone…");
+    const track = await LK.createLocalAudioTrack(getAudioCaptureOptions());
+    setStatus("Publishing microphone…");
     await room.localParticipant.publishTrack(track, {
       source: LK.Track?.Source?.Microphone,
     });
     callState.localTrack = track;
     callState.muted = false;
     startLocalMeter(track);
-    setCallUiState({ inCall: true, muted: false, cameraEnabled: false, musicMode });
+    setCallUiState({ inCall: true, muted: false, cameraEnabled: false });
     renderPeers();
-    const connectedStatus = musicMode
-      ? `Connected to ${window.currentRoom} in Music Mode; headphones recommended.`
-      : `Connected to ${window.currentRoom}`;
-    setStatus(callState.cameraBlocked ? `${connectedStatus}; camera disabled by admin.` : connectedStatus);
-    socket.emit("call:join", { room: window.currentRoom, musicMode });
+    setStatus(callState.cameraBlocked ? `Connected to ${window.currentRoom}; camera disabled by admin.` : `Connected to ${window.currentRoom}`);
+    socket.emit("call:join", { room: window.currentRoom });
     room.on(LK.RoomEvent.ActiveSpeakersChanged, (speakers = []) => {
       const seen = new Set();
       speakers.forEach((participant) => {
@@ -8465,9 +8442,7 @@ if (voiceBtn) {
 
   voiceCallBtn.hidden = false;
   voiceCallBtn.removeAttribute("aria-hidden");
-  livekitMusicBtn?.removeAttribute("aria-hidden");
-  if (livekitMusicBtn) livekitMusicBtn.hidden = false;
-  setCallUiState({ inCall: false, muted: false, cameraBlocked: false, musicMode: false });
+  setCallUiState({ inCall: false, muted: false, cameraBlocked: false });
   renderPeers();
 
   dragHandle?.addEventListener("pointerdown", startPanelDrag);
@@ -8484,29 +8459,27 @@ if (voiceBtn) {
   voiceCallBtn.addEventListener("click", () => {
     panel.hidden = !panel.hidden;
   });
-  const joinWithMode = async (musicMode = false) => {
+  musicModeControl?.addEventListener("click", () => {
+    if (callState.room) return;
+    callState.musicMode = !callState.musicMode;
+    updateMusicModeControl();
+    setStatus(callState.musicMode
+      ? "Music mode will be used for the next call. Use headphones to avoid feedback."
+      : "Music mode off. The next call will use regular voice settings.");
+  });
+
+  joinControl.addEventListener("click", async () => {
     try {
-      await joinCall({ musicMode });
-      if (callState.room) showToast(musicMode ? "Music Mode connected" : "Call connected", "success");
+      await joinCall();
+      showToast("Call connected", "success");
     } catch (error) {
       console.error("[LiveCall] join failed", error);
       await leaveCall(true);
       const message = normalizeCallError(error);
       showToast(message, "error");
       setStatus(message);
-      setCallUiState({ inCall: false, muted: false, cameraBlocked: false, musicMode: false });
+      setCallUiState({ inCall: false, muted: false, cameraBlocked: false });
     }
-  };
-
-  joinControl.addEventListener("click", () => joinWithMode(false));
-  musicJoinControl?.addEventListener("click", () => joinWithMode(true));
-  livekitMusicBtn?.addEventListener("click", () => {
-    panel.hidden = false;
-    if (callState.room) {
-      setCallUiState({ inCall: true, muted: callState.muted, cameraEnabled: callState.cameraEnabled, musicMode: callState.musicMode });
-      return;
-    }
-    joinWithMode(true);
   });
   muteControl.addEventListener("click", toggleLocalMute);
   cameraControl.addEventListener("click", async () => {
