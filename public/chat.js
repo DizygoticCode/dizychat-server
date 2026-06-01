@@ -92,6 +92,7 @@ const fileInput = document.getElementById("file-input");
 const attachBtn = document.getElementById("file-attach");
 const voiceBtn = document.getElementById("voice-btn");
 const voiceCallBtn = document.getElementById("voice-call-btn");
+const jamSessionBtn = document.getElementById("jam-session-btn");
 const emojiBtn = document.getElementById("emoji-btn");
 const pinnedContainer = document.getElementById("pinned-messages");
 const searchInput = document.getElementById("message-search");
@@ -8674,6 +8675,167 @@ if (voiceBtn) {
 
   window.addEventListener("resize", () => {
     if (panel.style.display === "block") positionPanel();
+  });
+})();
+
+// ------------------- Jam Session Launcher -------------------
+(() => {
+  if (!jamSessionBtn) return;
+
+  const panel = document.createElement("div");
+  panel.className = "jam-session-panel";
+  panel.hidden = true;
+  panel.innerHTML = `
+    <div class="jam-session-header">
+      <div>
+        <div class="jam-session-title">Jam Session</div>
+        <div class="jam-session-status" data-role="status">Checking pro-audio options…</div>
+      </div>
+      <button type="button" class="jam-session-close" data-role="close" aria-label="Close jam session panel">✕</button>
+    </div>
+    <div class="jam-session-providers" data-role="providers"></div>
+    <div class="jam-session-output" data-role="output" hidden></div>
+  `;
+  document.body.appendChild(panel);
+
+  const statusEl = panel.querySelector('[data-role="status"]');
+  const providersEl = panel.querySelector('[data-role="providers"]');
+  const outputEl = panel.querySelector('[data-role="output"]');
+  const closeBtn = panel.querySelector('[data-role="close"]');
+  let jamStatus = null;
+
+  const setJamStatus = (message) => {
+    if (statusEl) statusEl.textContent = message;
+  };
+
+  const fetchJamStatus = async () => {
+    const res = await fetch("/api/jam/status", { cache: "no-store" });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload?.error || `Jam status check failed (${res.status}).`);
+    return payload;
+  };
+
+  const requestJamSession = async (provider) => {
+    const res = await fetch("/api/jam/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider, room: window.currentRoom || "DizyChat Jam" }),
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload?.error || `Jam session request failed (${res.status}).`);
+    return payload?.session;
+  };
+
+  const copyText = async (text) => {
+    if (!text) return false;
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (_err) {
+      return false;
+    }
+  };
+
+  const renderSession = (session) => {
+    if (!outputEl || !session) return;
+    const instructions = Array.isArray(session.instructions) ? session.instructions : session.setupTips || [];
+    outputEl.hidden = false;
+    outputEl.innerHTML = `
+      <div class="jam-session-result-title">${escapeHtml(session.providerName || session.provider)} ready</div>
+      <div class="jam-session-result-meta">${escapeHtml(session.title || session.room || "DizyChat Jam")}</div>
+      ${session.groupName ? `<div class="jam-session-code"><span>Group</span><code>${escapeHtml(session.groupName)}</code><button type="button" data-copy="${escapeHtml(session.groupName)}">Copy</button></div>` : ""}
+      ${session.password ? `<div class="jam-session-code"><span>Password</span><code>${escapeHtml(session.password)}</code><button type="button" data-copy="${escapeHtml(session.password)}">Copy</button></div>` : ""}
+      <ul>${instructions.map((tip) => `<li>${escapeHtml(tip)}</li>`).join("")}</ul>
+      ${session.url ? `<a class="jam-session-open" href="${escapeHtml(session.url)}" target="_blank" rel="noopener noreferrer">Open ${escapeHtml(session.providerName || "jam provider")}</a>` : ""}
+    `;
+    const link = outputEl.querySelector(".jam-session-open");
+    if (link && session.provider === "jacktrip") {
+      window.open(session.url, "_blank", "noopener,noreferrer");
+    }
+  };
+
+  const renderProviders = (providers = []) => {
+    if (!providersEl) return;
+    providersEl.innerHTML = providers.map((provider) => `
+      <article class="jam-provider-card" data-provider="${escapeHtml(provider.id)}">
+        <div class="jam-provider-head">
+          <strong>${escapeHtml(provider.name)}</strong>
+          <span>${escapeHtml(provider.badge || "")}</span>
+        </div>
+        <p>${escapeHtml(provider.bestFor || "")}</p>
+        <ul>
+          ${(provider.setupTips || []).slice(0, 3).map((tip) => `<li>${escapeHtml(tip)}</li>`).join("")}
+        </ul>
+        <button type="button" data-provider-action="${escapeHtml(provider.id)}">
+          ${provider.id === "jacktrip" ? "Try JackTrip free" : `Use ${escapeHtml(provider.name)}`}
+        </button>
+      </article>
+    `).join("");
+  };
+
+  const openPanel = async () => {
+    panel.hidden = false;
+    if (!jamStatus) {
+      setJamStatus("Checking free jam providers…");
+      jamStatus = await fetchJamStatus();
+      renderProviders(jamStatus.providers || []);
+    }
+    const jacktrip = (jamStatus.providers || []).find((provider) => provider.id === "jacktrip");
+    setJamStatus(jacktrip?.freeTier
+      ? "JackTrip has a free test tier: up to 5 musicians for 30 minutes."
+      : "Choose a free external jam provider.");
+  };
+
+  jamSessionBtn.hidden = false;
+  jamSessionBtn.removeAttribute("aria-hidden");
+
+  jamSessionBtn.addEventListener("click", async () => {
+    try {
+      if (panel.hidden) {
+        await openPanel();
+      } else {
+        panel.hidden = true;
+      }
+    } catch (error) {
+      console.error("[JamSession] status failed", error);
+      showToast(error?.message || "Unable to load jam providers.", "error");
+      setJamStatus(error?.message || "Unable to load jam providers.");
+    }
+  });
+
+  closeBtn?.addEventListener("click", () => {
+    panel.hidden = true;
+  });
+
+  providersEl?.addEventListener("click", async (event) => {
+    const button = event.target.closest("button[data-provider-action]");
+    if (!button) return;
+    const provider = button.dataset.providerAction;
+    try {
+      if (!window.currentRoom) {
+        showToast("Join a chat room before starting a jam session.", "warn");
+        return;
+      }
+      button.disabled = true;
+      setJamStatus(`Preparing ${provider} jam…`);
+      const session = await requestJamSession(provider);
+      renderSession(session);
+      setJamStatus(provider === "jacktrip" ? "JackTrip opened. Share its studio invite back in chat." : "Jam handoff generated.");
+      showToast(provider === "jacktrip" ? "JackTrip free test opened" : "Jam session details ready", "success");
+    } catch (error) {
+      console.error("[JamSession] launch failed", error);
+      showToast(error?.message || "Unable to start jam session.", "error");
+      setJamStatus(error?.message || "Unable to start jam session.");
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  outputEl?.addEventListener("click", async (event) => {
+    const button = event.target.closest("button[data-copy]");
+    if (!button) return;
+    const ok = await copyText(button.dataset.copy);
+    showToast(ok ? "Copied jam detail" : "Unable to copy jam detail", ok ? "success" : "error");
   });
 })();
 
