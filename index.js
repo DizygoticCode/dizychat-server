@@ -313,24 +313,12 @@ if (plaintextAdminCredentialCount > 0) {
 }
 const adminAuthFailures = new Map();
 
-const getForwardedClientAddress = (forwardedFor) => {
-  const rawForwardedFor = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
-  if (typeof rawForwardedFor !== 'string' || !rawForwardedFor.trim()) return '';
-  return rawForwardedFor.split(',')[0].trim();
-};
-
 const getSocketRemoteAddress = (socket) => {
-  return getForwardedClientAddress(socket?.handshake?.headers?.['x-forwarded-for'])
-    || socket?.handshake?.address
-    || socket?.conn?.remoteAddress
-    || 'unknown';
-};
-
-const getHttpRemoteAddress = (req) => {
-  return getForwardedClientAddress(req?.headers?.['x-forwarded-for'])
-    || req?.ip
-    || req?.socket?.remoteAddress
-    || 'unknown';
+  const forwardedFor = socket?.handshake?.headers?.['x-forwarded-for'];
+  if (typeof forwardedFor === 'string' && forwardedFor.trim()) {
+    return forwardedFor.split(',')[0].trim();
+  }
+  return socket?.handshake?.address || socket?.conn?.remoteAddress || 'unknown';
 };
 
 const getAdminAuthAttemptKey = (socket, username) => {
@@ -1780,8 +1768,8 @@ app.get('/api/jam/status', (_req, res) => {
 });
 
 app.post('/api/jam/session', express.json(), (req, res) => {
-  const remoteAddress = getHttpRemoteAddress(req);
-  if (!canCreateJamSession(remoteAddress)) {
+  const remoteAddress = req.ip || req.headers?.['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
+  if (!canCreateJamSession(String(remoteAddress).split(',')[0].trim())) {
     res.status(429).json({ error: 'Too many jam session requests. Please wait a minute and try again.' });
     return;
   }
