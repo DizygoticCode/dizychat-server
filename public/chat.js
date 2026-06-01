@@ -7674,6 +7674,19 @@ if (voiceBtn) {
     return Math.min(1, Math.max(0, numeric));
   };
 
+  const MUSIC_MODE_AUDIO_BITRATE = 510000;
+  const MUSIC_MODE_FALLBACK_AUDIO_SETTINGS = Object.freeze({
+    channelCount: 2,
+    sampleRate: 48000,
+    sampleSize: 24,
+    echoCancellation: false,
+    noiseSuppression: false,
+    autoGainControl: false,
+    audioBitrate: MUSIC_MODE_AUDIO_BITRATE,
+    dtx: false,
+    red: false,
+  });
+
   const callState = {
     sdkLoaded: false,
     room: null,
@@ -7932,9 +7945,45 @@ if (voiceBtn) {
     setCallUiState({ inCall: false, muted: false, cameraEnabled: false });
   };
 
-  const getMicrophoneSettings = () => (callState.musicModeEnabled
-    ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-    : { echoCancellation: true, noiseSuppression: true, autoGainControl: true });
+  const getMusicModeAudioSettings = (tokenPayload = {}) => {
+    if (!callState.musicModeEnabled) return null;
+    const serverSettings = tokenPayload?.audioSettings && typeof tokenPayload.audioSettings === "object"
+      ? tokenPayload.audioSettings
+      : {};
+    const audioBitrate = Number.parseInt(serverSettings.audioBitrate, 10);
+    return {
+      ...MUSIC_MODE_FALLBACK_AUDIO_SETTINGS,
+      ...serverSettings,
+      audioBitrate: Number.isFinite(audioBitrate) && audioBitrate > 0
+        ? audioBitrate
+        : MUSIC_MODE_FALLBACK_AUDIO_SETTINGS.audioBitrate,
+    };
+  };
+
+  const getMicrophoneSettings = (tokenPayload = {}) => {
+    const musicSettings = getMusicModeAudioSettings(tokenPayload);
+    if (musicSettings) {
+      return {
+        channelCount: musicSettings.channelCount,
+        sampleRate: musicSettings.sampleRate,
+        sampleSize: musicSettings.sampleSize,
+        echoCancellation: musicSettings.echoCancellation,
+        noiseSuppression: musicSettings.noiseSuppression,
+        autoGainControl: musicSettings.autoGainControl,
+      };
+    }
+    return { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+  };
+
+  const getAudioPublishOptions = (LK, tokenPayload = {}) => {
+    const options = { source: LK.Track?.Source?.Microphone };
+    const musicSettings = getMusicModeAudioSettings(tokenPayload);
+    if (!musicSettings) return options;
+    options.audioBitrate = musicSettings.audioBitrate;
+    options.dtx = Boolean(musicSettings.dtx);
+    options.red = Boolean(musicSettings.red);
+    return options;
+  };
 
   const setCallUiState = ({ inCall = false, muted = false, cameraEnabled = callState.cameraEnabled } = {}) => {
     const hasMusicModeChoice = callState.musicModeEnabled !== null;
@@ -8291,7 +8340,11 @@ if (voiceBtn) {
     const res = await fetch("/api/calls/token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ room: window.currentRoom, username: window.currentUser }),
+      body: JSON.stringify({
+        room: window.currentRoom,
+        username: window.currentUser,
+        musicMode: callState.musicModeEnabled === true,
+      }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(explainCallSetupError(data, `Token request failed (${res.status})`));
@@ -8430,11 +8483,9 @@ if (voiceBtn) {
       });
     }
     setStatus(callState.musicModeEnabled ? "Requesting microphone for Music mode…" : "Requesting microphone…");
-    const track = await LK.createLocalAudioTrack(getMicrophoneSettings());
+    const track = await LK.createLocalAudioTrack(getMicrophoneSettings(tokenPayload));
     setStatus("Publishing microphone…");
-    await room.localParticipant.publishTrack(track, {
-      source: LK.Track?.Source?.Microphone,
-    });
+    await room.localParticipant.publishTrack(track, getAudioPublishOptions(LK, tokenPayload));
     callState.localTrack = track;
     callState.muted = false;
     startLocalMeter(track);
