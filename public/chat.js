@@ -7726,6 +7726,7 @@ if (voiceBtn) {
   const dragHandle = panel.querySelector('[data-role="drag-handle"]');
   const joinControl = panel.querySelector('[data-role="join"]');
   const muteControl = panel.querySelector('[data-role="mute"]');
+  const musicModeControl = panel.querySelector('[data-role="music-mode"]');
   const cameraControl = panel.querySelector('[data-role="camera"]');
   const leaveControl = panel.querySelector('[data-role="leave"]');
   const masterVolumeControl = panel.querySelector('[data-role="master-volume"]');
@@ -7905,6 +7906,7 @@ if (voiceBtn) {
     leaveControl.disabled = !inCall;
     joinControl.disabled = inCall;
     muteControl.textContent = muted ? "Unmute" : "Mute";
+    updateMusicModeControl();
     cameraControl.textContent = cameraEnabled ? "Stop video" : "Add video";
   };
 
