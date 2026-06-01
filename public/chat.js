@@ -8442,7 +8442,9 @@ if (voiceBtn) {
   joinControl.addEventListener("click", async () => {
     try {
       await joinCall();
-      showToast("Call connected", "success");
+      if (callState.room) {
+        showToast("Call connected", "success");
+      }
     } catch (error) {
       console.error("[LiveCall] join failed", error);
       await leaveCall(true);

@@ -1768,8 +1768,12 @@ app.get('/api/jam/status', (_req, res) => {
 });
 
 app.post('/api/jam/session', express.json(), (req, res) => {
-  const remoteAddress = req.ip || req.headers?.['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
-  if (!canCreateJamSession(String(remoteAddress).split(',')[0].trim())) {
+  const forwardedFor = req.headers?.['x-forwarded-for'];
+  const forwardedAddress = Array.isArray(forwardedFor)
+    ? forwardedFor[0]?.split(',')[0].trim()
+    : forwardedFor?.split(',')[0].trim();
+  const remoteAddress = forwardedAddress || req.ip || req.socket?.remoteAddress || 'unknown';
+  if (!canCreateJamSession(String(remoteAddress).trim())) {
     res.status(429).json({ error: 'Too many jam session requests. Please wait a minute and try again.' });
     return;
   }
