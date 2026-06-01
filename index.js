@@ -185,6 +185,17 @@ const parseVoiceCallsEnabled = () => {
 };
 const ENABLE_VOICE_CALLS = parseVoiceCallsEnabled();
 const CALL_TOKEN_TTL_SECONDS = 10 * 60;
+const MUSIC_MODE_AUDIO_BITRATE = 320000;
+const MUSIC_MODE_AUDIO_SETTINGS = Object.freeze({
+  channelCount: 2,
+  echoCancellation: false,
+  noiseSuppression: false,
+  autoGainControl: false,
+  audioBitrate: MUSIC_MODE_AUDIO_BITRATE,
+  dtx: false,
+  red: false,
+  forceStereo: true,
+});
 const CALL_EVENT_WINDOW_MS = 4000;
 const CALL_EVENT_MAX_PER_WINDOW = 30;
 const W2G_API_KEY_ENV_NAMES = [
@@ -1937,6 +1948,7 @@ app.post('/api/calls/token', express.json(), (req, res) => {
 
   const room = normaliseRoomName(req.body?.room);
   const username = normaliseUsername(req.body?.username, '');
+  const musicMode = req.body?.musicMode === true;
   if (!room || !username) {
     res.status(400).json({ error: 'room and username are required.' });
     return;
@@ -1946,7 +1958,7 @@ app.post('/api/calls/token', express.json(), (req, res) => {
     const token = createLivekitToken({
       room,
       username,
-      metadata: { room, username, issuedAt: new Date().toISOString(), supportsAudio: true, supportsVideo: true },
+      metadata: { room, username, issuedAt: new Date().toISOString(), supportsAudio: true, supportsVideo: true, musicMode },
     });
     const active = getActiveCallSnapshot(room);
     res.json({
@@ -1958,6 +1970,8 @@ app.post('/api/calls/token', express.json(), (req, res) => {
       voiceOnly: false,
       supportsAudio: true,
       supportsVideo: true,
+      musicMode,
+      audioSettings: musicMode ? MUSIC_MODE_AUDIO_SETTINGS : null,
       provider: status.provider,
       selfContained: status.selfContained,
     });
