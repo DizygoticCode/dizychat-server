@@ -92,6 +92,8 @@ const fileInput = document.getElementById("file-input");
 const attachBtn = document.getElementById("file-attach");
 const voiceBtn = document.getElementById("voice-btn");
 const voiceCallBtn = document.getElementById("voice-call-btn");
+const livekitMusicBtn = document.getElementById("livekit-music-btn");
+const jamSessionBtn = document.getElementById("jam-session-btn");
 const emojiBtn = document.getElementById("emoji-btn");
 const pinnedContainer = document.getElementById("pinned-messages");
 const searchInput = document.getElementById("message-search");
@@ -7680,6 +7682,7 @@ if (voiceBtn) {
     localLevel: 0,
     localMeter: null,
     muted: false,
+    musicMode: false,
     cameraEnabled: false,
     localVideoTrack: null,
     localVideoTile: null,
@@ -7721,6 +7724,37 @@ if (voiceBtn) {
   remoteAudioContainer.setAttribute("aria-hidden", "true");
   document.body.appendChild(remoteAudioContainer);
 
+  // Dedicated LiveKit Music Mode panel. This stays separate from the existing
+  // Live Call pop-up so the regular call button keeps its original behavior.
+  const musicPanel = document.createElement("div");
+  musicPanel.className = "livekit-music-panel";
+  musicPanel.hidden = true;
+  musicPanel.innerHTML = `
+    <div class="livekit-music-header">
+      <div>
+        <div class="livekit-music-title">LiveKit Music Mode</div>
+        <div class="livekit-music-status" data-role="music-status">Ready for an in-app jam.</div>
+      </div>
+      <button type="button" class="livekit-music-close" data-role="music-close" aria-label="Close LiveKit Music Mode panel">✕</button>
+    </div>
+    <p class="livekit-music-copy">
+      Uses your existing LiveKit room, but turns off browser echo cancellation, noise suppression,
+      and auto-gain for a more natural instrument sound. Use headphones.
+    </p>
+    <div class="livekit-music-controls">
+      <button type="button" data-role="music-start">Start Music Mode</button>
+      <button type="button" data-role="music-open-call">Open call panel</button>
+      <button type="button" data-role="music-leave">Leave</button>
+    </div>
+  `;
+  document.body.appendChild(musicPanel);
+
+  const musicStatusEl = musicPanel.querySelector('[data-role="music-status"]');
+  const musicCloseControl = musicPanel.querySelector('[data-role="music-close"]');
+  const musicStartControl = musicPanel.querySelector('[data-role="music-start"]');
+  const musicOpenCallControl = musicPanel.querySelector('[data-role="music-open-call"]');
+  const musicLeaveControl = musicPanel.querySelector('[data-role="music-leave"]');
+
   const statusEl = panel.querySelector('[data-role="status"]');
   const dragHandle = panel.querySelector('[data-role="drag-handle"]');
   const joinControl = panel.querySelector('[data-role="join"]');
@@ -7739,6 +7773,7 @@ if (voiceBtn) {
   );
 
   const setStatus = (text) => { if (statusEl) statusEl.textContent = text; };
+  const setMusicStatus = (text) => { if (musicStatusEl) musicStatusEl.textContent = text; };
 
   const updateVideoGridVisibility = () => {
     if (!videoGrid) return;
@@ -7894,11 +7929,25 @@ if (voiceBtn) {
     entries.forEach((entry) => peersEl.appendChild(createPeerRow(entry)));
   };
 
-  const setCallUiState = ({ inCall = false, muted = false, cameraEnabled = callState.cameraEnabled } = {}) => {
+  const setCallUiState = ({ inCall = false, muted = false, cameraEnabled = callState.cameraEnabled, musicMode = callState.musicMode } = {}) => {
     voiceCallBtn.classList.toggle("call-active", inCall);
     voiceCallBtn.classList.toggle("call-muted", inCall && muted);
     voiceCallBtn.classList.toggle("call-video-active", inCall && cameraEnabled);
-    voiceCallBtn.textContent = inCall ? (cameraEnabled ? "🎥" : (muted ? "🔇" : "📞")) : "📞";
+    voiceCallBtn.classList.toggle("call-music-active", inCall && musicMode);
+    voiceCallBtn.textContent = inCall ? (cameraEnabled ? "🎥" : (musicMode ? "🎵" : (muted ? "🔇" : "📞"))) : "📞";
+    livekitMusicBtn?.classList.toggle("music-mode-active", inCall && musicMode);
+    livekitMusicBtn?.classList.toggle("call-active", inCall && musicMode);
+    if (livekitMusicBtn) livekitMusicBtn.textContent = inCall && musicMode ? "🎶" : "🎵";
+    if (musicStartControl) musicStartControl.disabled = inCall;
+    if (musicLeaveControl) musicLeaveControl.disabled = !inCall;
+    if (musicOpenCallControl) musicOpenCallControl.disabled = !inCall;
+    if (musicMode && inCall) {
+      setMusicStatus(`Connected to ${window.currentRoom || "this room"} in Music Mode.`);
+    } else if (inCall) {
+      setMusicStatus("A regular LiveKit call is active. Leave it before starting Music Mode.");
+    } else {
+      setMusicStatus("Ready for an in-app jam.");
+    }
     muteControl.disabled = !inCall;
     cameraControl.disabled = !inCall;
     leaveControl.disabled = !inCall;
@@ -8243,6 +8292,20 @@ if (voiceBtn) {
     }
   };
 
+  const getAudioCaptureOptions = (musicMode = false) => musicMode
+    ? {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        channelCount: 2,
+        sampleRate: 48000,
+      }
+    : { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+
+  const confirmMusicMode = () => window.confirm(
+    "LiveKit Music Mode disables echo cancellation, noise suppression, and auto-gain so instruments sound more natural. Use headphones to prevent feedback. Continue?"
+  );
+
   const fetchToken = async () => {
     const res = await fetch("/api/calls/token", {
       method: "POST",
@@ -8296,8 +8359,8 @@ if (voiceBtn) {
     });
     callState.cameraEnabled = true;
     attachLocalVideoTrack(track);
-    setCallUiState({ inCall: true, muted: callState.muted, cameraEnabled: true });
-    setStatus(`Connected to ${window.currentRoom}`);
+    setCallUiState({ inCall: true, muted: callState.muted, cameraEnabled: true, musicMode: callState.musicMode });
+    setStatus(callState.musicMode ? `Connected to ${window.currentRoom} in Music Mode; headphones recommended.` : `Connected to ${window.currentRoom}`);
     showToast("Video started", "success");
   };
 
@@ -8311,12 +8374,13 @@ if (voiceBtn) {
       callState.room = null;
       callState.muted = false;
       callState.cameraEnabled = false;
+      callState.musicMode = false;
       callState.participants.clear();
       callState.localLevel = 0;
       clearRemoteAudioTracks();
       clearRemoteVideoTracks();
       renderPeers();
-      setCallUiState({ inCall: false, muted: false, cameraEnabled: false });
+      setCallUiState({ inCall: false, muted: false, cameraEnabled: false, musicMode: false });
       setStatus("Not connected.");
       if (!silent) socket.emit("call:leave", { room: window.currentRoom });
     } catch (error) {
@@ -8324,12 +8388,22 @@ if (voiceBtn) {
     }
   };
 
-  const joinCall = async () => {
+  const joinCall = async ({ musicMode = false } = {}) => {
     if (!window.currentRoom || !window.currentUser) {
       showToast("Join a chat room first.", "warn");
       return;
     }
-    setStatus("Checking call provider…");
+    if (callState.room) {
+      showToast("Leave the current call before switching modes.", "warn");
+      return;
+    }
+    if (musicMode && !confirmMusicMode()) {
+      setStatus("Music Mode canceled.");
+      return;
+    }
+    callState.musicMode = Boolean(musicMode);
+    setCallUiState({ inCall: false, muted: false, cameraEnabled: false, musicMode: callState.musicMode });
+    setStatus(musicMode ? "Checking LiveKit music provider…" : "Checking call provider…");
     await ensureCallServiceReady();
     setStatus("Loading voice engine…");
     await ensureSdk();
@@ -8381,19 +8455,22 @@ if (voiceBtn) {
         console.warn("[LiveCall] remote audio start warning", error);
       });
     }
-    setStatus("Requesting microphone…");
-    const track = await LK.createLocalAudioTrack({ echoCancellation: true, noiseSuppression: true, autoGainControl: true });
-    setStatus("Publishing microphone…");
+    setStatus(musicMode ? "Requesting microphone for Music Mode…" : "Requesting microphone…");
+    const track = await LK.createLocalAudioTrack(getAudioCaptureOptions(musicMode));
+    setStatus(musicMode ? "Publishing Music Mode microphone…" : "Publishing microphone…");
     await room.localParticipant.publishTrack(track, {
       source: LK.Track?.Source?.Microphone,
     });
     callState.localTrack = track;
     callState.muted = false;
     startLocalMeter(track);
-    setCallUiState({ inCall: true, muted: false, cameraEnabled: false });
+    setCallUiState({ inCall: true, muted: false, cameraEnabled: false, musicMode });
     renderPeers();
-    setStatus(callState.cameraBlocked ? `Connected to ${window.currentRoom}; camera disabled by admin.` : `Connected to ${window.currentRoom}`);
-    socket.emit("call:join", { room: window.currentRoom });
+    const connectedStatus = musicMode
+      ? `Connected to ${window.currentRoom} in Music Mode; headphones recommended.`
+      : `Connected to ${window.currentRoom}`;
+    setStatus(callState.cameraBlocked ? `${connectedStatus}; camera disabled by admin.` : connectedStatus);
+    socket.emit("call:join", { room: window.currentRoom, musicMode });
     room.on(LK.RoomEvent.ActiveSpeakersChanged, (speakers = []) => {
       const seen = new Set();
       speakers.forEach((participant) => {
@@ -8419,7 +8496,9 @@ if (voiceBtn) {
 
   voiceCallBtn.hidden = false;
   voiceCallBtn.removeAttribute("aria-hidden");
-  setCallUiState({ inCall: false, muted: false, cameraBlocked: false });
+  livekitMusicBtn?.removeAttribute("aria-hidden");
+  if (livekitMusicBtn) livekitMusicBtn.hidden = false;
+  setCallUiState({ inCall: false, muted: false, cameraBlocked: false, musicMode: false });
   renderPeers();
 
   dragHandle?.addEventListener("pointerdown", startPanelDrag);
@@ -8436,18 +8515,40 @@ if (voiceBtn) {
   voiceCallBtn.addEventListener("click", () => {
     panel.hidden = !panel.hidden;
   });
-  joinControl.addEventListener("click", async () => {
+  const joinWithMode = async (musicMode = false) => {
     try {
-      await joinCall();
-      showToast("Call connected", "success");
+      await joinCall({ musicMode });
+      if (callState.room) showToast(musicMode ? "Music Mode connected" : "Call connected", "success");
     } catch (error) {
       console.error("[LiveCall] join failed", error);
       await leaveCall(true);
       const message = normalizeCallError(error);
       showToast(message, "error");
       setStatus(message);
-      setCallUiState({ inCall: false, muted: false, cameraBlocked: false });
+      setCallUiState({ inCall: false, muted: false, cameraBlocked: false, musicMode: false });
     }
+  };
+
+  joinControl.addEventListener("click", () => joinWithMode(false));
+  livekitMusicBtn?.addEventListener("click", () => {
+    musicPanel.hidden = !musicPanel.hidden;
+    setCallUiState({
+      inCall: Boolean(callState.room),
+      muted: callState.muted,
+      cameraEnabled: callState.cameraEnabled,
+      musicMode: callState.musicMode,
+    });
+  });
+  musicCloseControl?.addEventListener("click", () => {
+    musicPanel.hidden = true;
+  });
+  musicStartControl?.addEventListener("click", () => joinWithMode(true));
+  musicOpenCallControl?.addEventListener("click", () => {
+    panel.hidden = false;
+  });
+  musicLeaveControl?.addEventListener("click", async () => {
+    await leaveCall();
+    showToast("Left call", "info");
   });
   muteControl.addEventListener("click", toggleLocalMute);
   cameraControl.addEventListener("click", async () => {
@@ -8674,6 +8775,167 @@ if (voiceBtn) {
 
   window.addEventListener("resize", () => {
     if (panel.style.display === "block") positionPanel();
+  });
+})();
+
+// ------------------- Jam Session Launcher -------------------
+(() => {
+  if (!jamSessionBtn) return;
+
+  const panel = document.createElement("div");
+  panel.className = "jam-session-panel";
+  panel.hidden = true;
+  panel.innerHTML = `
+    <div class="jam-session-header">
+      <div>
+        <div class="jam-session-title">Jam Session</div>
+        <div class="jam-session-status" data-role="status">Checking pro-audio options…</div>
+      </div>
+      <button type="button" class="jam-session-close" data-role="close" aria-label="Close jam session panel">✕</button>
+    </div>
+    <div class="jam-session-providers" data-role="providers"></div>
+    <div class="jam-session-output" data-role="output" hidden></div>
+  `;
+  document.body.appendChild(panel);
+
+  const statusEl = panel.querySelector('[data-role="status"]');
+  const providersEl = panel.querySelector('[data-role="providers"]');
+  const outputEl = panel.querySelector('[data-role="output"]');
+  const closeBtn = panel.querySelector('[data-role="close"]');
+  let jamStatus = null;
+
+  const setJamStatus = (message) => {
+    if (statusEl) statusEl.textContent = message;
+  };
+
+  const fetchJamStatus = async () => {
+    const res = await fetch("/api/jam/status", { cache: "no-store" });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload?.error || `Jam status check failed (${res.status}).`);
+    return payload;
+  };
+
+  const requestJamSession = async (provider) => {
+    const res = await fetch("/api/jam/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider, room: window.currentRoom || "DizyChat Jam" }),
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload?.error || `Jam session request failed (${res.status}).`);
+    return payload?.session;
+  };
+
+  const copyText = async (text) => {
+    if (!text) return false;
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (_err) {
+      return false;
+    }
+  };
+
+  const renderSession = (session) => {
+    if (!outputEl || !session) return;
+    const instructions = Array.isArray(session.instructions) ? session.instructions : session.setupTips || [];
+    outputEl.hidden = false;
+    outputEl.innerHTML = `
+      <div class="jam-session-result-title">${escapeHtml(session.providerName || session.provider)} ready</div>
+      <div class="jam-session-result-meta">${escapeHtml(session.title || session.room || "DizyChat Jam")}</div>
+      ${session.groupName ? `<div class="jam-session-code"><span>Group</span><code>${escapeHtml(session.groupName)}</code><button type="button" data-copy="${escapeHtml(session.groupName)}">Copy</button></div>` : ""}
+      ${session.password ? `<div class="jam-session-code"><span>Password</span><code>${escapeHtml(session.password)}</code><button type="button" data-copy="${escapeHtml(session.password)}">Copy</button></div>` : ""}
+      <ul>${instructions.map((tip) => `<li>${escapeHtml(tip)}</li>`).join("")}</ul>
+      ${session.url ? `<a class="jam-session-open" href="${escapeHtml(session.url)}" target="_blank" rel="noopener noreferrer">Open ${escapeHtml(session.providerName || "jam provider")}</a>` : ""}
+    `;
+    const link = outputEl.querySelector(".jam-session-open");
+    if (link && session.provider === "jacktrip") {
+      window.open(session.url, "_blank", "noopener,noreferrer");
+    }
+  };
+
+  const renderProviders = (providers = []) => {
+    if (!providersEl) return;
+    providersEl.innerHTML = providers.map((provider) => `
+      <article class="jam-provider-card" data-provider="${escapeHtml(provider.id)}">
+        <div class="jam-provider-head">
+          <strong>${escapeHtml(provider.name)}</strong>
+          <span>${escapeHtml(provider.badge || "")}</span>
+        </div>
+        <p>${escapeHtml(provider.bestFor || "")}</p>
+        <ul>
+          ${(provider.setupTips || []).slice(0, 3).map((tip) => `<li>${escapeHtml(tip)}</li>`).join("")}
+        </ul>
+        <button type="button" data-provider-action="${escapeHtml(provider.id)}">
+          ${provider.id === "jacktrip" ? "Try JackTrip free" : `Use ${escapeHtml(provider.name)}`}
+        </button>
+      </article>
+    `).join("");
+  };
+
+  const openPanel = async () => {
+    panel.hidden = false;
+    if (!jamStatus) {
+      setJamStatus("Checking free jam providers…");
+      jamStatus = await fetchJamStatus();
+      renderProviders(jamStatus.providers || []);
+    }
+    const jacktrip = (jamStatus.providers || []).find((provider) => provider.id === "jacktrip");
+    setJamStatus(jacktrip?.freeTier
+      ? "JackTrip has a free test tier: up to 5 musicians for 30 minutes."
+      : "Choose a free external jam provider.");
+  };
+
+  jamSessionBtn.hidden = false;
+  jamSessionBtn.removeAttribute("aria-hidden");
+
+  jamSessionBtn.addEventListener("click", async () => {
+    try {
+      if (panel.hidden) {
+        await openPanel();
+      } else {
+        panel.hidden = true;
+      }
+    } catch (error) {
+      console.error("[JamSession] status failed", error);
+      showToast(error?.message || "Unable to load jam providers.", "error");
+      setJamStatus(error?.message || "Unable to load jam providers.");
+    }
+  });
+
+  closeBtn?.addEventListener("click", () => {
+    panel.hidden = true;
+  });
+
+  providersEl?.addEventListener("click", async (event) => {
+    const button = event.target.closest("button[data-provider-action]");
+    if (!button) return;
+    const provider = button.dataset.providerAction;
+    try {
+      if (!window.currentRoom) {
+        showToast("Join a chat room before starting a jam session.", "warn");
+        return;
+      }
+      button.disabled = true;
+      setJamStatus(`Preparing ${provider} jam…`);
+      const session = await requestJamSession(provider);
+      renderSession(session);
+      setJamStatus(provider === "jacktrip" ? "JackTrip opened. Share its studio invite back in chat." : "Jam handoff generated.");
+      showToast(provider === "jacktrip" ? "JackTrip free test opened" : "Jam session details ready", "success");
+    } catch (error) {
+      console.error("[JamSession] launch failed", error);
+      showToast(error?.message || "Unable to start jam session.", "error");
+      setJamStatus(error?.message || "Unable to start jam session.");
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  outputEl?.addEventListener("click", async (event) => {
+    const button = event.target.closest("button[data-copy]");
+    if (!button) return;
+    const ok = await copyText(button.dataset.copy);
+    showToast(ok ? "Copied jam detail" : "Unable to copy jam detail", ok ? "success" : "error");
   });
 })();
 
