@@ -255,63 +255,6 @@
       margin: 0;
     }
 
-    .live-tools {
-      margin-top: clamp(56px, 8vw, 96px);
-    }
-
-    .live-tools-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 24px;
-      margin-top: 28px;
-    }
-
-    .live-tool-card {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      min-height: 100%;
-      padding: clamp(22px, 4vw, 28px);
-      border: 1px solid rgba(14, 165, 233, 0.28);
-      border-radius: 28px;
-      background: linear-gradient(145deg, rgba(15, 23, 42, 0.82), rgba(49, 46, 129, 0.42));
-      box-shadow: 0 20px 50px rgba(2, 6, 23, 0.42);
-    }
-
-    .live-tool-card h3 {
-      margin: 0;
-      color: #f8fafc;
-      font-size: 1.35rem;
-    }
-
-    .live-tool-card p,
-    .live-tool-card li {
-      color: rgba(226, 232, 240, 0.86);
-      line-height: 1.55;
-    }
-
-    .live-tool-card p,
-    .live-tool-card ul {
-      margin: 0;
-    }
-
-    .live-tool-card ul {
-      padding-left: 20px;
-    }
-
-    .live-tool-badge {
-      align-self: flex-start;
-      border: 1px solid rgba(125, 211, 252, 0.35);
-      border-radius: 999px;
-      padding: 6px 12px;
-      background: rgba(14, 165, 233, 0.12);
-      color: #bae6fd;
-      font-size: 0.78rem;
-      font-weight: 800;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
-
     .quickstart {
       margin-top: clamp(56px, 8vw, 96px);
       display: grid;
@@ -453,7 +396,6 @@
       </a>
       <nav class="nav-links" aria-label="Main navigation">
         <a href="#features">Features</a>
-        <a href="#live-tools">Live tools</a>
         <a href="#quickstart">Quick start</a>
         <a href="https://github.com/DizygoticCode/dizychat-server" target="_blank" rel="noreferrer">GitHub</a>
       </nav>
@@ -557,6 +499,44 @@
         <h3>Preview-friendly links</h3>
         <p>OpenGraph previews, direct GIF conversion, and responsive Rumble embeds make shared links useful before anyone clicks away.</p>
       </article>
+    </section>
+
+    <section class="quickstart" id="quickstart" aria-labelledby="quickstart-title">
+      <div class="quickstart-intro">
+        <div class="section-eyebrow">First visit?</div>
+        <h2 id="quickstart-title">Quick start for new users</h2>
+        <p>
+          DizyChat is designed to feel familiar in seconds. Pick a room, introduce yourself,
+          and use the composer tools as your community gets moving.
+        </p>
+        <div class="hero-actions">
+          <button class="primary-btn" type="button" onclick="window.location.href='/login'">
+            Start chatting
+          </button>
+        </div>
+      </div>
+      <div class="quickstart-steps">
+        <article class="quickstart-card">
+          <h3>Enter your name and room</h3>
+          <p>Head to <code>/login</code>, choose a display name, then join a public room or paste the room name your host shared.</p>
+        </article>
+        <article class="quickstart-card">
+          <h3>Set your vibe</h3>
+          <p>Toggle theme, density, and sound notifications so the chat feels right on desktop or mobile before the room gets busy.</p>
+        </article>
+        <article class="quickstart-card">
+          <h3>Share more than text</h3>
+          <ul>
+            <li>Attach files, images, clips, or push-to-talk voice notes.</li>
+            <li>Add GIFs, custom emoji, reactions, and soundboard hits.</li>
+            <li>Paste links for rich previews and inline media where supported.</li>
+          </ul>
+        </article>
+        <article class="quickstart-card">
+          <h3>Keep track of the good stuff</h3>
+          <p>Reply in threads, star messages for yourself, watch pinned posts from hosts, and use search filters when history grows.</p>
+        </article>
+      </div>
     </section>
 
     <section class="live-tools" id="live-tools" aria-labelledby="live-tools-title">
