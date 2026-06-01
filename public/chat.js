@@ -92,7 +92,6 @@ const fileInput = document.getElementById("file-input");
 const attachBtn = document.getElementById("file-attach");
 const voiceBtn = document.getElementById("voice-btn");
 const voiceCallBtn = document.getElementById("voice-call-btn");
-const livekitMusicBtn = document.getElementById("livekit-music-btn");
 const jamSessionBtn = document.getElementById("jam-session-btn");
 const emojiBtn = document.getElementById("emoji-btn");
 const pinnedContainer = document.getElementById("pinned-messages");
@@ -7699,17 +7698,22 @@ if (voiceBtn) {
   panel.innerHTML = `
     <div class="voice-call-header" data-role="drag-handle">
       <div>
-        <div class="voice-call-title">Live Call</div>
+        <div class="voice-call-title" data-role="title">Live Call</div>
         <div class="voice-call-status" data-role="status">Not connected.</div>
       </div>
       <span class="voice-call-drag-hint" aria-hidden="true">↕</span>
     </div>
     <div class="voice-call-controls">
-      <button type="button" data-role="join">Join</button>
+      <button type="button" data-role="join">Join voice</button>
+      <button type="button" data-role="music-join">Join music mode</button>
       <button type="button" data-role="mute">Mute</button>
       <button type="button" data-role="camera">Add video</button>
       <button type="button" data-role="leave">Leave</button>
     </div>
+    <p class="voice-call-music-hint" data-role="music-hint" hidden>
+      Music Mode keeps the jam inside DizyChat via LiveKit and disables browser echo cancellation,
+      noise suppression, and auto-gain so instruments sound more natural. Use headphones.
+    </p>
     <div class="call-video-grid" data-role="video-grid" hidden aria-label="Call video feeds"></div>
     <label class="voice-call-master-volume">
       <span>Call volume</span>
@@ -7724,40 +7728,12 @@ if (voiceBtn) {
   remoteAudioContainer.setAttribute("aria-hidden", "true");
   document.body.appendChild(remoteAudioContainer);
 
-  // Dedicated LiveKit Music Mode panel. This stays separate from the existing
-  // Live Call pop-up so the regular call button keeps its original behavior.
-  const musicPanel = document.createElement("div");
-  musicPanel.className = "livekit-music-panel";
-  musicPanel.hidden = true;
-  musicPanel.innerHTML = `
-    <div class="livekit-music-header">
-      <div>
-        <div class="livekit-music-title">LiveKit Music Mode</div>
-        <div class="livekit-music-status" data-role="music-status">Ready for an in-app jam.</div>
-      </div>
-      <button type="button" class="livekit-music-close" data-role="music-close" aria-label="Close LiveKit Music Mode panel">✕</button>
-    </div>
-    <p class="livekit-music-copy">
-      Uses your existing LiveKit room, but turns off browser echo cancellation, noise suppression,
-      and auto-gain for a more natural instrument sound. Use headphones.
-    </p>
-    <div class="livekit-music-controls">
-      <button type="button" data-role="music-start">Start Music Mode</button>
-      <button type="button" data-role="music-open-call">Open call panel</button>
-      <button type="button" data-role="music-leave">Leave</button>
-    </div>
-  `;
-  document.body.appendChild(musicPanel);
-
-  const musicStatusEl = musicPanel.querySelector('[data-role="music-status"]');
-  const musicCloseControl = musicPanel.querySelector('[data-role="music-close"]');
-  const musicStartControl = musicPanel.querySelector('[data-role="music-start"]');
-  const musicOpenCallControl = musicPanel.querySelector('[data-role="music-open-call"]');
-  const musicLeaveControl = musicPanel.querySelector('[data-role="music-leave"]');
-
+  const titleEl = panel.querySelector('[data-role="title"]');
   const statusEl = panel.querySelector('[data-role="status"]');
   const dragHandle = panel.querySelector('[data-role="drag-handle"]');
   const joinControl = panel.querySelector('[data-role="join"]');
+  const musicJoinControl = panel.querySelector('[data-role="music-join"]');
+  const musicHint = panel.querySelector('[data-role="music-hint"]');
   const muteControl = panel.querySelector('[data-role="mute"]');
   const cameraControl = panel.querySelector('[data-role="camera"]');
   const leaveControl = panel.querySelector('[data-role="leave"]');
@@ -7938,20 +7914,13 @@ if (voiceBtn) {
     livekitMusicBtn?.classList.toggle("music-mode-active", inCall && musicMode);
     livekitMusicBtn?.classList.toggle("call-active", inCall && musicMode);
     if (livekitMusicBtn) livekitMusicBtn.textContent = inCall && musicMode ? "🎶" : "🎵";
-    if (musicStartControl) musicStartControl.disabled = inCall;
-    if (musicLeaveControl) musicLeaveControl.disabled = !inCall;
-    if (musicOpenCallControl) musicOpenCallControl.disabled = !inCall;
-    if (musicMode && inCall) {
-      setMusicStatus(`Connected to ${window.currentRoom || "this room"} in Music Mode.`);
-    } else if (inCall) {
-      setMusicStatus("A regular LiveKit call is active. Leave it before starting Music Mode.");
-    } else {
-      setMusicStatus("Ready for an in-app jam.");
-    }
+    if (titleEl) titleEl.textContent = musicMode ? "LiveKit Music Mode" : "Live Call";
+    if (musicHint) musicHint.hidden = !musicMode;
     muteControl.disabled = !inCall;
     cameraControl.disabled = !inCall;
     leaveControl.disabled = !inCall;
     joinControl.disabled = inCall;
+    if (musicJoinControl) musicJoinControl.disabled = inCall;
     muteControl.textContent = muted ? "Unmute" : "Mute";
     cameraControl.textContent = cameraEnabled ? "Stop video" : "Add video";
   };
@@ -8530,25 +8499,14 @@ if (voiceBtn) {
   };
 
   joinControl.addEventListener("click", () => joinWithMode(false));
+  musicJoinControl?.addEventListener("click", () => joinWithMode(true));
   livekitMusicBtn?.addEventListener("click", () => {
-    musicPanel.hidden = !musicPanel.hidden;
-    setCallUiState({
-      inCall: Boolean(callState.room),
-      muted: callState.muted,
-      cameraEnabled: callState.cameraEnabled,
-      musicMode: callState.musicMode,
-    });
-  });
-  musicCloseControl?.addEventListener("click", () => {
-    musicPanel.hidden = true;
-  });
-  musicStartControl?.addEventListener("click", () => joinWithMode(true));
-  musicOpenCallControl?.addEventListener("click", () => {
     panel.hidden = false;
-  });
-  musicLeaveControl?.addEventListener("click", async () => {
-    await leaveCall();
-    showToast("Left call", "info");
+    if (callState.room) {
+      setCallUiState({ inCall: true, muted: callState.muted, cameraEnabled: callState.cameraEnabled, musicMode: callState.musicMode });
+      return;
+    }
+    joinWithMode(true);
   });
   muteControl.addEventListener("click", toggleLocalMute);
   cameraControl.addEventListener("click", async () => {

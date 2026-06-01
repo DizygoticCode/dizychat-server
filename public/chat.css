@@ -2389,22 +2389,6 @@ body:not(.dark) #voice-btn.recording {
   color: #fff;
 }
 
-#voice-call-btn.call-music-active,
-#livekit-music-btn.music-mode-active {
-  background: #7c3aed;
-  border-color: #c4b5fd;
-  color: #fff;
-}
-
-#livekit-music-btn {
-  border-color: rgba(196, 181, 253, 0.62);
-}
-
-#livekit-music-btn:hover,
-#livekit-music-btn:focus-visible {
-  background: rgba(124, 58, 237, 0.18);
-}
-
 #jam-session-btn {
   border-color: rgba(250, 204, 21, 0.55);
 }
@@ -2530,6 +2514,17 @@ body:not(.dark) #voice-btn.recording {
 .voice-call-status { font-size: 0.84rem; opacity: 0.9; }
 .voice-call-controls { display: flex; gap: 8px; flex-wrap: wrap; }
 .voice-call-controls button { flex: 1 1 42%; min-width: 88px; }
+.voice-call-music-hint {
+  background: rgba(124, 58, 237, 0.16);
+  border: 1px solid rgba(196, 181, 253, 0.34);
+  border-radius: 10px;
+  color: #ede9fe;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  margin: 10px 0 0;
+  padding: 8px 10px;
+}
+.voice-call-music-hint[hidden] { display: none !important; }
 .call-video-grid {
   display: grid;
   gap: 8px;
@@ -2727,7 +2722,6 @@ body:not(.dark) #voice-btn.recording {
 
 @media (max-width: 480px) {
   .voice-call-panel,
-  .livekit-music-panel,
   .jam-session-panel {
     bottom: 76px;
     width: calc(100vw - 20px);

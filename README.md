@@ -139,8 +139,6 @@ Recommended options:
 
 For audio and optional camera video, configure only the LiveKit variables above. DizyChat uses the same LiveKit room connection for microphone and camera tracks; users join with audio first and can press **Add video** in the live call panel to publish their camera. Browser camera access requires HTTPS or localhost, and the current server permissions policy allows both microphone and camera access.
 
-The in-app **LiveKit Music Mode** button uses the existing LiveKit provider and does not require new server credentials. It is separate from the regular phone call button: the phone button still opens the normal Live Call panel, while the music-note button opens a dedicated Music Mode panel for starting an in-app jam. Music Mode joins the same DizyChat room through LiveKit but requests the microphone with browser echo cancellation, noise suppression, and auto-gain disabled, plus 48 kHz stereo capture hints where supported. This is better for instruments than voice-call processing, but musicians should use headphones because feedback/echo protection is intentionally reduced.
-
 ### Jam session launcher setup
 
 The **Jam Session** button is an external pro-audio handoff for musician rooms. It recommends JackTrip first because JackTrip currently offers a free hosted-studio test path for up to 5 musicians for 30 minutes, then exposes SonoBus as a free fallback for open-source peer-to-peer audio with ASIO support through its native app.
