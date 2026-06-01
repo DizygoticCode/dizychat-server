@@ -2389,22 +2389,6 @@ body:not(.dark) #voice-btn.recording {
   color: #fff;
 }
 
-#voice-call-btn.call-music-active,
-#livekit-music-btn.music-mode-active {
-  background: #7c3aed;
-  border-color: #c4b5fd;
-  color: #fff;
-}
-
-#livekit-music-btn {
-  border-color: rgba(196, 181, 253, 0.62);
-}
-
-#livekit-music-btn:hover,
-#livekit-music-btn:focus-visible {
-  background: rgba(124, 58, 237, 0.18);
-}
-
 #jam-session-btn {
   border-color: rgba(250, 204, 21, 0.55);
 }

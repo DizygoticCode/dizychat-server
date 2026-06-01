@@ -92,7 +92,6 @@ const fileInput = document.getElementById("file-input");
 const attachBtn = document.getElementById("file-attach");
 const voiceBtn = document.getElementById("voice-btn");
 const voiceCallBtn = document.getElementById("voice-call-btn");
-const livekitMusicBtn = document.getElementById("livekit-music-btn");
 const jamSessionBtn = document.getElementById("jam-session-btn");
 const emojiBtn = document.getElementById("emoji-btn");
 const pinnedContainer = document.getElementById("pinned-messages");
