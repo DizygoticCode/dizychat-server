@@ -106,6 +106,9 @@ Create a `.env` file in the project root with the following keys:
 | `LIVEKIT_API_SECRET` | Required when LiveKit calls are enabled. LiveKit API secret paired with `LIVEKIT_API_KEY`. |
 | `W2G_API_KEY` | Required for Watch2Gether watch-party room creation. Keep this server-side in Render environment variables; clients only see generated W2G room links. Aliases `WATCH2GETHER_API_KEY` and `WATCH_2_GETHER_API_KEY` are also accepted. |
 | `W2G_REQUEST_TIMEOUT_MS` | (Optional) Timeout for Watch2Gether API room creation; defaults to 10000 ms. |
+| `JACKTRIP_STUDIO_CREATE_URL` | (Optional) Override the JackTrip create-studio URL used by the Jam Session launcher; defaults to `https://app.jacktrip.org/studios/create`. |
+| `JACKTRIP_STUDIO_INVITE_URL` | (Optional) If you already have a reusable JackTrip studio invite, expose that directly instead of the create-studio page. |
+| `SONOBUS_DOWNLOAD_URL` | (Optional) Override the SonoBus fallback URL; defaults to `https://sonobus.net/index.html`. |
 
 ## Running locally
 
@@ -135,6 +138,16 @@ Recommended options:
 4. **Use `livekit-server --dev` only for local testing.** The dev server uses the built-in `devkey` / `secret` credentials and is not a production deployment.
 
 For audio and optional camera video, configure only the LiveKit variables above. DizyChat uses the same LiveKit room connection for microphone and camera tracks; users join with audio first and can press **Add video** in the live call panel to publish their camera. Browser camera access requires HTTPS or localhost, and the current server permissions policy allows both microphone and camera access.
+
+The in-app **LiveKit Music Mode** button uses the existing LiveKit provider and does not require new server credentials. It joins the same DizyChat room through LiveKit but requests the microphone with browser echo cancellation, noise suppression, and auto-gain disabled, plus 48 kHz stereo capture hints where supported. This is better for instruments than voice-call processing, but musicians should use headphones because feedback/echo protection is intentionally reduced.
+
+### Jam session launcher setup
+
+The **Jam Session** button is an external pro-audio handoff for musician rooms. It recommends JackTrip first because JackTrip currently offers a free hosted-studio test path for up to 5 musicians for 30 minutes, then exposes SonoBus as a free fallback for open-source peer-to-peer audio with ASIO support through its native app.
+
+No JackTrip API key is required for the default launcher. If `JACKTRIP_STUDIO_CREATE_URL`, `JACKTRIP_STUDIO_INVITE_URL`, and `SONOBUS_DOWNLOAD_URL` are unset, DizyChat works as-is by opening JackTrip's create-studio page and SonoBus's download page. Set those variables only when you want Render to point users at a specific reusable JackTrip studio invite, a different JackTrip landing page, or a mirrored SonoBus URL.
+
+DizyChat does not handle ASIO audio directly in the browser. The launcher opens the external provider and gives room-specific instructions so musicians can use the provider's native desktop app/audio-interface support while staying coordinated in DizyChat.
 
 
 ### Configuring native/WebView builds
@@ -205,6 +218,12 @@ Resolves a Tenor share URL to embeddable GIF URLs via Tenor oEmbed.
 
 ### `GET /soundboard-clips`
 Returns locally curated soundboard clips aggregated from JSON definitions in `data/soundboards`. Accepts optional `q` and `board` query parameters for search filtering and responds with normalized clip metadata for the soundboard picker.
+
+### `GET /api/jam/status`
+Returns available external jam providers, including JackTrip as the recommended free test path and SonoBus as the free fallback.
+
+### `POST /api/jam/session`
+Accepts JSON `{ "provider": "jacktrip" | "sonobus", "room": "Room Name" }` and returns launch instructions for the selected external jam provider. JackTrip sessions return the configured create/invite URL plus free-tier guidance; SonoBus sessions generate a room-specific group name and password for copying into the native app.
 
 ### Importing meme boards from 101Soundboards
 
