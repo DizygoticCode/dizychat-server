@@ -7681,7 +7681,6 @@ if (voiceBtn) {
     localLevel: 0,
     localMeter: null,
     muted: false,
-    musicMode: false,
     cameraEnabled: false,
     localVideoTrack: null,
     localVideoTile: null,
@@ -7708,9 +7707,6 @@ if (voiceBtn) {
       <button type="button" data-role="mute">Mute</button>
       <button type="button" data-role="camera">Add video</button>
       <button type="button" data-role="leave">Leave</button>
-    </div>
-    <div class="voice-call-mode-controls">
-      <button type="button" data-role="music-mode" aria-pressed="false">Music mode: Off</button>
     </div>
     <div class="call-video-grid" data-role="video-grid" hidden aria-label="Call video feeds"></div>
     <label class="voice-call-master-volume">
@@ -7900,12 +7896,6 @@ if (voiceBtn) {
     entries.forEach((entry) => peersEl.appendChild(createPeerRow(entry)));
   };
 
-  const updateMusicModeControl = () => {
-    if (!musicModeControl) return;
-    musicModeControl.textContent = callState.musicMode ? "Music mode: On" : "Music mode: Off";
-    musicModeControl.setAttribute("aria-pressed", callState.musicMode ? "true" : "false");
-  };
-
   const setCallUiState = ({ inCall = false, muted = false, cameraEnabled = callState.cameraEnabled } = {}) => {
     voiceCallBtn.classList.toggle("call-active", inCall);
     voiceCallBtn.classList.toggle("call-muted", inCall && muted);
@@ -7915,7 +7905,6 @@ if (voiceBtn) {
     cameraControl.disabled = !inCall;
     leaveControl.disabled = !inCall;
     joinControl.disabled = inCall;
-    if (musicModeControl) musicModeControl.disabled = inCall;
     muteControl.textContent = muted ? "Unmute" : "Mute";
     updateMusicModeControl();
     cameraControl.textContent = cameraEnabled ? "Stop video" : "Add video";
@@ -8257,15 +8246,6 @@ if (voiceBtn) {
     }
   };
 
-  const getAudioCaptureOptions = () => callState.musicMode
-    ? {
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
-        channelCount: 2,
-      }
-    : { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
-
   const fetchToken = async () => {
     const res = await fetch("/api/calls/token", {
       method: "POST",
@@ -8404,8 +8384,8 @@ if (voiceBtn) {
         console.warn("[LiveCall] remote audio start warning", error);
       });
     }
-    setStatus(callState.musicMode ? "Requesting microphone for music mode…" : "Requesting microphone…");
-    const track = await LK.createLocalAudioTrack(getAudioCaptureOptions());
+    setStatus("Requesting microphone…");
+    const track = await LK.createLocalAudioTrack({ echoCancellation: true, noiseSuppression: true, autoGainControl: true });
     setStatus("Publishing microphone…");
     await room.localParticipant.publishTrack(track, {
       source: LK.Track?.Source?.Microphone,
@@ -8459,15 +8439,6 @@ if (voiceBtn) {
   voiceCallBtn.addEventListener("click", () => {
     panel.hidden = !panel.hidden;
   });
-  musicModeControl?.addEventListener("click", () => {
-    if (callState.room) return;
-    callState.musicMode = !callState.musicMode;
-    updateMusicModeControl();
-    setStatus(callState.musicMode
-      ? "Music mode will be used for the next call. Use headphones to avoid feedback."
-      : "Music mode off. The next call will use regular voice settings.");
-  });
-
   joinControl.addEventListener("click", async () => {
     try {
       await joinCall();
