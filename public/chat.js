@@ -7689,6 +7689,7 @@ if (voiceBtn) {
     participants: new Map(),
     remoteAudioElements: new Map(),
     remoteVideoElements: new Map(),
+    musicModeEnabled: null,
   };
 
   const panel = document.createElement("div");
@@ -7701,6 +7702,16 @@ if (voiceBtn) {
         <div class="voice-call-status" data-role="status">Not connected.</div>
       </div>
       <span class="voice-call-drag-hint" aria-hidden="true">↕</span>
+    </div>
+    <div class="voice-call-music-mode" data-role="music-mode-panel">
+      <div class="voice-call-music-mode-copy">
+        <strong>Please choose Music mode Off or On before starting the call.</strong>
+        <span>Music mode uses different microphone settings and cannot be changed after joining. Disconnect and join again to switch modes.</span>
+      </div>
+      <div class="voice-call-music-mode-actions" role="group" aria-label="Choose music mode for this call">
+        <button type="button" data-role="music-mode-off" aria-pressed="false">Music mode Off</button>
+        <button type="button" data-role="music-mode-on" aria-pressed="false">Music mode On</button>
+      </div>
     </div>
     <div class="voice-call-controls">
       <button type="button" data-role="join">Join</button>
@@ -7728,6 +7739,9 @@ if (voiceBtn) {
   const muteControl = panel.querySelector('[data-role="mute"]');
   const cameraControl = panel.querySelector('[data-role="camera"]');
   const leaveControl = panel.querySelector('[data-role="leave"]');
+  const musicModePanel = panel.querySelector('[data-role="music-mode-panel"]');
+  const musicModeOffControl = panel.querySelector('[data-role="music-mode-off"]');
+  const musicModeOnControl = panel.querySelector('[data-role="music-mode-on"]');
   const masterVolumeControl = panel.querySelector('[data-role="master-volume"]');
   const videoGrid = panel.querySelector('[data-role="video-grid"]');
   const peersEl = panel.querySelector('[data-role="peers"]');
@@ -7895,7 +7909,35 @@ if (voiceBtn) {
     entries.forEach((entry) => peersEl.appendChild(createPeerRow(entry)));
   };
 
+  const updateMusicModeUi = (inCall = Boolean(callState.room)) => {
+    const hasChoice = callState.musicModeEnabled !== null;
+    musicModePanel?.classList.toggle("music-mode-selected", hasChoice);
+    musicModePanel?.classList.toggle("music-mode-locked", inCall);
+    musicModeOffControl?.classList.toggle("active", callState.musicModeEnabled === false);
+    musicModeOnControl?.classList.toggle("active", callState.musicModeEnabled === true);
+    musicModeOffControl?.setAttribute("aria-pressed", String(callState.musicModeEnabled === false));
+    musicModeOnControl?.setAttribute("aria-pressed", String(callState.musicModeEnabled === true));
+    if (musicModeOffControl) musicModeOffControl.disabled = inCall;
+    if (musicModeOnControl) musicModeOnControl.disabled = inCall;
+    if (joinControl) joinControl.title = hasChoice ? "Join live call" : "Choose Music mode Off or On before joining.";
+  };
+
+  const chooseMusicMode = (enabled) => {
+    if (callState.room) {
+      showToast("Disconnect and join again to change Music mode.", "warn");
+      return;
+    }
+    callState.musicModeEnabled = Boolean(enabled);
+    updateMusicModeUi(false);
+    setCallUiState({ inCall: false, muted: false, cameraEnabled: false });
+  };
+
+  const getMicrophoneSettings = () => (callState.musicModeEnabled
+    ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    : { echoCancellation: true, noiseSuppression: true, autoGainControl: true });
+
   const setCallUiState = ({ inCall = false, muted = false, cameraEnabled = callState.cameraEnabled } = {}) => {
+    const hasMusicModeChoice = callState.musicModeEnabled !== null;
     voiceCallBtn.classList.toggle("call-active", inCall);
     voiceCallBtn.classList.toggle("call-muted", inCall && muted);
     voiceCallBtn.classList.toggle("call-video-active", inCall && cameraEnabled);
@@ -7903,9 +7945,10 @@ if (voiceBtn) {
     muteControl.disabled = !inCall;
     cameraControl.disabled = !inCall;
     leaveControl.disabled = !inCall;
-    joinControl.disabled = inCall;
+    joinControl.disabled = inCall || !hasMusicModeChoice;
     muteControl.textContent = muted ? "Unmute" : "Mute";
     cameraControl.textContent = cameraEnabled ? "Stop video" : "Add video";
+    updateMusicModeUi(inCall);
   };
 
   const startPanelDrag = (event) => {
@@ -8326,6 +8369,10 @@ if (voiceBtn) {
   };
 
   const joinCall = async () => {
+    if (callState.musicModeEnabled === null) {
+      showToast("Please choose Music mode Off or On before starting the call.", "warn");
+      return;
+    }
     if (!window.currentRoom || !window.currentUser) {
       showToast("Join a chat room first.", "warn");
       return;
@@ -8382,8 +8429,8 @@ if (voiceBtn) {
         console.warn("[LiveCall] remote audio start warning", error);
       });
     }
-    setStatus("Requesting microphone…");
-    const track = await LK.createLocalAudioTrack({ echoCancellation: true, noiseSuppression: true, autoGainControl: true });
+    setStatus(callState.musicModeEnabled ? "Requesting microphone for Music mode…" : "Requesting microphone…");
+    const track = await LK.createLocalAudioTrack(getMicrophoneSettings());
     setStatus("Publishing microphone…");
     await room.localParticipant.publishTrack(track, {
       source: LK.Track?.Source?.Microphone,
@@ -8437,6 +8484,8 @@ if (voiceBtn) {
   voiceCallBtn.addEventListener("click", () => {
     panel.hidden = !panel.hidden;
   });
+  musicModeOffControl?.addEventListener("click", () => chooseMusicMode(false));
+  musicModeOnControl?.addEventListener("click", () => chooseMusicMode(true));
   joinControl.addEventListener("click", async () => {
     try {
       await joinCall();
