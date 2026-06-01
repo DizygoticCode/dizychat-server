@@ -2450,6 +2450,34 @@ body:not(.dark) #voice-btn.recording {
 
 .voice-call-title { font-weight: 700; font-size: 0.92rem; margin-bottom: 4px; }
 .voice-call-status { font-size: 0.84rem; opacity: 0.9; }
+.voice-call-music-mode {
+  background: rgba(96, 165, 250, 0.1);
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  padding: 8px;
+}
+.voice-call-music-mode.music-mode-selected {
+  border-color: rgba(67, 209, 122, 0.48);
+}
+.voice-call-music-mode.music-mode-locked {
+  opacity: 0.82;
+}
+.voice-call-music-mode-copy {
+  display: grid;
+  gap: 3px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  margin-bottom: 8px;
+}
+.voice-call-music-mode-copy span { opacity: 0.88; }
+.voice-call-music-mode-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.voice-call-music-mode-actions button { flex: 1 1 150px; min-width: 0; }
+.voice-call-music-mode-actions button.active {
+  background: #1f9d55;
+  border-color: #43d17a;
+  color: #fff;
+}
 .voice-call-controls { display: flex; gap: 8px; flex-wrap: wrap; }
 .voice-call-controls button { flex: 1 1 42%; min-width: 88px; }
 .call-video-grid {
