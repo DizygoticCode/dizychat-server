@@ -517,19 +517,19 @@ app.get('/version', (req, res) => {
 // ---------------- File Uploads ----------------
 const fsPromises = fs.promises;
 const UPLOAD_EXTENSION_CONFIG = new Map([
-  ['.jpg', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'] }],
-  ['.jpeg', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'] }],
+  ['.jpg', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'], compatibleDetectedFamilies: ['heif-family'] }],
+  ['.jpeg', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'], compatibleDetectedFamilies: ['heif-family'] }],
   ['.png', { family: 'image/png', mimeTypes: ['image/png'] }],
   ['.gif', { family: 'image/gif', mimeTypes: ['image/gif'] }],
   ['.webp', { family: 'image/webp', mimeTypes: ['image/webp'] }],
-  ['.heic', { family: 'heif-family', mimeTypes: ['image/heic', 'image/heif'] }],
-  ['.heif', { family: 'heif-family', mimeTypes: ['image/heic', 'image/heif'] }],
+  ['.heic', { family: 'heif-family', mimeTypes: ['image/heic', 'image/heif'], compatibleDetectedFamilies: ['image/jpeg'] }],
+  ['.heif', { family: 'heif-family', mimeTypes: ['image/heic', 'image/heif'], compatibleDetectedFamilies: ['image/jpeg'] }],
   ['.mp3', { family: 'audio/mpeg', mimeTypes: ['audio/mpeg', 'audio/mp3', 'audio/x-mpeg', 'audio/x-mp3'] }],
   ['.m4a', { family: 'mp4-family', mimeTypes: ['audio/mp4', 'audio/x-m4a', 'audio/m4a'] }],
   ['.wav', { family: 'audio/wav', mimeTypes: ['audio/wav', 'audio/wave', 'audio/x-wav'] }],
   ['.ogg', { family: 'ogg-family', mimeTypes: ['audio/ogg', 'audio/x-ogg', 'video/ogg', 'application/ogg'] }],
   ['.opus', { family: 'ogg-family', mimeTypes: ['audio/ogg', 'audio/opus', 'audio/x-opus', 'application/ogg'] }],
-  ['.webm', { family: 'webm-family', mimeTypes: ['audio/webm', 'audio/x-webm', 'video/webm', 'video/x-webm', 'application/webm', 'application/octet-stream'] }],
+  ['.webm', { family: 'webm-family', mimeTypes: ['audio/webm', 'audio/x-webm', 'video/webm', 'video/x-webm', 'application/webm', 'application/octet-stream'], compatibleDetectedFamilies: ['mp4-family', 'ogg-family'] }],
   ['.mp4', { family: 'mp4-family', mimeTypes: ['video/mp4', 'audio/mp4', 'application/mp4'] }],
   ['.m4v', { family: 'mp4-family', mimeTypes: ['video/mp4', 'video/x-m4v'] }],
   ['.mov', { family: 'mp4-family', mimeTypes: ['video/quicktime', 'video/mp4'] }],
@@ -604,11 +604,64 @@ const detectFileKindByMagicBytes = async (filePath) => {
   }
 };
 
-const isDetectedKindAllowedForUpload = (detectedKind, mimeType, originalName) => {
+const validateDetectedUploadKind = (detectedKind, mimeType, originalName) => {
   const { config } = getUploadTypeInfo(mimeType, originalName);
-  if (!config) return false;
-  if (detectedKind === 'empty') return config.family === 'text';
-  return detectedKind === config.family;
+  if (!config) return { allowed: false, exact: false };
+  if (detectedKind === 'empty') {
+    return { allowed: config.family === 'text', exact: config.family === 'text' };
+  }
+
+  if (detectedKind === config.family) return { allowed: true, exact: true };
+
+  const compatibleDetectedFamilies = Array.isArray(config.compatibleDetectedFamilies)
+    ? config.compatibleDetectedFamilies
+    : [];
+  return {
+    allowed: compatibleDetectedFamilies.includes(detectedKind),
+    exact: false,
+  };
+};
+
+const getCanonicalDetectedUploadMetadata = (detectedKind, mimeType) => {
+  const originalMime = String(mimeType || '').toLowerCase().trim().split(';')[0];
+  const isAudioUpload = originalMime.startsWith('audio/');
+
+  if (detectedKind === 'image/jpeg') return { extension: '.jpg', mimeType: 'image/jpeg' };
+  if (detectedKind === 'image/png') return { extension: '.png', mimeType: 'image/png' };
+  if (detectedKind === 'image/gif') return { extension: '.gif', mimeType: 'image/gif' };
+  if (detectedKind === 'image/webp') return { extension: '.webp', mimeType: 'image/webp' };
+  if (detectedKind === 'heif-family') return { extension: '.heic', mimeType: 'image/heic' };
+  if (detectedKind === 'ogg-family') return { extension: '.ogg', mimeType: isAudioUpload ? 'audio/ogg' : 'application/ogg' };
+  if (detectedKind === 'webm-family') return { extension: '.webm', mimeType: isAudioUpload ? 'audio/webm' : 'video/webm' };
+  if (detectedKind === 'mp4-family') return { extension: isAudioUpload ? '.m4a' : '.mp4', mimeType: isAudioUpload ? 'audio/mp4' : 'video/mp4' };
+  return null;
+};
+
+const normaliseUploadedFileExtension = async (filePath, file, detectedKind) => {
+  const canonical = getCanonicalDetectedUploadMetadata(detectedKind, file?.mimetype);
+  if (!canonical || !file?.filename) return filePath;
+
+  const currentExtension = path.extname(file.filename).toLowerCase();
+  file.mimetype = canonical.mimeType;
+
+  if (currentExtension === canonical.extension) return filePath;
+
+  const baseName = path.basename(file.filename, path.extname(file.filename));
+  const renamedFilename = `${baseName}${canonical.extension}`;
+  const renamedPath = path.join(uploadDir, renamedFilename);
+
+  await fsPromises.rename(filePath, renamedPath);
+  file.filename = renamedFilename;
+  file.path = renamedPath;
+
+  logSecurityEvent('upload_extension_normalized', {
+    detectedKind,
+    fromExtension: currentExtension,
+    toExtension: canonical.extension,
+    originalName: file.originalname,
+  }, 'info');
+
+  return renamedPath;
 };
 
 const validateUploadOrigin = (req, res, next) => {
@@ -1410,11 +1463,16 @@ const uploadSingleMiddleware = (req, res, next) => {
 app.post('/upload', validateUploadOrigin, uploadSingleMiddleware, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-  const filePath = path.join(uploadDir, req.file.filename);
+  let filePath = path.join(uploadDir, req.file.filename);
 
   try {
     const detectedKind = await detectFileKindByMagicBytes(filePath);
-    if (!isDetectedKindAllowedForUpload(detectedKind, req.file.mimetype, req.file.originalname)) {
+    const detectedKindValidation = validateDetectedUploadKind(
+      detectedKind,
+      req.file.mimetype,
+      req.file.originalname,
+    );
+    if (!detectedKindValidation.allowed) {
       await removeFileSilently(filePath);
       logSecurityEvent('upload_magic_bytes_rejected', {
         detectedKind,
@@ -1422,6 +1480,14 @@ app.post('/upload', validateUploadOrigin, uploadSingleMiddleware, async (req, re
         originalName: req.file.originalname,
       }, 'warn');
       return res.status(415).json({ error: 'Unable to verify uploaded file type' });
+    }
+    if (!detectedKindValidation.exact) {
+      logSecurityEvent('upload_compatible_type_accepted', {
+        detectedKind,
+        mimeType: req.file.mimetype,
+        originalName: req.file.originalname,
+      }, 'info');
+      filePath = await normaliseUploadedFileExtension(filePath, req.file, detectedKind);
     }
     const scanResult = await scanUploadedFileIfConfigured(filePath);
     if (!scanResult.clean) {
