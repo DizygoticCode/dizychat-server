@@ -532,7 +532,7 @@ const UPLOAD_EXTENSION_CONFIG = new Map([
   ['.webm', { family: 'webm-family', mimeTypes: ['audio/webm', 'audio/x-webm', 'video/webm', 'video/x-webm', 'application/webm', 'application/octet-stream'], compatibleDetectedFamilies: ['mp4-family', 'ogg-family'] }],
   ['.mp4', { family: 'mp4-family', mimeTypes: ['video/mp4', 'audio/mp4', 'application/mp4'] }],
   ['.m4v', { family: 'mp4-family', mimeTypes: ['video/mp4', 'video/x-m4v'] }],
-  ['.mov', { family: 'mp4-family', mimeTypes: ['video/quicktime', 'video/mp4'] }],
+  ['.mov', { family: 'mp4-family', mimeTypes: ['video/quicktime', 'video/mov'] }],
   ['.pdf', { family: 'application/pdf', mimeTypes: ['application/pdf'] }],
   ['.txt', { family: 'text', mimeTypes: ['text/plain'] }],
   ['.md', { family: 'text', mimeTypes: ['text/markdown', 'text/plain'] }],
@@ -548,6 +548,19 @@ const UPLOAD_EXTENSION_CONFIG = new Map([
 ]);
 
 const BROWSER_FALLBACK_UPLOAD_MIME_TYPES = new Set(['application/octet-stream', 'binary/octet-stream']);
+const TEMPORARY_UPLOAD_EXTENSION = '.upload';
+const MAX_STORED_UPLOAD_EXTENSION_LENGTH = 20;
+
+const isBrowserFallbackUploadMime = (mime) => BROWSER_FALLBACK_UPLOAD_MIME_TYPES.has(mime);
+
+const findImageUploadConfigByMime = (mime) => {
+  for (const [candidateExt, candidateConfig] of UPLOAD_EXTENSION_CONFIG.entries()) {
+    if (candidateConfig.mediaType === 'image' && candidateConfig.mimeTypes.includes(mime)) {
+      return { ...candidateConfig, fallbackExtension: candidateExt };
+    }
+  }
+  return null;
+};
 
 const getUploadTypeInfo = (mimeType, originalName) => {
   const mime = String(mimeType || '').toLowerCase().trim().split(';')[0];
@@ -568,8 +581,20 @@ const getUploadTypeInfo = (mimeType, originalName) => {
 
 const isAllowedUploadType = (mimeType, originalName) => {
   const { mime, config } = getUploadTypeInfo(mimeType, originalName);
-  if (!config) return false;
-  return config.mimeTypes.includes(mime) || BROWSER_FALLBACK_UPLOAD_MIME_TYPES.has(mime);
+  if (!config) {
+    return mime.startsWith('image/') || isBrowserFallbackUploadMime(mime);
+  }
+  return config.mimeTypes.includes(mime) || isBrowserFallbackUploadMime(mime);
+};
+
+const getSafeStoredUploadExtension = (file) => {
+  const { mime, ext, config } = getUploadTypeInfo(file?.mimetype, file?.originalname);
+  if (config && UPLOAD_EXTENSION_CONFIG.has(ext) && ext.length <= MAX_STORED_UPLOAD_EXTENSION_LENGTH) {
+    return ext;
+  }
+  if (config?.fallbackExtension) return config.fallbackExtension;
+  if (mime.startsWith('image/') || isBrowserFallbackUploadMime(mime)) return TEMPORARY_UPLOAD_EXTENSION;
+  return '';
 };
 
 const isLikelyTextFile = (buffer, bytesRead) => {
@@ -1370,7 +1395,7 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
     const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + unique + path.extname(file.originalname));
+    cb(null, file.fieldname + '-' + unique + getSafeStoredUploadExtension(file));
   }
 });
 
