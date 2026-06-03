@@ -533,6 +533,8 @@ const UPLOAD_EXTENSION_CONFIG = new Map([
   ['.mp4', { family: 'mp4-family', mimeTypes: ['video/mp4', 'audio/mp4', 'application/mp4'] }],
   ['.m4v', { family: 'mp4-family', mimeTypes: ['video/mp4', 'video/x-m4v'] }],
   ['.mov', { family: 'mp4-family', mimeTypes: ['video/quicktime', 'video/mov'] }],
+  ['.3gp', { family: '3gpp-family', mimeTypes: ['video/3gpp', 'audio/3gpp'] }],
+  ['.3g2', { family: '3gpp2-family', mimeTypes: ['video/3gpp2', 'audio/3gpp2'] }],
   ['.pdf', { family: 'application/pdf', mimeTypes: ['application/pdf'] }],
   ['.txt', { family: 'text', mimeTypes: ['text/plain'] }],
   ['.md', { family: 'text', mimeTypes: ['text/markdown', 'text/plain'] }],
@@ -553,150 +555,30 @@ const MAX_STORED_UPLOAD_EXTENSION_LENGTH = 20;
 
 const isBrowserFallbackUploadMime = (mime) => BROWSER_FALLBACK_UPLOAD_MIME_TYPES.has(mime);
 
-const findImageUploadConfigByMime = (mime) => {
+const getUploadExtensionForMime = (mime) => {
   for (const [candidateExt, candidateConfig] of UPLOAD_EXTENSION_CONFIG.entries()) {
-    if (candidateConfig.mediaType === 'image' && candidateConfig.mimeTypes.includes(mime)) {
-      return { ...candidateConfig, fallbackExtension: candidateExt };
-    }
+    if (candidateConfig.mimeTypes.includes(mime)) return candidateExt;
   }
-  return null;
-};
-
-const getUploadTypeInfo = (mimeType, originalName) => {
-  const mime = String(mimeType || '').toLowerCase().trim().split(';')[0];
-  const ext = path.extname(String(originalName || '')).toLowerCase().trim();
-  let config = UPLOAD_EXTENSION_CONFIG.get(ext);
-
-  if (!config && mime.startsWith('image/')) {
-    for (const [candidateExt, candidateConfig] of UPLOAD_EXTENSION_CONFIG.entries()) {
-      if (candidateConfig.mediaType === 'image' && candidateConfig.mimeTypes.includes(mime)) {
-        config = { ...candidateConfig, fallbackExtension: candidateExt };
-        break;
-      }
-    }
-  }
-
-  return { mime, ext, config };
-};
-
-const isAllowedUploadType = (mimeType, originalName) => {
-  const { mime, config } = getUploadTypeInfo(mimeType, originalName);
-  if (!config) {
-    return mime.startsWith('image/') || isBrowserFallbackUploadMime(mime);
-  }
-  return config.mimeTypes.includes(mime) || isBrowserFallbackUploadMime(mime);
-};
-
-const getSafeStoredUploadExtension = (file) => {
-  const { mime, ext, config } = getUploadTypeInfo(file?.mimetype, file?.originalname);
-  if (config && UPLOAD_EXTENSION_CONFIG.has(ext) && ext.length <= MAX_STORED_UPLOAD_EXTENSION_LENGTH) {
-    return ext;
-  }
-  if (config?.fallbackExtension) return config.fallbackExtension;
-  if (mime.startsWith('image/') || isBrowserFallbackUploadMime(mime)) return TEMPORARY_UPLOAD_EXTENSION;
   return '';
 };
 
-const isLikelyTextFile = (buffer, bytesRead) => {
-  if (bytesRead === 0) return true;
-  let suspiciousControlBytes = 0;
-  for (let i = 0; i < bytesRead; i += 1) {
-    const byte = buffer[i];
-    if (byte === 0) return false;
-    if (byte < 0x09 || (byte > 0x0D && byte < 0x20)) suspiciousControlBytes += 1;
-  }
-  return suspiciousControlBytes / bytesRead < 0.02;
-};
+const isSafeStoredUploadExtension = (ext) => (
+  ext.length > 1
+  && ext.length <= MAX_STORED_UPLOAD_EXTENSION_LENGTH
+  && /^\.[a-z0-9][a-z0-9._-]*$/i.test(ext)
+);
 
-const detectFileKindByMagicBytes = async (filePath) => {
-  const handle = await fsPromises.open(filePath, 'r');
-  try {
-    const readBuffer = Buffer.alloc(512);
-    const { bytesRead } = await handle.read(readBuffer, 0, readBuffer.length, 0);
-    const bytes = readBuffer;
-    if (bytesRead === 0) return 'empty';
-    if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) return 'image/jpeg';
-    if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) return 'image/png';
-    if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) return 'image/gif';
-    if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return 'image/webp';
-    if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) return 'application/pdf';
-    if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) return 'audio/mpeg';
-    if (bytes[0] === 0xFF && (bytes[1] & 0xE0) === 0xE0) return 'audio/mpeg';
-    if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x41 && bytes[10] === 0x56 && bytes[11] === 0x45) return 'audio/wav';
-    if (bytes[0] === 0x4F && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) return 'ogg-family';
-    if (bytes[0] === 0x1A && bytes[1] === 0x45 && bytes[2] === 0xDF && bytes[3] === 0xA3) return 'webm-family';
-    if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
-      const brand = bytes.subarray(8, 12).toString('ascii').toLowerCase();
-      if (['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'hevm', 'hevs', 'mif1', 'msf1'].includes(brand)) return 'heif-family';
-      return 'mp4-family';
-    }
-    if (bytes[0] === 0x50 && bytes[1] === 0x4B && [0x03, 0x05, 0x07].includes(bytes[2])) return 'zip-family';
-    if (bytes[0] === 0xD0 && bytes[1] === 0xCF && bytes[2] === 0x11 && bytes[3] === 0xE0) return 'ole-family';
-    if (isLikelyTextFile(bytes, bytesRead)) return 'text';
-    return 'unknown';
-  } finally {
-    await handle.close();
-  }
-};
+const getSafeStoredUploadExtension = (file) => {
+  const mime = String(file?.mimetype || '').toLowerCase().trim().split(';')[0];
+  const originalExt = path.extname(String(file?.originalname || '')).toLowerCase().trim();
 
-const validateDetectedUploadKind = (detectedKind, mimeType, originalName) => {
-  const { config } = getUploadTypeInfo(mimeType, originalName);
-  if (!config) return { allowed: false, exact: false };
-  if (detectedKind === 'empty') {
-    return { allowed: config.family === 'text', exact: config.family === 'text' };
-  }
+  if (isSafeStoredUploadExtension(originalExt)) return originalExt;
 
-  if (detectedKind === config.family) return { allowed: true, exact: true };
+  const mimeExtension = getUploadExtensionForMime(mime);
+  if (mimeExtension) return mimeExtension;
 
-  const compatibleDetectedFamilies = Array.isArray(config.compatibleDetectedFamilies)
-    ? config.compatibleDetectedFamilies
-    : [];
-  return {
-    allowed: compatibleDetectedFamilies.includes(detectedKind),
-    exact: false,
-  };
-};
-
-const getCanonicalDetectedUploadMetadata = (detectedKind, mimeType) => {
-  const originalMime = String(mimeType || '').toLowerCase().trim().split(';')[0];
-  const isAudioUpload = originalMime.startsWith('audio/');
-
-  if (detectedKind === 'image/jpeg') return { extension: '.jpg', mimeType: 'image/jpeg' };
-  if (detectedKind === 'image/png') return { extension: '.png', mimeType: 'image/png' };
-  if (detectedKind === 'image/gif') return { extension: '.gif', mimeType: 'image/gif' };
-  if (detectedKind === 'image/webp') return { extension: '.webp', mimeType: 'image/webp' };
-  if (detectedKind === 'heif-family') return { extension: '.heic', mimeType: 'image/heic' };
-  if (detectedKind === 'ogg-family') return { extension: '.ogg', mimeType: isAudioUpload ? 'audio/ogg' : 'application/ogg' };
-  if (detectedKind === 'webm-family') return { extension: '.webm', mimeType: isAudioUpload ? 'audio/webm' : 'video/webm' };
-  if (detectedKind === 'mp4-family') return { extension: isAudioUpload ? '.m4a' : '.mp4', mimeType: isAudioUpload ? 'audio/mp4' : 'video/mp4' };
-  return null;
-};
-
-const normaliseUploadedFileExtension = async (filePath, file, detectedKind) => {
-  const canonical = getCanonicalDetectedUploadMetadata(detectedKind, file?.mimetype);
-  if (!canonical || !file?.filename) return filePath;
-
-  const currentExtension = path.extname(file.filename).toLowerCase();
-  file.mimetype = canonical.mimeType;
-
-  if (currentExtension === canonical.extension) return filePath;
-
-  const baseName = path.basename(file.filename, path.extname(file.filename));
-  const renamedFilename = `${baseName}${canonical.extension}`;
-  const renamedPath = path.join(uploadDir, renamedFilename);
-
-  await fsPromises.rename(filePath, renamedPath);
-  file.filename = renamedFilename;
-  file.path = renamedPath;
-
-  logSecurityEvent('upload_extension_normalized', {
-    detectedKind,
-    fromExtension: currentExtension,
-    toExtension: canonical.extension,
-    originalName: file.originalname,
-  }, 'info');
-
-  return renamedPath;
+  if (mime.startsWith('image/') || isBrowserFallbackUploadMime(mime)) return TEMPORARY_UPLOAD_EXTENSION;
+  return '';
 };
 
 const validateUploadOrigin = (req, res, next) => {
@@ -1461,18 +1343,6 @@ console.log(`[Upload] File size limit: ${UPLOAD_LIMIT_LABEL}`);
 const upload = multer({
   storage,
   limits: Object.keys(uploadLimits).length ? uploadLimits : undefined,
-  fileFilter: (_req, file, cb) => {
-    if (!isAllowedUploadType(file?.mimetype, file?.originalname)) {
-      logSecurityEvent('upload_type_rejected', {
-        mimeType: file?.mimetype,
-        originalName: file?.originalname,
-      }, 'warn');
-      const err = new Error('File type not allowed');
-      err.code = 'INVALID_FILE_TYPE';
-      return cb(err);
-    }
-    return cb(null, true);
-  },
 });
 
 const uploadSingleMiddleware = (req, res, next) => {
@@ -1486,10 +1356,6 @@ const uploadSingleMiddleware = (req, res, next) => {
           : `File too large. Maximum upload size is ${UPLOAD_LIMIT_LABEL}.`,
       });
     }
-    if (err.code === 'INVALID_FILE_TYPE') {
-      return res.status(415).json({ error: 'Unsupported file type' });
-    }
-
     console.error('[Upload] Error:', err);
     return res.status(400).json({ error: err.message || 'Upload failed' });
   });
@@ -1501,29 +1367,6 @@ app.post('/upload', validateUploadOrigin, uploadSingleMiddleware, async (req, re
   let filePath = path.join(uploadDir, req.file.filename);
 
   try {
-    const detectedKind = await detectFileKindByMagicBytes(filePath);
-    const detectedKindValidation = validateDetectedUploadKind(
-      detectedKind,
-      req.file.mimetype,
-      req.file.originalname,
-    );
-    if (!detectedKindValidation.allowed) {
-      await removeFileSilently(filePath);
-      logSecurityEvent('upload_magic_bytes_rejected', {
-        detectedKind,
-        mimeType: req.file.mimetype,
-        originalName: req.file.originalname,
-      }, 'warn');
-      return res.status(415).json({ error: 'Unable to verify uploaded file type' });
-    }
-    if (!detectedKindValidation.exact) {
-      logSecurityEvent('upload_compatible_type_accepted', {
-        detectedKind,
-        mimeType: req.file.mimetype,
-        originalName: req.file.originalname,
-      }, 'info');
-      filePath = await normaliseUploadedFileExtension(filePath, req.file, detectedKind);
-    }
     const scanResult = await scanUploadedFileIfConfigured(filePath);
     if (!scanResult.clean) {
       await removeFileSilently(filePath);
