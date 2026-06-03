@@ -6610,7 +6610,7 @@ function appendAttachmentFromMessage(node, msg) {
     previewType = "image";
   } else if (typeHint.startsWith("audio/") || /\.(mp3|wav|ogg|opus)(\?.*)?$/i.test(url) || isLikelyVoiceWebmUrl(url, fileNameHint)) {
     previewType = "audio";
-  } else if (typeHint.startsWith("video/") || /\.(mp4|webm|mov)(\?.*)?$/i.test(url)) {
+  } else if (typeHint.startsWith("video/") || /\.(mp4|m4v|webm|mov|3gp|3g2)(\?.*)?$/i.test(url)) {
     previewType = "video";
   } else if (typeHint.includes("pdf") || /\.(pdf)(\?.*)?$/i.test(url)) {
     previewType = "pdf";
@@ -9411,7 +9411,7 @@ function autoEmbed(node, providedLinks = null) {
         el = createInlinePreview(link, "audio");
       }
     }
-    if (!el && /\.(mp4|webm|mov)(\?.*)?$/i.test(link)) {
+    if (!el && /\.(mp4|m4v|webm|mov|3gp|3g2)(\?.*)?$/i.test(link)) {
       if (!hasInlinePreview(wrap, link)) {
         el = createInlinePreview(link, "video");
       }
