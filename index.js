@@ -552,7 +552,17 @@ const BROWSER_FALLBACK_UPLOAD_MIME_TYPES = new Set(['application/octet-stream', 
 const getUploadTypeInfo = (mimeType, originalName) => {
   const mime = String(mimeType || '').toLowerCase().trim().split(';')[0];
   const ext = path.extname(String(originalName || '')).toLowerCase().trim();
-  const config = UPLOAD_EXTENSION_CONFIG.get(ext);
+  let config = UPLOAD_EXTENSION_CONFIG.get(ext);
+
+  if (!config && mime.startsWith('image/')) {
+    for (const [candidateExt, candidateConfig] of UPLOAD_EXTENSION_CONFIG.entries()) {
+      if (candidateConfig.mediaType === 'image' && candidateConfig.mimeTypes.includes(mime)) {
+        config = { ...candidateConfig, fallbackExtension: candidateExt };
+        break;
+      }
+    }
+  }
+
   return { mime, ext, config };
 };
 
@@ -592,7 +602,7 @@ const detectFileKindByMagicBytes = async (filePath) => {
     if (bytes[0] === 0x1A && bytes[1] === 0x45 && bytes[2] === 0xDF && bytes[3] === 0xA3) return 'webm-family';
     if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
       const brand = bytes.subarray(8, 12).toString('ascii').toLowerCase();
-      if (['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1'].includes(brand)) return 'heif-family';
+      if (['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'hevm', 'hevs', 'mif1', 'msf1'].includes(brand)) return 'heif-family';
       return 'mp4-family';
     }
     if (bytes[0] === 0x50 && bytes[1] === 0x4B && [0x03, 0x05, 0x07].includes(bytes[2])) return 'zip-family';
