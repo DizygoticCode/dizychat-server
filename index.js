@@ -517,19 +517,19 @@ app.get('/version', (req, res) => {
 // ---------------- File Uploads ----------------
 const fsPromises = fs.promises;
 const UPLOAD_EXTENSION_CONFIG = new Map([
-  ['.jpg', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'] }],
-  ['.jpeg', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'] }],
-  ['.png', { family: 'image/png', mimeTypes: ['image/png'] }],
-  ['.gif', { family: 'image/gif', mimeTypes: ['image/gif'] }],
-  ['.webp', { family: 'image/webp', mimeTypes: ['image/webp'] }],
-  ['.heic', { family: 'heif-family', mimeTypes: ['image/heic', 'image/heif'] }],
-  ['.heif', { family: 'heif-family', mimeTypes: ['image/heic', 'image/heif'] }],
+  ['.jpg', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'], mediaType: 'image' }],
+  ['.jpeg', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'], mediaType: 'image' }],
+  ['.png', { family: 'image/png', mimeTypes: ['image/png'], mediaType: 'image' }],
+  ['.gif', { family: 'image/gif', mimeTypes: ['image/gif'], mediaType: 'image' }],
+  ['.webp', { family: 'image/webp', mimeTypes: ['image/webp'], mediaType: 'image' }],
+  ['.heic', { family: 'heif-family', mimeTypes: ['image/heic', 'image/heif'], mediaType: 'image' }],
+  ['.heif', { family: 'heif-family', mimeTypes: ['image/heic', 'image/heif'], mediaType: 'image' }],
   ['.mp3', { family: 'audio/mpeg', mimeTypes: ['audio/mpeg', 'audio/mp3', 'audio/x-mpeg', 'audio/x-mp3'] }],
   ['.m4a', { family: 'mp4-family', mimeTypes: ['audio/mp4', 'audio/x-m4a', 'audio/m4a'] }],
   ['.wav', { family: 'audio/wav', mimeTypes: ['audio/wav', 'audio/wave', 'audio/x-wav'] }],
   ['.ogg', { family: 'ogg-family', mimeTypes: ['audio/ogg', 'audio/x-ogg', 'video/ogg', 'application/ogg'] }],
   ['.opus', { family: 'ogg-family', mimeTypes: ['audio/ogg', 'audio/opus', 'audio/x-opus', 'application/ogg'] }],
-  ['.webm', { family: 'webm-family', mimeTypes: ['audio/webm', 'audio/x-webm', 'video/webm', 'video/x-webm', 'application/webm', 'application/octet-stream'] }],
+  ['.webm', { family: 'webm-family', mimeTypes: ['audio/webm', 'audio/x-webm', 'video/webm', 'video/x-webm', 'application/webm', 'application/octet-stream'], compatibleDetectedFamilies: ['mp4-family', 'ogg-family'] }],
   ['.mp4', { family: 'mp4-family', mimeTypes: ['video/mp4', 'audio/mp4', 'application/mp4'] }],
   ['.m4v', { family: 'mp4-family', mimeTypes: ['video/mp4', 'video/x-m4v'] }],
   ['.mov', { family: 'mp4-family', mimeTypes: ['video/quicktime', 'video/mp4'] }],
@@ -548,18 +548,48 @@ const UPLOAD_EXTENSION_CONFIG = new Map([
 ]);
 
 const BROWSER_FALLBACK_UPLOAD_MIME_TYPES = new Set(['application/octet-stream', 'binary/octet-stream']);
+const TEMPORARY_UPLOAD_EXTENSION = '.upload';
+const MAX_STORED_UPLOAD_EXTENSION_LENGTH = 20;
+
+const isBrowserFallbackUploadMime = (mime) => BROWSER_FALLBACK_UPLOAD_MIME_TYPES.has(mime);
+
+const findImageUploadConfigByMime = (mime) => {
+  for (const [candidateExt, candidateConfig] of UPLOAD_EXTENSION_CONFIG.entries()) {
+    if (candidateConfig.mediaType === 'image' && candidateConfig.mimeTypes.includes(mime)) {
+      return { ...candidateConfig, fallbackExtension: candidateExt };
+    }
+  }
+  return null;
+};
 
 const getUploadTypeInfo = (mimeType, originalName) => {
   const mime = String(mimeType || '').toLowerCase().trim().split(';')[0];
   const ext = path.extname(String(originalName || '')).toLowerCase().trim();
-  const config = UPLOAD_EXTENSION_CONFIG.get(ext);
+  let config = UPLOAD_EXTENSION_CONFIG.get(ext);
+
+  if (!config && mime.startsWith('image/')) {
+    config = findImageUploadConfigByMime(mime);
+  }
+
   return { mime, ext, config };
 };
 
 const isAllowedUploadType = (mimeType, originalName) => {
   const { mime, config } = getUploadTypeInfo(mimeType, originalName);
-  if (!config) return false;
-  return config.mimeTypes.includes(mime) || BROWSER_FALLBACK_UPLOAD_MIME_TYPES.has(mime);
+  if (!config) {
+    return mime.startsWith('image/') || isBrowserFallbackUploadMime(mime);
+  }
+  return config.mimeTypes.includes(mime) || isBrowserFallbackUploadMime(mime);
+};
+
+const getSafeStoredUploadExtension = (file) => {
+  const { mime, ext, config } = getUploadTypeInfo(file?.mimetype, file?.originalname);
+  if (config && UPLOAD_EXTENSION_CONFIG.has(ext) && ext.length <= MAX_STORED_UPLOAD_EXTENSION_LENGTH) {
+    return ext;
+  }
+  if (config?.fallbackExtension) return config.fallbackExtension;
+  if (mime.startsWith('image/') || isBrowserFallbackUploadMime(mime)) return TEMPORARY_UPLOAD_EXTENSION;
+  return '';
 };
 
 const isLikelyTextFile = (buffer, bytesRead) => {
@@ -592,7 +622,7 @@ const detectFileKindByMagicBytes = async (filePath) => {
     if (bytes[0] === 0x1A && bytes[1] === 0x45 && bytes[2] === 0xDF && bytes[3] === 0xA3) return 'webm-family';
     if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
       const brand = bytes.subarray(8, 12).toString('ascii').toLowerCase();
-      if (['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1'].includes(brand)) return 'heif-family';
+      if (['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'hevm', 'hevs', 'mif1', 'msf1'].includes(brand)) return 'heif-family';
       return 'mp4-family';
     }
     if (bytes[0] === 0x50 && bytes[1] === 0x4B && [0x03, 0x05, 0x07].includes(bytes[2])) return 'zip-family';
@@ -604,11 +634,93 @@ const detectFileKindByMagicBytes = async (filePath) => {
   }
 };
 
-const isDetectedKindAllowedForUpload = (detectedKind, mimeType, originalName) => {
-  const { config } = getUploadTypeInfo(mimeType, originalName);
-  if (!config) return false;
-  if (detectedKind === 'empty') return config.family === 'text';
-  return detectedKind === config.family;
+const IMAGE_UPLOAD_FAMILIES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'heif-family',
+]);
+
+const IMAGE_UPLOAD_MIME_TYPES = new Set(
+  [...UPLOAD_EXTENSION_CONFIG.values()]
+    .filter((config) => config.mediaType === 'image')
+    .flatMap((config) => config.mimeTypes),
+);
+
+const validateDetectedUploadKind = (detectedKind, mimeType, originalName) => {
+  const { config, mime } = getUploadTypeInfo(mimeType, originalName);
+  if (!config) {
+    return {
+      allowed: IMAGE_UPLOAD_FAMILIES.has(detectedKind)
+        && (mime.startsWith('image/') || isBrowserFallbackUploadMime(mime)),
+      exact: false,
+    };
+  }
+  if (detectedKind === 'empty') {
+    return { allowed: config.family === 'text', exact: config.family === 'text' };
+  }
+
+  if (detectedKind === config.family) return { allowed: true, exact: true };
+
+  const compatibleDetectedFamilies = Array.isArray(config.compatibleDetectedFamilies)
+    ? config.compatibleDetectedFamilies
+    : [];
+  if (compatibleDetectedFamilies.includes(detectedKind)) {
+    return { allowed: true, exact: false };
+  }
+
+  if (
+    config.mediaType === 'image'
+    && (IMAGE_UPLOAD_MIME_TYPES.has(mime) || mime.startsWith('image/') || isBrowserFallbackUploadMime(mime))
+    && IMAGE_UPLOAD_FAMILIES.has(detectedKind)
+  ) {
+    return { allowed: true, exact: false };
+  }
+
+  return { allowed: false, exact: false };
+};
+
+const getCanonicalDetectedUploadMetadata = (detectedKind, mimeType) => {
+  const originalMime = String(mimeType || '').toLowerCase().trim().split(';')[0];
+  const isAudioUpload = originalMime.startsWith('audio/');
+
+  if (detectedKind === 'image/jpeg') return { extension: '.jpg', mimeType: 'image/jpeg' };
+  if (detectedKind === 'image/png') return { extension: '.png', mimeType: 'image/png' };
+  if (detectedKind === 'image/gif') return { extension: '.gif', mimeType: 'image/gif' };
+  if (detectedKind === 'image/webp') return { extension: '.webp', mimeType: 'image/webp' };
+  if (detectedKind === 'heif-family') return { extension: '.heic', mimeType: 'image/heic' };
+  if (detectedKind === 'ogg-family') return { extension: '.ogg', mimeType: isAudioUpload ? 'audio/ogg' : 'application/ogg' };
+  if (detectedKind === 'webm-family') return { extension: '.webm', mimeType: isAudioUpload ? 'audio/webm' : 'video/webm' };
+  if (detectedKind === 'mp4-family') return { extension: isAudioUpload ? '.m4a' : '.mp4', mimeType: isAudioUpload ? 'audio/mp4' : 'video/mp4' };
+  return null;
+};
+
+const normaliseUploadedFileExtension = async (filePath, file, detectedKind) => {
+  const canonical = getCanonicalDetectedUploadMetadata(detectedKind, file?.mimetype);
+  if (!canonical || !file?.filename) return filePath;
+
+  const currentExtension = path.extname(file.filename).toLowerCase();
+  file.mimetype = canonical.mimeType;
+
+  if (currentExtension === canonical.extension) return filePath;
+
+  const baseName = path.basename(file.filename, path.extname(file.filename));
+  const renamedFilename = `${baseName}${canonical.extension}`;
+  const renamedPath = path.join(uploadDir, renamedFilename);
+
+  await fsPromises.rename(filePath, renamedPath);
+  file.filename = renamedFilename;
+  file.path = renamedPath;
+
+  logSecurityEvent('upload_extension_normalized', {
+    detectedKind,
+    fromExtension: currentExtension,
+    toExtension: canonical.extension,
+    originalName: file.originalname,
+  }, 'info');
+
+  return renamedPath;
 };
 
 const validateUploadOrigin = (req, res, next) => {
@@ -1307,7 +1419,7 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
     const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + unique + path.extname(file.originalname));
+    cb(null, file.fieldname + '-' + unique + getSafeStoredUploadExtension(file));
   }
 });
 
@@ -1410,11 +1522,16 @@ const uploadSingleMiddleware = (req, res, next) => {
 app.post('/upload', validateUploadOrigin, uploadSingleMiddleware, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-  const filePath = path.join(uploadDir, req.file.filename);
+  let filePath = path.join(uploadDir, req.file.filename);
 
   try {
     const detectedKind = await detectFileKindByMagicBytes(filePath);
-    if (!isDetectedKindAllowedForUpload(detectedKind, req.file.mimetype, req.file.originalname)) {
+    const detectedKindValidation = validateDetectedUploadKind(
+      detectedKind,
+      req.file.mimetype,
+      req.file.originalname,
+    );
+    if (!detectedKindValidation.allowed) {
       await removeFileSilently(filePath);
       logSecurityEvent('upload_magic_bytes_rejected', {
         detectedKind,
@@ -1423,6 +1540,14 @@ app.post('/upload', validateUploadOrigin, uploadSingleMiddleware, async (req, re
       }, 'warn');
       return res.status(415).json({ error: 'Unable to verify uploaded file type' });
     }
+    if (!detectedKindValidation.exact) {
+      logSecurityEvent('upload_compatible_type_accepted', {
+        detectedKind,
+        mimeType: req.file.mimetype,
+        originalName: req.file.originalname,
+      }, 'info');
+    }
+    filePath = await normaliseUploadedFileExtension(filePath, req.file, detectedKind);
     const scanResult = await scanUploadedFileIfConfigured(filePath);
     if (!scanResult.clean) {
       await removeFileSilently(filePath);
