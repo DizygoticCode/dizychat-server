@@ -517,13 +517,13 @@ app.get('/version', (req, res) => {
 // ---------------- File Uploads ----------------
 const fsPromises = fs.promises;
 const UPLOAD_EXTENSION_CONFIG = new Map([
-  ['.jpg', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'], mediaType: 'image' }],
-  ['.jpeg', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'], mediaType: 'image' }],
-  ['.png', { family: 'image/png', mimeTypes: ['image/png'], mediaType: 'image' }],
-  ['.gif', { family: 'image/gif', mimeTypes: ['image/gif'], mediaType: 'image' }],
-  ['.webp', { family: 'image/webp', mimeTypes: ['image/webp'], mediaType: 'image' }],
-  ['.heic', { family: 'heif-family', mimeTypes: ['image/heic', 'image/heif'], mediaType: 'image' }],
-  ['.heif', { family: 'heif-family', mimeTypes: ['image/heic', 'image/heif'], mediaType: 'image' }],
+  ['.jpg', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'], compatibleDetectedFamilies: ['heif-family'] }],
+  ['.jpeg', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'], compatibleDetectedFamilies: ['heif-family'] }],
+  ['.png', { family: 'image/png', mimeTypes: ['image/png'] }],
+  ['.gif', { family: 'image/gif', mimeTypes: ['image/gif'] }],
+  ['.webp', { family: 'image/webp', mimeTypes: ['image/webp'] }],
+  ['.heic', { family: 'heif-family', mimeTypes: ['image/heic', 'image/heif'], compatibleDetectedFamilies: ['image/jpeg'] }],
+  ['.heif', { family: 'heif-family', mimeTypes: ['image/heic', 'image/heif'], compatibleDetectedFamilies: ['image/jpeg'] }],
   ['.mp3', { family: 'audio/mpeg', mimeTypes: ['audio/mpeg', 'audio/mp3', 'audio/x-mpeg', 'audio/x-mp3'] }],
   ['.m4a', { family: 'mp4-family', mimeTypes: ['audio/mp4', 'audio/x-m4a', 'audio/m4a'] }],
   ['.wav', { family: 'audio/wav', mimeTypes: ['audio/wav', 'audio/wave', 'audio/x-wav'] }],
@@ -614,22 +614,8 @@ const detectFileKindByMagicBytes = async (filePath) => {
   }
 };
 
-const IMAGE_UPLOAD_FAMILIES = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'heif-family',
-]);
-
-const IMAGE_UPLOAD_MIME_TYPES = new Set(
-  [...UPLOAD_EXTENSION_CONFIG.values()]
-    .filter((config) => config.mediaType === 'image')
-    .flatMap((config) => config.mimeTypes),
-);
-
 const validateDetectedUploadKind = (detectedKind, mimeType, originalName) => {
-  const { config, mime } = getUploadTypeInfo(mimeType, originalName);
+  const { config } = getUploadTypeInfo(mimeType, originalName);
   if (!config) return { allowed: false, exact: false };
   if (detectedKind === 'empty') {
     return { allowed: config.family === 'text', exact: config.family === 'text' };
@@ -640,19 +626,10 @@ const validateDetectedUploadKind = (detectedKind, mimeType, originalName) => {
   const compatibleDetectedFamilies = Array.isArray(config.compatibleDetectedFamilies)
     ? config.compatibleDetectedFamilies
     : [];
-  if (compatibleDetectedFamilies.includes(detectedKind)) {
-    return { allowed: true, exact: false };
-  }
-
-  if (
-    config.mediaType === 'image'
-    && IMAGE_UPLOAD_MIME_TYPES.has(mime)
-    && IMAGE_UPLOAD_FAMILIES.has(detectedKind)
-  ) {
-    return { allowed: true, exact: false };
-  }
-
-  return { allowed: false, exact: false };
+  return {
+    allowed: compatibleDetectedFamilies.includes(detectedKind),
+    exact: false,
+  };
 };
 
 const getCanonicalDetectedUploadMetadata = (detectedKind, mimeType) => {
@@ -1520,8 +1497,8 @@ app.post('/upload', validateUploadOrigin, uploadSingleMiddleware, async (req, re
         mimeType: req.file.mimetype,
         originalName: req.file.originalname,
       }, 'info');
+      filePath = await normaliseUploadedFileExtension(filePath, req.file, detectedKind);
     }
-    filePath = await normaliseUploadedFileExtension(filePath, req.file, detectedKind);
     const scanResult = await scanUploadedFileIfConfigured(filePath);
     if (!scanResult.clean) {
       await removeFileSilently(filePath);
