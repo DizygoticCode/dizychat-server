@@ -516,38 +516,37 @@ app.get('/version', (req, res) => {
 
 // ---------------- File Uploads ----------------
 const fsPromises = fs.promises;
-const UPLOAD_EXTENSION_MIME_TYPES = new Map([
-  ['.jpg', ['image/jpeg', 'image/jpg', 'image/pjpeg']],
-  ['.jpeg', ['image/jpeg', 'image/jpg', 'image/pjpeg']],
-  ['.png', ['image/png']],
-  ['.gif', ['image/gif']],
-  ['.webp', ['image/webp']],
-  ['.heic', ['image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence']],
-  ['.heif', ['image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence']],
-  ['.avif', ['image/avif']],
-  ['.mp3', ['audio/mpeg', 'audio/mp3', 'audio/x-mpeg', 'audio/x-mp3']],
-  ['.m4a', ['audio/mp4', 'audio/x-m4a', 'audio/m4a']],
-  ['.wav', ['audio/wav', 'audio/wave', 'audio/x-wav']],
-  ['.ogg', ['audio/ogg', 'audio/x-ogg', 'video/ogg', 'application/ogg']],
-  ['.opus', ['audio/ogg', 'audio/opus', 'audio/x-opus', 'application/ogg']],
-  ['.webm', ['audio/webm', 'audio/x-webm', 'video/webm', 'video/x-webm', 'application/webm', 'application/octet-stream']],
-  ['.mp4', ['video/mp4', 'audio/mp4', 'application/mp4']],
-  ['.m4v', ['video/mp4', 'video/x-m4v']],
-  ['.mov', ['video/quicktime', 'video/mov']],
-  ['.3gp', ['video/3gpp', 'audio/3gpp']],
-  ['.3g2', ['video/3gpp2', 'audio/3gpp2']],
-  ['.pdf', ['application/pdf']],
-  ['.txt', ['text/plain']],
-  ['.md', ['text/markdown', 'text/plain']],
-  ['.csv', ['text/csv', 'application/csv', 'text/plain']],
-  ['.json', ['application/json', 'text/json', 'text/plain']],
-  ['.zip', ['application/zip', 'application/x-zip-compressed']],
-  ['.doc', ['application/msword']],
-  ['.xls', ['application/vnd.ms-excel']],
-  ['.ppt', ['application/vnd.ms-powerpoint']],
-  ['.docx', ['application/vnd.openxmlformats-officedocument.wordprocessingml.document']],
-  ['.xlsx', ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']],
-  ['.pptx', ['application/vnd.openxmlformats-officedocument.presentationml.presentation']],
+const UPLOAD_EXTENSION_CONFIG = new Map([
+  ['.jpg', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'], compatibleDetectedFamilies: ['heif-family'] }],
+  ['.jpeg', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'], compatibleDetectedFamilies: ['heif-family'] }],
+  ['.png', { family: 'image/png', mimeTypes: ['image/png'] }],
+  ['.gif', { family: 'image/gif', mimeTypes: ['image/gif'] }],
+  ['.webp', { family: 'image/webp', mimeTypes: ['image/webp'] }],
+  ['.heic', { family: 'heif-family', mimeTypes: ['image/heic', 'image/heif'], compatibleDetectedFamilies: ['image/jpeg'] }],
+  ['.heif', { family: 'heif-family', mimeTypes: ['image/heic', 'image/heif'], compatibleDetectedFamilies: ['image/jpeg'] }],
+  ['.mp3', { family: 'audio/mpeg', mimeTypes: ['audio/mpeg', 'audio/mp3', 'audio/x-mpeg', 'audio/x-mp3'] }],
+  ['.m4a', { family: 'mp4-family', mimeTypes: ['audio/mp4', 'audio/x-m4a', 'audio/m4a'] }],
+  ['.wav', { family: 'audio/wav', mimeTypes: ['audio/wav', 'audio/wave', 'audio/x-wav'] }],
+  ['.ogg', { family: 'ogg-family', mimeTypes: ['audio/ogg', 'audio/x-ogg', 'video/ogg', 'application/ogg'] }],
+  ['.opus', { family: 'ogg-family', mimeTypes: ['audio/ogg', 'audio/opus', 'audio/x-opus', 'application/ogg'] }],
+  ['.webm', { family: 'webm-family', mimeTypes: ['audio/webm', 'audio/x-webm', 'video/webm', 'video/x-webm', 'application/webm', 'application/octet-stream'], compatibleDetectedFamilies: ['mp4-family', 'ogg-family'] }],
+  ['.mp4', { family: 'mp4-family', mimeTypes: ['video/mp4', 'audio/mp4', 'application/mp4'] }],
+  ['.m4v', { family: 'mp4-family', mimeTypes: ['video/mp4', 'video/x-m4v'] }],
+  ['.mov', { family: 'mp4-family', mimeTypes: ['video/quicktime', 'video/mov'] }],
+  ['.3gp', { family: '3gpp-family', mimeTypes: ['video/3gpp', 'audio/3gpp'] }],
+  ['.3g2', { family: '3gpp2-family', mimeTypes: ['video/3gpp2', 'audio/3gpp2'] }],
+  ['.pdf', { family: 'application/pdf', mimeTypes: ['application/pdf'] }],
+  ['.txt', { family: 'text', mimeTypes: ['text/plain'] }],
+  ['.md', { family: 'text', mimeTypes: ['text/markdown', 'text/plain'] }],
+  ['.csv', { family: 'text', mimeTypes: ['text/csv', 'application/csv', 'text/plain'] }],
+  ['.json', { family: 'text', mimeTypes: ['application/json', 'text/json', 'text/plain'] }],
+  ['.zip', { family: 'zip-family', mimeTypes: ['application/zip', 'application/x-zip-compressed'] }],
+  ['.doc', { family: 'ole-family', mimeTypes: ['application/msword'] }],
+  ['.xls', { family: 'ole-family', mimeTypes: ['application/vnd.ms-excel'] }],
+  ['.ppt', { family: 'ole-family', mimeTypes: ['application/vnd.ms-powerpoint'] }],
+  ['.docx', { family: 'zip-family', mimeTypes: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'] }],
+  ['.xlsx', { family: 'zip-family', mimeTypes: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'] }],
+  ['.pptx', { family: 'zip-family', mimeTypes: ['application/vnd.openxmlformats-officedocument.presentationml.presentation'] }],
 ]);
 
 const BROWSER_FALLBACK_UPLOAD_MIME_TYPES = new Set(['application/octet-stream', 'binary/octet-stream']);
@@ -557,8 +556,8 @@ const MAX_STORED_UPLOAD_EXTENSION_LENGTH = 20;
 const isBrowserFallbackUploadMime = (mime) => BROWSER_FALLBACK_UPLOAD_MIME_TYPES.has(mime);
 
 const getUploadExtensionForMime = (mime) => {
-  for (const [candidateExt, mimeTypes] of UPLOAD_EXTENSION_MIME_TYPES.entries()) {
-    if (mimeTypes.includes(mime)) return candidateExt;
+  for (const [candidateExt, candidateConfig] of UPLOAD_EXTENSION_CONFIG.entries()) {
+    if (candidateConfig.mimeTypes.includes(mime)) return candidateExt;
   }
   return '';
 };
