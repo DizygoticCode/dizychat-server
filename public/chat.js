@@ -6605,7 +6605,7 @@ function appendAttachmentFromMessage(node, msg) {
   }
 
   let previewType = "";
-  const imagePattern = /\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?.*)?$/i;
+  const imagePattern = /\.(png|jpg|jpeg|gif|webp|avif|heic|heif|bmp|svg)(\?.*)?$/i;
   if (typeHint.startsWith("image/") || imagePattern.test(url)) {
     previewType = "image";
   } else if (typeHint.startsWith("audio/") || /\.(mp3|wav|ogg|opus)(\?.*)?$/i.test(url) || isLikelyVoiceWebmUrl(url, fileNameHint)) {
@@ -6624,7 +6624,7 @@ function appendAttachmentFromMessage(node, msg) {
     return;
   }
 
-  if (previewType === "image" && !imagePattern.test(url)) {
+  if (previewType === "image" && !typeHint.startsWith("image/") && !imagePattern.test(url)) {
     if (/tenor\.com/i.test(url)) {
       fetchTenorPreview(url, node);
     }
@@ -9401,7 +9401,7 @@ function autoEmbed(node, providedLinks = null) {
     }
 
     // Direct media
-    if (!el && /\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?.*)?$/i.test(link)) {
+    if (!el && /\.(png|jpg|jpeg|gif|webp|avif|heic|heif|bmp|svg)(\?.*)?$/i.test(link)) {
       if (!hasInlinePreview(wrap, link)) {
         el = createInlinePreview(link, "image");
       }
