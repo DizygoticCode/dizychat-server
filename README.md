@@ -64,7 +64,7 @@ tests/                # Automated tests (if/when added)
 
 - **Node.js 22+** (matching the `engines` field).
 - **MongoDB** instance accessible via connection string.
-- **MetaDefender Cloud API key** (set `METADEFENDER_API_KEY`) for inline antivirus scanning.
+- Upload antivirus/type-signature enforcement is temporarily disabled while mobile upload compatibility is being verified.
 
 ## Installation
 
@@ -74,7 +74,7 @@ tests/                # Automated tests (if/when added)
    cd dizychat-server
    npm install
    ```
-2. Ensure MongoDB is running/available and obtain a MetaDefender Cloud API key.
+2. Ensure MongoDB is running/available.
 3. Create a `.env` file (see below) or configure environment variables in your host.
 
 ## Environment variables
@@ -95,11 +95,6 @@ Create a `.env` file in the project root with the following keys:
 | `ADMIN_AUTH_LOCK_MS` | (Optional) Temporary lockout duration in milliseconds after too many failed admin auth attempts; defaults to `900000` (15 minutes). |
 | `MESSAGE_HISTORY_CHUNK_SIZE` | Page size (25-500) for history fetches; defaults to 150. |
 | `MAX_UPLOAD_SIZE_MB` | File upload cap; accepts values like `50`, `50mb`, or `2gb`. Use `unlimited` to disable the limit. |
-| `METADEFENDER_API_KEY` | OPSWAT MetaDefender Cloud API key used to scan files when configured. If unset, uploads still work after local type verification unless `REQUIRE_UPLOAD_ANTIVIRUS_SCAN=true`. |
-| `REQUIRE_UPLOAD_ANTIVIRUS_SCAN` | (Optional) Set to `true` to fail uploads when `METADEFENDER_API_KEY` is missing or rejected; defaults to allowing locally verified uploads without antivirus scanning. |
-| `METADEFENDER_BASE_URL` | (Optional) Override the MetaDefender API origin. Defaults to `https://api.metadefender.com/v4`. |
-| `METADEFENDER_POLL_INTERVAL_MS` | (Optional) Milliseconds between status polls; defaults to 1500 (bounded between 250-15000). |
-| `METADEFENDER_MAX_POLL_ATTEMPTS` | (Optional) Maximum polling attempts before timing out; defaults to 10 (bounded between 1-40). |
 | `ENABLE_VOICE_CALLS` | (Optional) Set to `true`/`false` to force LiveKit call availability. The legacy name is still used for compatibility; when enabled, calls support microphone audio and optional camera video. If unset, calls enable automatically when all LiveKit credentials are present. |
 | `LIVEKIT_URL` | Required when LiveKit calls are enabled. LiveKit Cloud/server WebSocket URL (for example `wss://<project>.livekit.cloud`). |
 | `LIVEKIT_API_KEY` | Required when LiveKit calls are enabled. LiveKit API key used by the backend to issue room-scoped access tokens. |
@@ -272,7 +267,7 @@ All marketing routes serve the hero experience from `public/index.html`; the cha
 - Behind a reverse proxy, ensure WebSocket upgrades are forwarded to the Node server.
 - Provision persistent storage for `public/uploads` if you need to retain files across deploys.
 - Configure process managers (PM2, systemd, Docker, etc.) to supply environment variables securely.
-- Rotate admin credentials and scanner API keys on a fixed cadence (for example every 60–90 days) and immediately after suspected exposure.
+- Rotate admin credentials on a fixed cadence (for example every 60–90 days) and immediately after suspected exposure.
 - Scale horizontally by sharing the same MongoDB and enabling a Socket.IO adapter (e.g., Redis) if broadcasting across instances is required.
 
 ## Roadmap ideas
