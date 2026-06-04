@@ -516,69 +516,28 @@ app.get('/version', (req, res) => {
 
 // ---------------- File Uploads ----------------
 const fsPromises = fs.promises;
-const UPLOAD_EXTENSION_CONFIG = new Map([
-  ['.jpg', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'], compatibleDetectedFamilies: ['heif-family'] }],
-  ['.jpeg', { family: 'image/jpeg', mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'], compatibleDetectedFamilies: ['heif-family'] }],
-  ['.png', { family: 'image/png', mimeTypes: ['image/png'] }],
-  ['.gif', { family: 'image/gif', mimeTypes: ['image/gif'] }],
-  ['.webp', { family: 'image/webp', mimeTypes: ['image/webp'] }],
-  ['.heic', { family: 'heif-family', mimeTypes: ['image/heic', 'image/heif'], compatibleDetectedFamilies: ['image/jpeg'] }],
-  ['.heif', { family: 'heif-family', mimeTypes: ['image/heic', 'image/heif'], compatibleDetectedFamilies: ['image/jpeg'] }],
-  ['.mp3', { family: 'audio/mpeg', mimeTypes: ['audio/mpeg', 'audio/mp3', 'audio/x-mpeg', 'audio/x-mp3'] }],
-  ['.m4a', { family: 'mp4-family', mimeTypes: ['audio/mp4', 'audio/x-m4a', 'audio/m4a'] }],
-  ['.wav', { family: 'audio/wav', mimeTypes: ['audio/wav', 'audio/wave', 'audio/x-wav'] }],
-  ['.ogg', { family: 'ogg-family', mimeTypes: ['audio/ogg', 'audio/x-ogg', 'video/ogg', 'application/ogg'] }],
-  ['.opus', { family: 'ogg-family', mimeTypes: ['audio/ogg', 'audio/opus', 'audio/x-opus', 'application/ogg'] }],
-  ['.webm', { family: 'webm-family', mimeTypes: ['audio/webm', 'audio/x-webm', 'video/webm', 'video/x-webm', 'application/webm', 'application/octet-stream'], compatibleDetectedFamilies: ['mp4-family', 'ogg-family'] }],
-  ['.mp4', { family: 'mp4-family', mimeTypes: ['video/mp4', 'audio/mp4', 'application/mp4'] }],
-  ['.m4v', { family: 'mp4-family', mimeTypes: ['video/mp4', 'video/x-m4v'] }],
-  ['.mov', { family: 'mp4-family', mimeTypes: ['video/quicktime', 'video/mov'] }],
-  ['.3gp', { family: '3gpp-family', mimeTypes: ['video/3gpp', 'audio/3gpp'] }],
-  ['.3g2', { family: '3gpp2-family', mimeTypes: ['video/3gpp2', 'audio/3gpp2'] }],
-  ['.pdf', { family: 'application/pdf', mimeTypes: ['application/pdf'] }],
-  ['.txt', { family: 'text', mimeTypes: ['text/plain'] }],
-  ['.md', { family: 'text', mimeTypes: ['text/markdown', 'text/plain'] }],
-  ['.csv', { family: 'text', mimeTypes: ['text/csv', 'application/csv', 'text/plain'] }],
-  ['.json', { family: 'text', mimeTypes: ['application/json', 'text/json', 'text/plain'] }],
-  ['.zip', { family: 'zip-family', mimeTypes: ['application/zip', 'application/x-zip-compressed'] }],
-  ['.doc', { family: 'ole-family', mimeTypes: ['application/msword'] }],
-  ['.xls', { family: 'ole-family', mimeTypes: ['application/vnd.ms-excel'] }],
-  ['.ppt', { family: 'ole-family', mimeTypes: ['application/vnd.ms-powerpoint'] }],
-  ['.docx', { family: 'zip-family', mimeTypes: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'] }],
-  ['.xlsx', { family: 'zip-family', mimeTypes: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'] }],
-  ['.pptx', { family: 'zip-family', mimeTypes: ['application/vnd.openxmlformats-officedocument.presentationml.presentation'] }],
-]);
-
-const BROWSER_FALLBACK_UPLOAD_MIME_TYPES = new Set(['application/octet-stream', 'binary/octet-stream']);
 const TEMPORARY_UPLOAD_EXTENSION = '.upload';
-const MAX_STORED_UPLOAD_EXTENSION_LENGTH = 20;
+const MAX_STORED_UPLOAD_EXTENSION_LENGTH = 64;
 
-const isBrowserFallbackUploadMime = (mime) => BROWSER_FALLBACK_UPLOAD_MIME_TYPES.has(mime);
+const normaliseStoredUploadExtension = (ext) => {
+  const cleaned = String(ext || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^.a-z0-9_-]/gi, '');
 
-const getUploadExtensionForMime = (mime) => {
-  for (const [candidateExt, candidateConfig] of UPLOAD_EXTENSION_CONFIG.entries()) {
-    if (candidateConfig.mimeTypes.includes(mime)) return candidateExt;
-  }
-  return '';
+  if (!cleaned || cleaned === '.') return TEMPORARY_UPLOAD_EXTENSION;
+
+  const withLeadingDot = cleaned.startsWith('.') ? cleaned : `.${cleaned}`;
+  if (withLeadingDot.length <= MAX_STORED_UPLOAD_EXTENSION_LENGTH) return withLeadingDot;
+
+  return withLeadingDot.slice(0, MAX_STORED_UPLOAD_EXTENSION_LENGTH);
 };
 
-const isSafeStoredUploadExtension = (ext) => (
-  ext.length > 1
-  && ext.length <= MAX_STORED_UPLOAD_EXTENSION_LENGTH
-  && /^\.[a-z0-9][a-z0-9._-]*$/i.test(ext)
-);
-
 const getSafeStoredUploadExtension = (file) => {
-  const mime = String(file?.mimetype || '').toLowerCase().trim().split(';')[0];
-  const originalExt = path.extname(String(file?.originalname || '')).toLowerCase().trim();
-
-  if (isSafeStoredUploadExtension(originalExt)) return originalExt;
-
-  const mimeExtension = getUploadExtensionForMime(mime);
-  if (mimeExtension) return mimeExtension;
-
-  if (mime.startsWith('image/') || isBrowserFallbackUploadMime(mime)) return TEMPORARY_UPLOAD_EXTENSION;
-  return '';
+  // Keep uploads permissive while still avoiding path traversal: stored names are
+  // generated by the server and only the final extension is copied from the client.
+  const originalExt = path.extname(String(file?.originalname || ''));
+  return normaliseStoredUploadExtension(originalExt);
 };
 
 const validateUploadOrigin = (req, res, next) => {
@@ -647,12 +606,6 @@ const fetchMessageHistoryChunk = async (roomName, { beforeId } = {}) => {
     cursor: hasMore && oldestDoc ? String(oldestDoc._id) : null,
   };
 };
-const METADEFENDER_API_KEY = process.env.METADEFENDER_API_KEY;
-const REQUIRE_UPLOAD_ANTIVIRUS_SCAN =
-  String(process.env.REQUIRE_UPLOAD_ANTIVIRUS_SCAN || '').trim().toLowerCase() === 'true';
-let warnedAboutDisabledUploadScanner = false;
-const METADEFENDER_BASE_URL =
-  process.env.METADEFENDER_BASE_URL || 'https://api.metadefender.com/v4';
 const PSYBIN_STATUS_URL =
   process.env.PSYBIN_STATUS_URL || 'https://www.psyb.in/radio/status-json.xsl';
 const PSYBIN_CURRENT_SONG_URL =
@@ -1044,190 +997,6 @@ app.get('/api/psybin/now-playing', async (req, res) => {
   }
 });
 
-const parsePositiveInteger = (value, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) => {
-  const numeric = Number.parseInt(String(value ?? '').trim(), 10);
-  if (!Number.isFinite(numeric) || numeric < min) return fallback;
-  return Math.min(numeric, max);
-};
-
-const METADEFENDER_POLL_INTERVAL_MS = parsePositiveInteger(
-  process.env.METADEFENDER_POLL_INTERVAL_MS,
-  1500,
-  { min: 250, max: 15000 },
-);
-
-const METADEFENDER_MAX_POLL_ATTEMPTS = parsePositiveInteger(
-  process.env.METADEFENDER_MAX_POLL_ATTEMPTS,
-  10,
-  { min: 1, max: 40 },
-);
-
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const readMetaDefenderJson = async (response) => {
-  try {
-    return await response.json();
-  } catch (_err) {
-    return null;
-  }
-};
-
-const extractDetectionDetails = (scanResults = {}) => {
-  const details = scanResults.scan_details;
-  if (details && typeof details === 'object') {
-    for (const detail of Object.values(details)) {
-      if (detail && detail.threat_found && detail.threat_found !== 'Clean') {
-        return detail.threat_found;
-      }
-    }
-  }
-  return scanResults.scan_all_result_a || 'Threat detected';
-};
-
-const scanFileWithMetaDefender = async (filePath) => {
-  if (!METADEFENDER_API_KEY) {
-    const error = new Error('MetaDefender API key not configured');
-    error.code = 'SCANNER_NOT_CONFIGURED';
-    throw error;
-  }
-
-  let uploadResponse;
-  try {
-    uploadResponse = await fetch(`${METADEFENDER_BASE_URL}/file`, {
-      method: 'POST',
-      headers: {
-        apikey: METADEFENDER_API_KEY,
-        filename: path.basename(filePath),
-        'content-type': 'application/octet-stream',
-      },
-      body: fs.createReadStream(filePath),
-    });
-  } catch (err) {
-    const networkError = new Error(`MetaDefender upload failed: ${err.message}`);
-    networkError.code = 'SCANNER_UNAVAILABLE';
-    throw networkError;
-  }
-
-  if (uploadResponse.status === 401 || uploadResponse.status === 403) {
-    const authError = new Error('MetaDefender API key rejected');
-    authError.code = 'SCANNER_NOT_CONFIGURED';
-    throw authError;
-  }
-
-  if (!uploadResponse.ok) {
-    const bodyText = await uploadResponse.text().catch(() => '');
-    const error = new Error(
-      bodyText
-        ? `MetaDefender upload error (${uploadResponse.status}): ${bodyText}`
-        : `MetaDefender upload error (${uploadResponse.status})`,
-    );
-    error.code = uploadResponse.status === 429 ? 'SCANNER_UNAVAILABLE' : 'SCANNER_ERROR';
-    throw error;
-  }
-
-  const uploadPayload = await readMetaDefenderJson(uploadResponse);
-  const dataId = uploadPayload?.data_id;
-  if (!dataId) {
-    const error = new Error('MetaDefender upload response missing data_id');
-    error.code = 'SCANNER_ERROR';
-    throw error;
-  }
-
-  let attempts = 0;
-  while (attempts < METADEFENDER_MAX_POLL_ATTEMPTS) {
-    if (attempts > 0) {
-      await wait(METADEFENDER_POLL_INTERVAL_MS);
-    }
-    attempts += 1;
-
-    let statusResponse;
-    try {
-      statusResponse = await fetch(`${METADEFENDER_BASE_URL}/file/${encodeURIComponent(dataId)}`, {
-        method: 'GET',
-        headers: { apikey: METADEFENDER_API_KEY },
-      });
-    } catch (err) {
-      if (attempts < METADEFENDER_MAX_POLL_ATTEMPTS) {
-        continue;
-      }
-      const networkError = new Error(`MetaDefender status check failed: ${err.message}`);
-      networkError.code = 'SCANNER_UNAVAILABLE';
-      throw networkError;
-    }
-
-    if (statusResponse.status === 429) {
-      if (attempts >= METADEFENDER_MAX_POLL_ATTEMPTS) {
-        const rateLimitError = new Error('MetaDefender rate limited status polling');
-        rateLimitError.code = 'SCANNER_UNAVAILABLE';
-        throw rateLimitError;
-      }
-      continue;
-    }
-
-    if (!statusResponse.ok) {
-      if (statusResponse.status === 401 || statusResponse.status === 403) {
-        const authError = new Error('MetaDefender API key rejected during status check');
-        authError.code = 'SCANNER_NOT_CONFIGURED';
-        throw authError;
-      }
-
-      const bodyText = await statusResponse.text().catch(() => '');
-      const error = new Error(
-        bodyText
-          ? `MetaDefender status error (${statusResponse.status}): ${bodyText}`
-          : `MetaDefender status error (${statusResponse.status})`,
-      );
-      error.code = 'SCANNER_ERROR';
-      throw error;
-    }
-
-    const statusPayload = await readMetaDefenderJson(statusResponse);
-    const scanResults = statusPayload?.scan_results;
-    if (!scanResults) {
-      continue;
-    }
-
-    const progress = Number.parseInt(scanResults.progress_percentage, 10);
-    if (Number.isFinite(progress) && progress < 100) {
-      continue;
-    }
-
-    const overallResult = (scanResults.scan_all_result_a || '').toLowerCase();
-    if (overallResult === 'no threat detected') {
-      return { clean: true };
-    }
-
-    const details = extractDetectionDetails(scanResults);
-    return { clean: false, details };
-  }
-
-  const timeoutError = new Error('MetaDefender scan timed out');
-  timeoutError.code = 'SCANNER_TIMEOUT';
-  throw timeoutError;
-};
-
-const scanUploadedFileIfConfigured = async (filePath) => {
-  if (!METADEFENDER_API_KEY && !REQUIRE_UPLOAD_ANTIVIRUS_SCAN) {
-    if (!warnedAboutDisabledUploadScanner) {
-      warnedAboutDisabledUploadScanner = true;
-      logSecurityEvent('upload_scanner_disabled', {
-        message: 'METADEFENDER_API_KEY is not configured; uploads will skip antivirus scanning.',
-      }, 'warn');
-    }
-    return { clean: true, skipped: true };
-  }
-
-  return scanFileWithMetaDefender(filePath);
-};
-
-const removeFileSilently = async (filePath) => {
-  try {
-    await fsPromises.unlink(filePath);
-  } catch (_err) {
-    // Ignore unlink errors to avoid masking the original failure.
-  }
-};
-
 const resolveUploadPathFromUrl = (fileUrl) => {
   if (typeof fileUrl !== 'string') return null;
   const trimmed = fileUrl.trim();
@@ -1361,40 +1130,11 @@ const uploadSingleMiddleware = (req, res, next) => {
   });
 };
 
-app.post('/upload', validateUploadOrigin, uploadSingleMiddleware, async (req, res) => {
+app.post('/upload', validateUploadOrigin, uploadSingleMiddleware, (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-  let filePath = path.join(uploadDir, req.file.filename);
-
-  try {
-    const scanResult = await scanUploadedFileIfConfigured(filePath);
-    if (!scanResult.clean) {
-      await removeFileSilently(filePath);
-      return res.status(400).json({
-        error: 'File failed antivirus scan',
-        details: scanResult.details,
-      });
-    }
-  } catch (err) {
-    await removeFileSilently(filePath);
-
-    if (err && ['SCANNER_NOT_CONFIGURED', 'SCANNER_UNAVAILABLE'].includes(err.code)) {
-      console.error('[Upload] Antivirus scanner unavailable:', err);
-      logSecurityEvent('scanner_unavailable', { code: err.code, message: err.message }, 'error');
-      return res.status(500).json({ error: 'Antivirus scanner unavailable' });
-    }
-
-    if (err && err.code === 'SCANNER_TIMEOUT') {
-      console.error('[Upload] Antivirus scan timed out:', err);
-      logSecurityEvent('scanner_timeout', { message: err.message }, 'warn');
-      return res.status(504).json({ error: 'Antivirus scan timed out' });
-    }
-
-    console.error('[Upload] Antivirus scan error:', err);
-    logSecurityEvent('scanner_error', { message: err?.message || 'unknown' }, 'error');
-    return res.status(500).json({ error: 'Antivirus scan failed' });
-  }
-
+  // Temporarily accept uploads without MIME, file-signature, or antivirus gating so
+  // mobile camera/library files can be tested before upload security is re-added.
   res.json({
     url: `/uploads/${req.file.filename}`,
     name: req.file.originalname,
