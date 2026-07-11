@@ -1354,7 +1354,7 @@ app.get('/tenor-proxy', async (req, res) => {
   }
 });
 
-const pickGiphyGif = (gif) => {
+const pickGiphyMedia = (gif, mediaType = 'gif') => {
   const images = gif?.images || {};
   const preview =
     images.fixed_width_small?.webp ||
@@ -1381,12 +1381,47 @@ const pickGiphyGif = (gif) => {
 
   return {
     id: gif?.id || '',
-    title: gif?.title || gif?.alt_text || 'GIF',
+    title: gif?.title || gif?.alt_text || (mediaType === 'clip' ? 'Clip' : mediaType === 'sticker' ? 'Sticker' : mediaType === 'emoji' ? 'Emoji' : 'GIF'),
     preview,
     gif: full,
     mp4,
     url: gif?.url || '',
     provider: 'giphy',
+    mediaType,
+    analytics: gif?.analytics || null,
+  };
+};
+
+const pickGiphyClip = (clip) => {
+  const assets = clip?.assets || clip?.video || {};
+  const preview =
+    assets?.preview?.url ||
+    assets?.fixed_width?.url ||
+    assets?.fixed_height?.url ||
+    clip?.images?.fixed_width_small?.url ||
+    clip?.images?.preview_gif?.url ||
+    '';
+  const mp4 =
+    assets?.source?.url ||
+    assets?.original?.url ||
+    assets?.hd?.url ||
+    assets?.sd?.url ||
+    clip?.video?.url ||
+    clip?.images?.original?.mp4 ||
+    '';
+
+  if (!preview && !mp4) return null;
+
+  return {
+    id: clip?.id || '',
+    title: clip?.title || clip?.slug || 'Clip',
+    preview: preview || mp4,
+    gif: '',
+    mp4,
+    url: clip?.url || '',
+    provider: 'giphy',
+    mediaType: 'clip',
+    analytics: clip?.analytics || null,
   };
 };
 
@@ -1401,18 +1436,27 @@ app.get('/giphy-search', async (req, res) => {
 
   const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 24, 1), 50);
   const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  const requestedType = typeof req.query.type === 'string' ? req.query.type.toLowerCase() : 'gifs';
+  const safeType = ['gifs', 'stickers', 'emoji', 'clips', 'text'].includes(requestedType) ? requestedType : 'gifs';
   const endpoint = query ? 'search' : 'trending';
   const params = new URLSearchParams({
     api_key: giphyKey,
     limit: String(limit),
     rating: 'pg-13',
-    bundle: 'messaging_non_clips',
   });
 
-  if (query) params.set('q', query);
+  if (query) params.set('q', safeType === 'text' ? `text ${query}` : query);
+  if (safeType === 'gifs') params.set('bundle', 'messaging_non_clips');
+
+  const apiPath = (() => {
+    if (safeType === 'clips') return `https://api.giphy.com/v1/clips/${endpoint}`;
+    if (safeType === 'emoji') return 'https://api.giphy.com/v2/emoji';
+    if (safeType === 'stickers' || safeType === 'text') return `https://api.giphy.com/v1/stickers/${endpoint}`;
+    return `https://api.giphy.com/v1/gifs/${endpoint}`;
+  })();
 
   try {
-    const response = await fetch(`https://api.giphy.com/v1/gifs/${endpoint}?${params.toString()}`);
+    const response = await fetch(`${apiPath}?${params.toString()}`);
     const data = await response.json();
 
     if (!response.ok) {
@@ -1426,7 +1470,10 @@ app.get('/giphy-search', async (req, res) => {
     res.setHeader('Cache-Control', query ? 'no-store' : 'public, max-age=300');
     res.json({
       provider: 'giphy',
-      results: (data?.data || []).map(pickGiphyGif).filter(Boolean),
+      mediaType: safeType,
+      results: (data?.data || [])
+        .map((item) => (safeType === 'clips' ? pickGiphyClip(item) : pickGiphyMedia(item, safeType === 'gifs' ? 'gif' : safeType)))
+        .filter(Boolean),
     });
   } catch (err) {
     console.error('[GIPHY] Error:', err.message);
