@@ -1425,6 +1425,53 @@ const pickGiphyClip = (clip) => {
   };
 };
 
+const pickGiphyClip = (clip) => {
+  const assets = clip?.assets || clip?.video || {};
+  const preview =
+    assets?.preview?.url ||
+    assets?.fixed_width?.url ||
+    assets?.fixed_height?.url ||
+    clip?.images?.fixed_width_small?.url ||
+    clip?.images?.preview_gif?.url ||
+    '';
+  const mp4 =
+    assets?.source?.url ||
+    assets?.original?.url ||
+    assets?.hd?.url ||
+    assets?.sd?.url ||
+    clip?.video?.url ||
+    clip?.images?.original?.mp4 ||
+    '';
+
+  if (!preview && !mp4) return null;
+
+  return {
+    id: clip?.id || '',
+    title: clip?.title || clip?.slug || 'Clip',
+    preview: preview || mp4,
+    gif: '',
+    mp4,
+    url: clip?.url || '',
+    provider: 'giphy',
+    mediaType: 'clip',
+    analytics: clip?.analytics || null,
+  };
+};
+
+
+const parseCountryCode = (value) => {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (typeof raw !== 'string') return '';
+  const country = raw.trim().slice(0, 2).toUpperCase();
+  return /^[A-Z]{2}$/.test(country) ? country : '';
+};
+
+const getRequestCountryCode = (req) =>
+  parseCountryCode(req.headers['cf-ipcountry']) ||
+  parseCountryCode(req.headers['x-vercel-ip-country']) ||
+  parseCountryCode(req.headers['x-country-code']) ||
+  'US';
+
 app.get('/giphy-search', async (req, res) => {
   const giphyKey = process.env.GIPHY_SDK_KEY;
   if (!giphyKey) {
@@ -1460,9 +1507,14 @@ app.get('/giphy-search', async (req, res) => {
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('[GIPHY] Error:', data?.message || response.statusText);
+      const apiMessage = data?.message || data?.meta?.msg || response.statusText;
+      const isClipApprovalError = safeType === 'clips' && (response.status === 401 || response.status === 403);
+      const error = isClipApprovalError
+        ? 'GIPHY Clips require Clips API approval for this SDK key. Email clips@giphy.com to request access.'
+        : apiMessage || 'GIPHY request failed.';
+      console.error('[GIPHY] Error:', error);
       return res.status(response.status).json({
-        error: data?.message || 'GIPHY request failed.',
+        error,
         results: [],
       });
     }

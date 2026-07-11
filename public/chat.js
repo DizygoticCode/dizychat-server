@@ -8711,7 +8711,11 @@ if (voiceBtn) {
       if (query) params.set("q", query);
       const res = await fetch(`/giphy-search?${params.toString()}`);
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "GIPHY request failed");
+      if (!res.ok) {
+        const message = data?.error || "GIPHY request failed";
+        const isClipApprovalError = type === "clips" && /approval|permission|forbidden|unauthorized|access/i.test(message);
+        throw new Error(isClipApprovalError ? "Clips need GIPHY approval for this SDK key." : message);
+      }
       grid.innerHTML = "";
       if (!data.results?.length) {
         grid.innerHTML = `<div class="gif-error">No ${typeLabel} found.</div>`;
