@@ -8658,6 +8658,8 @@ if (voiceBtn) {
 // ------------------- GIPHY GIF Picker (beside emoji) -------------------
 (() => {
   if (!emojiBtn || !form) return;
+  if (window.__dizyGiphyPickerInitialized) return;
+  window.__dizyGiphyPickerInitialized = true;
 
     const gifBtn = (() => {
       const existing = document.getElementById("gif-btn");
