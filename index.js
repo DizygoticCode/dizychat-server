@@ -1449,6 +1449,7 @@ app.get('/giphy-search', async (req, res) => {
   }
 
   const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 24, 1), 50);
+  const offset = Math.min(Math.max(Number.parseInt(req.query.offset, 10) || 0, 0), 4999);
   const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
   const requestedType = typeof req.query.type === 'string' ? req.query.type.toLowerCase() : 'gifs';
   const safeType = ['gifs', 'stickers', 'emoji', 'clips', 'text'].includes(requestedType) ? requestedType : 'gifs';
@@ -1458,6 +1459,7 @@ app.get('/giphy-search', async (req, res) => {
     limit: String(limit),
     rating: 'pg-13',
   });
+  if (offset > 0) params.set('offset', String(offset));
 
   if (query) params.set('q', safeType === 'text' ? `text ${query}` : query);
   if (safeType === 'gifs') params.set('bundle', 'messaging_non_clips');
@@ -1490,6 +1492,7 @@ app.get('/giphy-search', async (req, res) => {
     res.json({
       provider: 'giphy',
       mediaType: safeType,
+      pagination: data?.pagination || { count: Array.isArray(data?.data) ? data.data.length : 0, offset, total_count: 0 },
       results: (data?.data || [])
         .map((item) => (safeType === 'clips' ? pickGiphyClip(item) : pickGiphyMedia(item, safeType === 'gifs' ? 'gif' : safeType)))
         .filter(Boolean),

@@ -8701,14 +8701,91 @@ if (voiceBtn) {
     panel.style.display = "block";
   }
 
-  async function loadGiphy(query = "", type = activeGiphyType) {
+  const giphyState = {
+    query: "",
+    type: activeGiphyType,
+    offset: 0,
+    loading: false,
+    hasMore: true,
+  };
+
+  function resetGiphyState(query = "", type = activeGiphyType) {
+    giphyState.query = query;
+    giphyState.type = type;
+    giphyState.offset = 0;
+    giphyState.loading = false;
+    giphyState.hasMore = true;
+  }
+
+  function renderGiphyTile(grid, g, type, typeLabel) {
+    const thumb = g?.preview || g?.gif || g?.mp4;
+    if (!thumb) return;
+    const tile = document.createElement("button");
+    tile.type = "button";
+    tile.className = `gif-tile gif-tile-${g?.mediaType || type}`;
+    tile.title = g?.title || typeLabel;
+    const img = document.createElement("img");
+    img.src = thumb;
+    img.alt = g?.title || typeLabel;
+    img.className = "gif-thumb";
+    tile.appendChild(img);
+    if (g?.mediaType === "clip") {
+      const badge = document.createElement("span");
+      badge.className = "gif-badge";
+      badge.textContent = "Sound";
+      tile.appendChild(badge);
+    }
+    tile.onclick = () => {
+      const url = g?.mediaType === "clip" ? (g?.mp4 || thumb) : (g?.gif || g?.mp4 || thumb);
+      if (!url) return;
+
+      const isVideo = /\.(mp4|webm)(\?|$)/i.test(url) || g?.mediaType === "clip";
+      const gifLabel = (g?.title || typeLabel).trim() || typeLabel;
+      const labelWithExt = isVideo ? `${gifLabel}.mp4` : `${gifLabel}.gif`;
+
+      socket.emit("chat message", {
+        room: window.currentRoom,
+        user: window.currentUser,
+        text: "",
+        timestamp: Date.now(),
+        fileUrl: url,
+        fileType: isVideo ? "video/mp4" : "image/gif",
+        fileName: labelWithExt,
+      });
+      showToast(`${g?.mediaType === "clip" ? "Clip" : "GIPHY item"} added`, "success");
+      panel.style.display = "none";
+      input?.focus();
+    };
+    grid.appendChild(tile);
+  }
+
+  async function loadGiphy(query = "", type = activeGiphyType, { append = false } = {}) {
     const grid = document.getElementById("gif-grid");
     const typeLabel = giphyTypes.find((item) => item.key === type)?.label || "GIFs";
-    grid.innerHTML = `<div class="gif-loading">Loading ${typeLabel}…</div>`;
+    const normalizedQuery = query.trim();
+
+    if (giphyState.loading) return;
+    if (append && !giphyState.hasMore) return;
+    if (!append) {
+      resetGiphyState(normalizedQuery, type);
+      grid.innerHTML = `<div class="gif-loading">Loading ${typeLabel}…</div>`;
+    } else {
+      giphyState.loading = true;
+      const loadingMore = document.createElement("div");
+      loadingMore.className = "gif-loading gif-loading-more";
+      loadingMore.textContent = `Loading more ${typeLabel}…`;
+      grid.appendChild(loadingMore);
+    }
+
+    giphyState.loading = true;
 
     try {
-      const params = new URLSearchParams({ limit: "24", type });
-      if (query) params.set("q", query);
+      const params = new URLSearchParams({
+        limit: "24",
+        offset: String(append ? giphyState.offset : 0),
+        type,
+      });
+      if (normalizedQuery) params.set("q", normalizedQuery);
       const res = await fetch(`/giphy-search?${params.toString()}`);
       const data = await res.json();
       if (!res.ok) {
@@ -8716,56 +8793,38 @@ if (voiceBtn) {
         const isClipApprovalError = type === "clips" && /approval|permission|forbidden|unauthorized|access/i.test(message);
         throw new Error(isClipApprovalError ? "Clips need GIPHY approval for this SDK key." : message);
       }
-      grid.innerHTML = "";
-      if (!data.results?.length) {
+
+      grid.querySelector(".gif-loading-more")?.remove();
+      if (!append) grid.innerHTML = "";
+
+      const results = Array.isArray(data.results) ? data.results : [];
+      if (!results.length && !append) {
         grid.innerHTML = `<div class="gif-error">No ${typeLabel} found.</div>`;
+        giphyState.hasMore = false;
         return;
       }
 
-      data.results.forEach((g) => {
-        const thumb = g?.preview || g?.gif || g?.mp4;
-        if (!thumb) return;
-        const tile = document.createElement("button");
-        tile.type = "button";
-        tile.className = `gif-tile gif-tile-${g?.mediaType || type}`;
-        tile.title = g?.title || typeLabel;
-        const img = document.createElement("img");
-        img.src = thumb;
-        img.alt = g?.title || typeLabel;
-        img.className = "gif-thumb";
-        tile.appendChild(img);
-        if (g?.mediaType === "clip") {
-          const badge = document.createElement("span");
-          badge.className = "gif-badge";
-          badge.textContent = "Sound";
-          tile.appendChild(badge);
-        }
-        tile.onclick = () => {
-          const url = g?.mediaType === "clip" ? (g?.mp4 || thumb) : (g?.gif || g?.mp4 || thumb);
-          if (!url) return;
+      results.forEach((g) => renderGiphyTile(grid, g, type, typeLabel));
 
-          const isVideo = /\.(mp4|webm)(\?|$)/i.test(url) || g?.mediaType === "clip";
-          const gifLabel = (g?.title || typeLabel).trim() || typeLabel;
-          const labelWithExt = isVideo ? `${gifLabel}.mp4` : `${gifLabel}.gif`;
-
-          socket.emit("chat message", {
-            room: window.currentRoom,
-            user: window.currentUser,
-            text: "",
-            timestamp: Date.now(),
-            fileUrl: url,
-            fileType: isVideo ? "video/mp4" : "image/gif",
-            fileName: labelWithExt,
-          });
-          showToast(`${g?.mediaType === "clip" ? "Clip" : "GIPHY item"} added`, "success");
-          panel.style.display = "none";
-          input?.focus();
-        };
-        grid.appendChild(tile);
-      });
+      const pagination = data?.pagination || {};
+      const returnedCount = Number.isFinite(Number(pagination.count)) ? Number(pagination.count) : results.length;
+      const totalCount = Number.isFinite(Number(pagination.total_count)) ? Number(pagination.total_count) : 0;
+      giphyState.offset = (Number.isFinite(Number(pagination.offset)) ? Number(pagination.offset) : giphyState.offset) + returnedCount;
+      giphyState.hasMore = returnedCount > 0 && (!totalCount || giphyState.offset < totalCount);
     } catch (e) {
-      grid.innerHTML = `<div class="gif-error">${typeLabel} failed to load.</div>`;
+      grid.querySelector(".gif-loading-more")?.remove();
+      if (!append) grid.innerHTML = `<div class="gif-error">${typeLabel} failed to load.</div>`;
       console.log("[GIF] GIPHY error:", e);
+    } finally {
+      giphyState.loading = false;
+    }
+  }
+
+  function loadMoreGiphyIfNeeded() {
+    if (panel.style.display !== "block" || giphyState.loading || !giphyState.hasMore) return;
+    const distanceFromBottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight;
+    if (distanceFromBottom <= 72) {
+      loadGiphy(giphyState.query, giphyState.type, { append: true });
     }
   }
 
@@ -8799,9 +8858,12 @@ if (voiceBtn) {
       searchInput.placeholder = typeConfig?.placeholder || "Search GIPHY…";
       const q = searchInput.value.trim();
       loadGiphy(activeGiphyType === "emoji" && !q ? "" : q);
+      panel.scrollTop = 0;
       panel.dataset.loaded = activeGiphyType;
     });
   });
+
+  panel.addEventListener("scroll", loadMoreGiphyIfNeeded, { passive: true });
 
   searchInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
@@ -8809,6 +8871,7 @@ if (voiceBtn) {
       const q = searchInput.value.trim();
       if (!q && activeGiphyType !== "emoji") return;
       loadGiphy(q);
+      panel.scrollTop = 0;
     }
   });
 
