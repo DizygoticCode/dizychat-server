@@ -16,7 +16,7 @@ DizyChat is a Socket.IO and Express-powered real-time chat backend designed for 
 
 ### Rich content previews
 - Link preview endpoint fetches remote pages, parses OpenGraph/Twitter/JSON-LD metadata, and normalizes image/icon URLs with caching to reduce load.
-- GIPHY GIF search powers the composer GIF picker through a server-side proxy, while Tenor share links can still be resolved for legacy embeds.
+- GIPHY search powers the composer media picker through a server-side proxy with tabs for GIFs, Clips, stickers, emoji, and text-sticker-style results, while Tenor share links can still be resolved for legacy embeds.
 
 ### Moderation & administration
 - Admin accounts can be provisioned through environment variables with flexible username/password pairs.
@@ -218,8 +218,8 @@ Fetches metadata for an absolute URL and responds with normalized preview attrib
 ### `GET /tenor-proxy?url=...`
 Resolves a Tenor share URL to embeddable GIF URLs via Tenor oEmbed.
 
-### `GET /giphy-search?q=...&limit=24`
-Returns normalized GIPHY GIF results for the composer picker. Omit `q` to load trending GIFs. Requires `GIPHY_SDK_KEY`.
+### `GET /giphy-search?q=...&limit=24&type=gifs|clips|stickers|emoji|text`
+Returns normalized GIPHY results for the composer picker. Omit `q` to load trending GIFs, stickers, Clips, or emoji depending on `type`. Requires `GIPHY_SDK_KEY`; Clips availability depends on GIPHY account approval.
 
 ### `GET /soundboard-clips`
 Returns locally curated soundboard clips aggregated from JSON definitions in `data/soundboards`. Accepts optional `q` and `board` query parameters for search filtering and responds with normalized clip metadata for the soundboard picker.

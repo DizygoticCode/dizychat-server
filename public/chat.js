@@ -8673,9 +8673,21 @@ if (voiceBtn) {
       return created;
     })();
 
+  const giphyTypes = [
+    { key: "gifs", label: "GIFs", placeholder: "Search GIFs…" },
+    { key: "clips", label: "Clips", placeholder: "Search clips with sound…" },
+    { key: "stickers", label: "Stickers", placeholder: "Search stickers…" },
+    { key: "emoji", label: "Emoji", placeholder: "Browse animated emoji…" },
+    { key: "text", label: "Text", placeholder: "Type text sticker words…" },
+  ];
+  let activeGiphyType = "gifs";
+
   const panel = document.createElement("div");
   panel.id = "gif-picker";
   panel.innerHTML = `
+    <div class="gif-tabs" role="tablist" aria-label="GIPHY content types">
+      ${giphyTypes.map((type) => `<button type="button" class="gif-tab${type.key === activeGiphyType ? " active" : ""}" data-giphy-type="${type.key}" role="tab" aria-selected="${type.key === activeGiphyType}">${type.label}</button>`).join("")}
+    </div>
     <div class="gif-search"><input id="gif-search-input" placeholder="Search GIFs…"></div>
     <div id="gif-grid" class="gif-grid"></div>
     <div class="gif-attribution">Powered by GIPHY</div>`;
@@ -8689,36 +8701,47 @@ if (voiceBtn) {
     panel.style.display = "block";
   }
 
-  async function loadGiphy(query = "") {
+  async function loadGiphy(query = "", type = activeGiphyType) {
     const grid = document.getElementById("gif-grid");
-    grid.innerHTML = '<div class="gif-loading">Loading GIFs…</div>';
+    const typeLabel = giphyTypes.find((item) => item.key === type)?.label || "GIFs";
+    grid.innerHTML = `<div class="gif-loading">Loading ${typeLabel}…</div>`;
 
     try {
-      const endpoint = query
-        ? `/giphy-search?q=${encodeURIComponent(query)}&limit=24`
-        : "/giphy-search?limit=24";
-      const res = await fetch(endpoint);
+      const params = new URLSearchParams({ limit: "24", type });
+      if (query) params.set("q", query);
+      const res = await fetch(`/giphy-search?${params.toString()}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "GIPHY request failed");
       grid.innerHTML = "";
       if (!data.results?.length) {
-        grid.innerHTML = '<div class="gif-error">No GIFs found.</div>';
+        grid.innerHTML = `<div class="gif-error">No ${typeLabel} found.</div>`;
         return;
       }
 
       data.results.forEach((g) => {
         const thumb = g?.preview || g?.gif || g?.mp4;
         if (!thumb) return;
+        const tile = document.createElement("button");
+        tile.type = "button";
+        tile.className = `gif-tile gif-tile-${g?.mediaType || type}`;
+        tile.title = g?.title || typeLabel;
         const img = document.createElement("img");
         img.src = thumb;
-        img.alt = g?.title || "GIF";
+        img.alt = g?.title || typeLabel;
         img.className = "gif-thumb";
-        img.onclick = () => {
-          const url = g?.gif || g?.mp4 || thumb;
+        tile.appendChild(img);
+        if (g?.mediaType === "clip") {
+          const badge = document.createElement("span");
+          badge.className = "gif-badge";
+          badge.textContent = "Sound";
+          tile.appendChild(badge);
+        }
+        tile.onclick = () => {
+          const url = g?.mediaType === "clip" ? (g?.mp4 || thumb) : (g?.gif || g?.mp4 || thumb);
           if (!url) return;
 
-          const isVideo = /\.(mp4|webm)$/i.test(url);
-          const gifLabel = (g?.title || "GIF").trim() || "GIF";
+          const isVideo = /\.(mp4|webm)(\?|$)/i.test(url) || g?.mediaType === "clip";
+          const gifLabel = (g?.title || typeLabel).trim() || typeLabel;
           const labelWithExt = isVideo ? `${gifLabel}.mp4` : `${gifLabel}.gif`;
 
           socket.emit("chat message", {
@@ -8730,14 +8753,14 @@ if (voiceBtn) {
             fileType: isVideo ? "video/mp4" : "image/gif",
             fileName: labelWithExt,
           });
-          showToast("GIF added", "success");
+          showToast(`${g?.mediaType === "clip" ? "Clip" : "GIPHY item"} added`, "success");
           panel.style.display = "none";
           input?.focus();
         };
-        grid.appendChild(img);
+        grid.appendChild(tile);
       });
     } catch (e) {
-      grid.innerHTML = '<div class="gif-error">GIFs failed to load.</div>';
+      grid.innerHTML = `<div class="gif-error">${typeLabel} failed to load.</div>`;
       console.log("[GIF] GIPHY error:", e);
     }
   }
@@ -8753,17 +8776,34 @@ if (voiceBtn) {
       soundboardPanel.style.display = "none";
     }
     if (!panel.dataset.loaded) {
-      loadGiphy();
-      panel.dataset.loaded = "1";
+      loadGiphy(searchInput.value.trim());
+      panel.dataset.loaded = activeGiphyType;
     }
   };
 
   const searchInput = panel.querySelector("#gif-search-input");
+  const tabButtons = panel.querySelectorAll(".gif-tab");
+  tabButtons.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      activeGiphyType = tab.dataset.giphyType || "gifs";
+      tabButtons.forEach((button) => {
+        const isActive = button === tab;
+        button.classList.toggle("active", isActive);
+        button.setAttribute("aria-selected", String(isActive));
+      });
+      const typeConfig = giphyTypes.find((item) => item.key === activeGiphyType);
+      searchInput.placeholder = typeConfig?.placeholder || "Search GIPHY…";
+      const q = searchInput.value.trim();
+      loadGiphy(activeGiphyType === "emoji" && !q ? "" : q);
+      panel.dataset.loaded = activeGiphyType;
+    });
+  });
+
   searchInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
       const q = searchInput.value.trim();
-      if (!q) return;
+      if (!q && activeGiphyType !== "emoji") return;
       loadGiphy(q);
     }
   });
