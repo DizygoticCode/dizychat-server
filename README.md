@@ -99,7 +99,7 @@ Create a `.env` file in the project root with the following keys:
 | `LIVEKIT_URL` | Required when LiveKit calls are enabled. LiveKit Cloud/server WebSocket URL (for example `wss://<project>.livekit.cloud`). |
 | `LIVEKIT_API_KEY` | Required when LiveKit calls are enabled. LiveKit API key used by the backend to issue room-scoped access tokens. |
 | `LIVEKIT_API_SECRET` | Required when LiveKit calls are enabled. LiveKit API secret paired with `LIVEKIT_API_KEY`. |
-| `GIPHY_SDK_KEY` | Required for the GIF picker. Create a GIPHY SDK key in the GIPHY Developer Dashboard and store it server-side in Render environment variables. The legacy `GIPHY_API_KEY` name is still accepted as a fallback. |
+| `GIPHY_SDK_KEY` | Required for the GIF picker. Create a GIPHY SDK key in the GIPHY Developer Dashboard and store it server-side in Render environment variables. |
 | `W2G_API_KEY` | Required for Watch2Gether watch-party room creation. Keep this server-side in Render environment variables; clients only see generated W2G room links. Aliases `WATCH2GETHER_API_KEY` and `WATCH_2_GETHER_API_KEY` are also accepted. |
 | `W2G_REQUEST_TIMEOUT_MS` | (Optional) Timeout for Watch2Gether API room creation; defaults to 10000 ms. |
 | `JACKTRIP_STUDIO_CREATE_URL` | (Optional) Override the JackTrip create-studio URL used by the Jam Session launcher; defaults to `https://app.jacktrip.org/studios/create`. |
@@ -108,7 +108,7 @@ Create a `.env` file in the project root with the following keys:
 
 ### GIPHY setup
 
-Yes, the GIF picker requires your own `GIPHY_SDK_KEY`; there is no bundled shared key. Create a GIPHY developer account, create an SDK key in the GIPHY Developer Dashboard, then add the key to Render as `GIPHY_SDK_KEY` and redeploy. The browser never receives the key directly because the composer calls DizyChat's `/giphy-search` endpoint, and the server forwards requests to GIPHY. The server also accepts the older `GIPHY_API_KEY` variable as a fallback, but `GIPHY_SDK_KEY` is the recommended name for new deployments.
+Yes, the GIF picker requires your own `GIPHY_SDK_KEY`; there is no bundled shared key and no fallback key name. Create a GIPHY developer account, create an SDK key in the GIPHY Developer Dashboard, then add the key to Render as `GIPHY_SDK_KEY` and redeploy. The browser never receives the key directly because the composer calls DizyChat's `/giphy-search` endpoint, and the server forwards requests to GIPHY.
 
 GIPHY SDK keys start as beta keys with limited hourly usage. If chat traffic grows beyond beta limits, upgrade the key from the GIPHY dashboard before relying on the GIF picker in production.
 
@@ -219,7 +219,7 @@ Fetches metadata for an absolute URL and responds with normalized preview attrib
 Resolves a Tenor share URL to embeddable GIF URLs via Tenor oEmbed.
 
 ### `GET /giphy-search?q=...&limit=24`
-Returns normalized GIPHY GIF results for the composer picker. Omit `q` to load trending GIFs. Requires `GIPHY_SDK_KEY` or the legacy `GIPHY_API_KEY` fallback.
+Returns normalized GIPHY GIF results for the composer picker. Omit `q` to load trending GIFs. Requires `GIPHY_SDK_KEY`.
 
 ### `GET /soundboard-clips`
 Returns locally curated soundboard clips aggregated from JSON definitions in `data/soundboards`. Accepts optional `q` and `board` query parameters for search filtering and responds with normalized clip metadata for the soundboard picker.
