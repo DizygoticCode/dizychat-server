@@ -3882,6 +3882,13 @@ body:not(.dark) #soundboard-btn {
   gap: 6px;
   grid-auto-rows: 72px;
 }
+#gif-picker .gif-loading,
+#gif-picker .gif-error {
+  grid-column: 1 / -1;
+  color: rgba(255,255,255,0.82);
+  font-size: 0.9rem;
+  padding: 8px 2px;
+}
 #gif-picker .gif-thumb {
   width: 100%;
   height: 100%;
@@ -3893,6 +3900,15 @@ body:not(.dark) #soundboard-btn {
 #gif-picker .gif-thumb:hover {
   transform: translateY(-2px);
   box-shadow: 0 0 8px rgba(187,134,252,0.45);
+}
+#gif-picker .gif-attribution {
+  color: rgba(255,255,255,0.7);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin-top: 8px;
+  text-align: right;
+  text-transform: uppercase;
 }
 
 #soundboard-picker {
