@@ -8764,7 +8764,7 @@ if (voiceBtn) {
         grid.appendChild(tile);
       });
     } catch (e) {
-      grid.innerHTML = `<div class="gif-error">${e?.message || `${typeLabel} failed to load.`}</div>`;
+      grid.innerHTML = `<div class="gif-error">${typeLabel} failed to load.</div>`;
       console.log("[GIF] GIPHY error:", e);
     }
   }

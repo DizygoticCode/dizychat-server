@@ -1425,6 +1425,39 @@ const pickGiphyClip = (clip) => {
   };
 };
 
+const pickGiphyClip = (clip) => {
+  const assets = clip?.assets || clip?.video || {};
+  const preview =
+    assets?.preview?.url ||
+    assets?.fixed_width?.url ||
+    assets?.fixed_height?.url ||
+    clip?.images?.fixed_width_small?.url ||
+    clip?.images?.preview_gif?.url ||
+    '';
+  const mp4 =
+    assets?.source?.url ||
+    assets?.original?.url ||
+    assets?.hd?.url ||
+    assets?.sd?.url ||
+    clip?.video?.url ||
+    clip?.images?.original?.mp4 ||
+    '';
+
+  if (!preview && !mp4) return null;
+
+  return {
+    id: clip?.id || '',
+    title: clip?.title || clip?.slug || 'Clip',
+    preview: preview || mp4,
+    gif: '',
+    mp4,
+    url: clip?.url || '',
+    provider: 'giphy',
+    mediaType: 'clip',
+    analytics: clip?.analytics || null,
+  };
+};
+
 
 const parseCountryCode = (value) => {
   const raw = Array.isArray(value) ? value[0] : value;
@@ -1461,7 +1494,6 @@ app.get('/giphy-search', async (req, res) => {
 
   if (query) params.set('q', safeType === 'text' ? `text ${query}` : query);
   if (safeType === 'gifs') params.set('bundle', 'messaging_non_clips');
-  if (safeType === 'clips') params.set('country_code', getRequestCountryCode(req));
 
   const apiPath = (() => {
     if (safeType === 'clips') return `https://api.giphy.com/v1/clips/${endpoint}`;
