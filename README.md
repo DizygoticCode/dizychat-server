@@ -108,7 +108,7 @@ Create a `.env` file in the project root with the following keys:
 
 ### GIPHY setup
 
-Yes, the GIF picker requires your own `GIPHY_SDK_KEY`; there is no bundled shared key. Create a GIPHY developer account, create an SDK key in the GIPHY Developer Dashboard, then add the key to Render as `GIPHY_SDK_KEY` and redeploy. The browser never receives the key directly because the composer calls DizyChat's `/giphy-search` endpoint, and the server forwards requests to GIPHY. The server prefers `GIPHY_SDK_KEY` and only tries the older `GIPHY_API_KEY` fallback if the SDK key is missing or the SDK-key request fails.
+Yes, the GIF picker requires your own `GIPHY_SDK_KEY`; there is no bundled shared key. Create a GIPHY developer account, create an SDK key in the GIPHY Developer Dashboard, then add the key to Render as `GIPHY_SDK_KEY` and redeploy. The browser never receives the key directly because the composer calls DizyChat's `/giphy-search` endpoint, and the server forwards requests to GIPHY. The server also accepts the older `GIPHY_API_KEY` variable as a fallback, but `GIPHY_SDK_KEY` is the recommended name for new deployments.
 
 GIPHY SDK keys start as beta keys with limited hourly usage. If chat traffic grows beyond beta limits, upgrade the key from the GIPHY dashboard before relying on the GIF picker in production.
 

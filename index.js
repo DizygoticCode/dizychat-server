@@ -1391,14 +1391,8 @@ const pickGiphyGif = (gif) => {
 };
 
 app.get('/giphy-search', async (req, res) => {
-  const giphyKeys = [
-    { source: 'GIPHY_SDK_KEY', value: process.env.GIPHY_SDK_KEY },
-    { source: 'GIPHY_API_KEY', value: process.env.GIPHY_API_KEY },
-  ]
-    .map(({ source, value }) => ({ source, value: typeof value === 'string' ? value.trim() : '' }))
-    .filter(({ value }, index, keys) => value && keys.findIndex((key) => key.value === value) === index);
-
-  if (!giphyKeys.length) {
+  const giphyKey = process.env.GIPHY_SDK_KEY || process.env.GIPHY_API_KEY;
+  if (!giphyKey) {
     return res.status(503).json({
       error: 'GIPHY_SDK_KEY is not configured.',
       results: [],
@@ -1408,58 +1402,36 @@ app.get('/giphy-search', async (req, res) => {
   const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 24, 1), 50);
   const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
   const endpoint = query ? 'search' : 'trending';
-  let sdkKeyFailed = false;
+  const params = new URLSearchParams({
+    api_key: giphyKey,
+    limit: String(limit),
+    rating: 'pg-13',
+    bundle: 'messaging_non_clips',
+  });
 
-  const requestGiphy = async ({ source, value }) => {
-    const params = new URLSearchParams({
-      api_key: value,
-      limit: String(limit),
-      rating: 'pg-13',
-      bundle: 'messaging_non_clips',
-    });
+  if (query) params.set('q', query);
 
-    if (query) params.set('q', query);
-
+  try {
     const response = await fetch(`https://api.giphy.com/v1/gifs/${endpoint}?${params.toString()}`);
     const data = await response.json();
 
     if (!response.ok) {
-      throw Object.assign(new Error(data?.message || response.statusText || 'GIPHY request failed.'), {
-        status: response.status,
-        source,
+      console.error('[GIPHY] Error:', data?.message || response.statusText);
+      return res.status(response.status).json({
+        error: data?.message || 'GIPHY request failed.',
+        results: [],
       });
     }
 
-    return { data, source };
-  };
-
-  let lastError;
-  for (const key of giphyKeys) {
-    try {
-      const { data, source } = await requestGiphy(key);
-      if (source !== 'GIPHY_SDK_KEY' && sdkKeyFailed) {
-        console.warn('[GIPHY] Falling back to GIPHY_API_KEY after SDK key failure.');
-      }
-
-      res.setHeader('X-GIPHY-Key-Source', source);
-      res.setHeader('Cache-Control', query ? 'no-store' : 'public, max-age=300');
-      return res.json({
-        provider: 'giphy',
-        results: (data?.data || []).map(pickGiphyGif).filter(Boolean),
-      });
-    } catch (err) {
-      lastError = err;
-      if (key.source === 'GIPHY_SDK_KEY' && giphyKeys.some(({ source }) => source === 'GIPHY_API_KEY')) {
-        sdkKeyFailed = true;
-        console.warn('[GIPHY] SDK key failed; trying GIPHY_API_KEY fallback:', err.message);
-        continue;
-      }
-      break;
-    }
+    res.setHeader('Cache-Control', query ? 'no-store' : 'public, max-age=300');
+    res.json({
+      provider: 'giphy',
+      results: (data?.data || []).map(pickGiphyGif).filter(Boolean),
+    });
+  } catch (err) {
+    console.error('[GIPHY] Error:', err.message);
+    res.status(502).json({ error: 'GIPHY request failed.', results: [] });
   }
-
-  console.error('[GIPHY] Error:', lastError?.message || 'GIPHY request failed.');
-  res.status(lastError?.status || 502).json({ error: lastError?.message || 'GIPHY request failed.', results: [] });
 });
 
 app.get('/soundboard-clips', (req, res) => {
