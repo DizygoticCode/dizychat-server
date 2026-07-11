@@ -1393,21 +1393,32 @@ const pickGiphyMedia = (gif, mediaType = 'gif') => {
 };
 
 const pickGiphyClip = (clip) => {
-  const assets = clip?.assets || clip?.video || {};
+  const videoAssets = clip?.video?.assets || clip?.assets || {};
+  const preferredVideo =
+    videoAssets?.['360p'] ||
+    videoAssets?.['480p'] ||
+    videoAssets?.['720p'] ||
+    videoAssets?.['1080p'] ||
+    videoAssets?.['4k'] ||
+    videoAssets?.source ||
+    videoAssets?.original ||
+    videoAssets?.hd ||
+    videoAssets?.sd ||
+    {};
+  const images = clip?.images || {};
   const preview =
-    assets?.preview?.url ||
-    assets?.fixed_width?.url ||
-    assets?.fixed_height?.url ||
-    clip?.images?.fixed_width_small?.url ||
-    clip?.images?.preview_gif?.url ||
+    images.fixed_width?.webp ||
+    images.fixed_width?.url ||
+    images.fixed_height?.webp ||
+    images.fixed_height?.url ||
+    images.original?.webp ||
+    images.original?.url ||
+    preferredVideo?.url ||
     '';
   const mp4 =
-    assets?.source?.url ||
-    assets?.original?.url ||
-    assets?.hd?.url ||
-    assets?.sd?.url ||
+    preferredVideo?.url ||
     clip?.video?.url ||
-    clip?.images?.original?.mp4 ||
+    images.original?.mp4 ||
     '';
 
   if (!preview && !mp4) return null;
@@ -1462,6 +1473,7 @@ app.get('/giphy-search', async (req, res) => {
   if (offset > 0) params.set('offset', String(offset));
 
   if (query) params.set('q', safeType === 'text' ? `text ${query}` : query);
+  if (safeType === 'clips') params.set('country_code', getRequestCountryCode(req));
   if (safeType === 'gifs') params.set('bundle', 'messaging_non_clips');
 
   const apiPath = (() => {
