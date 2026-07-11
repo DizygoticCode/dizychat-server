@@ -16,7 +16,7 @@ DizyChat is a Socket.IO and Express-powered real-time chat backend designed for 
 
 ### Rich content previews
 - Link preview endpoint fetches remote pages, parses OpenGraph/Twitter/JSON-LD metadata, and normalizes image/icon URLs with caching to reduce load.
-- Tenor GIF proxy converts Tenor share links into direct GIF URLs for quick embeds while enforcing domain safelists.
+- GIPHY GIF search powers the composer GIF picker through a server-side proxy, while Tenor share links can still be resolved for legacy embeds.
 
 ### Moderation & administration
 - Admin accounts can be provisioned through environment variables with flexible username/password pairs.
@@ -30,7 +30,7 @@ DizyChat is a Socket.IO and Express-powered real-time chat backend designed for 
 ### Message enrichment tools
 - Allows message editing, deletion (with file cleanup), pinning, starring, emoji reactions, threaded replies, and full-text search.
 - Sanitizes all user-provided text and filenames to avoid HTML/script injection.
-- Packs a Tenor GIF browser plus a curated meme soundboard picker backed by `/soundboard-clips`, sourcing JSON catalogs from `data/soundboards` so clips can be hosted entirely offline.
+- Packs a GIPHY GIF browser plus a curated meme soundboard picker backed by `/soundboard-clips`, sourcing JSON catalogs from `data/soundboards` so clips can be hosted entirely offline.
 
 ### Client experience helpers
 - Broadcasts typing status with rate limiting to prevent spam.
@@ -99,11 +99,18 @@ Create a `.env` file in the project root with the following keys:
 | `LIVEKIT_URL` | Required when LiveKit calls are enabled. LiveKit Cloud/server WebSocket URL (for example `wss://<project>.livekit.cloud`). |
 | `LIVEKIT_API_KEY` | Required when LiveKit calls are enabled. LiveKit API key used by the backend to issue room-scoped access tokens. |
 | `LIVEKIT_API_SECRET` | Required when LiveKit calls are enabled. LiveKit API secret paired with `LIVEKIT_API_KEY`. |
+| `GIPHY_SDK_KEY` | Required for the GIF picker. Create a GIPHY SDK key in the GIPHY Developer Dashboard and store it server-side in Render environment variables. The legacy `GIPHY_API_KEY` name is still accepted as a fallback. |
 | `W2G_API_KEY` | Required for Watch2Gether watch-party room creation. Keep this server-side in Render environment variables; clients only see generated W2G room links. Aliases `WATCH2GETHER_API_KEY` and `WATCH_2_GETHER_API_KEY` are also accepted. |
 | `W2G_REQUEST_TIMEOUT_MS` | (Optional) Timeout for Watch2Gether API room creation; defaults to 10000 ms. |
 | `JACKTRIP_STUDIO_CREATE_URL` | (Optional) Override the JackTrip create-studio URL used by the Jam Session launcher; defaults to `https://app.jacktrip.org/studios/create`. |
 | `JACKTRIP_STUDIO_INVITE_URL` | (Optional) If you already have a reusable JackTrip studio invite, expose that directly instead of the create-studio page. |
 | `SONOBUS_DOWNLOAD_URL` | (Optional) Override the SonoBus fallback URL; defaults to `https://sonobus.net/index.html`. |
+
+### GIPHY setup
+
+Yes, the GIF picker requires your own `GIPHY_SDK_KEY`; there is no bundled shared key. Create a GIPHY developer account, create an SDK key in the GIPHY Developer Dashboard, then add the key to Render as `GIPHY_SDK_KEY` and redeploy. The browser never receives the key directly because the composer calls DizyChat's `/giphy-search` endpoint, and the server forwards requests to GIPHY. The server prefers `GIPHY_SDK_KEY` and only tries the older `GIPHY_API_KEY` fallback if the SDK key is missing or the SDK-key request fails.
+
+GIPHY SDK keys start as beta keys with limited hourly usage. If chat traffic grows beyond beta limits, upgrade the key from the GIPHY dashboard before relying on the GIF picker in production.
 
 ## Running locally
 
@@ -210,6 +217,9 @@ Fetches metadata for an absolute URL and responds with normalized preview attrib
 
 ### `GET /tenor-proxy?url=...`
 Resolves a Tenor share URL to embeddable GIF URLs via Tenor oEmbed.
+
+### `GET /giphy-search?q=...&limit=24`
+Returns normalized GIPHY GIF results for the composer picker. Omit `q` to load trending GIFs. Requires `GIPHY_SDK_KEY` or the legacy `GIPHY_API_KEY` fallback.
 
 ### `GET /soundboard-clips`
 Returns locally curated soundboard clips aggregated from JSON definitions in `data/soundboards`. Accepts optional `q` and `board` query parameters for search filtering and responds with normalized clip metadata for the soundboard picker.

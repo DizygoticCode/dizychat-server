@@ -8655,10 +8655,11 @@ if (voiceBtn) {
   window.addEventListener("beforeunload", autoLeaveIfActive);
 })();
 
-// ------------------- Tenor GIF Picker (beside emoji) -------------------
+// ------------------- GIPHY GIF Picker (beside emoji) -------------------
 (() => {
-  const TENOR_API_KEY = "LIVDSRZULELA"; // test key (can move to .env later)
   if (!emojiBtn || !form) return;
+  if (window.__dizyGiphyPickerInitialized) return;
+  window.__dizyGiphyPickerInitialized = true;
 
     const gifBtn = (() => {
       const existing = document.getElementById("gif-btn");
@@ -8676,7 +8677,8 @@ if (voiceBtn) {
   panel.id = "gif-picker";
   panel.innerHTML = `
     <div class="gif-search"><input id="gif-search-input" placeholder="Search GIFs…"></div>
-    <div id="gif-grid" class="gif-grid"></div>`;
+    <div id="gif-grid" class="gif-grid"></div>
+    <div class="gif-attribution">Powered by GIPHY</div>`;
   document.body.appendChild(panel);
 
   function positionPanel() {
@@ -8687,39 +8689,36 @@ if (voiceBtn) {
     panel.style.display = "block";
   }
 
-  async function loadTenor(endpoint) {
+  async function loadGiphy(query = "") {
+    const grid = document.getElementById("gif-grid");
+    grid.innerHTML = '<div class="gif-loading">Loading GIFs…</div>';
+
     try {
+      const endpoint = query
+        ? `/giphy-search?q=${encodeURIComponent(query)}&limit=24`
+        : "/giphy-search?limit=24";
       const res = await fetch(endpoint);
       const data = await res.json();
-      const grid = document.getElementById("gif-grid");
+      if (!res.ok) throw new Error(data?.error || "GIPHY request failed");
       grid.innerHTML = "";
-      (data.results || []).forEach((g) => {
-        const thumb =
-          g?.media_formats?.tinygif?.url ||
-          g?.media_formats?.gif?.url ||
-          g?.media?.[0]?.tinygif?.url ||
-          g?.media?.[0]?.gif?.url;
+      if (!data.results?.length) {
+        grid.innerHTML = '<div class="gif-error">No GIFs found.</div>';
+        return;
+      }
+
+      data.results.forEach((g) => {
+        const thumb = g?.preview || g?.gif || g?.mp4;
         if (!thumb) return;
         const img = document.createElement("img");
         img.src = thumb;
-        img.alt = "gif";
+        img.alt = g?.title || "GIF";
         img.className = "gif-thumb";
         img.onclick = () => {
-          const directGif =
-            g?.media_formats?.gif?.url ||
-            g?.media?.[0]?.gif?.url ||
-            g?.media_formats?.tinygif?.url ||
-            g?.media?.[0]?.tinygif?.url;
-          const videoVariant =
-            g?.media_formats?.mp4?.url ||
-            g?.media_formats?.mediumgif?.url ||
-            g?.media?.[0]?.mp4?.url;
-
-          const url = directGif || videoVariant || thumb;
+          const url = g?.gif || g?.mp4 || thumb;
           if (!url) return;
 
           const isVideo = /\.(mp4|webm)$/i.test(url);
-          const gifLabel = (g?.content_description || "GIF").trim() || "GIF";
+          const gifLabel = (g?.title || "GIF").trim() || "GIF";
           const labelWithExt = isVideo ? `${gifLabel}.mp4` : `${gifLabel}.gif`;
 
           socket.emit("chat message", {
@@ -8738,9 +8737,8 @@ if (voiceBtn) {
         grid.appendChild(img);
       });
     } catch (e) {
-      const grid = document.getElementById("gif-grid");
       grid.innerHTML = '<div class="gif-error">GIFs failed to load.</div>';
-      console.log("[GIF] Tenor error:", e);
+      console.log("[GIF] GIPHY error:", e);
     }
   }
 
@@ -8755,7 +8753,7 @@ if (voiceBtn) {
       soundboardPanel.style.display = "none";
     }
     if (!panel.dataset.loaded) {
-      loadTenor(`https://g.tenor.com/v1/trending?key=${TENOR_API_KEY}&limit=24`);
+      loadGiphy();
       panel.dataset.loaded = "1";
     }
   };
@@ -8766,9 +8764,7 @@ if (voiceBtn) {
       e.preventDefault();
       const q = searchInput.value.trim();
       if (!q) return;
-      loadTenor(
-        `https://g.tenor.com/v1/search?q=${encodeURIComponent(q)}&key=${TENOR_API_KEY}&limit=24`
-      );
+      loadGiphy(q);
     }
   });
 

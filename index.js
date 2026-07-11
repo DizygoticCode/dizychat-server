@@ -1354,6 +1354,114 @@ app.get('/tenor-proxy', async (req, res) => {
   }
 });
 
+const pickGiphyGif = (gif) => {
+  const images = gif?.images || {};
+  const preview =
+    images.fixed_width_small?.webp ||
+    images.fixed_width_small?.url ||
+    images.fixed_height_small?.webp ||
+    images.fixed_height_small?.url ||
+    images.preview_gif?.url ||
+    images.downsized_still?.url ||
+    '';
+  const full =
+    images.original?.url ||
+    images.downsized?.url ||
+    images.fixed_height?.url ||
+    images.fixed_width?.url ||
+    preview;
+  const mp4 =
+    images.original?.mp4 ||
+    images.downsized_small?.mp4 ||
+    images.fixed_height?.mp4 ||
+    images.fixed_width?.mp4 ||
+    '';
+
+  if (!preview && !full && !mp4) return null;
+
+  return {
+    id: gif?.id || '',
+    title: gif?.title || gif?.alt_text || 'GIF',
+    preview,
+    gif: full,
+    mp4,
+    url: gif?.url || '',
+    provider: 'giphy',
+  };
+};
+
+app.get('/giphy-search', async (req, res) => {
+  const giphyKeys = [
+    { source: 'GIPHY_SDK_KEY', value: process.env.GIPHY_SDK_KEY },
+    { source: 'GIPHY_API_KEY', value: process.env.GIPHY_API_KEY },
+  ]
+    .map(({ source, value }) => ({ source, value: typeof value === 'string' ? value.trim() : '' }))
+    .filter(({ value }, index, keys) => value && keys.findIndex((key) => key.value === value) === index);
+
+  if (!giphyKeys.length) {
+    return res.status(503).json({
+      error: 'GIPHY_SDK_KEY is not configured.',
+      results: [],
+    });
+  }
+
+  const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 24, 1), 50);
+  const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  const endpoint = query ? 'search' : 'trending';
+  let sdkKeyFailed = false;
+
+  const requestGiphy = async ({ source, value }) => {
+    const params = new URLSearchParams({
+      api_key: value,
+      limit: String(limit),
+      rating: 'pg-13',
+      bundle: 'messaging_non_clips',
+    });
+
+    if (query) params.set('q', query);
+
+    const response = await fetch(`https://api.giphy.com/v1/gifs/${endpoint}?${params.toString()}`);
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw Object.assign(new Error(data?.message || response.statusText || 'GIPHY request failed.'), {
+        status: response.status,
+        source,
+      });
+    }
+
+    return { data, source };
+  };
+
+  let lastError;
+  for (const key of giphyKeys) {
+    try {
+      const { data, source } = await requestGiphy(key);
+      if (source !== 'GIPHY_SDK_KEY' && sdkKeyFailed) {
+        console.warn('[GIPHY] Falling back to GIPHY_API_KEY after SDK key failure.');
+      }
+
+      res.setHeader('X-GIPHY-Key-Source', source);
+      res.setHeader('Cache-Control', query ? 'no-store' : 'public, max-age=300');
+      return res.json({
+        provider: 'giphy',
+        results: (data?.data || []).map(pickGiphyGif).filter(Boolean),
+      });
+    } catch (err) {
+      lastError = err;
+      if (key.source === 'GIPHY_SDK_KEY' && giphyKeys.some(({ source }) => source === 'GIPHY_API_KEY')) {
+        sdkKeyFailed = true;
+        console.warn('[GIPHY] SDK key failed; trying GIPHY_API_KEY fallback:', err.message);
+        continue;
+      }
+      break;
+    }
+  }
+
+  console.error('[GIPHY] Error:', lastError?.message || 'GIPHY request failed.');
+  res.status(lastError?.status || 502).json({ error: lastError?.message || 'GIPHY request failed.', results: [] });
+});
+
 app.get('/soundboard-clips', (req, res) => {
   try {
     const { q, board } = req.query;
