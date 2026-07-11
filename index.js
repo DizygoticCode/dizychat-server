@@ -1391,7 +1391,7 @@ const pickGiphyGif = (gif) => {
 };
 
 app.get('/giphy-search', async (req, res) => {
-  const giphyKey = process.env.GIPHY_SDK_KEY || process.env.GIPHY_API_KEY;
+  const giphyKey = process.env.GIPHY_SDK_KEY;
   if (!giphyKey) {
     return res.status(503).json({
       error: 'GIPHY_SDK_KEY is not configured.',

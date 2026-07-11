@@ -8724,7 +8724,7 @@ if (voiceBtn) {
           socket.emit("chat message", {
             room: window.currentRoom,
             user: window.currentUser,
-            text: url,
+            text: "",
             timestamp: Date.now(),
             fileUrl: url,
             fileType: isVideo ? "video/mp4" : "image/gif",
