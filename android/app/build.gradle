@@ -34,7 +34,7 @@ android {
         buildConfigField "String", "MONGO_URI", "\"${localProperties.getProperty('MONGO_URI', '')}\""
         buildConfigField "String", "NODE_VERSION", "\"${localProperties.getProperty('NODE_VERSION', '')}\""
         buildConfigField "String", "PORT", "\"${localProperties.getProperty('PORT', '')}\""
-        buildConfigField "String", "TENOR_API_KEY", "\"${localProperties.getProperty('TENOR_API_KEY', '')}\""
+        buildConfigField "String", "GIPHY_SDK_KEY", "\"${localProperties.getProperty('GIPHY_SDK_KEY', localProperties.getProperty('GIPHY_API_KEY', ''))}\""
         buildConfigField "String", "RENDER_API_URL", "\"${localProperties.getProperty('RENDER_API_URL', '')}\""
     }
     buildTypes {
