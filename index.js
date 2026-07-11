@@ -1354,7 +1354,7 @@ app.get('/tenor-proxy', async (req, res) => {
   }
 });
 
-const pickGiphyGif = (gif) => {
+const pickGiphyMedia = (gif, mediaType = 'gif') => {
   const images = gif?.images || {};
   const preview =
     images.fixed_width_small?.webp ||
@@ -1381,14 +1381,63 @@ const pickGiphyGif = (gif) => {
 
   return {
     id: gif?.id || '',
-    title: gif?.title || gif?.alt_text || 'GIF',
+    title: gif?.title || gif?.alt_text || (mediaType === 'clip' ? 'Clip' : mediaType === 'sticker' ? 'Sticker' : mediaType === 'emoji' ? 'Emoji' : 'GIF'),
     preview,
     gif: full,
     mp4,
     url: gif?.url || '',
     provider: 'giphy',
+    mediaType,
+    analytics: gif?.analytics || null,
   };
 };
+
+const pickGiphyClip = (clip) => {
+  const assets = clip?.assets || clip?.video || {};
+  const preview =
+    assets?.preview?.url ||
+    assets?.fixed_width?.url ||
+    assets?.fixed_height?.url ||
+    clip?.images?.fixed_width_small?.url ||
+    clip?.images?.preview_gif?.url ||
+    '';
+  const mp4 =
+    assets?.source?.url ||
+    assets?.original?.url ||
+    assets?.hd?.url ||
+    assets?.sd?.url ||
+    clip?.video?.url ||
+    clip?.images?.original?.mp4 ||
+    '';
+
+  if (!preview && !mp4) return null;
+
+  return {
+    id: clip?.id || '',
+    title: clip?.title || clip?.slug || 'Clip',
+    preview: preview || mp4,
+    gif: '',
+    mp4,
+    url: clip?.url || '',
+    provider: 'giphy',
+    mediaType: 'clip',
+    analytics: clip?.analytics || null,
+  };
+};
+
+
+const parseCountryCode = (value) => {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (typeof raw !== 'string') return '';
+  const country = raw.trim().slice(0, 2).toUpperCase();
+  return /^[A-Z]{2}$/.test(country) ? country : '';
+};
+
+const getRequestCountryCode = (req) =>
+  parseCountryCode(req.headers['cf-ipcountry']) ||
+  parseCountryCode(req.headers['x-vercel-ip-country']) ||
+  parseCountryCode(req.headers['x-country-code']) ||
+  'US';
 
 app.get('/giphy-search', async (req, res) => {
   const giphyKey = process.env.GIPHY_SDK_KEY;
@@ -1401,24 +1450,39 @@ app.get('/giphy-search', async (req, res) => {
 
   const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 24, 1), 50);
   const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  const requestedType = typeof req.query.type === 'string' ? req.query.type.toLowerCase() : 'gifs';
+  const safeType = ['gifs', 'stickers', 'emoji', 'clips', 'text'].includes(requestedType) ? requestedType : 'gifs';
   const endpoint = query ? 'search' : 'trending';
   const params = new URLSearchParams({
     api_key: giphyKey,
     limit: String(limit),
     rating: 'pg-13',
-    bundle: 'messaging_non_clips',
   });
 
-  if (query) params.set('q', query);
+  if (query) params.set('q', safeType === 'text' ? `text ${query}` : query);
+  if (safeType === 'gifs') params.set('bundle', 'messaging_non_clips');
+  if (safeType === 'clips') params.set('country_code', getRequestCountryCode(req));
+
+  const apiPath = (() => {
+    if (safeType === 'clips') return `https://api.giphy.com/v1/clips/${endpoint}`;
+    if (safeType === 'emoji') return 'https://api.giphy.com/v2/emoji';
+    if (safeType === 'stickers' || safeType === 'text') return `https://api.giphy.com/v1/stickers/${endpoint}`;
+    return `https://api.giphy.com/v1/gifs/${endpoint}`;
+  })();
 
   try {
-    const response = await fetch(`https://api.giphy.com/v1/gifs/${endpoint}?${params.toString()}`);
+    const response = await fetch(`${apiPath}?${params.toString()}`);
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('[GIPHY] Error:', data?.message || response.statusText);
+      const apiMessage = data?.message || data?.meta?.msg || response.statusText;
+      const isClipApprovalError = safeType === 'clips' && (response.status === 401 || response.status === 403);
+      const error = isClipApprovalError
+        ? 'GIPHY Clips require Clips API approval for this SDK key. Email clips@giphy.com to request access.'
+        : apiMessage || 'GIPHY request failed.';
+      console.error('[GIPHY] Error:', error);
       return res.status(response.status).json({
-        error: data?.message || 'GIPHY request failed.',
+        error,
         results: [],
       });
     }
@@ -1426,7 +1490,10 @@ app.get('/giphy-search', async (req, res) => {
     res.setHeader('Cache-Control', query ? 'no-store' : 'public, max-age=300');
     res.json({
       provider: 'giphy',
-      results: (data?.data || []).map(pickGiphyGif).filter(Boolean),
+      mediaType: safeType,
+      results: (data?.data || [])
+        .map((item) => (safeType === 'clips' ? pickGiphyClip(item) : pickGiphyMedia(item, safeType === 'gifs' ? 'gif' : safeType)))
+        .filter(Boolean),
     });
   } catch (err) {
     console.error('[GIPHY] Error:', err.message);
