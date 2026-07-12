@@ -1473,7 +1473,10 @@ app.get('/giphy-search', async (req, res) => {
   if (offset > 0) params.set('offset', String(offset));
 
   if (query) params.set('q', safeType === 'text' ? `text ${query}` : query);
-  if (safeType === 'clips') params.set('country_code', getRequestCountryCode(req));
+  if (safeType === 'clips') {
+    params.set('country_code', getRequestCountryCode(req));
+    params.set('bundle', 'clips_grid_picker');
+  }
   if (safeType === 'gifs') params.set('bundle', 'messaging_non_clips');
 
   const apiPath = (() => {

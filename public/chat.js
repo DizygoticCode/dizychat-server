@@ -8724,11 +8724,24 @@ if (voiceBtn) {
     tile.type = "button";
     tile.className = `gif-tile gif-tile-${g?.mediaType || type}`;
     tile.title = g?.title || typeLabel;
-    const img = document.createElement("img");
-    img.src = thumb;
-    img.alt = g?.title || typeLabel;
-    img.className = "gif-thumb";
-    tile.appendChild(img);
+    const isVideoThumb = /\.(mp4|webm)(\?|$)/i.test(thumb);
+    if (isVideoThumb) {
+      const video = document.createElement("video");
+      video.src = thumb;
+      video.className = "gif-thumb";
+      video.autoplay = true;
+      video.loop = true;
+      video.muted = true;
+      video.playsInline = true;
+      video.setAttribute("aria-label", g?.title || typeLabel);
+      tile.appendChild(video);
+    } else {
+      const img = document.createElement("img");
+      img.src = thumb;
+      img.alt = g?.title || typeLabel;
+      img.className = "gif-thumb";
+      tile.appendChild(img);
+    }
     if (g?.mediaType === "clip") {
       const badge = document.createElement("span");
       badge.className = "gif-badge";
