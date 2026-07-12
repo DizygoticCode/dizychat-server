@@ -1436,6 +1436,13 @@ const pickGiphyClip = (clip) => {
   };
 };
 
+const getFallbackGiphyClipUrl = (endpoint) => {
+  const fallbackEndpoint = endpoint === 'search' ? 'search' : 'trending';
+  return `https://api.giphy.com/v1/gifs/${fallbackEndpoint}`;
+};
+
+const getGiphyPagination = (data, offset) =>
+  data?.pagination || { count: Array.isArray(data?.data) ? data.data.length : 0, offset, total_count: 0 };
 
 const parseCountryCode = (value) => {
   const raw = Array.isArray(value) ? value[0] : value;
@@ -1490,26 +1497,56 @@ app.get('/giphy-search', async (req, res) => {
     const response = await fetch(`${apiPath}?${params.toString()}`);
     const data = await response.json();
 
+    let payloadData = data;
+    let payloadType = safeType;
+    let fallbackNotice = '';
+
     if (!response.ok) {
       const apiMessage = data?.message || data?.meta?.msg || response.statusText;
       const isClipApprovalError = safeType === 'clips' && (response.status === 401 || response.status === 403);
-      const error = isClipApprovalError
-        ? 'GIPHY Clips require Clips API approval for this SDK key. Email clips@giphy.com to request access.'
-        : apiMessage || 'GIPHY request failed.';
-      console.error('[GIPHY] Error:', error);
-      return res.status(response.status).json({
-        error,
-        results: [],
-      });
+
+      if (!isClipApprovalError) {
+        const error = apiMessage || 'GIPHY request failed.';
+        console.error('[GIPHY] Error:', error);
+        return res.status(response.status).json({
+          error,
+          results: [],
+        });
+      }
+
+      fallbackNotice = 'GIPHY Clips API access is not approved for this SDK key, so video GIF results are shown instead.';
+      console.warn('[GIPHY] Clips API unavailable for this key; falling back to GIF video results.');
+      const fallbackParams = new URLSearchParams(params);
+      fallbackParams.delete('country_code');
+      fallbackParams.set('bundle', 'messaging_non_clips');
+      const fallbackResponse = await fetch(`${getFallbackGiphyClipUrl(endpoint)}?${fallbackParams.toString()}`);
+      const fallbackData = await fallbackResponse.json();
+
+      if (!fallbackResponse.ok) {
+        const fallbackError = fallbackData?.message || fallbackData?.meta?.msg || fallbackResponse.statusText || fallbackNotice;
+        console.error('[GIPHY] Fallback Error:', fallbackError);
+        return res.status(fallbackResponse.status).json({
+          error: fallbackError,
+          results: [],
+        });
+      }
+
+      payloadData = fallbackData;
+      payloadType = 'clip-fallback';
     }
 
     res.setHeader('Cache-Control', query ? 'no-store' : 'public, max-age=300');
     res.json({
       provider: 'giphy',
-      mediaType: safeType,
-      pagination: data?.pagination || { count: Array.isArray(data?.data) ? data.data.length : 0, offset, total_count: 0 },
-      results: (data?.data || [])
-        .map((item) => (safeType === 'clips' ? pickGiphyClip(item) : pickGiphyMedia(item, safeType === 'gifs' ? 'gif' : safeType)))
+      mediaType: payloadType,
+      warning: fallbackNotice,
+      pagination: getGiphyPagination(payloadData, offset),
+      results: (payloadData?.data || [])
+        .map((item) => (safeType === 'clips' && payloadType !== 'clips'
+          ? pickGiphyMedia(item, 'clip')
+          : safeType === 'clips'
+            ? pickGiphyClip(item)
+            : pickGiphyMedia(item, safeType === 'gifs' ? 'gif' : safeType)))
         .filter(Boolean),
     });
   } catch (err) {
