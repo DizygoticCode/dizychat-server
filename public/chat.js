@@ -8724,22 +8724,35 @@ if (voiceBtn) {
     tile.type = "button";
     tile.className = `gif-tile gif-tile-${g?.mediaType || type}`;
     tile.title = g?.title || typeLabel;
-    const img = document.createElement("img");
-    img.src = thumb;
-    img.alt = g?.title || typeLabel;
-    img.className = "gif-thumb";
-    tile.appendChild(img);
-    if (g?.mediaType === "clip") {
+    const isVideoThumb = /\.(mp4|webm)(\?|$)/i.test(thumb);
+    if (isVideoThumb) {
+      const video = document.createElement("video");
+      video.src = thumb;
+      video.className = "gif-thumb";
+      video.autoplay = true;
+      video.loop = true;
+      video.muted = true;
+      video.playsInline = true;
+      video.setAttribute("aria-label", g?.title || typeLabel);
+      tile.appendChild(video);
+    } else {
+      const img = document.createElement("img");
+      img.src = thumb;
+      img.alt = g?.title || typeLabel;
+      img.className = "gif-thumb";
+      tile.appendChild(img);
+    }
+    if (g?.hasSound) {
       const badge = document.createElement("span");
       badge.className = "gif-badge";
       badge.textContent = "Sound";
       tile.appendChild(badge);
     }
     tile.onclick = () => {
-      const url = g?.mediaType === "clip" ? (g?.mp4 || thumb) : (g?.gif || g?.mp4 || thumb);
+      const url = g?.hasSound ? (g?.mp4 || thumb) : (g?.gif || g?.mp4 || thumb);
       if (!url) return;
 
-      const isVideo = /\.(mp4|webm)(\?|$)/i.test(url) || g?.mediaType === "clip";
+      const isVideo = /\.(mp4|webm)(\?|$)/i.test(url) || g?.hasSound;
       const gifLabel = (g?.title || typeLabel).trim() || typeLabel;
       const labelWithExt = isVideo ? `${gifLabel}.mp4` : `${gifLabel}.gif`;
 
@@ -8752,7 +8765,7 @@ if (voiceBtn) {
         fileType: isVideo ? "video/mp4" : "image/gif",
         fileName: labelWithExt,
       });
-      showToast(`${g?.mediaType === "clip" ? "Clip" : "GIPHY item"} added`, "success");
+      showToast(`${g?.hasSound ? "Clip" : "GIPHY item"} added`, "success");
       panel.style.display = "none";
       input?.focus();
     };
@@ -8796,6 +8809,13 @@ if (voiceBtn) {
 
       grid.querySelector(".gif-loading-more")?.remove();
       if (!append) grid.innerHTML = "";
+
+      if (!append && data?.warning) {
+        const warning = document.createElement("div");
+        warning.className = "gif-error gif-warning";
+        warning.textContent = data.warning;
+        grid.appendChild(warning);
+      }
 
       const results = Array.isArray(data.results) ? data.results : [];
       if (!results.length && !append) {
