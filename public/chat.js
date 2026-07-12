@@ -8749,10 +8749,10 @@ if (voiceBtn) {
       tile.appendChild(badge);
     }
     tile.onclick = () => {
-      const url = g?.mediaType === "clip" ? (g?.mp4 || thumb) : (g?.gif || g?.mp4 || thumb);
+      const url = g?.hasSound ? (g?.mp4 || thumb) : (g?.gif || g?.mp4 || thumb);
       if (!url) return;
 
-      const isVideo = /\.(mp4|webm)(\?|$)/i.test(url) || g?.mediaType === "clip";
+      const isVideo = /\.(mp4|webm)(\?|$)/i.test(url) || g?.hasSound;
       const gifLabel = (g?.title || typeLabel).trim() || typeLabel;
       const labelWithExt = isVideo ? `${gifLabel}.mp4` : `${gifLabel}.gif`;
 
@@ -8765,7 +8765,7 @@ if (voiceBtn) {
         fileType: isVideo ? "video/mp4" : "image/gif",
         fileName: labelWithExt,
       });
-      showToast(`${g?.mediaType === "clip" ? "Clip" : "GIPHY item"} added`, "success");
+      showToast(`${g?.hasSound ? "Clip" : "GIPHY item"} added`, "success");
       panel.style.display = "none";
       input?.focus();
     };
@@ -8809,6 +8809,13 @@ if (voiceBtn) {
 
       grid.querySelector(".gif-loading-more")?.remove();
       if (!append) grid.innerHTML = "";
+
+      if (!append && data?.warning) {
+        const warning = document.createElement("div");
+        warning.className = "gif-error gif-warning";
+        warning.textContent = data.warning;
+        grid.appendChild(warning);
+      }
 
       const results = Array.isArray(data.results) ? data.results : [];
       if (!results.length && !append) {

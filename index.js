@@ -1389,6 +1389,7 @@ const pickGiphyMedia = (gif, mediaType = 'gif') => {
     provider: 'giphy',
     mediaType,
     analytics: gif?.analytics || null,
+    hasSound: mediaType === 'clip',
   };
 };
 
@@ -1433,6 +1434,7 @@ const pickGiphyClip = (clip) => {
     provider: 'giphy',
     mediaType: 'clip',
     analytics: clip?.analytics || null,
+    hasSound: true,
   };
 };
 
