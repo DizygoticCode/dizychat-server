@@ -1545,7 +1545,7 @@ app.get('/giphy-search', async (req, res) => {
       pagination: getGiphyPagination(payloadData, offset),
       results: (payloadData?.data || [])
         .map((item) => (safeType === 'clips' && payloadType !== 'clips'
-          ? pickGiphyMedia(item, 'gif')
+          ? pickGiphyMedia(item, 'clip')
           : safeType === 'clips'
             ? pickGiphyClip(item)
             : pickGiphyMedia(item, safeType === 'gifs' ? 'gif' : safeType)))

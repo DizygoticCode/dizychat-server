@@ -8742,7 +8742,7 @@ if (voiceBtn) {
       img.className = "gif-thumb";
       tile.appendChild(img);
     }
-    if (g?.hasSound) {
+    if (g?.mediaType === "clip") {
       const badge = document.createElement("span");
       badge.className = "gif-badge";
       badge.textContent = "Sound";
