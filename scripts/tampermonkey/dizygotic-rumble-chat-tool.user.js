@@ -218,8 +218,10 @@
         }
     }
 
+    const escapeRegexPattern = /[\\^$.*+?()[\]{}|]/g;
+
     function escapeRegex(value) {
-        return value.replace(/[.*+?^${}()|[\]\]/g, "\$&");
+        return value.replace(escapeRegexPattern, "\\$&");
     }
 
     /***********************
