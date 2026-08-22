@@ -1,0 +1,49 @@
+name: Run exact Rumble Chat Tool v1.8 installer
+
+on:
+  push:
+    paths:
+      - '.github/workflows/run-rumble-v18.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Extract staged payload and install exact v1.8
+        shell: python
+        run: |
+          import base64
+          import bz2
+          import hashlib
+          import re
+          from pathlib import Path
+
+          staged = Path('.github/workflows/install-rumble-v18.yml').read_text(encoding='utf-8')
+          match = re.search(r'payload = """(.*?)"""', staged, re.S)
+          if not match:
+              raise SystemExit('Could not locate staged v1.8 payload')
+          data = bz2.decompress(base64.b64decode(match.group(1)))
+          expected = 'c499c86bbca43dd4cbdfdade5c84a62e1cd1bf709bf6403dd2f1e7e59fa01a73'
+          digest = hashlib.sha256(data).hexdigest()
+          if digest != expected or len(data) != 82546:
+              raise SystemExit(f'Payload verification failed: {len(data)} bytes / {digest}')
+          target = Path('scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js')
+          target.write_bytes(data)
+          print(f'Installed verified v1.8: {len(data)} bytes / {digest}')
+      - name: Commit exact v1.8 and remove one-shot staging
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+          git rm -f --ignore-unmatch scripts/tampermonkey/.v1.8-payload.b64
+          git rm -f --ignore-unmatch .github/workflows/install-rumble-v18.yml
+          git rm -f --ignore-unmatch .github/workflows/run-rumble-v18.yml
+          git commit -m "Update Rumble Chat Tool to v1.8"
+          git push origin HEAD:main
