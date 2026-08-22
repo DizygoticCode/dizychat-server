@@ -1,0 +1,637 @@
+name: Temporary Rumble v1.8 patch
+
+on:
+  push:
+    branches:
+      - fix/rumble-auto-burn-regex
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'Add temporary Rumble v1.8 patch workflow'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/rumble-auto-burn-regex
+
+      - name: Integrate v1.8 features
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js')
+          text = path.read_text(encoding='utf-8')
+
+          if '// @version      1.8' in text:
+              raise SystemExit('v1.8 already applied')
+          if '// @version      1.7' not in text:
+              raise SystemExit('expected v1.7 metadata not found')
+          if 'const escapeRegexPattern = /[\\^$.*+?()[\]{}|]/g;' not in text:
+              raise SystemExit('known-good escapeRegexPattern is missing')
+          if 'Dizygotic v1.8 evidence recorder' in text:
+              raise SystemExit('v1.8 extension already present')
+
+          text = text.replace('// @version      1.7', '// @version      1.8', 1)
+          text = text.replace(
+              '// @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.',
+              '// @description  All-in-one Rumble chat tool: DM shortcut, blocker/filter/highlights, Burn Bot, local evidence recorder/export, font controls, quiet mode, timestamps, notifications, autoscroll, collapse, stats and backup.',
+              1,
+          )
+          if '// @license      MIT' not in text:
+              text = text.replace('// @grant        GM_download\n', '// @grant        GM_download\n// @license      MIT\n', 1)
+
+          anchor = '''    if (document.readyState === "complete" || document.readyState === "interactive") {
+'''
+          if anchor not in text:
+              raise SystemExit('boot anchor not found')
+
+          extension = r'''
+    /*******************************************
+     * Dizygotic v1.8 evidence recorder + font *
+     *******************************************/
+    const v18Defaults = {
+        chatFontFamily: "default",
+        chatFontSize: 0,
+        quietMode: false,
+        evidenceCaptureEnabled: true,
+        evidenceRecordAll: true,
+        evidenceMaxMessages: 50000,
+        evidenceTargets: [
+            "mrbiscuits",
+            "ttomtumbling",
+            "ttomtumblin",
+            "hugsrus",
+            "orionspectrum",
+            "buckowenusa",
+            "tiddypuzzy",
+            "demapples",
+            "priondiseaselgtbqia",
+            "youdoubleshitshit"
+        ]
+    };
+
+    Object.entries(v18Defaults).forEach(([key, value]) => {
+        if (settings[key] === undefined) {
+            settings[key] = Array.isArray(value) ? [...value] : value;
+        }
+    });
+    saveSettings();
+
+    const chatFontChoices = {
+        default: { label: "Rumble default", css: "" },
+        system: { label: "System UI", css: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" },
+        arial: { label: "Arial", css: "Arial, Helvetica, sans-serif" },
+        verdana: { label: "Verdana", css: "Verdana, Geneva, sans-serif" },
+        tahoma: { label: "Tahoma", css: "Tahoma, Geneva, sans-serif" },
+        trebuchet: { label: "Trebuchet MS", css: "'Trebuchet MS', Arial, sans-serif" },
+        georgia: { label: "Georgia", css: "Georgia, 'Times New Roman', serif" },
+        times: { label: "Times New Roman", css: "'Times New Roman', Times, serif" },
+        courier: { label: "Courier New", css: "'Courier New', Courier, monospace" },
+        monospace: { label: "Monospace", css: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }
+    };
+
+    const EVIDENCE_DB_NAME = "dizygoticRumbleEvidence";
+    const EVIDENCE_DB_VERSION = 1;
+    const EVIDENCE_STORE = "messages";
+    const EVIDENCE_STYLE_ID = "dizygoticChatFontStyle";
+    const evidenceSessionId = `${new Date().toISOString()}-${Math.random().toString(36).slice(2, 10)}`;
+    let evidenceSequence = 0;
+    let evidenceDbPromise = null;
+
+    function normalizeEvidenceTargets(value = settings.evidenceTargets) {
+        const list = Array.isArray(value)
+            ? value
+            : String(value || "").split(",");
+        return [...new Set(
+            list
+                .map((item) => item.toString().trim().replace(/^@+/, "").toLowerCase())
+                .filter(Boolean)
+        )];
+    }
+
+    function normalizedEvidenceMaxMessages() {
+        const parsed = parseInt(settings.evidenceMaxMessages, 10);
+        if (!Number.isFinite(parsed)) return v18Defaults.evidenceMaxMessages;
+        return Math.min(250000, Math.max(1000, parsed));
+    }
+
+    function openEvidenceDb() {
+        if (evidenceDbPromise) return evidenceDbPromise;
+        evidenceDbPromise = new Promise((resolve, reject) => {
+            const request = indexedDB.open(EVIDENCE_DB_NAME, EVIDENCE_DB_VERSION);
+            request.onupgradeneeded = () => {
+                const db = request.result;
+                if (!db.objectStoreNames.contains(EVIDENCE_STORE)) {
+                    const store = db.createObjectStore(EVIDENCE_STORE, {
+                        keyPath: "id",
+                        autoIncrement: true
+                    });
+                    store.createIndex("capturedAtMs", "capturedAtMs", { unique: false });
+                    store.createIndex("usernameLower", "usernameLower", { unique: false });
+                    store.createIndex("sessionId", "sessionId", { unique: false });
+                    store.createIndex("pagePath", "pagePath", { unique: false });
+                    store.createIndex("isTarget", "isTarget", { unique: false });
+                }
+            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+        return evidenceDbPromise;
+    }
+
+    async function addEvidenceRecord(record) {
+        const db = await openEvidenceDb();
+        await new Promise((resolve, reject) => {
+            const tx = db.transaction(EVIDENCE_STORE, "readwrite");
+            tx.objectStore(EVIDENCE_STORE).add(record);
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error);
+        });
+
+        if (evidenceSequence % 250 === 0) {
+            await pruneEvidenceRecords();
+        }
+    }
+
+    async function getAllEvidenceRecords() {
+        const db = await openEvidenceDb();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(EVIDENCE_STORE, "readonly");
+            const request = tx.objectStore(EVIDENCE_STORE).getAll();
+            request.onsuccess = () => resolve(request.result || []);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async function getEvidenceCount() {
+        const db = await openEvidenceDb();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(EVIDENCE_STORE, "readonly");
+            const request = tx.objectStore(EVIDENCE_STORE).count();
+            request.onsuccess = () => resolve(request.result || 0);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async function clearEvidenceRecords() {
+        const db = await openEvidenceDb();
+        await new Promise((resolve, reject) => {
+            const tx = db.transaction(EVIDENCE_STORE, "readwrite");
+            tx.objectStore(EVIDENCE_STORE).clear();
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error);
+        });
+    }
+
+    async function pruneEvidenceRecords() {
+        const max = normalizedEvidenceMaxMessages();
+        const count = await getEvidenceCount();
+        let remaining = count - max;
+        if (remaining <= 0) return;
+
+        const db = await openEvidenceDb();
+        await new Promise((resolve, reject) => {
+            const tx = db.transaction(EVIDENCE_STORE, "readwrite");
+            const store = tx.objectStore(EVIDENCE_STORE);
+            const request = store.openCursor();
+            request.onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (!cursor || remaining <= 0) return;
+                cursor.delete();
+                remaining -= 1;
+                cursor.continue();
+            };
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error);
+        });
+    }
+
+    function cleanEvidenceText(value) {
+        return (value || "")
+            .toString()
+            .replace(/\u00a0/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+    }
+
+    function originalMessageText(el, msgEl) {
+        const raw = typeof el._originalMessage === "string"
+            ? el._originalMessage
+            : msgEl?.innerHTML || "";
+        const scratch = document.createElement("div");
+        scratch.innerHTML = raw;
+        return cleanEvidenceText(scratch.innerText || scratch.textContent || msgEl?.innerText || "");
+    }
+
+    function extractEvidenceMentions(message) {
+        const output = [];
+        const regex = /@([A-Za-z0-9_.-]{1,64})/g;
+        let match;
+        while ((match = regex.exec(message)) !== null) {
+            const mention = match[1].toLowerCase();
+            if (!output.includes(mention)) output.push(mention);
+        }
+        return output;
+    }
+
+    function currentStreamTitle() {
+        return cleanEvidenceText(
+            document.querySelector("h1")?.innerText ||
+            document.querySelector('meta[property="og:title"]')?.content ||
+            document.title ||
+            ""
+        );
+    }
+
+    function evidenceDomMessageId(el) {
+        return cleanEvidenceText(
+            el?.dataset?.messageId ||
+            el?.dataset?.id ||
+            el?.getAttribute?.("data-message-id") ||
+            el?.getAttribute?.("data-id") ||
+            el?.id ||
+            ""
+        );
+    }
+
+    function captureEvidenceRows() {
+        if (!settings.evidenceCaptureEnabled) return;
+
+        const targets = new Set(normalizeEvidenceTargets());
+        document
+            .querySelectorAll("li.chat-history--row.js-chat-history-item")
+            .forEach((el) => {
+                if (el._dizygoticEvidenceCaptured) return;
+
+                const usernameEl = el.querySelector("button.chat-history--username.js-user-tag");
+                const msgEl = el.querySelector("div.js-chat-message.chat-history--message");
+                if (!msgEl) return;
+
+                const isSystem =
+                    !usernameEl ||
+                    el.classList.contains("system-message") ||
+                    /system/i.test(msgEl.innerText || "");
+                const displayName = cleanEvidenceText(usernameEl?.innerText || "system");
+                const usernameLower = displayName.replace(/^@+/, "").toLowerCase();
+                const message = originalMessageText(el, msgEl);
+                const isTarget = targets.has(usernameLower);
+
+                if (!settings.evidenceRecordAll && !isTarget) {
+                    el._dizygoticEvidenceCaptured = true;
+                    return;
+                }
+                if (!message && !displayName) return;
+
+                el._dizygoticEvidenceCaptured = true;
+                const now = new Date();
+                const record = {
+                    capturedAt: now.toISOString(),
+                    capturedAtMs: now.getTime(),
+                    capturedAtLocal: now.toLocaleString(),
+                    renderedTimestamp: cleanEvidenceText(el._timestampNode?.textContent || ""),
+                    sessionId: evidenceSessionId,
+                    sequence: ++evidenceSequence,
+                    username: displayName,
+                    usernameLower,
+                    message,
+                    mentions: extractEvidenceMentions(message),
+                    isTarget,
+                    isSystem,
+                    domMessageId: evidenceDomMessageId(el),
+                    pageUrl: location.href,
+                    pagePath: location.pathname,
+                    streamTitle: currentStreamTitle()
+                };
+
+                addEvidenceRecord(record).catch((err) => {
+                    console.warn("Evidence recorder failed to store a message", err);
+                    delete el._dizygoticEvidenceCaptured;
+                });
+            });
+    }
+
+    function escapeCsvCell(value) {
+        const normalized = Array.isArray(value) ? value.join("|") : value ?? "";
+        return `"${String(normalized).replace(/"/g, '""')}"`;
+    }
+
+    function downloadEvidenceBlob(filename, blob) {
+        const url = URL.createObjectURL(blob);
+        const cleanup = () => {
+            try {
+                URL.revokeObjectURL(url);
+            } catch (_) {}
+        };
+
+        if (typeof GM_download === "function") {
+            try {
+                GM_download({
+                    url,
+                    name: filename,
+                    saveAs: true,
+                    onload: cleanup,
+                    ontimeout: cleanup,
+                    onerror: () => {
+                        cleanup();
+                        fallbackDownload(filename, blob);
+                    }
+                });
+                return;
+            } catch (_) {
+                cleanup();
+            }
+        }
+        fallbackDownload(filename, blob);
+    }
+
+    async function exportEvidenceJson() {
+        const rows = await getAllEvidenceRecords();
+        const payload = {
+            schema: "dizygotic-rumble-evidence/v1",
+            exportedAt: new Date().toISOString(),
+            targets: normalizeEvidenceTargets(),
+            recordAll: !!settings.evidenceRecordAll,
+            messageCount: rows.length,
+            messages: rows
+        };
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+        downloadEvidenceBlob(
+            `dizygotic-rumble-evidence-${stamp}.json`,
+            new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" })
+        );
+    }
+
+    async function exportEvidenceCsv() {
+        const rows = await getAllEvidenceRecords();
+        const columns = [
+            "id",
+            "capturedAt",
+            "capturedAtLocal",
+            "renderedTimestamp",
+            "sessionId",
+            "sequence",
+            "username",
+            "usernameLower",
+            "message",
+            "mentions",
+            "isTarget",
+            "isSystem",
+            "domMessageId",
+            "streamTitle",
+            "pageUrl"
+        ];
+        const lines = [columns.map(escapeCsvCell).join(",")];
+        rows.forEach((row) => {
+            lines.push(columns.map((column) => escapeCsvCell(row[column])).join(","));
+        });
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+        downloadEvidenceBlob(
+            `dizygotic-rumble-evidence-${stamp}.csv`,
+            new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" })
+        );
+    }
+
+    function updateChatFontStyle() {
+        let style = document.getElementById(EVIDENCE_STYLE_ID);
+        if (!style) {
+            style = document.createElement("style");
+            style.id = EVIDENCE_STYLE_ID;
+            (document.head || document.documentElement).appendChild(style);
+        }
+
+        const selected = chatFontChoices[settings.chatFontFamily] || chatFontChoices.default;
+        const parsedSize = parseInt(settings.chatFontSize, 10);
+        const size = Number.isFinite(parsedSize) ? Math.min(28, Math.max(0, parsedSize)) : 0;
+        const rules = [];
+
+        if (selected.css) {
+            rules.push(`
+                li.chat-history--row.js-chat-history-item,
+                li.chat-history--row.js-chat-history-item button.chat-history--username.js-user-tag,
+                li.chat-history--row.js-chat-history-item div.js-chat-message.chat-history--message {
+                    font-family: ${selected.css} !important;
+                }
+            `);
+        }
+        if (size > 0) {
+            rules.push(`
+                li.chat-history--row.js-chat-history-item button.chat-history--username.js-user-tag,
+                li.chat-history--row.js-chat-history-item div.js-chat-message.chat-history--message {
+                    font-size: ${size}px !important;
+                }
+            `);
+        }
+        style.textContent = rules.join("\n");
+    }
+
+    function applyQuietMode() {
+        const selfHandle = (sanitizeNickname(detectMyNickname()) || "").toLowerCase();
+        document
+            .querySelectorAll("li.chat-history--row.js-chat-history-item")
+            .forEach((el) => {
+                const usernameEl = el.querySelector("button.chat-history--username.js-user-tag");
+                const username = cleanEvidenceText(usernameEl?.innerText || "")
+                    .replace(/^@+/, "")
+                    .toLowerCase();
+                const keepVisible =
+                    !settings.quietMode ||
+                    username === selfHandle ||
+                    (username && settings.highlightedUsers.includes(username));
+
+                if (!keepVisible) {
+                    if (!el._dizygoticQuietHidden) {
+                        el._dizygoticQuietPreviousDisplay = el.style.display;
+                        el._dizygoticQuietHidden = true;
+                    }
+                    el.style.display = "none";
+                } else if (el._dizygoticQuietHidden) {
+                    el.style.display = el._dizygoticQuietPreviousDisplay || "";
+                    delete el._dizygoticQuietHidden;
+                    delete el._dizygoticQuietPreviousDisplay;
+                }
+            });
+    }
+
+    async function refreshEvidenceCount(panel) {
+        const output = panel?.querySelector("#evidenceStoredCount");
+        if (!output) return;
+        try {
+            const count = await getEvidenceCount();
+            output.textContent = `${count.toLocaleString()} messages stored locally`;
+        } catch (err) {
+            output.textContent = "Evidence store unavailable";
+            console.warn("Unable to count evidence records", err);
+        }
+    }
+
+    function readV18PanelSettings(panel) {
+        const family = panel.querySelector("#chatFontFamilyInput")?.value || "default";
+        settings.chatFontFamily = chatFontChoices[family] ? family : "default";
+        settings.chatFontSize = Math.min(
+            28,
+            Math.max(0, parseInt(panel.querySelector("#chatFontSizeInput")?.value, 10) || 0)
+        );
+        settings.quietMode = !!panel.querySelector("#quietModeInput")?.checked;
+        settings.evidenceCaptureEnabled = !!panel.querySelector("#evidenceCaptureEnabledInput")?.checked;
+        settings.evidenceRecordAll = !!panel.querySelector("#evidenceRecordAllInput")?.checked;
+        settings.evidenceMaxMessages = Math.min(
+            250000,
+            Math.max(1000, parseInt(panel.querySelector("#evidenceMaxMessagesInput")?.value, 10) || 50000)
+        );
+        settings.evidenceTargets = normalizeEvidenceTargets(
+            panel.querySelector("#evidenceTargetsInput")?.value || ""
+        );
+        saveSettings();
+        updateChatFontStyle();
+        applyQuietMode();
+        captureEvidenceRows();
+    }
+
+    const baseShowSettingsPanel = showSettingsPanel;
+    showSettingsPanel = function () {
+        baseShowSettingsPanel();
+        const panel = document.querySelector("#rumbleBlockerSettingsPanel");
+        if (!panel || panel.querySelector("#dizygoticV18Extras")) return;
+
+        const extras = document.createElement("div");
+        extras.id = "dizygoticV18Extras";
+        extras.innerHTML = `
+            <div style="height:14px"></div>
+            <b>Chat Font</b>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
+                <select id="chatFontFamilyInput" style="flex:1;min-width:190px">
+                    ${Object.entries(chatFontChoices)
+                        .map(([key, option]) => `<option value="${key}"${settings.chatFontFamily === key ? " selected" : ""}>${option.label}</option>`)
+                        .join("")}
+                </select>
+                <label>Size <input type="number" id="chatFontSizeInput" min="0" max="28" value="${settings.chatFontSize || 0}" style="width:64px"> px</label>
+            </div>
+            <div style="font-size:12px;color:gray;margin-top:4px">Size 0 keeps Rumble/compact-mode sizing.</div>
+
+            <div style="height:14px"></div>
+            <b>Quiet Mode</b>
+            <div style="margin-top:6px;font-size:13px">
+                <label><input type="checkbox" id="quietModeInput"${settings.quietMode ? " checked" : ""}> Show only highlighted users and my own messages</label>
+            </div>
+            <div style="font-size:12px;color:gray;margin-top:4px">Local display only — nothing is sent to Rumble.</div>
+
+            <div style="height:14px"></div>
+            <b>Evidence Recorder</b>
+            <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;font-size:13px">
+                <label><input type="checkbox" id="evidenceCaptureEnabledInput"${settings.evidenceCaptureEnabled ? " checked" : ""}> Record rendered public chat locally</label>
+                <label><input type="checkbox" id="evidenceRecordAllInput"${settings.evidenceRecordAll ? " checked" : ""}> Record all visible chat for context (otherwise targets only)</label>
+                <label>Tracked usernames</label>
+                <textarea id="evidenceTargetsInput" style="width:100%;height:62px">${normalizeEvidenceTargets().join(", ")}</textarea>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <label>Keep up to <input type="number" id="evidenceMaxMessagesInput" min="1000" max="250000" step="1000" value="${normalizedEvidenceMaxMessages()}" style="width:100px"> messages</label>
+                    <span id="evidenceStoredCount" style="font-size:12px;color:gray;margin-left:auto">Checking store…</span>
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap">
+                    <button type="button" id="evidenceExportJsonBtn">📤 Export JSON</button>
+                    <button type="button" id="evidenceExportCsvBtn">📊 Export CSV</button>
+                    <button type="button" id="evidenceClearBtn">🗑️ Clear evidence</button>
+                </div>
+                <div style="font-size:12px;color:gray;line-height:1.4">Stores only chat already rendered in this browser: timestamp, username, message, mentions, stream/page and target flag.</div>
+            </div>
+            <div style="height:14px"></div>
+        `;
+
+        const stats = panel.querySelector("#statsSummary");
+        if (stats?.parentNode) {
+            stats.parentNode.insertBefore(extras, stats);
+        } else {
+            panel.appendChild(extras);
+        }
+
+        applyThemeToPanel(panel);
+
+        panel.querySelector("#evidenceExportJsonBtn")?.addEventListener("click", () => {
+            exportEvidenceJson().catch((err) => {
+                console.error(err);
+                alert("⚠️ Evidence JSON export failed.");
+            });
+        });
+        panel.querySelector("#evidenceExportCsvBtn")?.addEventListener("click", () => {
+            exportEvidenceCsv().catch((err) => {
+                console.error(err);
+                alert("⚠️ Evidence CSV export failed.");
+            });
+        });
+        panel.querySelector("#evidenceClearBtn")?.addEventListener("click", async () => {
+            if (!confirm("Clear all locally stored Rumble evidence messages?")) return;
+            try {
+                await clearEvidenceRecords();
+                await refreshEvidenceCount(panel);
+            } catch (err) {
+                console.error(err);
+                alert("⚠️ Failed to clear evidence store.");
+            }
+        });
+
+        const saveButton = [...panel.querySelectorAll("button")]
+            .find((button) => /save/i.test(button.textContent || ""));
+        saveButton?.addEventListener("click", () => readV18PanelSettings(panel));
+
+        refreshEvidenceCount(panel);
+    };
+
+    const baseRefreshBlockedMessages = refreshBlockedMessages;
+    refreshBlockedMessages = function () {
+        const result = baseRefreshBlockedMessages();
+        updateChatFontStyle();
+        applyQuietMode();
+        captureEvidenceRows();
+        return result;
+    };
+
+    updateChatFontStyle();
+
+'''
+
+          text = text.replace(anchor, extension + anchor, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Validate userscript syntax and feature contracts
+        shell: bash
+        run: |
+          node --check scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+          node - <<'NODE'
+          const fs = require('fs');
+          const src = fs.readFileSync('scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js', 'utf8');
+          new Function(src);
+          const required = [
+            '// @version      1.8',
+            'const escapeRegexPattern = /[\\\\^$.*+?()[\\]{}|]/g;',
+            'Dizygotic v1.8 evidence recorder',
+            'evidenceCaptureEnabled: true',
+            'chatFontFamily: "default"',
+            'quietMode: false',
+            'Export JSON',
+            'Export CSV'
+          ];
+          for (const marker of required) {
+            if (!src.includes(marker)) throw new Error(`missing marker: ${marker}`);
+          }
+          const escapeRegexPattern = /[\\^$.*+?()[\]{}|]/g;
+          const escaped = 'a.b[c]\\d$e'.replace(escapeRegexPattern, '\\$&');
+          const re = new RegExp(escaped);
+          if (!re.test('a.b[c]\\d$e')) throw new Error('escapeRegex contract failed');
+          console.log('userscript syntax + v1.8 contracts OK');
+          NODE
+
+      - name: Commit integrated userscript
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+          git commit -m "Integrate Rumble evidence recorder and font controls [skip ci]"
+          git push origin HEAD:fix/rumble-auto-burn-regex
