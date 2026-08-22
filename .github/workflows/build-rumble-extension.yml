@@ -1,0 +1,53 @@
+name: Build Rumble Browser Extension
+
+on:
+  pull_request:
+    paths:
+      - 'browser-extension/**'
+      - 'scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js'
+      - '.github/workflows/build-rumble-extension.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'browser-extension/**'
+      - 'scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js'
+      - '.github/workflows/build-rumble-extension.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: browser-extension
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install extension build dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build Chromium Firefox and Safari packages
+        run: npm run build
+
+      - name: Verify generated manifests and bundles
+        run: |
+          node --check dist/chromium/content.js
+          node --check dist/firefox/content.js
+          node --check dist/safari/content.js
+          node -e "for (const b of ['chromium','firefox','safari']) { const m=require('./dist/'+b+'/manifest.json'); if (m.manifest_version!==3 || m.version!=='1.8.0') throw new Error(b+' manifest invalid'); }"
+
+      - name: Upload extension packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: dizygotic-rumble-chat-extension
+          path: |
+            browser-extension/dist/*.zip
+          if-no-files-found: error
