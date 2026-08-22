@@ -41,9 +41,11 @@ DizyChat is a Socket.IO and Express-powered real-time chat backend designed for 
 ### Live broadcast companions
 - The dedicated Psybin Radio room surfaces a mini audio player that streams the live station, polls `/api/psybin/now-playing` for metadata, and exposes play/pause, mute, and volume controls with resilient reconnect logic.
 - Rumble live streams pop into a draggable, resizable modal so viewers can park the broadcast alongside chat without losing context.
+- **Dizygotic Rumble Chat Companion v1.8** extends Rumble itself with blocking/highlighting, keyword filtering, transcript capture/export, chat appearance controls, DizyChat DM handoff, notifications, and selectable auto-burn engines from the companion userscript in `scripts/tampermonkey/`.
 - Watch2Gether watch-party launchers create synced W2G rooms from inside a DizyChat room while keeping the API key server-side.
 
 ### Recently added
+- **Rumble Chat Companion v1.8** – the companion userscript now adds a passive local transcript recorder with JSON/CSV export, configurable fonts and chat colours (including per-character rainbow/multi-colour local rendering), multiple selectable burn engines, import/export compatibility, and the existing block/highlight/DM toolset.
 - **Push-to-talk voice notes** – the web client exposes a hold-to-record microphone button that uploads and posts audio clips with automatic cleanup and status toasts so moderators can manage voice memos alongside regular attachments.
 - **Theme & density toggles** – users can flip between dark/light themes and compact/comfortable layouts, both of which persist per browser via local storage to keep the interface feeling familiar across sessions.
 - **Inline Rumble embeds** – links to Rumble videos auto-expand into responsive iframes so shared broadcasts can play without leaving the room.
@@ -57,6 +59,7 @@ DizyChat is a Socket.IO and Express-powered real-time chat backend designed for 
 index.js              # Express & Socket.IO server entry point
 src/models/message.js # Mongoose schema for chat messages
 public/               # Static assets served to clients (uploads, UI bundle)
+scripts/tampermonkey/ # Dizygotic Rumble Chat Companion userscript
 tests/                # Automated tests (if/when added)
 ```
 
@@ -92,7 +95,7 @@ Create a `.env` file in the project root with the following keys:
 | `ADMIN_CREDENTIALS_HASHED` | Preferred comma-separated list of `username:scrypt$N$r$p$saltBase64$keyBase64$keyLength` pairs. |
 | `ADMIN_AUTH_MAX_FAILURES` | (Optional) Failed admin auth attempts allowed per window before temporary lockout; defaults to `5`. |
 | `ADMIN_AUTH_WINDOW_MS` | (Optional) Rolling window in milliseconds for counting failed admin auth attempts; defaults to `600000` (10 minutes). |
-| `ADMIN_AUTH_LOCK_MS` | (Optional) Temporary lockout duration in milliseconds after too many failed admin auth attempts; defaults to `900000` (15 minutes). |
+| `ADMIN_AUTH_LOCK_MS` | (Optional) Temporary lockout duration in milliseconds after too many failed failures; defaults to `900000` (15 minutes). |
 | `MESSAGE_HISTORY_CHUNK_SIZE` | Page size (25-500) for history fetches; defaults to 150. |
 | `MAX_UPLOAD_SIZE_MB` | File upload cap; accepts values like `50`, `50mb`, or `2gb`. Use `unlimited` to disable the limit. |
 | `ENABLE_VOICE_CALLS` | (Optional) Set to `true`/`false` to force LiveKit call availability. The legacy name is still used for compatibility; when enabled, calls support microphone audio and optional camera video. If unset, calls enable automatically when all LiveKit credentials are present. |
@@ -286,28 +289,41 @@ All marketing routes serve the hero experience from `public/index.html`; the cha
 - Redis or MongoDB change streams for cross-instance Socket.IO scaling.
 - Rate-limited public APIs to expose room listings and message statistics.
 
-## Dizygotic Rumble Chat UserScript
+## Dizygotic Rumble Chat Companion (Tampermonkey v1.8)
 
-Bring the DizyChat experience to Rumble livestreams with the companion Tampermonkey script located at `scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js`.
+The companion userscript at `scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js` brings DizyChat-style moderation and utility controls directly into Rumble livestream chat. It is designed to run as a browser-side companion: Rumble remains the chat service, while the script augments the page locally and can hand users into DizyChat for private direct-message rooms.
 
-### Feature highlights
-- **Contextual moderation controls** – right-click usernames to block/unblock viewers, highlight regulars, or jump straight into a DizyChat-powered direct-message tab with friendly placeholders ready for your handle and room.
-- **Smart filtering & alerts** – combine user blocks, keyword filters, collapsible long posts, timestamps, and optional desktop/audio notifications to focus on the messages that matter.
-- **Portable settings** – export/import profiles or schedule auto-backups so your blocklist, highlights, and preferences travel with you across browsers.
-- **Draggable control center** – launch a floating settings palette that remembers its position, supports dark mode, and surfaces quick toggles for compact layout, autoscroll lock, previews, and more.
+Greasy Fork listing: https://greasyfork.org/en/scripts/565816-dizygotic-rumble-chat-tool
+
+### v1.8 feature highlights
+- **Context-menu moderation & DizyChat handoff** – right-click a Rumble username to block/unblock, highlight/unhighlight, or open a DizyChat direct-message tab for that user.
+- **Filtering and chat controls** – keyword hide/mask modes, compact display, timestamps with 12/24-hour modes, autoscroll lock, optional system-message hiding, long-message collapse, highlighted-user notifications, and configurable notification sound/volume.
+- **Passive transcript recorder** – optionally records public chat locally with sequence number, ISO capture time, username/display name, message text, @mentions, page URL/title, original rendered message HTML, and row classes. The recorder is bounded to 20,000 messages and batches local-storage writes to avoid hammering the browser on busy streams.
+- **JSON/CSV transcript export** – export the locally captured transcript for later analysis, or clear it independently of the main settings/blocklist.
+- **Chat appearance controls** – choose any installed font family by name, enumerate locally installed fonts where the browser exposes the Local Font Access API, override font size, choose a single text colour, or render each character locally using rainbow or configurable multi-colour palettes.
+- **Selectable auto-burn engines** – optional mention-triggered replies with cooldown control. Built-in quips, Compromise NLP, RiTa creative generation, local Markov generation, and a custom JavaScript hook can each be enabled or disabled independently, with a preferred engine selector and graceful fallbacks.
+- **Portable settings** – export/import blocklists and settings, schedule automatic backups, and import JSON exported by earlier script versions; new v1.8 fields fall back to defaults when they are absent from an older profile.
+- **Persistent draggable UI** – the floating Chat Settings button remembers its screen position and keeps the existing dark mode, block/highlight management, notifications, DM integration, and other controls in one panel.
+
+### Burn engine notes
+- **Built-in** requires no external dependency and is always available.
+- **Compromise** is loaded by Tampermonkey using `@require` and provides lightweight noun/verb-aware responses.
+- **RiTa** is also loaded with `@require` for more playful creative generation.
+- **Markov** uses a small local word-chain generator so a third-party CDN/package change cannot break the entire userscript; users can supply their own corpus in the settings panel.
+- **Custom** exposes `window.rumbleBlocker.customBurnGenerator(ctx)` for users who want to supply their own response function.
 
 ### Install with Tampermonkey
-1. Install the [Tampermonkey](https://www.tampermonkey.net/) browser extension (Chrome, Edge, Firefox, Brave, etc.).
-2. Open the raw script URL: `https://raw.githubusercontent.com/<your-org>/dizychat-server/main/scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js`.
-3. Tampermonkey will prompt to create a new userscript—review the code, then click **Install**.
-4. Visit any `https://rumble.com/` chat; a floating Chat Settings button should appear after the page loads. Click it to configure filters, highlights, DMs, notifications, and backups.
+1. Install the [Tampermonkey](https://www.tampermonkey.net/) browser extension.
+2. Install from the Greasy Fork listing above, or open the repository source directly: `https://raw.githubusercontent.com/DizygoticCode/dizychat-server/main/scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js`.
+3. Review the requested Rumble match scope and dependencies, then install the userscript.
+4. Visit a Rumble livestream with chat. The floating **Chat Settings** button appears once the chat DOM is available.
+5. Existing users can open **Import** and select a settings JSON exported by an older release; v1.8 merges it with the current defaults.
+
+### Local data and privacy
+The transcript recorder, blocklist, highlights, appearance settings, and other preferences are stored in the browser. Transcript export is user-triggered. The companion does not require access to DizyChat server data for normal Rumble filtering/recording; the DizyChat server is only opened when the user explicitly chooses the direct-message handoff.
 
 ### Manual script injection
-If you prefer not to use a userscript manager:
-
-1. Copy the contents of `scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js` to your clipboard.
-2. In a Rumble chat tab, open your browser’s developer tools and run the script from the Console, or save it as a bookmarklet/snippet that executes on demand.
-3. The script stores settings in `localStorage`, so rerunning it will reload your existing blocklist, filters, and UI customizations.
+Tampermonkey is the supported userscript workflow, but the file is plain JavaScript and can also be reviewed or run manually for development/testing. A future standalone Chrome/Brave/Edge/Firefox WebExtension can reuse the same core Rumble DOM logic while replacing userscript metadata/local storage glue with browser-extension APIs.
 
 ---
 
