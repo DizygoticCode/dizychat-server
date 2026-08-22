@@ -1,15 +1,15 @@
 name: Run exact Rumble Chat Tool v1.8 installer
 
 on:
-  push:
-    paths:
-      - '.github/workflows/run-rumble-v18.yml'
+  issues:
+    types: [opened]
 
 permissions:
   contents: write
 
 jobs:
   install:
+    if: github.event.issue.title == 'INSTALL_RUMBLE_CHAT_V1_8_ONCE'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,5 +47,3 @@ jobs:
           git rm -f --ignore-unmatch .github/workflows/run-rumble-v18.yml
           git commit -m "Update Rumble Chat Tool to v1.8"
           git push origin HEAD:main
-
-# Triggered after workflow existed on main.
