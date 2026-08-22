@@ -1,19 +1,33 @@
 # Dizygotic Rumble Chat Companion — Browser Extension
 
-Standalone WebExtension packaging for the Dizygotic Rumble Chat Companion. The extension deliberately reuses the canonical userscript at `../scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js`, so Tampermonkey/Greasy Fork and browser-extension releases do not drift into separate products.
+Store-ready WebExtension packaging for the Rumble companion userscript. Chrome, Brave and Edge share one Chromium Manifest V3 package; Firefox gets a Firefox MV3 package; Safari uses the same WebExtension source and can be wrapped by Apple's Safari Web Extension Packager.
 
-## Supported targets
+## One source of truth
 
-- **Chrome / Brave / Edge** — Manifest V3 Chromium package.
-- **Firefox** — Manifest V3 WebExtension package with a stable Gecko extension ID.
-- **Safari** — Safari-WebExtension-ready output. Apple packaging/signing is performed from the generated Safari folder using Apple's Safari Web Extension packager and an Apple Developer account.
+The extension build reads the canonical userscript at:
 
-## Build
+`scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js`
+
+It extracts that file's `@version`, strips only the Tampermonkey metadata block, and packages the same companion core. There is deliberately no second copy of the Rumble feature logic under `browser-extension/`, so Greasy Fork/Tampermonkey and browser-store editions cannot silently drift apart.
+
+The extension preserves the blocker/highlighter, keyword filters, compact mode, timestamps, notifications, autoscroll lock, long-message handling, DizyChat DM handoff, transcript recorder/export, font and colour controls, rainbow/multi-colour local rendering, portable settings, draggable settings UI, and selectable burn engines.
+
+## Manifest V3 dependency handling
+
+The Tampermonkey edition loads Compromise and RiTa with `@require`. Browser-store Manifest V3 builds instead download the pinned versions **at build time** and place them inside the extension package:
+
+- Compromise `14.7.0`
+- RiTa `2.0.2`
+
+The installed extension therefore executes packaged code only; it does not fetch executable JavaScript from a CDN at runtime.
+
+## Build locally
 
 ```bash
 cd browser-extension
-npm install
-npm run build
+./scripts/fetch-vendor.sh
+node build.mjs
+./scripts/package.sh
 ```
 
 Output:
@@ -22,66 +36,65 @@ Output:
 dist/chromium/
 dist/firefox/
 dist/safari/
-dist/dizygotic-rumble-chat-chromium-vX.Y.Z.zip
-dist/dizygotic-rumble-chat-firefox-vX.Y.Z.zip
-dist/dizygotic-rumble-chat-safari-vX.Y.Z.zip
+dist/dizygotic-rumble-chat-companion-vX.Y-chromium.zip
+dist/dizygotic-rumble-chat-companion-vX.Y-firefox.zip
+dist/dizygotic-rumble-chat-companion-vX.Y-safari-source.zip
+dist/SHA256SUMS.txt
 ```
 
-The build reads `@version` from the canonical Tampermonkey userscript automatically. A userscript version such as `1.8` becomes extension version `1.8.0`.
-
-## What the extension preserves
-
-The packaged content script carries the same Rumble DOM companion behaviour as the userscript: block/highlight/filter tools, timestamps, compact mode, notifications, transcript capture/export, font/colour controls, DizyChat DM handoff, selectable burn engines, portable settings and the draggable settings panel.
-
-`compromise` and `rita` are bundled into `content.js`; the extension does **not** execute remotely hosted JavaScript. `GM_download` is replaced by a small WebExtension bridge to the browser downloads API.
+The icons are generated during the build, so the repository does not carry duplicate binary icon sets.
 
 ## Development install
 
 ### Chrome / Brave / Edge
 
-1. Run `npm run build:chromium`.
-2. Open the browser extensions page.
-3. Enable Developer mode.
+1. Build the extension.
+2. Open the browser's extensions page.
+3. Enable **Developer mode**.
 4. Choose **Load unpacked** and select `browser-extension/dist/chromium`.
+
+The same Chromium ZIP is the release package for Chrome, Brave and Edge.
 
 ### Firefox
 
-1. Run `npm run build:firefox`.
+1. Build the extension.
 2. Open `about:debugging#/runtime/this-firefox`.
 3. Choose **Load Temporary Add-on** and select `browser-extension/dist/firefox/manifest.json`.
 
-For permanent public distribution, submit the generated ZIP to Firefox Add-ons (AMO).
+For normal permanent installation and automatic updates, submit/sign the Firefox ZIP through AMO.
 
 ### Safari
 
-1. Run `npm run build:safari`.
-2. On macOS with current Xcode installed, run:
+Build the Safari source, then on macOS with Xcode installed run:
 
 ```bash
-xcrun safari-web-extension-packager dist/safari \
-  --app-name "Dizygotic Rumble Chat Companion" \
-  --bundle-identifier "dev.dizygotic.rumblechat" \
-  --swift
+./scripts/package-safari.sh
 ```
 
-Apple previously called this tool `safari-web-extension-converter`; current Xcode uses `safari-web-extension-packager`.
+This creates an Xcode Safari Web Extension wrapper under `dist/safari-xcode`. Final signing/App Store or TestFlight distribution requires the publisher's Apple Developer account and signing identity.
 
-## Updating all editions
+## GitHub build/update pipeline
 
-1. Update and test the canonical Tampermonkey userscript.
-2. Bump its `@version`.
-3. Run the extension build.
-4. Publish the generated Chromium ZIP to the Chrome Web Store, Firefox ZIP to AMO, and the Safari package through Apple's distribution flow.
+`.github/workflows/build-rumble-extension.yml` rebuilds and validates the browser packages whenever the canonical userscript or `browser-extension/` source changes. It also produces a Safari Xcode wrapper on a macOS runner.
 
-The browser stores then deliver normal extension updates. Greasy Fork remains the userscript/beta distribution path.
+For a new release:
 
-## Permissions
+1. update and test the canonical userscript;
+2. bump its `@version` once;
+3. commit it;
+4. let the workflow rebuild every browser target;
+5. publish the generated Chromium ZIP to Chrome Web Store, Firefox ZIP to AMO, and Safari wrapper through Apple's distribution flow.
 
-The extension requests only the capabilities used by the companion:
+Once published in those stores, subsequent approved versions use the normal store auto-update mechanisms. Greasy Fork remains the userscript/beta channel.
 
-- host access to `https://rumble.com/*`
-- `downloads` for transcript/settings exports
-- `storage` for extension persistence/migration work
-- `tabs` for the popup's Open Rumble/Open DizyChat shortcuts
+## Popup
 
-The existing companion data remains local to the browser unless the user explicitly opens the DizyChat DM handoff.
+The toolbar popup shows whether the active Rumble tab has the companion running, recorder status, Burn Bot status and current locally recorded message count. It can open the in-page **Chat Settings** panel, Rumble, or DizyChat directly.
+
+## Data and permissions
+
+The extension requests Rumble host access only. Existing companion settings, blocklists and transcript data continue to live in the browser's Rumble-origin local storage for compatibility with current Tampermonkey data/export behaviour. Transcript export is user-triggered; DizyChat is opened only when the user explicitly chooses the DM handoff.
+
+## Third-party licensing
+
+See `THIRD_PARTY_NOTICES.md`. Compromise is MIT licensed. RiTa is GPL-3.0; review the GPL obligations before public store distribution of a bundle containing RiTa, or replace/remove that optional engine before publication if a different licensing model is preferred.
