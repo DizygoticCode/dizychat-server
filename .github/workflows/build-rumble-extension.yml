@@ -1,53 +1,84 @@
 name: Build Rumble Browser Extension
 
 on:
-  pull_request:
-    paths:
-      - 'browser-extension/**'
-      - 'scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js'
-      - '.github/workflows/build-rumble-extension.yml'
-  push:
-    branches:
-      - main
-    paths:
-      - 'browser-extension/**'
-      - 'scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js'
-      - '.github/workflows/build-rumble-extension.yml'
   workflow_dispatch:
+  push:
+    branches: [main]
+    tags:
+      - 'rumble-extension-v*'
+    paths:
+      - 'scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js'
+      - 'browser-extension/**'
+      - '.github/workflows/build-rumble-extension.yml'
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
 
 jobs:
-  build:
+  build-webextensions:
+    if: github.event_name != 'issues' || github.event.issue.title == 'BUILD_RUMBLE_EXTENSION'
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: browser-extension
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 22
-
-      - name: Install extension build dependencies
-        run: npm install --no-audit --no-fund
-
-      - name: Build Chromium Firefox and Safari packages
-        run: npm run build
-
-      - name: Verify generated manifests and bundles
+          node-version: '22'
+      - name: Fetch pinned browser libraries
+        run: ./browser-extension/scripts/fetch-vendor.sh
+      - name: Build browser packages
         run: |
-          node --check dist/chromium/content.js
-          node --check dist/firefox/content.js
-          node --check dist/safari/content.js
-          node -e "for (const b of ['chromium','firefox','safari']) { const m=require('./dist/'+b+'/manifest.json'); if (m.manifest_version!==3 || m.version!=='1.8.0') throw new Error(b+' manifest invalid'); }"
-
-      - name: Upload extension packages
-        uses: actions/upload-artifact@v4
+          node browser-extension/build.mjs
+          ./browser-extension/scripts/package.sh
+      - name: Validate generated packages
+        run: |
+          node --check browser-extension/dist/chromium/content-core.js
+          node --check browser-extension/dist/chromium/bridge.js
+          node --check browser-extension/dist/chromium/shim.js
+          node --check browser-extension/dist/chromium/popup.js
+          python - <<'PY'
+          import json, pathlib, zipfile
+          root = pathlib.Path('browser-extension/dist')
+          for target in ('chromium', 'firefox', 'safari'):
+              manifest = json.loads((root / target / 'manifest.json').read_text())
+              assert manifest['manifest_version'] == 3
+              assert manifest['version']
+              assert manifest['content_scripts'][0]['matches'] == ['https://rumble.com/*']
+              for icon in manifest['icons'].values():
+                  assert (root / target / icon).exists()
+          for archive in root.glob('*.zip'):
+              with zipfile.ZipFile(archive) as z:
+                  assert 'manifest.json' in z.namelist(), f'{archive}: manifest not at zip root'
+          PY
+      - uses: actions/upload-artifact@v4
         with:
-          name: dizygotic-rumble-chat-extension
+          name: rumble-browser-extension-packages
           path: |
-            browser-extension/dist/*.zip
+            browser-extension/dist/*-chromium.zip
+            browser-extension/dist/*-firefox.zip
+            browser-extension/dist/*-safari-source.zip
+            browser-extension/dist/SHA256SUMS.txt
+          if-no-files-found: error
+
+  package-safari-xcode:
+    if: github.event_name != 'issues' || github.event.issue.title == 'BUILD_RUMBLE_EXTENSION'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Fetch pinned browser libraries
+        run: ./browser-extension/scripts/fetch-vendor.sh
+      - name: Build Safari source
+        run: node browser-extension/build.mjs
+      - name: Create Safari Xcode wrapper
+        run: ./browser-extension/scripts/package-safari.sh
+      - name: Archive Safari Xcode project
+        run: ditto -c -k --sequesterRsrc --keepParent browser-extension/dist/safari-xcode browser-extension/dist/dizygotic-rumble-chat-companion-safari-xcode.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rumble-safari-xcode-project
+          path: browser-extension/dist/dizygotic-rumble-chat-companion-safari-xcode.zip
           if-no-files-found: error
