@@ -2,7 +2,7 @@ name: Install Rumble Browser Extension Source
 
 on:
   issues:
-    types: [opened]
+    types: [opened, reopened, edited]
 
 permissions:
   contents: write
