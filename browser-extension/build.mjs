@@ -1,182 +1,158 @@
-import fs from "node:fs/promises";
+import fs from "node:fs";
 import path from "node:path";
-import process from "node:process";
+import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
-import { build } from "esbuild";
-import archiver from "archiver";
-import { PNG } from "pngjs";
-import { createWriteStream } from "node:fs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..");
-const userscriptPath = path.join(repoRoot, "scripts", "tampermonkey", "dizygotic-rumble-chat-tool.user.js");
-const distRoot = path.join(here, "dist");
-const requested = process.argv[2] ? [process.argv[2]] : ["chromium", "firefox", "safari"];
+const canonical = path.join(repoRoot, "scripts", "tampermonkey", "dizygotic-rumble-chat-tool.user.js");
+if (!fs.existsSync(canonical)) throw new Error(`Canonical userscript not found: ${canonical}`);
+const source = fs.readFileSync(canonical, "utf8");
+const versionMatch = source.match(/^\/\/\s*@version\s+([^\s]+)\s*$/m);
+if (!versionMatch) throw new Error(`Could not read @version from ${canonical}`);
+const version = versionMatch[1].trim();
+if (!/^\d+(?:\.\d+){1,3}$/.test(version)) throw new Error(`Unsupported extension version: ${version}`);
 
-const userscript = await fs.readFile(userscriptPath, "utf8");
-const versionMatch = userscript.match(/^\/\/\s*@version\s+([^\s]+)$/m);
-if (!versionMatch) throw new Error("Unable to read @version from canonical userscript");
-const userscriptVersion = versionMatch[1];
-const extensionVersion = /^\d+\.\d+\.\d+$/.test(userscriptVersion) ? userscriptVersion : `${userscriptVersion}.0`;
-const core = userscript.replace(/^\/\/ ==UserScript==[\s\S]*?^\/\/ ==\/UserScript==\s*/m, "");
+const vendorDir = path.join(here, "vendor");
+const compromise = path.join(vendorDir, "compromise.min.js");
+const rita = path.join(vendorDir, "rita.min.js");
+if (!fs.existsSync(compromise) || !fs.existsSync(rita)) {
+  throw new Error("Missing bundled libraries. Run ./scripts/fetch-vendor.sh first.");
+}
 
-const prelude = `
-import nlp from "compromise";
-import { RiTa } from "rita";
+const core = source
+  .replace(/^\/\/ ==UserScript==[\s\S]*?^\/\/ ==\/UserScript==\s*/m, "")
+  .replace(
+    "Compromise and RiTa are loaded by Tampermonkey via @require. Markov uses a local word-chain generator so a CDN package change cannot kill the whole userscript.",
+    "Compromise and RiTa are bundled inside the browser extension. Markov uses a local word-chain generator so an external package/CDN outage cannot kill the companion."
+  );
 
-globalThis.nlp = nlp;
-globalThis.RiTa = RiTa;
+const targets = ["chromium", "firefox", "safari"];
+const iconSizes = [16, 32, 48, 64, 96, 128, 256, 512];
 
-globalThis.GM_download = function GM_download(arg1, arg2) {
-  const options = typeof arg1 === "string" ? { url: arg1, name: arg2 } : (arg1 || {});
-  const api = globalThis.browser ?? globalThis.chrome;
-  if (!api?.runtime?.sendMessage) throw new Error("Extension runtime messaging is unavailable");
-  const payload = {
-    type: "dizygotic-download",
-    url: String(options.url || ""),
-    filename: String(options.name || options.filename || "download"),
-    saveAs: Boolean(options.saveAs)
-  };
-  const result = api.runtime.sendMessage(payload);
-  if (result && typeof result.then === "function") {
-    result.then((response) => {
-      if (response?.ok) options.onload?.(response);
-      else options.onerror?.(response);
-    }).catch((error) => options.onerror?.(error));
+const crcTable = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n += 1) {
+    let c = n;
+    for (let k = 0; k < 8; k += 1) c = (c & 1) ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[n] = c >>> 0;
   }
-  return result;
+  return table;
+})();
+const crc32 = (buffer) => {
+  let c = 0xffffffff;
+  for (const byte of buffer) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
 };
-`;
+const pngChunk = (type, data = Buffer.alloc(0)) => {
+  const name = Buffer.from(type, "ascii");
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length, 0);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(Buffer.concat([name, data])), 0);
+  return Buffer.concat([length, name, data, crc]);
+};
+const makeIcon = (size) => {
+  const row = size * 4 + 1;
+  const raw = Buffer.alloc(row * size);
+  const bg = [20, 22, 28, 255];
+  const fg = [255, 214, 72, 255];
+  for (let y = 0; y < size; y += 1) {
+    raw[y * row] = 0;
+    for (let x = 0; x < size; x += 1) {
+      const nx = (x + 0.5) / size;
+      const ny = (y + 0.5) / size;
+      const edge = Math.min(nx, ny, 1 - nx, 1 - ny);
+      const frame = edge > 0.055 && edge < 0.105;
+      const vertical = nx > 0.23 && nx < 0.34 && ny > 0.20 && ny < 0.80;
+      const cap = nx >= 0.30 && nx < 0.56 && ((ny > 0.20 && ny < 0.31) || (ny > 0.69 && ny < 0.80));
+      const ex = (nx - 0.53) / 0.26;
+      const ey = (ny - 0.50) / 0.30;
+      const ellipse = ex * ex + ey * ey;
+      const arc = nx >= 0.50 && ellipse > 0.62 && ellipse < 1.08;
+      const color = frame || vertical || cap || arc ? fg : bg;
+      const i = y * row + 1 + x * 4;
+      raw[i] = color[0]; raw[i + 1] = color[1]; raw[i + 2] = color[2]; raw[i + 3] = color[3];
+    }
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(size, 0);
+  ihdr.writeUInt32BE(size, 4);
+  ihdr[8] = 8; ihdr[9] = 6;
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", zlib.deflateSync(raw, { level: 9 })),
+    pngChunk("IEND")
+  ]);
+};
 
-const generatedEntry = path.join(here, ".generated-content-entry.js");
-await fs.writeFile(generatedEntry, `${prelude}\n${core}\n`, "utf8");
+const common = {
+  manifest_version: 3,
+  name: "Dizygotic Rumble Chat Companion",
+  short_name: "Dizy Rumble Chat",
+  version,
+  description: "Rumble chat companion with blocking, highlights, keyword filters, transcript recording/export, appearance controls, DizyChat DM handoff and selectable burn engines.",
+  icons: {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png",
+    "128": "icons/icon-128.png"
+  },
+  action: {
+    default_title: "Dizygotic Rumble Chat Companion",
+    default_popup: "popup.html",
+    default_icon: {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png"
+    }
+  },
+  host_permissions: ["https://rumble.com/*"],
+  content_scripts: [{
+    matches: ["https://rumble.com/*"],
+    js: ["vendor/compromise.min.js", "vendor/rita.min.js", "shim.js", "content-core.js", "bridge.js"],
+    run_at: "document_idle"
+  }]
+};
 
-function manifestFor(target) {
-  const base = {
-    manifest_version: 3,
-    name: "Dizygotic Rumble Chat Companion",
-    short_name: "Dizy Rumble Chat",
-    version: extensionVersion,
-    description: "Rumble chat companion with moderation, transcript export, appearance controls, DizyChat DM handoff and burn engines.",
-    permissions: ["downloads", "storage", "tabs"],
-    host_permissions: ["https://rumble.com/*"],
-    action: {
-      default_title: "Dizygotic Rumble Chat Companion",
-      default_popup: "popup.html",
-      default_icon: { "16": "icons/icon16.png", "32": "icons/icon32.png" }
-    },
-    icons: {
-      "16": "icons/icon16.png",
-      "32": "icons/icon32.png",
-      "48": "icons/icon48.png",
-      "128": "icons/icon128.png"
-    },
-    content_scripts: [{
-      matches: ["https://rumble.com/*"],
-      js: ["content.js"],
-      run_at: "document_idle"
-    }]
-  };
-
-  if (target === "chromium") {
-    base.background = { service_worker: "background.js" };
-  } else if (target === "firefox") {
-    base.background = { scripts: ["background.js"] };
-    base.browser_specific_settings = {
+const manifests = {
+  chromium: { ...common },
+  firefox: {
+    ...common,
+    browser_specific_settings: {
       gecko: {
-        id: "rumble-chat@dizygotic.dev",
-        strict_min_version: "121.0"
-      }
-    };
-  } else if (target === "safari") {
-    base.background = {
-      scripts: ["background.js"],
-      service_worker: "background.js"
-    };
-  } else {
-    throw new Error(`Unknown target: ${target}`);
-  }
-  return base;
-}
-
-async function makeIcon(file, size) {
-  const png = new PNG({ width: size, height: size });
-  const cx = (size - 1) / 2;
-  const cy = (size - 1) / 2;
-  const radius = size * 0.46;
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const i = (size * y + x) << 2;
-      const inside = Math.hypot(x - cx, y - cy) <= radius;
-      png.data[i] = inside ? 25 : 0;
-      png.data[i + 1] = inside ? 118 : 0;
-      png.data[i + 2] = inside ? 210 : 0;
-      png.data[i + 3] = inside ? 255 : 0;
-    }
-  }
-  const stroke = Math.max(1, Math.floor(size * 0.09));
-  const left = Math.floor(size * 0.31);
-  const top = Math.floor(size * 0.24);
-  const bottom = Math.ceil(size * 0.76);
-  const right = Math.ceil(size * 0.70);
-  const mid = (top + bottom) / 2;
-  for (let y = top; y <= bottom; y++) {
-    for (let x = left; x <= right; x++) {
-      const vertical = x < left + stroke;
-      const outer = Math.hypot((x - left) / (right - left), (y - mid) / ((bottom - top) / 2)) <= 1.02;
-      const inner = Math.hypot((x - left) / Math.max(1, right - left - stroke * 2), (y - mid) / Math.max(1, (bottom - top) / 2 - stroke)) <= 1;
-      if (vertical || (outer && !inner)) {
-        if (x >= 0 && y >= 0 && x < size && y < size) {
-          const i = (size * y + x) << 2;
-          png.data[i] = 255;
-          png.data[i + 1] = 255;
-          png.data[i + 2] = 255;
-          png.data[i + 3] = 255;
-        }
+        id: "dizygotic-rumble-chat-companion@dizygoticcode",
+        strict_min_version: "121.0",
+        data_collection_permissions: { required: ["none"] }
       }
     }
-  }
-  await fs.writeFile(file, PNG.sync.write(png));
+  },
+  safari: { ...common }
+};
+
+const copy = (src, dest) => {
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.copyFileSync(src, dest);
+};
+
+for (const target of targets) {
+  const out = path.join(here, "dist", target);
+  fs.rmSync(out, { recursive: true, force: true });
+  fs.mkdirSync(path.join(out, "vendor"), { recursive: true });
+  fs.mkdirSync(path.join(out, "icons"), { recursive: true });
+  fs.writeFileSync(path.join(out, "manifest.json"), JSON.stringify(manifests[target], null, 2) + "\n");
+  fs.writeFileSync(path.join(out, "content-core.js"), core);
+  copy(path.join(here, "src", "shim.js"), path.join(out, "shim.js"));
+  copy(path.join(here, "src", "bridge.js"), path.join(out, "bridge.js"));
+  copy(path.join(here, "src", "popup.html"), path.join(out, "popup.html"));
+  copy(path.join(here, "src", "popup.css"), path.join(out, "popup.css"));
+  copy(path.join(here, "src", "popup.js"), path.join(out, "popup.js"));
+  copy(compromise, path.join(out, "vendor", "compromise.min.js"));
+  copy(rita, path.join(out, "vendor", "rita.min.js"));
+  for (const size of iconSizes) fs.writeFileSync(path.join(out, "icons", `icon-${size}.png`), makeIcon(size));
+  copy(path.join(here, "THIRD_PARTY_NOTICES.md"), path.join(out, "THIRD_PARTY_NOTICES.md"));
 }
 
-async function zipDirectory(sourceDir, outPath) {
-  await new Promise((resolve, reject) => {
-    const output = createWriteStream(outPath);
-    const archive = archiver("zip", { zlib: { level: 9 } });
-    output.on("close", resolve);
-    archive.on("error", reject);
-    archive.pipe(output);
-    archive.directory(sourceDir, false);
-    archive.finalize();
-  });
-}
-
-for (const target of requested) {
-  const outDir = path.join(distRoot, target);
-  await fs.rm(outDir, { recursive: true, force: true });
-  await fs.mkdir(path.join(outDir, "icons"), { recursive: true });
-
-  await build({
-    entryPoints: [generatedEntry],
-    bundle: true,
-    platform: "browser",
-    format: "iife",
-    target: ["es2022"],
-    outfile: path.join(outDir, "content.js"),
-    legalComments: "none"
-  });
-
-  await fs.copyFile(path.join(here, "src", "background.js"), path.join(outDir, "background.js"));
-  await fs.copyFile(path.join(here, "src", "popup.html"), path.join(outDir, "popup.html"));
-  await fs.copyFile(path.join(here, "src", "popup.css"), path.join(outDir, "popup.css"));
-  await fs.copyFile(path.join(here, "src", "popup.js"), path.join(outDir, "popup.js"));
-  await fs.writeFile(path.join(outDir, "manifest.json"), JSON.stringify(manifestFor(target), null, 2) + "\n");
-  for (const size of [16, 32, 48, 128]) {
-    await makeIcon(path.join(outDir, "icons", `icon${size}.png`), size);
-  }
-
-  await zipDirectory(outDir, path.join(distRoot, `dizygotic-rumble-chat-${target}-v${extensionVersion}.zip`));
-}
-
-await fs.rm(generatedEntry, { force: true });
-console.log(`Built Dizygotic Rumble Chat Companion ${extensionVersion}: ${requested.join(", ")}`);
+console.log(`Built Dizygotic Rumble Chat Companion v${version} for ${targets.join(", ")}`);
