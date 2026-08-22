@@ -1,10 +1,12 @@
 // ==UserScript==
 // @name         Dizygotic Rumble Chat Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.7
-// @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.
+// @version      1.8
+// @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + transcript recorder/export + font controls + auto-burn + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.
 // @author       Dizygotic
 // @match        https://rumble.com/*
+// @require      https://unpkg.com/compromise@14.7.0/builds/compromise.min.js
+// @require      https://cdnjs.cloudflare.com/ajax/libs/rita/2.0.2/rita.min.js
 // @grant        GM_download
 // ==/UserScript==
 
@@ -18,9 +20,14 @@
     const SETTINGS_KEY = "rumbleBlockerSettings";
     const BACKUP_KEY = "rumbleLastBackup";
     const BTN_POS_KEY = "rumbleBlockerBtnPos";
+    const CHAT_LOG_KEY = "rumbleChatTranscriptLogV1";
+    const CHAT_LOG_LIMIT = 20000;
 
     let blockedUsers = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
     let settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+    let chatLog = JSON.parse(localStorage.getItem(CHAT_LOG_KEY) || "[]");
+    if (!Array.isArray(chatLog)) chatLog = [];
+    let chatSequence = chatLog.length ? Math.max(...chatLog.map((r) => Number(r.seq) || 0)) : 0;
 
     const defaultSettings = {
         previewLength: 50,
@@ -42,43 +49,31 @@
         notificationVolume: 1,
         highlightNotificationSoundEnabled: false,
         myNickname: "",
+        chatRecorderEnabled: true,
+        chatFontFamily: "",
+        chatFontSize: 0,
+        chatTextMode: "default",
+        chatTextColor: "#ffffff",
+        chatMultiPalette: "#ff4d4d,#ffa64d,#ffff4d,#4dff88,#4dd2ff,#8c4dff,#ff4dd2",
         autoBurnEnabled: false,
         autoBurnCooldownSeconds: 45,
-        autoBurnEngine: "builtin"
+        autoBurnEngine: "builtin",
+        burnEnginesEnabled: {
+            builtin: true,
+            compromise: true,
+            rita: true,
+            markov: true,
+            custom: true
+        },
+        burnMarkovCorpus: ""
     };
 
-    const burnEngineRecommendations = [
-        {
-            key: "builtin",
-            label: "Built-in quips (no dependency)",
-            note: "Tiny set of baked-in playful replies."
-        },
-        {
-            key: "compromise",
-            label: "compromise (NLP)",
-            cdn: "https://unpkg.com/compromise@14.7.0/builds/compromise.min.js",
-            note: "Good for lightweight verb/noun flips; exposes global `nlp`."
-        },
-        {
-            key: "rita",
-            label: "RiTa (creative writing)",
-            cdn: "https://cdnjs.cloudflare.com/ajax/libs/rita/2.0.2/rita.min.js",
-            note: "Useful for alliteration or syllable-count-aware burns; exposes global `RiTa`."
-        },
-        {
-            key: "markov",
-            label: "markov-strings (Markov chains)",
-            cdn: "https://unpkg.com/markov-strings@2.0.0/dist/markov-strings.js",
-            note: "Feed your own corpus via `window.rumbleBlocker.burnMarkovSource` for randomized replies."
-        },
-        {
-            key: "custom",
-            label: "Custom hook",
-            note: "Attach `window.rumbleBlocker.customBurnGenerator(ctx)` to return your own message string."
-        }
-    ];
-
     settings = Object.assign({}, defaultSettings, settings);
+    settings.burnEnginesEnabled = Object.assign(
+        {},
+        defaultSettings.burnEnginesEnabled,
+        settings.burnEnginesEnabled || {}
+    );
 
     function saveBlocklist() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(blockedUsers));
@@ -87,6 +82,88 @@
     function saveSettings() {
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     }
+
+    let chatLogSaveTimer = null;
+    function saveChatLog() {
+        if (chatLogSaveTimer) { clearTimeout(chatLogSaveTimer); chatLogSaveTimer = null; }
+        try {
+            localStorage.setItem(CHAT_LOG_KEY, JSON.stringify(chatLog));
+        } catch (err) {
+            console.warn("Chat transcript storage full; trimming oldest records", err);
+            chatLog = chatLog.slice(-Math.floor(CHAT_LOG_LIMIT / 2));
+            try {
+                localStorage.setItem(CHAT_LOG_KEY, JSON.stringify(chatLog));
+            } catch (retryErr) {
+                console.warn("Unable to persist chat transcript", retryErr);
+            }
+        }
+    }
+
+    function scheduleChatLogSave() {
+        if (chatLogSaveTimer) return;
+        chatLogSaveTimer = setTimeout(saveChatLog, 750);
+    }
+
+    function extractMentions(text) {
+        const matches = (text || "").match(/@[A-Za-z0-9_.-]+/g) || [];
+        return [...new Set(matches.map((m) => m.slice(1).toLowerCase()))];
+    }
+
+    function recordChatMessage(el, username, displayName, message) {
+        if (!settings.chatRecorderEnabled || !el || el._chatLogged || !username) return;
+        const clean = (message || "").replace(/\s+/g, " ").trim();
+        if (!clean) return;
+        el._chatLogged = true;
+        const record = {
+            seq: ++chatSequence,
+            capturedAt: new Date().toISOString(),
+            username,
+            displayName,
+            message: clean,
+            mentions: extractMentions(clean),
+            rawHtml: el._originalMessage || el.querySelector("div.js-chat-message.chat-history--message")?.innerHTML || "",
+            rowClass: el.className || "",
+            url: location.href,
+            title: document.title
+        };
+        chatLog.push(record);
+        if (chatLog.length > CHAT_LOG_LIMIT) chatLog.splice(0, chatLog.length - CHAT_LOG_LIMIT);
+        scheduleChatLogSave();
+    }
+
+    function clearChatLog() {
+        chatLog = [];
+        chatSequence = 0;
+        localStorage.removeItem(CHAT_LOG_KEY);
+    }
+
+    function csvEscape(value) {
+        const text = value == null ? "" : String(value);
+        return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    }
+
+    function exportChatLog(format = "json") {
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+        if (format === "csv") {
+            const header = ["seq","capturedAt","username","displayName","message","mentions","rawHtml","rowClass","url","title"];
+            const rows = chatLog.map((r) => [r.seq,r.capturedAt,r.username,r.displayName,r.message,(r.mentions||[]).join(" "),r.rawHtml||"",r.rowClass||"",r.url,r.title].map(csvEscape).join(","));
+            triggerDownload(`dizygotic-rumble-chat-${stamp}.csv`, [header.join(","), ...rows].join("\n"), { prompt: true });
+            return;
+        }
+        triggerDownload(`dizygotic-rumble-chat-${stamp}.json`, JSON.stringify(chatLog, null, 2), { prompt: true });
+    }
+
+    function escapeRegex(value) {
+        return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+
+    const burnEngineRecommendations = [
+        { key: "builtin", label: "Built-in quips" },
+        { key: "compromise", label: "compromise NLP" },
+        { key: "rita", label: "RiTa creative" },
+        { key: "markov", label: "Markov corpus" },
+        { key: "custom", label: "Custom hook" }
+    ];
 
     /***********************
      * Export / Import / Backup
@@ -216,10 +293,6 @@
                 console.log("💾 Auto-backup created");
             }, settings.autoBackupMinutes * 60 * 1000);
         }
-    }
-
-    function escapeRegex(value) {
-        return value.replace(/[.*+?^${}()|[\]\]/g, "\$&");
     }
 
     /***********************
@@ -359,6 +432,57 @@
             </div>
             <div style="height:12px"></div>
 
+            <b>Chat font & colour</b>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
+                <label>Family</label>
+                <input id="chatFontFamilyInput" list="dizyFontList" value="${String(settings.chatFontFamily || "").replace(/"/g, "&quot;")}" placeholder="Rumble default / any installed font" style="min-width:240px;flex:1">
+                <datalist id="dizyFontList">
+                    ${["Arial","Arial Black","Bahnschrift","Calibri","Cambria","Candara","Comic Sans MS","Consolas","Courier New","Franklin Gothic Medium","Garamond","Georgia","Impact","Lucida Console","Microsoft Sans Serif","Palatino Linotype","Segoe UI","Tahoma","Times New Roman","Trebuchet MS","Verdana","monospace","sans-serif","serif"].map((f) => `<option value="${f}"></option>`).join("")}
+                </datalist>
+                <button type="button" id="loadInstalledFontsBtn">Load installed fonts</button>
+                <label>Size px</label>
+                <input type="number" id="chatFontSizeInput" min="0" max="72" value="${settings.chatFontSize || 0}" style="width:70px">
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
+                <label>Text style</label>
+                <select id="chatTextModeInput">
+                    <option value="default"${settings.chatTextMode === "default" ? " selected" : ""}>Rumble default</option>
+                    <option value="single"${settings.chatTextMode === "single" ? " selected" : ""}>Single colour</option>
+                    <option value="rainbow"${settings.chatTextMode === "rainbow" ? " selected" : ""}>Rainbow - each character</option>
+                    <option value="multi"${settings.chatTextMode === "multi" ? " selected" : ""}>Multi-colour - each character</option>
+                </select>
+                <label>Colour</label>
+                <input type="color" id="chatTextColorInput" value="${settings.chatTextColor || "#ffffff"}">
+            </div>
+            <div style="margin-top:6px">
+                <label style="font-size:12px">Multi-colour palette (comma-separated CSS colours)</label>
+                <input id="chatMultiPaletteInput" value="${String(settings.chatMultiPalette || "").replace(/"/g, "&quot;")}" style="width:100%;margin-top:3px">
+            </div>
+            <div style="font-size:12px;color:gray;margin-top:3px">0 = Rumble default size. Font accepts any installed family. Character colours are rendered by this userscript. Raw message HTML/classes are recorded so genuine server-side Rumble formatting can be identified if it appears.</div>
+            <div style="height:12px"></div>
+
+            <b>Passive chat recorder</b>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px">
+                <label><input type="checkbox" id="chatRecorderEnabledInput"${settings.chatRecorderEnabled ? " checked" : ""}> Record public chat locally</label>
+                <span style="font-size:12px;color:gray">${chatLog.length} saved messages</span>
+            </div>
+            <div style="height:12px"></div>
+
+            <b>Auto-burn bot</b>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
+                <label><input type="checkbox" id="autoBurnToggle"${settings.autoBurnEnabled ? " checked" : ""}> Reply when someone tags me</label>
+                <label>Cooldown</label>
+                <input type="number" id="autoBurnCooldownInput" min="5" value="${settings.autoBurnCooldownSeconds}" style="width:70px">
+                <label>Preferred engine</label>
+                <select id="autoBurnEngineSelect">${burnEngineRecommendations.map((r) => `<option value="${r.key}"${settings.autoBurnEngine === r.key ? " selected" : ""}>${r.label}</option>`).join("")}</select>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:7px;font-size:12px">
+                ${burnEngineRecommendations.map((r) => `<label><input type="checkbox" data-burn-engine-toggle="${r.key}"${settings.burnEnginesEnabled?.[r.key] !== false ? " checked" : ""}> ${r.label}</label>`).join("")}
+            </div>
+            <div style="font-size:12px;color:gray;margin-top:4px">Compromise and RiTa are loaded by Tampermonkey via @require. Markov uses a local word-chain generator so a CDN package change cannot kill the whole userscript.</div>
+            <textarea id="burnMarkovCorpusInput" placeholder="Optional Markov corpus — one burn/example per line" style="width:100%;height:58px;margin-top:6px">${settings.burnMarkovCorpus || ""}</textarea>
+            <div style="height:12px"></div>
+
             <b>Collapse long messages</b>
             <div style="font-size:12px;color:gray;margin-bottom:6px">Collapse messages longer than X characters (0 = off).</div>
             <input type="number" id="collapseLengthInput" value="${settings.collapseLength}" style="width:100px">
@@ -391,33 +515,6 @@
 
             <div style="height:14px"></div>
 
-            <b>Auto-burn bot</b>
-            <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;font-size:13px">
-                <label><input type="checkbox" id="autoBurnToggle"${settings.autoBurnEnabled ? " checked" : ""}> Reply when someone tags me</label>
-                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                    <label>Cooldown (seconds)</label>
-                    <input type="number" id="autoBurnCooldownInput" value="${settings.autoBurnCooldownSeconds}" style="width:80px">
-                    <label>Engine</label>
-                    <select id="autoBurnEngineSelect" style="flex:1;min-width:180px">
-                        ${burnEngineRecommendations
-                            .map((rec) => `<option value="${rec.key}"${settings.autoBurnEngine === rec.key ? " selected" : ""}>${rec.label}</option>`)
-                            .join("")}
-                    </select>
-                </div>
-                <div style="font-size:12px;color:gray;line-height:1.5">
-                    Quick inject suggestions for Tampermonkey:
-                    <ul style="margin:6px 0 0 16px;padding:0">
-                        ${burnEngineRecommendations
-                            .filter((rec) => rec.cdn)
-                            .map((rec) => `<li><code>${rec.cdn}</code> — ${rec.note}</li>`)
-                            .join("")}
-                        <li>Custom hook: set <code>window.rumbleBlocker.customBurnGenerator = (ctx) =&gt; "@" + ctx.target + " ..."</code></li>
-                    </ul>
-                </div>
-            </div>
-
-            <div style="height:14px"></div>
-
             <b>Other</b>
             <div style="margin-top:6px;font-size:13px">
               <label><input type="checkbox" id="darkModeInput"${settings.darkMode ? " checked" : ""}> Dark mode</label>
@@ -430,6 +527,34 @@
         `;
 
         applyThemeToPanel(panel);
+
+        const loadInstalledFontsBtn = panel.querySelector("#loadInstalledFontsBtn");
+        if (loadInstalledFontsBtn) {
+            loadInstalledFontsBtn.addEventListener("click", async () => {
+                if (typeof window.queryLocalFonts !== "function") {
+                    alert("This browser does not expose the Local Font Access API. Type any installed font name into the Family box instead.");
+                    return;
+                }
+                try {
+                    const fonts = await window.queryLocalFonts();
+                    const list = panel.querySelector("#dizyFontList");
+                    const families = [...new Set(fonts.map((f) => f.family).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+                    if (list) {
+                        const existing = new Set([...list.querySelectorAll("option")].map((o) => o.value));
+                        families.forEach((family) => {
+                            if (existing.has(family)) return;
+                            const option = document.createElement("option");
+                            option.value = family;
+                            list.appendChild(option);
+                        });
+                    }
+                    alert(`Loaded ${families.length} installed font families.`);
+                } catch (err) {
+                    console.warn("Unable to enumerate local fonts", err);
+                    alert("Font permission was denied or unavailable. You can still type a font family manually.");
+                }
+            });
+        }
 
         panel.querySelector("#keywordActionHide").checked = settings.keywordAction === "hide";
         panel.querySelector("#keywordActionMask").checked = settings.keywordAction === "mask";
@@ -481,12 +606,20 @@
             settings.notifyOnKeyword = !!panel.querySelector("#notifyOnKeywordInput").checked;
             settings.notifyOnHighlight = !!panel.querySelector("#notifyOnHighlightInput").checked;
             settings.highlightNotificationSoundEnabled = !!panel.querySelector("#highlightSoundInput").checked;
+            settings.chatRecorderEnabled = !!panel.querySelector("#chatRecorderEnabledInput")?.checked;
+            settings.chatFontFamily = panel.querySelector("#chatFontFamilyInput")?.value?.trim() || "";
+            settings.chatFontSize = Math.max(0, Math.min(72, parseInt(panel.querySelector("#chatFontSizeInput")?.value, 10) || 0));
+            settings.chatTextMode = panel.querySelector("#chatTextModeInput")?.value || "default";
+            settings.chatTextColor = panel.querySelector("#chatTextColorInput")?.value || "#ffffff";
+            settings.chatMultiPalette = panel.querySelector("#chatMultiPaletteInput")?.value?.trim() || defaultSettings.chatMultiPalette;
             settings.autoBurnEnabled = !!panel.querySelector("#autoBurnToggle")?.checked;
-            settings.autoBurnCooldownSeconds = Math.max(
-                5,
-                parseInt(panel.querySelector("#autoBurnCooldownInput")?.value, 10) || 0
-            );
+            settings.autoBurnCooldownSeconds = Math.max(5, parseInt(panel.querySelector("#autoBurnCooldownInput")?.value, 10) || 45);
             settings.autoBurnEngine = panel.querySelector("#autoBurnEngineSelect")?.value || "builtin";
+            settings.burnEnginesEnabled = Object.assign({}, defaultSettings.burnEnginesEnabled);
+            panel.querySelectorAll("[data-burn-engine-toggle]").forEach((input) => {
+                settings.burnEnginesEnabled[input.dataset.burnEngineToggle] = !!input.checked;
+            });
+            settings.burnMarkovCorpus = panel.querySelector("#burnMarkovCorpusInput")?.value || "";
             const volumeSlider = panel.querySelector("#notificationVolumeInput");
             const parsedVolume = volumeSlider ? parseInt(volumeSlider.value, 10) : NaN;
             const normalizedVolume = Number.isFinite(parsedVolume)
@@ -550,6 +683,9 @@
         buttonRow.appendChild(createAccentButton("Save", () => savePanelSettings(), "#4caf50", "💾"));
         buttonRow.appendChild(createAccentButton("Clear All", () => clearAllSettings(), "#f44336", "🗑️"));
         buttonRow.appendChild(createAccentButton("Export", () => exportData(), "#2196f3", "📤"));
+        buttonRow.appendChild(createAccentButton("Chat JSON", () => exportChatLog("json"), "#673ab7", "🧾"));
+        buttonRow.appendChild(createAccentButton("Chat CSV", () => exportChatLog("csv"), "#3f51b5", "📊"));
+        buttonRow.appendChild(createAccentButton("Clear Chat Log", () => { if (confirm("Clear saved local chat transcript?")) { clearChatLog(); alert("✅ Chat transcript cleared."); } }, "#795548", "🧹"));
         buttonRow.appendChild(
             createAccentButton(
                 "Import",
@@ -597,7 +733,7 @@
         }
 
         const stats = panel.querySelector("#statsSummary");
-        stats.innerText = `Blocked users: ${blockedUsers.length} · Keywords: ${settings.blockedKeywords.length} · Highlighted: ${settings.highlightedUsers.length}`;
+        stats.innerText = `Blocked users: ${blockedUsers.length} · Keywords: ${settings.blockedKeywords.length} · Highlighted: ${settings.highlightedUsers.length} · Logged chat: ${chatLog.length}`;
 
         document.body.appendChild(panel);
         setTimeout(() => {
@@ -722,226 +858,228 @@
         return luminance > 0.6 ? "#000000" : "#ffffff";
     }
 
+    function parseColourPalette(value) {
+        const colours = String(value || "")
+            .split(",")
+            .map((v) => v.trim())
+            .filter(Boolean);
+        return colours.length ? colours : ["#ff4d4d", "#ffa64d", "#ffff4d", "#4dff88", "#4dd2ff", "#8c4dff", "#ff4dd2"];
+    }
+
+    function colourizeTextNode(node, mode, palette, state) {
+        if (!node || !node.nodeValue) return;
+        const text = node.nodeValue;
+        const frag = document.createDocumentFragment();
+        [...text].forEach((char) => {
+            if (/\s/.test(char)) {
+                frag.appendChild(document.createTextNode(char));
+                return;
+            }
+            const span = document.createElement("span");
+            span.className = "dizy-chat-char-colour";
+            span.textContent = char;
+            span.style.color = mode === "rainbow"
+                ? `hsl(${(state.index * 41) % 360} 100% 62%)`
+                : palette[state.index % palette.length];
+            state.index += 1;
+            frag.appendChild(span);
+        });
+        node.parentNode.replaceChild(frag, node);
+    }
+
+    function applyPerCharacterColour(msgEl, mode) {
+        if (!msgEl || (mode !== "rainbow" && mode !== "multi")) return;
+        const palette = parseColourPalette(settings.chatMultiPalette);
+        const walker = document.createTreeWalker(msgEl, NodeFilter.SHOW_TEXT, {
+            acceptNode(node) {
+                if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+                const parent = node.parentElement;
+                if (!parent) return NodeFilter.FILTER_REJECT;
+                if (parent.closest(".dizy-chat-char-colour")) return NodeFilter.FILTER_REJECT;
+                if (parent.closest("script,style")) return NodeFilter.FILTER_REJECT;
+                return NodeFilter.FILTER_ACCEPT;
+            }
+        });
+        const nodes = [];
+        while (walker.nextNode()) nodes.push(walker.currentNode);
+        const state = { index: 0 };
+        nodes.forEach((node) => colourizeTextNode(node, mode, palette, state));
+    }
+
+    function applyConfiguredChatTextStyle(msgEl, isBlocked, isCollapsed) {
+        if (!msgEl || isBlocked || isCollapsed) return;
+        const mode = settings.chatTextMode || "default";
+        if (mode === "single") {
+            msgEl.style.color = settings.chatTextColor || "#ffffff";
+        } else if (mode === "rainbow" || mode === "multi") {
+            msgEl.style.color = "";
+            applyPerCharacterColour(msgEl, mode);
+        }
+    }
+
+    function simpleMarkovGenerate(lines) {
+        const corpus = (Array.isArray(lines) ? lines : [])
+            .map((line) => String(line || "").replace(/\s+/g, " ").trim())
+            .filter(Boolean);
+        if (!corpus.length) return null;
+        const transitions = new Map();
+        const starts = [];
+        corpus.forEach((line) => {
+            const words = line.split(" ");
+            if (!words.length) return;
+            starts.push(words[0]);
+            for (let i = 0; i < words.length - 1; i += 1) {
+                const key = words[i].toLowerCase();
+                if (!transitions.has(key)) transitions.set(key, []);
+                transitions.get(key).push(words[i + 1]);
+            }
+        });
+        let word = starts[Math.floor(Math.random() * starts.length)];
+        const out = [word];
+        while (out.length < 18) {
+            const next = transitions.get(String(word).toLowerCase());
+            if (!next || !next.length) break;
+            word = next[Math.floor(Math.random() * next.length)];
+            out.push(word);
+            if (/[.!?]$/.test(word) && out.length >= 5) break;
+        }
+        return out.join(" ");
+    }
+
     /***********************
      * Auto-burn bot helpers
      ***********************/
     const builtInBurns = [
         ({ target }) => `@${target} you just pinged the wrong dojo.`,
         ({ target }) => `@${target} that's a bold take for someone typing with mittens.`,
-        ({ target, snippet }) => `@${target} ${snippet ? `cool story about “${snippet}”` : "appreciate the shout"}, but the jury is still out.`,
         ({ target }) => `@${target} you rang? I brought receipts and a thesaurus.`,
         ({ target }) => `@${target} touch grass, clear cache, try again.`,
-        ({ target, snippet }) => `@${target} ${snippet ? `that “${snippet}” line` : "that take"} needs a patch note.`,
         ({ target }) => `@${target} noted. Filing under 'draft tweets'.`
     ];
-
     let lastBurnTimestamp = 0;
-
-    function getMessageSnippetForBurn(text) {
-        if (!text) return "";
-        const trimmed = text.replace(/\s+/g, " ").trim();
-        return trimmed.slice(0, 110);
-    }
-
-    function tryCustomBurn(ctx) {
-        const generator = window.rumbleBlocker?.customBurnGenerator;
-        if (typeof generator === "function") {
-            try {
-                return generator(ctx);
-            } catch (err) {
-                console.warn("Custom burn generator threw", err);
-            }
-        }
-        return null;
-    }
-
-    function tryCompromiseBurn(ctx) {
-        try {
-            const nlp = window.nlp;
-            if (!nlp) return null;
-            const doc = nlp(ctx.message || "");
-            const verbs = doc.verbs().toInfinitive().out("array");
-            const nouns = doc.nouns().out("array");
-            const chosenVerb = verbs[0] || "ping";
-            const chosenNoun = nouns[0] || "take";
-            return `@${ctx.target} bold ${chosenVerb} on that ${chosenNoun}. Wanna run that again?`;
-        } catch (err) {
-            console.warn("Compromise burn failed", err);
-            return null;
-        }
-    }
-
-    function tryRiTaBurn(ctx) {
-        try {
-            const RiTa = window.RiTa;
-            if (!RiTa) return null;
-            const allit = `${RiTa.randomWord({ numSyllables: 1 })} ${RiTa.randomWord({ startsWith: ctx.target?.[0] || "b" })}`;
-            const verb = RiTa.conjugate("roast", { tense: "present" });
-            return `@${ctx.target} ${allit.trim()} just ${verb}ed that take.`;
-        } catch (err) {
-            console.warn("RiTa burn failed", err);
-            return null;
-        }
-    }
-
-    function tryMarkovBurn(ctx) {
-        const MarkovStrings = window.Markov || window.markovStrings;
-        const seed = window.rumbleBlocker?.burnMarkovSource;
-        if (!MarkovStrings || !Array.isArray(seed) || seed.length === 0) return null;
-        try {
-            const markov = new MarkovStrings(seed);
-            if (typeof markov.buildCorpus === "function") {
-                markov.buildCorpus();
-            }
-            const generated = markov.generate?.({ maxTries: 20, filter: (res) => res && res.string });
-            const phrase = generated?.string || "ran out of spice";
-            return `@${ctx.target} ${phrase}`;
-        } catch (err) {
-            console.warn("Markov burn failed", err);
-            return null;
-        }
-    }
-
-    function pickBurnLine(ctx) {
-        const template = builtInBurns[Math.floor(Math.random() * builtInBurns.length)];
-        return template(ctx);
-    }
-
-    function generateBurnResponse(ctx) {
-        const normalizedCtx = {
-            target: ctx.target || "there",
-            message: getMessageSnippetForBurn(ctx.message || ""),
-            snippet: getMessageSnippetForBurn(ctx.message || "")
-        };
-
-        if (settings.autoBurnEngine === "custom") {
-            const fromCustom = tryCustomBurn(normalizedCtx);
-            if (fromCustom) return fromCustom;
-        }
-
-        if (settings.autoBurnEngine === "compromise") {
-            const compromiseResult = tryCompromiseBurn(normalizedCtx);
-            if (compromiseResult) return compromiseResult;
-        }
-
-        if (settings.autoBurnEngine === "rita") {
-            const ritaResult = tryRiTaBurn(normalizedCtx);
-            if (ritaResult) return ritaResult;
-        }
-
-        if (settings.autoBurnEngine === "markov") {
-            const markovResult = tryMarkovBurn(normalizedCtx);
-            if (markovResult) return markovResult;
-        }
-
-        const customFallback = tryCustomBurn(normalizedCtx);
-        if (customFallback) return customFallback;
-
-        return pickBurnLine(normalizedCtx);
-    }
 
     function findChatComposer() {
         const selectors = [
-            "textarea.chat-input",
-            "textarea.chat-textarea",
-            "textarea.chat-input__textarea",
-            "textarea#chat-message-text",
-            "textarea[name='chat']",
-            "textarea[data-role='chat-input']",
-            "textarea[data-qa='live-chat-input']",
-            "input.chat-input",
-            "input[name='chat']",
+            "textarea.chat-input", "textarea.chat-textarea", "textarea.chat-input__textarea",
+            "textarea#chat-message-text", "textarea[name='chat']", "textarea[data-role='chat-input']",
+            "textarea[data-qa='live-chat-input']", "input.chat-input", "input[name='chat']",
             "div[contenteditable='true'][data-placeholder*='message' i]",
             "div[contenteditable='true'][aria-label*='message' i]"
         ];
-
-        for (const selector of selectors) {
-            const el = document.querySelector(selector);
-            if (el) return el;
-        }
+        for (const selector of selectors) { const el = document.querySelector(selector); if (el) return el; }
         return null;
     }
 
     function findSendButton() {
         const selectors = [
-            "button.chat-send",
-            "button.send-message",
-            "button[type='submit'][aria-label*='send' i]",
-            "button[aria-label='Send message']",
-            "button[aria-label='Send']",
-            "button.chat__send",
-            "button[data-role='send-button']"
+            "button.chat-send", "button.send-message", "button[type='submit'][aria-label*='send' i]",
+            "button[aria-label='Send message']", "button[aria-label='Send']", "button.chat__send", "button[data-role='send-button']"
         ];
-
-        for (const selector of selectors) {
-            const btn = document.querySelector(selector);
-            if (btn) return btn;
-        }
+        for (const selector of selectors) { const btn = document.querySelector(selector); if (btn) return btn; }
         return null;
     }
 
     function setComposerValue(composer, value) {
         if (!composer) return;
-        if (typeof composer.value === "string") {
-            composer.focus();
-            composer.value = value;
-            composer.dispatchEvent(new Event("input", { bubbles: true }));
-            composer.dispatchEvent(new Event("change", { bubbles: true }));
-            return;
-        }
-
-        if (composer.isContentEditable) {
-            composer.focus();
+        composer.focus();
+        if ("value" in composer) {
+            const proto = composer.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+            const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+            if (setter) setter.call(composer, value); else composer.value = value;
+        } else if (composer.isContentEditable) {
             composer.textContent = value;
-            composer.dispatchEvent(new Event("input", { bubbles: true }));
-            return;
         }
-    }
-
-    function triggerSendAction(composer) {
-        const sendButton = findSendButton();
-        if (sendButton) {
-            sendButton.click();
-            return true;
-        }
-
-        if (composer) {
-            const enterEvent = new KeyboardEvent("keydown", {
-                key: "Enter",
-                code: "Enter",
-                bubbles: true,
-                cancelable: true
-            });
-            composer.dispatchEvent(enterEvent);
-            return !enterEvent.defaultPrevented;
-        }
-        return false;
+        composer.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
+        composer.dispatchEvent(new Event("change", { bubbles: true }));
     }
 
     function sendChatMessage(message) {
         const composer = findChatComposer();
-        if (!composer) {
-            console.warn("Auto-burn bot could not find chat composer");
-            return false;
-        }
-
+        if (!composer) return false;
         setComposerValue(composer, message);
-        return triggerSendAction(composer);
+        const btn = findSendButton();
+        if (btn) { btn.click(); return true; }
+        composer.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }));
+        return true;
+    }
+
+    function generateBurnResponse(ctx) {
+        const normalizedCtx = {
+            target: ctx.target || "there",
+            message: (ctx.message || "").replace(/\s+/g, " ").trim().slice(0, 110),
+            snippet: (ctx.message || "").replace(/\s+/g, " ").trim().slice(0, 110)
+        };
+        const enabled = Object.assign({}, defaultSettings.burnEnginesEnabled, settings.burnEnginesEnabled || {});
+        const preferred = settings.autoBurnEngine || "builtin";
+        const engineOrder = [preferred, "custom", "compromise", "rita", "markov", "builtin"]
+            .filter((key, index, arr) => arr.indexOf(key) === index && enabled[key] !== false);
+
+        const custom = window.rumbleBlocker?.customBurnGenerator;
+        const tryCustom = () => {
+            if (typeof custom !== "function") return null;
+            try { return custom(normalizedCtx) || null; } catch (err) { console.warn("Custom burn generator threw", err); return null; }
+        };
+
+        for (const engine of engineOrder) {
+            if (engine === "custom") {
+                const result = tryCustom();
+                if (result) return String(result);
+            }
+            if (engine === "compromise") {
+                const nlpLib = typeof nlp !== "undefined" ? nlp : window.nlp;
+                if (nlpLib) {
+                    try {
+                        const doc = nlpLib(normalizedCtx.message);
+                        const verb = doc.verbs().toInfinitive().out("array")[0] || "ping";
+                        const noun = doc.nouns().out("array")[0] || "take";
+                        return `@${normalizedCtx.target} bold ${verb} on that ${noun}. Wanna run that again?`;
+                    } catch (err) { console.warn("Compromise burn failed", err); }
+                }
+            }
+            if (engine === "rita") {
+                const ritaLib = typeof RiTa !== "undefined" ? RiTa : window.RiTa;
+                if (ritaLib) {
+                    try {
+                        const lead = ritaLib.randomWord({ numSyllables: 1 });
+                        const noun = ritaLib.randomWord({ pos: "nn" });
+                        return `@${normalizedCtx.target} ${lead} ${noun} energy detected. Recompile your take.`;
+                    } catch (err) { console.warn("RiTa burn failed", err); }
+                }
+            }
+            if (engine === "markov") {
+                const supplied = String(settings.burnMarkovCorpus || "")
+                    .split(/\r?\n/)
+                    .map((line) => line.trim())
+                    .filter(Boolean);
+                const hookCorpus = Array.isArray(window.rumbleBlocker?.burnMarkovSource)
+                    ? window.rumbleBlocker.burnMarkovSource
+                    : [];
+                const fallbackCorpus = [
+                    "that take needs a patch note before production.",
+                    "you rang and brought a beta opinion to a release build.",
+                    "clear cache touch grass and try that sentence again.",
+                    "bold claim but the logs are not on your side.",
+                    "that argument arrived without dependencies installed.",
+                    "your hot take just failed the deterministic test suite."
+                ];
+                const phrase = simpleMarkovGenerate([...supplied, ...hookCorpus, ...fallbackCorpus]);
+                if (phrase) return `@${normalizedCtx.target} ${phrase}`;
+            }
+            if (engine === "builtin") {
+                const template = builtInBurns[Math.floor(Math.random() * builtInBurns.length)];
+                return template(normalizedCtx);
+            }
+        }
+        return null;
     }
 
     function maybeHandleAutoBurn(ctx) {
         if (!settings.autoBurnEnabled) return;
-        const cooldownMs = Math.max(5, settings.autoBurnCooldownSeconds || 45) * 1000;
         const now = Date.now();
+        const cooldownMs = Math.max(5, settings.autoBurnCooldownSeconds || 45) * 1000;
         if (now - lastBurnTimestamp < cooldownMs) return;
-
         const response = generateBurnResponse(ctx);
-        if (!response) return;
-
-        const success = sendChatMessage(response);
-        if (success) {
-            lastBurnTimestamp = now;
-        }
+        if (response && sendChatMessage(response)) lastBurnTimestamp = now;
     }
 
     /***********************
@@ -1057,6 +1195,19 @@
                     delete el._compactApplied;
                 }
 
+                const chosenFont = settings.chatFontFamily || "";
+                const chosenSize = Number(settings.chatFontSize) || 0;
+                el.style.fontFamily = chosenFont;
+                msgEl.style.fontFamily = chosenFont;
+                if (usernameEl) usernameEl.style.fontFamily = chosenFont;
+                if (chosenSize > 0) {
+                    msgEl.style.fontSize = `${chosenSize}px`;
+                    if (usernameEl) usernameEl.style.fontSize = `${chosenSize}px`;
+                } else if (!settings.compactMode) {
+                    msgEl.style.fontSize = "";
+                    if (usernameEl) usernameEl.style.fontSize = "";
+                }
+
                 if (settings.showTimestamps && usernameEl) {
                     if (!el._timestampApplied) {
                         const timeNode = document.createElement("span");
@@ -1084,29 +1235,25 @@
                     ? rawOriginal.replace(/<\/?[^>]+(>|$)/g, "")
                     : msgEl.innerText || "";
                 const lowerText = plainOriginal.toLowerCase();
-                const userIsBlocked = username && blockedUsers.includes(username);
 
+                recordChatMessage(el, username, displayName, plainOriginal);
+
+                const userIsBlocked = username && blockedUsers.includes(username);
                 if (
                     settings.autoBurnEnabled &&
                     !el._autoBurnHandled &&
                     el._recentlyAdded &&
-                    username &&
-                    selfHandleLower &&
+                    username && selfHandleLower &&
                     username !== selfHandleLower &&
-                    !userIsBlocked &&
-                    !isSystem
+                    !userIsBlocked && !isSystem
                 ) {
                     const mentionRegex = new RegExp(`\\b@?${escapeRegex(selfHandleLower)}\\b`, "i");
                     if (mentionRegex.test(lowerText)) {
-                        const targetName = displayName.replace(/^@+/, "");
-                        maybeHandleAutoBurn({
-                            target: targetName || displayName,
-                            message: plainOriginal,
-                            from: username
-                        });
+                        maybeHandleAutoBurn({ target: displayName.replace(/^@+/, ""), message: plainOriginal, from: username });
                         el._autoBurnHandled = true;
                     }
                 }
+
                 let keywordMatched = null;
                 if (settings.blockedKeywords && settings.blockedKeywords.length > 0) {
                     for (const kw of settings.blockedKeywords) {
@@ -1293,6 +1440,8 @@
                         msgEl.onclick = null;
                     }
                 }
+
+                applyConfiguredChatTextStyle(msgEl, isBlocked, !!el._collapsed);
 
                 if (el._recentlyAdded) {
                     if (isHighlighted) {
@@ -1615,6 +1764,7 @@
         }, 800);
 
         ensureFloatingSettingsButton();
+        window.addEventListener("beforeunload", saveChatLog, { once: true });
     }
 
     if (document.readyState === "complete" || document.readyState === "interactive") {
@@ -1630,4 +1780,15 @@
     window.rumbleBlocker.import = importData;
     window.rumbleBlocker.getSettings = () => settings;
     window.rumbleBlocker.getBlocked = () => blockedUsers;
+    window.rumbleBlocker.exportChat = exportChatLog;
+    window.rumbleBlocker.clearChat = clearChatLog;
+    window.rumbleBlocker.getChatLog = () => chatLog.slice();
+    window.rumbleBlocker.getBurnEngines = () => ({
+        builtin: true,
+        compromise: typeof nlp !== "undefined" || !!window.nlp,
+        rita: typeof RiTa !== "undefined" || !!window.RiTa,
+        markov: true,
+        custom: typeof window.rumbleBlocker?.customBurnGenerator === "function"
+    });
+    window.rumbleBlocker.customBurnGenerator = window.rumbleBlocker.customBurnGenerator || null;
 })();
