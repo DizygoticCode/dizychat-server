@@ -1,0 +1,21 @@
+{
+  "name": "dizygotic-rumble-chat-extension",
+  "private": true,
+  "version": "1.8.0",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "build:chromium": "node build.mjs chromium",
+    "build:firefox": "node build.mjs firefox",
+    "build:safari": "node build.mjs safari"
+  },
+  "dependencies": {
+    "compromise": "14.7.0",
+    "rita": "2.0.2"
+  },
+  "devDependencies": {
+    "archiver": "7.0.1",
+    "esbuild": "0.25.9",
+    "pngjs": "7.0.0"
+  }
+}
