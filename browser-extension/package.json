@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "compromise": "14.7.0",
-    "rita": "2.0.2"
+    "rita": "3.2.16"
   },
   "devDependencies": {
     "archiver": "7.0.1",
