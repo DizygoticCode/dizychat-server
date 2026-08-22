@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Dizygotic Rumble Chat Companion</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <header>
+      <img src="icons/icon-64.png" alt="" width="48" height="48">
+      <div>
+        <h1>Dizygotic Rumble Chat Companion</h1>
+        <p id="versionLabel">v1.8</p>
+      </div>
+    </header>
+
+    <section class="status" aria-live="polite">
+      <div><span>Rumble page</span><strong id="pageStatus">Checking…</strong></div>
+      <div><span>Recorder</span><strong id="recorderStatus">—</strong></div>
+      <div><span>Burn bot</span><strong id="burnStatus">—</strong></div>
+      <div><span>Saved chat</span><strong id="logCount">—</strong></div>
+    </section>
+
+    <button id="openSettings" type="button">Open Chat Settings</button>
+    <button id="openRumble" class="secondary" type="button">Open Rumble</button>
+
+    <p class="footnote">Runs only on <code>rumble.com</code>. Settings and transcript data stay in your browser unless you export them.</p>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>
