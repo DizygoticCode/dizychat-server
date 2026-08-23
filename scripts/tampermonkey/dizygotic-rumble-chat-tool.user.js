@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Dizygotic Rumble Chat Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.9
-// @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + transcript recorder/export + automated curated burn memory + font controls + auto-burn + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.
+// @version      1.9.1
+// @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + transcript recorder/export + automated curated burn memory + outgoing message styling + auto-burn + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.
 // @author       Dizygotic
 // @match        https://rumble.com/*
 // @require      https://unpkg.com/compromise@14.7.0/builds/compromise.min.js
@@ -63,8 +63,7 @@
         highlightNotificationSoundEnabled: false,
         myNickname: "",
         chatRecorderEnabled: true,
-        chatFontFamily: "",
-        chatFontSize: 0,
+        outgoingFontStyle: "default",
         chatTextMode: "default",
         chatTextColor: "#ffffff",
         chatMultiPalette: "#ff4d4d,#ffa64d,#ffff4d,#4dff88,#4dd2ff,#8c4dff,#ff4dd2",
@@ -908,19 +907,20 @@
             </div>
             <div style="height:12px"></div>
 
-            <b>Chat font & colour</b>
+            <b>Outgoing message style</b>
+            <div style="font-size:12px;color:gray;margin-top:3px">These controls format messages you send. They no longer repaint everybody's chat on your screen.</div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
-                <label>Family</label>
-                <input id="chatFontFamilyInput" list="dizyFontList" value="${String(settings.chatFontFamily || "").replace(/"/g, "&quot;")}" placeholder="Rumble default / any installed font" style="min-width:240px;flex:1">
-                <datalist id="dizyFontList">
-                    ${["Arial","Arial Black","Bahnschrift","Calibri","Cambria","Candara","Comic Sans MS","Consolas","Courier New","Franklin Gothic Medium","Garamond","Georgia","Impact","Lucida Console","Microsoft Sans Serif","Palatino Linotype","Segoe UI","Tahoma","Times New Roman","Trebuchet MS","Verdana","monospace","sans-serif","serif"].map((f) => `<option value="${f}"></option>`).join("")}
-                </datalist>
-                <button type="button" id="loadInstalledFontsBtn">Load installed fonts</button>
-                <label>Size px</label>
-                <input type="number" id="chatFontSizeInput" min="0" max="72" value="${settings.chatFontSize || 0}" style="width:70px">
-            </div>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
-                <label>Text style</label>
+                <label>Font</label>
+                <select id="outgoingFontStyleInput">
+                    <option value="default"${settings.outgoingFontStyle === "default" ? " selected" : ""}>Rumble default</option>
+                    <option value="bold"${settings.outgoingFontStyle === "bold" ? " selected" : ""}>𝐁𝐨𝐥𝐝 Unicode</option>
+                    <option value="sans"${settings.outgoingFontStyle === "sans" ? " selected" : ""}>𝖲𝖺𝗇𝗌 Unicode</option>
+                    <option value="sansBold"${settings.outgoingFontStyle === "sansBold" ? " selected" : ""}>𝗦𝗮𝗻𝘀 𝗕𝗼𝗹𝗱 Unicode</option>
+                    <option value="mono"${settings.outgoingFontStyle === "mono" ? " selected" : ""}>𝙼𝚘𝚗𝚘 Unicode</option>
+                    <option value="fullwidth"${settings.outgoingFontStyle === "fullwidth" ? " selected" : ""}>Ｆｕｌｌｗｉｄｔｈ</option>
+                    <option value="circled"${settings.outgoingFontStyle === "circled" ? " selected" : ""}>Ⓒⓘⓡⓒⓛⓔⓓ</option>
+                </select>
+                <label>Colour mode</label>
                 <select id="chatTextModeInput">
                     <option value="default"${settings.chatTextMode === "default" ? " selected" : ""}>Rumble default</option>
                     <option value="single"${settings.chatTextMode === "single" ? " selected" : ""}>Single colour</option>
@@ -934,7 +934,7 @@
                 <label style="font-size:12px">Multi-colour palette (comma-separated CSS colours)</label>
                 <input id="chatMultiPaletteInput" value="${String(settings.chatMultiPalette || "").replace(/"/g, "&quot;")}" style="width:100%;margin-top:3px">
             </div>
-            <div style="font-size:12px;color:gray;margin-top:3px">0 = Rumble default size. Font accepts any installed family. Character colours are rendered by this userscript. Raw message HTML/classes are recorded so genuine server-side Rumble formatting can be identified if it appears.</div>
+            <div style="font-size:12px;color:gray;margin-top:3px">Unicode font styles are carried in the outgoing text itself and are visible to other viewers. Mentions, URLs and :emote: tokens stay plain so Rumble can parse them. Colour modes are applied to Rumble's rich/contenteditable composer when that composer exposes formatting; a plain textarea cannot carry CSS colour. Burn Bot uses this same outgoing formatter.</div>
             <div style="height:12px"></div>
 
             <b>Passive chat recorder</b>
@@ -1027,34 +1027,6 @@
         updateBackupStatus(panel);
         updateCuratedBurnStatus(panel);
 
-        const loadInstalledFontsBtn = panel.querySelector("#loadInstalledFontsBtn");
-        if (loadInstalledFontsBtn) {
-            loadInstalledFontsBtn.addEventListener("click", async () => {
-                if (typeof window.queryLocalFonts !== "function") {
-                    alert("This browser does not expose the Local Font Access API. Type any installed font name into the Family box instead.");
-                    return;
-                }
-                try {
-                    const fonts = await window.queryLocalFonts();
-                    const list = panel.querySelector("#dizyFontList");
-                    const families = [...new Set(fonts.map((f) => f.family).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-                    if (list) {
-                        const existing = new Set([...list.querySelectorAll("option")].map((o) => o.value));
-                        families.forEach((family) => {
-                            if (existing.has(family)) return;
-                            const option = document.createElement("option");
-                            option.value = family;
-                            list.appendChild(option);
-                        });
-                    }
-                    alert(`Loaded ${families.length} installed font families.`);
-                } catch (err) {
-                    console.warn("Unable to enumerate local fonts", err);
-                    alert("Font permission was denied or unavailable. You can still type a font family manually.");
-                }
-            });
-        }
-
         panel.querySelector("#keywordActionHide").checked = settings.keywordAction === "hide";
         panel.querySelector("#keywordActionMask").checked = settings.keywordAction === "mask";
 
@@ -1106,8 +1078,7 @@
             settings.notifyOnHighlight = !!panel.querySelector("#notifyOnHighlightInput").checked;
             settings.highlightNotificationSoundEnabled = !!panel.querySelector("#highlightSoundInput").checked;
             settings.chatRecorderEnabled = !!panel.querySelector("#chatRecorderEnabledInput")?.checked;
-            settings.chatFontFamily = panel.querySelector("#chatFontFamilyInput")?.value?.trim() || "";
-            settings.chatFontSize = Math.max(0, Math.min(72, parseInt(panel.querySelector("#chatFontSizeInput")?.value, 10) || 0));
+            settings.outgoingFontStyle = panel.querySelector("#outgoingFontStyleInput")?.value || "default";
             settings.chatTextMode = panel.querySelector("#chatTextModeInput")?.value || "default";
             settings.chatTextColor = panel.querySelector("#chatTextColorInput")?.value || "#ffffff";
             settings.chatMultiPalette = panel.querySelector("#chatMultiPaletteInput")?.value?.trim() || defaultSettings.chatMultiPalette;
@@ -1393,55 +1364,44 @@
         return colours.length ? colours : ["#ff4d4d", "#ffa64d", "#ffff4d", "#4dff88", "#4dd2ff", "#8c4dff", "#ff4dd2"];
     }
 
-    function colourizeTextNode(node, mode, palette, state) {
-        if (!node || !node.nodeValue) return;
-        const text = node.nodeValue;
-        const frag = document.createDocumentFragment();
-        [...text].forEach((char) => {
-            if (/\s/.test(char)) {
-                frag.appendChild(document.createTextNode(char));
-                return;
-            }
-            const span = document.createElement("span");
-            span.className = "dizy-chat-char-colour";
-            span.textContent = char;
-            span.style.color = mode === "rainbow"
-                ? `hsl(${(state.index * 41) % 360} 100% 62%)`
-                : palette[state.index % palette.length];
-            state.index += 1;
-            frag.appendChild(span);
-        });
-        node.parentNode.replaceChild(frag, node);
-    }
+    const OUTGOING_FONT_RANGES = {
+        bold: { upper: 0x1D400, lower: 0x1D41A, digit: 0x1D7CE },
+        sans: { upper: 0x1D5A0, lower: 0x1D5BA, digit: 0x1D7E2 },
+        sansBold: { upper: 0x1D5D4, lower: 0x1D5EE, digit: 0x1D7EC },
+        mono: { upper: 0x1D670, lower: 0x1D68A, digit: 0x1D7F6 }
+    };
 
-    function applyPerCharacterColour(msgEl, mode) {
-        if (!msgEl || (mode !== "rainbow" && mode !== "multi")) return;
-        const palette = parseColourPalette(settings.chatMultiPalette);
-        const walker = document.createTreeWalker(msgEl, NodeFilter.SHOW_TEXT, {
-            acceptNode(node) {
-                if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
-                const parent = node.parentElement;
-                if (!parent) return NodeFilter.FILTER_REJECT;
-                if (parent.closest(".dizy-chat-char-colour")) return NodeFilter.FILTER_REJECT;
-                if (parent.closest("script,style")) return NodeFilter.FILTER_REJECT;
-                return NodeFilter.FILTER_ACCEPT;
-            }
-        });
-        const nodes = [];
-        while (walker.nextNode()) nodes.push(walker.currentNode);
-        const state = { index: 0 };
-        nodes.forEach((node) => colourizeTextNode(node, mode, palette, state));
-    }
-
-    function applyConfiguredChatTextStyle(msgEl, isBlocked, isCollapsed) {
-        if (!msgEl || isBlocked || isCollapsed) return;
-        const mode = settings.chatTextMode || "default";
-        if (mode === "single") {
-            msgEl.style.color = settings.chatTextColor || "#ffffff";
-        } else if (mode === "rainbow" || mode === "multi") {
-            msgEl.style.color = "";
-            applyPerCharacterColour(msgEl, mode);
+    function mapOutgoingCharacter(char, style) {
+        const code = char.codePointAt(0);
+        if (style === "fullwidth") {
+            if (char === " ") return "\u3000";
+            return code >= 0x21 && code <= 0x7E ? String.fromCodePoint(code + 0xFEE0) : char;
         }
+        if (style === "circled") {
+            if (code >= 65 && code <= 90) return String.fromCodePoint(0x24B6 + code - 65);
+            if (code >= 97 && code <= 122) return String.fromCodePoint(0x24D0 + code - 97);
+            if (code === 48) return "⓪";
+            if (code >= 49 && code <= 57) return String.fromCodePoint(0x2460 + code - 49);
+            return char;
+        }
+        const range = OUTGOING_FONT_RANGES[style];
+        if (!range) return char;
+        if (code >= 65 && code <= 90) return String.fromCodePoint(range.upper + code - 65);
+        if (code >= 97 && code <= 122) return String.fromCodePoint(range.lower + code - 97);
+        if (code >= 48 && code <= 57) return String.fromCodePoint(range.digit + code - 48);
+        return char;
+    }
+
+    const OUTGOING_PROTECTED_TOKEN_RE = /(https?:\/\/\S+|www\.\S+|@[A-Za-z0-9_.-]+|:[A-Za-z0-9_+-]+:)/gi;
+
+    function formatOutgoingText(text) {
+        const style = settings.outgoingFontStyle || "default";
+        const raw = String(text || "");
+        if (style === "default") return raw;
+        return raw
+            .split(OUTGOING_PROTECTED_TOKEN_RE)
+            .map((part, index) => index % 2 ? part : [...part].map((char) => mapOutgoingCharacter(char, style)).join(""))
+            .join("");
     }
 
     function simpleMarkovGenerate(lines) {
@@ -1520,10 +1480,94 @@
         composer.dispatchEvent(new Event("change", { bubbles: true }));
     }
 
+    function getComposerPlainText(composer) {
+        if (!composer) return "";
+        return "value" in composer ? String(composer.value || "") : String(composer.innerText || composer.textContent || "");
+    }
+
+    function appendOutgoingColourNodes(target, text, mode) {
+        const palette = parseColourPalette(settings.chatMultiPalette);
+        const parts = String(text || "").split(OUTGOING_PROTECTED_TOKEN_RE);
+        let colourIndex = 0;
+        parts.forEach((part, partIndex) => {
+            if (!part) return;
+            if (partIndex % 2 || mode === "default") {
+                target.appendChild(document.createTextNode(part));
+                return;
+            }
+            if (mode === "single") {
+                const span = document.createElement("span");
+                span.style.color = settings.chatTextColor || "#ffffff";
+                span.textContent = part;
+                target.appendChild(span);
+                return;
+            }
+            [...part].forEach((char) => {
+                if (/\s/.test(char)) {
+                    target.appendChild(document.createTextNode(char));
+                    return;
+                }
+                const span = document.createElement("span");
+                span.style.color = mode === "rainbow"
+                    ? `hsl(${(colourIndex * 41) % 360} 100% 62%)`
+                    : palette[colourIndex % palette.length];
+                span.textContent = char;
+                colourIndex += 1;
+                target.appendChild(span);
+            });
+        });
+    }
+
+    function setOutgoingComposerValue(composer, value) {
+        if (!composer) return "";
+        const formatted = formatOutgoingText(value);
+        const colourMode = settings.chatTextMode || "default";
+        if (!composer.isContentEditable || colourMode === "default") {
+            setComposerValue(composer, formatted);
+            return formatted;
+        }
+
+        composer.focus();
+        composer.replaceChildren();
+        appendOutgoingColourNodes(composer, formatted, colourMode);
+        composer.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: formatted }));
+        composer.dispatchEvent(new Event("change", { bubbles: true }));
+        return formatted;
+    }
+
+    function prepareCurrentComposerForSend(composer) {
+        const raw = getComposerPlainText(composer);
+        if (!raw.trim()) return;
+        setOutgoingComposerValue(composer, raw);
+    }
+
+    function installOutgoingComposerFormatting() {
+        const composer = findChatComposer();
+        if (!composer) return;
+        if (!composer._dizyOutgoingFormattingBound) {
+            composer._dizyOutgoingFormattingBound = true;
+            composer.addEventListener("keydown", (event) => {
+                if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || event.isComposing) return;
+                prepareCurrentComposerForSend(composer);
+            }, true);
+            const form = composer.closest("form");
+            if (form && !form._dizyOutgoingFormattingBound) {
+                form._dizyOutgoingFormattingBound = true;
+                form.addEventListener("submit", () => prepareCurrentComposerForSend(composer), true);
+            }
+        }
+        const sendButton = findSendButton();
+        if (sendButton && !sendButton._dizyOutgoingFormattingBound) {
+            sendButton._dizyOutgoingFormattingBound = true;
+            sendButton.addEventListener("pointerdown", () => prepareCurrentComposerForSend(composer), true);
+            sendButton.addEventListener("mousedown", () => prepareCurrentComposerForSend(composer), true);
+        }
+    }
+
     function sendChatMessage(message) {
         const composer = findChatComposer();
         if (!composer) return false;
-        setComposerValue(composer, message);
+        setOutgoingComposerValue(composer, message);
         const btn = findSendButton();
         if (btn) { btn.click(); return true; }
         composer.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }));
@@ -1738,19 +1782,6 @@
                     msgEl.style.lineHeight = "";
                     msgEl.style.fontSize = "";
                     delete el._compactApplied;
-                }
-
-                const chosenFont = settings.chatFontFamily || "";
-                const chosenSize = Number(settings.chatFontSize) || 0;
-                el.style.fontFamily = chosenFont;
-                msgEl.style.fontFamily = chosenFont;
-                if (usernameEl) usernameEl.style.fontFamily = chosenFont;
-                if (chosenSize > 0) {
-                    msgEl.style.fontSize = `${chosenSize}px`;
-                    if (usernameEl) usernameEl.style.fontSize = `${chosenSize}px`;
-                } else if (!settings.compactMode) {
-                    msgEl.style.fontSize = "";
-                    if (usernameEl) usernameEl.style.fontSize = "";
                 }
 
                 if (settings.showTimestamps && usernameEl) {
@@ -1985,8 +2016,6 @@
                         msgEl.onclick = null;
                     }
                 }
-
-                applyConfiguredChatTextStyle(msgEl, isBlocked, !!el._collapsed);
 
                 if (el._recentlyAdded) {
                     if (isHighlighted) {
@@ -2310,6 +2339,8 @@
         }, 800);
 
         ensureFloatingSettingsButton();
+        installOutgoingComposerFormatting();
+        setInterval(installOutgoingComposerFormatting, 800);
         window.addEventListener("beforeunload", saveChatLog, { once: true });
     }
 
@@ -2332,6 +2363,7 @@
     window.rumbleBlocker.getCuratedBurns = () => JSON.parse(JSON.stringify(curatedBurnStore));
     window.rumbleBlocker.rebuildCuratedBurns = () => rebuildCuratedBurnsFromTranscript(true);
     window.rumbleBlocker.clearCuratedBurns = () => clearCuratedBurns();
+    window.rumbleBlocker.formatOutgoing = (text) => formatOutgoingText(text);
     window.rumbleBlocker.getBurnEngines = () => ({
         curated: true,
         builtin: true,
