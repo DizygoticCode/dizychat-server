@@ -1,16 +1,16 @@
-name: Run Rumble v1.9.2 runtime repair
+name: Validate Rumble v1.9.2 runtime repair
 
 on:
-  push:
+  pull_request:
     branches: [main]
-    paths:
-      - '.github/workflows/rumble-v192-run.yml'
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
 
 jobs:
   patch-validate-push:
+    if: github.head_ref == 'fix/rumble-burn-runtime-v192'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,13 +22,20 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Load exact patch from main
+      - name: Apply guarded patch when needed
         shell: bash
         run: |
           set -euo pipefail
-          git fetch origin main
-          git show FETCH_HEAD:scripts/maintenance/rumble-v192-runtime-patch.py > /tmp/rumble-v192-runtime-patch.py
-          python /tmp/rumble-v192-runtime-patch.py
+          SCRIPT=scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+          if grep -Fq '// @version      1.9.1' "$SCRIPT"; then
+            git fetch origin main
+            git show FETCH_HEAD:scripts/maintenance/rumble-v192-runtime-patch.py > /tmp/rumble-v192-runtime-patch.py
+            python /tmp/rumble-v192-runtime-patch.py
+            echo 'RUMBLE_V192_PATCHED=1' >> "$GITHUB_ENV"
+          else
+            grep -F '// @version      1.9.2' "$SCRIPT"
+            echo 'RUMBLE_V192_PATCHED=0' >> "$GITHUB_ENV"
+          fi
 
       - name: Validate userscript contracts
         shell: bash
@@ -64,16 +71,24 @@ jobs:
           node --check browser-extension/dist/safari/content.js
           cat browser-extension/dist/SHA256SUMS.txt
 
-      - name: Commit only validated product files
+      - name: Push exact validated product patch
+        if: env.RUMBLE_V192_PATCHED == '1'
         shell: bash
         run: |
           set -euo pipefail
           rm -rf browser-extension/vendor browser-extension/dist
-          git add scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js README.md browser-extension/README.md
+          rm -f .github/rumble-v192-request
+          git add -A .github/rumble-v192-request scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js README.md browser-extension/README.md
           git diff --cached --check
-          test "$(git diff --cached --name-only | wc -l)" -eq 3
-          git diff --cached --name-only
           git config user.name 'DizygoticCode'
           git config user.email 'rob.noyce@gmail.com'
           git commit -m 'Fix Rumble Burn Bot live composer runtime v1.9.2'
           git push origin HEAD:fix/rumble-burn-runtime-v192
+
+      - name: Confirm clean synchronized head
+        if: env.RUMBLE_V192_PATCHED == '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e .github/rumble-v192-request
+          test -z "$(git status --short --untracked-files=no)"
