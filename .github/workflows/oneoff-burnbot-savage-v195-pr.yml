@@ -19,6 +19,20 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
+      - name: Narrow one-off stale-template assertion
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/patch-burnbot-v195.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''    "requested a rollback",\n'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one broad rollback assertion, found {text.count(old)}')
+          text = text.replace(old, '''    "the logs saw that ${noun} and immediately requested a rollback.",\n''', 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+
       - name: Patch current userscript
         run: python scripts/patch-burnbot-v195.py
 
@@ -41,14 +55,12 @@ jobs:
         run: |
           set -euo pipefail
           rm -f scripts/patch-burnbot-v195.py \
+            scripts/.burnbot-v195-trigger \
             .github/workflows/oneoff-burnbot-savage-v195.yml \
             .github/workflows/oneoff-burnbot-savage-v195-pr.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js \
-            scripts/patch-burnbot-v195.py \
-            .github/workflows/oneoff-burnbot-savage-v195.yml \
-            .github/workflows/oneoff-burnbot-savage-v195-pr.yml
+          git add -A
           git diff --cached --check
           git commit -m 'Upgrade Rumble burn bot to savage v1.9.5'
           git push origin HEAD:burnbot-savage-v1.9.5
