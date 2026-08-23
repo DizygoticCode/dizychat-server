@@ -10,7 +10,7 @@ The extension build reads the canonical userscript at:
 
 It extracts that file's `@version`, strips only the Tampermonkey metadata block, and packages the same companion core. There is deliberately no second copy of the Rumble feature logic under `browser-extension/`, so Greasy Fork/Tampermonkey and browser-store editions cannot silently drift apart.
 
-The extension preserves the blocker/highlighter, keyword filters, compact mode, timestamps, notifications, autoscroll lock, long-message handling, DizyChat DM handoff, transcript recorder/export, automatic local curated-burn memory, font and colour controls, rainbow/multi-colour local rendering, portable settings, draggable settings UI, and selectable burn engines.
+The extension preserves the blocker/highlighter, keyword filters, compact mode, timestamps, notifications, autoscroll lock, long-message handling, DizyChat DM handoff, transcript recorder/export, automatic local curated-burn memory, outgoing Unicode font styles and outgoing single/rainbow/multi-colour rich-composer formatting, portable settings, draggable settings UI, and selectable burn engines.
 
 ## Manifest V3 dependency handling
 
@@ -93,7 +93,7 @@ The toolbar popup shows whether the active Rumble tab has the companion running,
 
 ## Data and permissions
 
-The extension requests Rumble host access only. Existing companion settings, blocklists and transcript data continue to live in the browser's Rumble-origin local storage for compatibility with current Tampermonkey data/export behaviour. Transcript export is user-triggered; DizyChat is opened only when the user explicitly chooses the DM handoff.
+The extension requests Rumble host access only. Existing companion settings, blocklists and transcript data continue to live in the browser's Rumble-origin local storage for compatibility with current Tampermonkey data/export behaviour. Transcript export is user-triggered; DizyChat is opened only when the user explicitly chooses the DM handoff. Outgoing Unicode font transforms are plain-text compatible; colour spans are used only when Rumble exposes a contenteditable/rich composer, because a plain textarea cannot transport CSS colour.
 
 ## Third-party licensing
 
