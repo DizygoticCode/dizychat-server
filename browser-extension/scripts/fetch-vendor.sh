@@ -9,7 +9,7 @@ curl --fail --location --retry 3 --silent --show-error \
   -o "$VENDOR/compromise.min.js"
 
 curl --fail --location --retry 3 --silent --show-error \
-  'https://cdnjs.cloudflare.com/ajax/libs/rita/2.0.2/rita.min.js' \
+  'https://unpkg.com/rita@3.2.16/dist/rita.min.js' \
   -o "$VENDOR/rita.min.js"
 
 printf 'compromise: '; wc -c < "$VENDOR/compromise.min.js"
