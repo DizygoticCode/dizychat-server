@@ -66,9 +66,9 @@ jobs:
           test -f browser-extension/dist/dizygotic-rumble-chat-companion-v1.9.2-chromium.zip
           test -f browser-extension/dist/dizygotic-rumble-chat-companion-v1.9.2-firefox.zip
           test -f browser-extension/dist/dizygotic-rumble-chat-companion-v1.9.2-safari-source.zip
-          node --check browser-extension/dist/chromium/content.js
-          node --check browser-extension/dist/firefox/content.js
-          node --check browser-extension/dist/safari/content.js
+          node --check browser-extension/dist/chromium/content-core.js
+          node --check browser-extension/dist/firefox/content-core.js
+          node --check browser-extension/dist/safari/content-core.js
           cat browser-extension/dist/SHA256SUMS.txt
 
       - name: Push exact validated product patch
