@@ -1,0 +1,25 @@
+name: One-off Rumble chat IndexedDB v1.9.7
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/rumble-chat-indexeddb-v197'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Run IndexedDB transcript regression test
+        run: node --test scripts/tests/rumble-chat-indexeddb-source.test.mjs
+      - name: Verify userscript syntax
+        run: node --check scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+      - name: Verify PR diff whitespace
+        run: git diff --check origin/main...HEAD
