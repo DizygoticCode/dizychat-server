@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dizygotic Rumble Chat Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.9.3
+// @version      1.9.4
 // @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + transcript recorder/export + automated curated burn memory + outgoing message styling + auto-burn + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.
 // @author       Dizygotic
 // @match        https://rumble.com/*
@@ -92,7 +92,7 @@
         defaultSettings.burnEnginesEnabled,
         settings.burnEnginesEnabled || {}
     );
-    // v1.9.3 auto-burn is deliberately hands-off; retire any persisted review prompt.
+    // v1.9.4 auto-burn is deliberately hands-off; retire any persisted review prompt.
     settings.curatedBurnReviewBeforeUse = false;
 
     function saveBlocklist() {
@@ -146,6 +146,8 @@
             url: location.href,
             title: document.title
         };
+        const burnMeta = consumePendingBurnEcho(record);
+        if (burnMeta) Object.assign(record, burnMeta);
         chatLog.push(record);
         if (chatLog.length > CHAT_LOG_LIMIT) chatLog.splice(0, chatLog.length - CHAT_LOG_LIMIT);
         maybeLearnSelfNickname(record);
@@ -168,8 +170,8 @@
     function exportChatLog(format = "json") {
         const stamp = new Date().toISOString().replace(/[:.]/g, "-");
         if (format === "csv") {
-            const header = ["seq","capturedAt","username","displayName","message","mentions","rawHtml","rowClass","url","title"];
-            const rows = chatLog.map((r) => [r.seq,r.capturedAt,r.username,r.displayName,r.message,(r.mentions||[]).join(" "),r.rawHtml||"",r.rowClass||"",r.url,r.title].map(csvEscape).join(","));
+            const header = ["seq","capturedAt","username","displayName","message","mentions","rawHtml","rowClass","url","title","botGenerated","botEngine","botTarget","botFontStyle"];
+            const rows = chatLog.map((r) => [r.seq,r.capturedAt,r.username,r.displayName,r.message,(r.mentions||[]).join(" "),r.rawHtml||"",r.rowClass||"",r.url,r.title,r.botGenerated?"true":"",r.botEngine||"",r.botTarget||"",r.botFontStyle||""].map(csvEscape).join(","));
             triggerDownload(`dizygotic-rumble-chat-${stamp}.csv`, [header.join(","), ...rows].join("\n"), { prompt: true, mimeType: "text/csv;charset=utf-8" });
             return;
         }
@@ -192,7 +194,10 @@
     const CURATED_STOP_WORDS = new Set([
         "about","after","again","also","and","are","because","been","before","being","but","can","cant","could","did","does","doing","dont","for","from","get","got","had","has","have","here","how","into","its","just","like","more","not","now","off","one","only","our","out","really","said","say","says","some","than","that","the","their","them","then","there","they","this","those","too","was","were","what","when","where","which","who","why","will","with","would","you","your","youre"
     ]);
-    const CURATED_SENSITIVE_PATTERN = /\b(?:address|postcode|phone|email|diagnos(?:ed|is)|cancer|hiv|autis(?:m|tic)|disabled|disability|pregnan(?:t|cy)|religion|muslim|christian|jew(?:ish)?|hindu|sikh|gay|lesbian|bisexual|trans(?:gender)?|race|racial|ethnicity)\b/i;
+    const CURATED_WEAK_TOPICS = new Set([
+        "good","great","thing","things","people","right","wrong","maybe","think","know","want","need","yeah","okay","looks","look","make","made","going","come","back","much","time","chat","work","working"
+    ]);
+    const CURATED_SENSITIVE_PATTERN = /\b(?:address|postcode|phone|email|diagnos(?:ed|is)|cancer|hiv|autis(?:m|tic)|disabled|disability|pregnan(?:t|cy)|religion|muslims?|christians?|jews?|jewish|hindus?|sikhs?|gays?|lesbians?|bisexuals?|trans(?:gender)?|race|racial|ethnicity)\b/gi;
     const CURATED_PERSONAL_DATA_PATTERN = /(?:[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\b(?:\d{1,3}\.){3}\d{1,3}\b|(?:\+?\d[\d ()-]{7,}\d))/i;
     let curatedSaveTimer = null;
     let pendingCuratedBurnSelection = null;
@@ -310,7 +315,15 @@
     }
 
     function curatedTokens(text) {
-        return [...new Set(curatedWords(text).filter((word) => word.length >= 4 && !CURATED_STOP_WORDS.has(word)))].slice(0, 14);
+        const useful = curatedWords(text).filter((word) => {
+            const normalized = word.replace(/'/g, "");
+            return word.length >= 4 &&
+                !CURATED_STOP_WORDS.has(word) &&
+                !CURATED_STOP_WORDS.has(normalized) &&
+                !CURATED_WEAK_TOPICS.has(word) &&
+                !CURATED_WEAK_TOPICS.has(normalized);
+        });
+        return [...new Set(useful)].slice(0, 14);
     }
 
     function curatedPhrases(text) {
@@ -405,7 +418,7 @@
             }));
 
         Object.entries(profile.phrases || {})
-            .filter(([, stat]) => statCount(stat) >= 3)
+            .filter(([phrase, stat]) => statCount(stat) >= 3 && curatedTokens(phrase).length >= 2)
             .sort((a, b) => statCount(b[1]) - statCount(a[1]))
             .slice(0, 5)
             .forEach(([phrase, stat]) => add({
@@ -418,7 +431,7 @@
             }));
 
         Object.entries(profile.topics || {})
-            .filter(([, stat]) => statCount(stat) >= 4)
+            .filter(([topic, stat]) => statCount(stat) >= 4 && !CURATED_WEAK_TOPICS.has(topic))
             .sort((a, b) => statCount(b[1]) - statCount(a[1]))
             .slice(0, 4)
             .forEach(([topic, stat]) => add({
@@ -984,7 +997,8 @@
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:7px;font-size:12px">
                 ${burnEngineRecommendations.map((r) => `<label><input type="checkbox" data-burn-engine-toggle="${r.key}"${settings.burnEnginesEnabled?.[r.key] !== false ? " checked" : ""}> ${r.label}</label>`).join("")}
             </div>
-            <div style="font-size:12px;color:gray;margin-top:4px">The Primary engine runs first. Other enabled engines are fallbacks only when the primary cannot produce a fresh burn; exact recent burns are skipped instead of repeated.</div>
+            <div style="font-size:12px;color:gray;margin-top:4px">The Primary engine runs first. Other enabled engines are fallbacks only when the primary cannot produce a fresh burn; exact recent burns are skipped instead of repeated. Burn replies wait for an empty idle composer rather than trampling a message you are typing.</div>
+            <div style="font-size:12px;color:gray;margin-top:4px">Successful Burn Bot echoes are labelled with engine, target and font style in new transcript exports so future live tests can be analysed directly.</div>
             <div style="font-size:12px;color:gray;margin-top:4px">Compromise and RiTa are loaded by Tampermonkey via @require. Markov uses a local word-chain generator so a CDN package change cannot kill the whole userscript.</div>
             <textarea id="burnMarkovCorpusInput" placeholder="Optional Markov corpus — one burn/example per line" style="width:100%;height:58px;margin-top:6px">${settings.burnMarkovCorpus || ""}</textarea>
             <div style="height:12px"></div>
@@ -1420,28 +1434,36 @@
             .map((line) => String(line || "").replace(/\s+/g, " ").trim())
             .filter(Boolean);
         if (!corpus.length) return null;
+
         const transitions = new Map();
         const starts = [];
         corpus.forEach((line) => {
-            const words = line.split(" ");
-            if (!words.length) return;
-            starts.push(words[0]);
-            for (let i = 0; i < words.length - 1; i += 1) {
-                const key = words[i].toLowerCase();
+            const words = line.split(" ").filter(Boolean);
+            if (words.length < 2) return;
+            starts.push(words.slice(0, 2));
+            for (let i = 0; i < words.length - 2; i += 1) {
+                const key = `${words[i].toLowerCase()}\u0001${words[i + 1].toLowerCase()}`;
                 if (!transitions.has(key)) transitions.set(key, []);
-                transitions.get(key).push(words[i + 1]);
+                transitions.get(key).push(words[i + 2]);
             }
         });
-        let word = starts[Math.floor(Math.random() * starts.length)];
-        const out = [word];
+        if (!starts.length) return corpus[Math.floor(Math.random() * corpus.length)] || null;
+
+        const start = starts[Math.floor(Math.random() * starts.length)];
+        const out = [...start];
         while (out.length < 18) {
-            const next = transitions.get(String(word).toLowerCase());
+            const key = `${String(out[out.length - 2]).toLowerCase()}\u0001${String(out[out.length - 1]).toLowerCase()}`;
+            const next = transitions.get(key);
             if (!next || !next.length) break;
-            word = next[Math.floor(Math.random() * next.length)];
+            const word = next[Math.floor(Math.random() * next.length)];
             out.push(word);
             if (/[.!?]$/.test(word) && out.length >= 5) break;
         }
-        return out.join(" ");
+        const result = out.join(" ").trim();
+        if (out.length < 5 || !/[.!?]$/.test(result)) {
+            return corpus[Math.floor(Math.random() * corpus.length)] || result || null;
+        }
+        return result;
     }
 
     /***********************
@@ -1452,7 +1474,12 @@
         ({ target }) => `@${target} that's a bold take for someone typing with mittens.`,
         ({ target }) => `@${target} you rang? I brought receipts and a thesaurus.`,
         ({ target }) => `@${target} touch grass, clear cache, try again.`,
-        ({ target }) => `@${target} noted. Filing under 'draft tweets'.`
+        ({ target }) => `@${target} noted. Filing under 'draft tweets'.`,
+        ({ target }) => `@${target} your confidence has excellent uptime; shame the argument doesn't.`,
+        ({ target }) => `@${target} I've seen stronger logic in a 404 page.`,
+        ({ target }) => `@${target} that comeback needs a rollback and an apology to punctuation.`,
+        ({ target }) => `@${target} your point filed for bankruptcy halfway through the sentence.`,
+        ({ target }) => `@${target} even your typo is trying to distance itself from that take.`
     ];
     let lastBurnTimestamp = 0;
     const RECENT_BURN_LIMIT = 12;
@@ -1484,6 +1511,11 @@
 
     let burnSendInFlight = false;
     let pendingOutgoingIdentity = null;
+    let pendingBurnEcho = null;
+    let lastTrustedComposerInputAt = 0;
+    let botComposerMutationGuard = false;
+    const BURN_COMPOSER_IDLE_MS = 650;
+    const BURN_COMPOSER_WAIT_MS = 12000;
     const burnRuntimeStatus = {
         nickname: "",
         composerFound: false,
@@ -1511,6 +1543,39 @@
         const sent = normalizeOutgoingEcho(formatted);
         if (!original && !sent) return;
         pendingOutgoingIdentity = { raw: original, formatted: sent, expiresAt: Date.now() + 20000 };
+    }
+
+    function rememberPendingBurnEcho(raw, formatted, meta = {}) {
+        if (!meta.engine) return;
+        const selfUsername = sanitizeNickname(settings.myNickname || burnRuntimeStatus.nickname || detectMyNickname()).toLowerCase();
+        pendingBurnEcho = {
+            raw: normalizeOutgoingEcho(raw),
+            formatted: normalizeOutgoingEcho(formatted),
+            engine: String(meta.engine || ""),
+            target: String(meta.target || ""),
+            fontStyle: settings.outgoingFontStyle || "default",
+            selfUsername,
+            expiresAt: Date.now() + 20000
+        };
+    }
+
+    function consumePendingBurnEcho(record) {
+        if (!pendingBurnEcho || !record?.username) return null;
+        if (Date.now() > pendingBurnEcho.expiresAt) {
+            pendingBurnEcho = null;
+            return null;
+        }
+        if (pendingBurnEcho.selfUsername && String(record.username).toLowerCase() !== pendingBurnEcho.selfUsername) return null;
+        const observed = normalizeOutgoingEcho(record.message);
+        if (!observed || (observed !== pendingBurnEcho.raw && observed !== pendingBurnEcho.formatted)) return null;
+        const meta = {
+            botGenerated: true,
+            botEngine: pendingBurnEcho.engine,
+            botTarget: pendingBurnEcho.target,
+            botFontStyle: pendingBurnEcho.fontStyle
+        };
+        pendingBurnEcho = null;
+        return meta;
     }
 
     function maybeLearnSelfNickname(record) {
@@ -1719,16 +1784,48 @@
         return new Promise((resolve) => setTimeout(resolve, ms));
     }
 
-    async function submitComposer(composer) {
+    async function waitForBurnComposerIdle(initialComposer) {
+        let composer = initialComposer;
+        const deadline = Date.now() + BURN_COMPOSER_WAIT_MS;
+        while (Date.now() < deadline) {
+            if (!composer?.isConnected) composer = findChatComposer();
+            if (composer) {
+                const hasDraft = !!getComposerPlainText(composer).trim();
+                const recentlyTyped = Date.now() - lastTrustedComposerInputAt < BURN_COMPOSER_IDLE_MS;
+                if (!hasDraft && !recentlyTyped) return composer;
+                setBurnRuntimeStatus({ composerFound: true, lastAttempt: "queued: waiting for your draft", lastError: "" });
+            }
+            await sleep(120);
+        }
+        setBurnRuntimeStatus({ lastAttempt: "skipped: composer stayed busy", lastError: "composer-busy" });
+        return null;
+    }
+
+    function cancelBotComposerCollision(composer, expectedText) {
+        if (expectedText == null) return false;
+        const current = getComposerPlainText(composer);
+        if (current === expectedText) return false;
+        if (current.startsWith(expectedText)) {
+            const userTail = current.slice(expectedText.length);
+            botComposerMutationGuard = true;
+            try { setComposerValue(composer, userTail); } finally { botComposerMutationGuard = false; }
+        }
+        setBurnRuntimeStatus({ lastAttempt: "cancelled: you started typing", lastError: "composer-changed" });
+        return true;
+    }
+
+    async function submitComposer(composer, expectedText = null) {
         if (!composer) return false;
         for (let attempt = 0; attempt < 8; attempt += 1) {
             await sleep(attempt === 0 ? 80 : 60);
+            if (cancelBotComposerCollision(composer, expectedText)) return false;
             const button = findSendButton(composer);
             if (button && !button.disabled && button.getAttribute("aria-disabled") !== "true") {
                 button.click();
                 return true;
             }
         }
+        if (cancelBotComposerCollision(composer, expectedText)) return false;
         const form = composer.closest?.("form");
         if (form && typeof form.requestSubmit === "function") {
             try {
@@ -1738,6 +1835,7 @@
                 console.warn("Rumble form requestSubmit failed", err);
             }
         }
+        if (cancelBotComposerCollision(composer, expectedText)) return false;
         for (const type of ["keydown", "keypress", "keyup"]) {
             composer.dispatchEvent(new KeyboardEvent(type, { key: "Enter", code: "Enter", bubbles: true, cancelable: true }));
         }
@@ -1773,6 +1871,9 @@
         if (!composer) return;
         if (!composer._dizyOutgoingFormattingBound) {
             composer._dizyOutgoingFormattingBound = true;
+            composer.addEventListener("input", (event) => {
+                if (event.isTrusted && !botComposerMutationGuard) lastTrustedComposerInputAt = Date.now();
+            }, true);
             composer.addEventListener("keydown", (event) => {
                 if (outgoingSubmitGuard) return;
                 if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || event.isComposing) return;
@@ -1802,19 +1903,37 @@
         }
     }
 
-    async function sendChatMessage(message) {
-        const composer = findChatComposer();
+    async function sendChatMessage(message, meta = {}) {
+        let composer = findChatComposer();
         if (!composer) {
             setBurnRuntimeStatus({ composerFound: false, lastAttempt: "failed: composer not found", lastError: "composer-not-found" });
             return false;
         }
-        const formatted = setOutgoingComposerValue(composer, message);
+
+        const isBurn = !!meta.engine;
+        if (isBurn) {
+            composer = await waitForBurnComposerIdle(composer);
+            if (!composer) return false;
+            if (getComposerPlainText(composer).trim() || Date.now() - lastTrustedComposerInputAt < BURN_COMPOSER_IDLE_MS) {
+                setBurnRuntimeStatus({ lastAttempt: "skipped: composer became busy", lastError: "composer-busy" });
+                return false;
+            }
+        }
+
+        let formatted = "";
+        botComposerMutationGuard = isBurn;
+        try {
+            formatted = setOutgoingComposerValue(composer, message);
+        } finally {
+            botComposerMutationGuard = false;
+        }
         rememberPendingOutgoingIdentity(message, formatted);
-        setBurnRuntimeStatus({ composerFound: true, lastAttempt: "composer filled", lastError: "" });
+        setBurnRuntimeStatus({ composerFound: true, lastAttempt: isBurn ? "burn composer filled" : "composer filled", lastError: "" });
         outgoingSubmitGuard = true;
         try {
-            const submitted = await submitComposer(composer);
-            setBurnRuntimeStatus({ lastAttempt: submitted ? "send dispatched" : "failed: no send path", lastError: submitted ? "" : "send-path-not-found" });
+            const submitted = await submitComposer(composer, isBurn ? formatted : null);
+            if (submitted && isBurn) rememberPendingBurnEcho(message, formatted, meta);
+            setBurnRuntimeStatus({ lastAttempt: submitted ? "send dispatched" : (isBurn ? "burn send cancelled" : "failed: no send path"), lastError: submitted ? "" : burnRuntimeStatus.lastError || "send-path-not-found" });
             return submitted;
         } finally {
             outgoingSubmitGuard = false;
@@ -1928,7 +2047,7 @@
         burnSendInFlight = true;
         setBurnRuntimeStatus({ lastAttempt: `generated via ${lastBurnEngineUsed} for @${ctx.target || ctx.from}` });
         try {
-            const sent = await sendChatMessage(response);
+            const sent = await sendChatMessage(response, { engine: lastBurnEngineUsed, target: ctx.target || ctx.from || "" });
             if (sent) {
                 lastBurnTimestamp = Date.now();
                 rememberRecentBurn(response);
