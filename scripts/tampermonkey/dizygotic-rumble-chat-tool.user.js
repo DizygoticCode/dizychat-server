@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dizygotic Rumble Chat Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.9.6
+// @version      1.9.7
 // @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + transcript recorder/export + automated curated burn memory + outgoing message styling + auto-burn + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.
 // @author       Dizygotic
 // @match        https://rumble.com/*
@@ -22,16 +22,31 @@
     const BACKUP_FILENAME = "dizygotic-rumble-chat-tool-settings-backup.json";
     const BTN_POS_KEY = "rumbleBlockerBtnPos";
     const CHAT_LOG_KEY = "rumbleChatTranscriptLogV1";
-    const CHAT_LOG_LIMIT = 20000;
+    const CHAT_DB_NAME = "dizygoticRumbleChat";
+    const CHAT_DB_VERSION = 1;
+    const CHAT_DB_STORE = "messages";
     const CURATED_BURNS_KEY = "rumbleCuratedBurnsV1";
     const CURATED_BURNS_SCHEMA = 1;
     const CURATED_MAX_USERS = 120;
 
     let blockedUsers = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
     let settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
-    let chatLog = JSON.parse(localStorage.getItem(CHAT_LOG_KEY) || "[]");
-    if (!Array.isArray(chatLog)) chatLog = [];
-    let chatSequence = chatLog.length ? Math.max(...chatLog.map((r) => Number(r.seq) || 0)) : 0;
+    const legacyChatLog = (() => {
+        try {
+            const parsed = JSON.parse(localStorage.getItem(CHAT_LOG_KEY) || "[]");
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (err) {
+            console.warn("Unable to parse legacy chat transcript", err);
+            return [];
+        }
+    })();
+    let chatLog = [];
+    let chatSequence = 0;
+    let chatDbPromise = null;
+    let chatStorageInitPromise = null;
+    let chatStorageMode = "loading";
+    let chatStorageLastError = "";
+    let pendingChatWrites = [];
     let curatedBurnStore = (() => {
         try {
             const parsed = JSON.parse(localStorage.getItem(CURATED_BURNS_KEY) || "null");
@@ -93,7 +108,7 @@
         defaultSettings.burnEnginesEnabled,
         settings.burnEnginesEnabled || {}
     );
-    // v1.9.6 adds a configurable pre-send reply delay while keeping auto-burn hands-off; retire any persisted review prompt.
+    // v1.9.7 moves transcript persistence to IndexedDB while keeping the v1.9.6 delayed auto-burn behaviour.
     settings.curatedBurnReviewBeforeUse = false;
 
     function saveBlocklist() {
@@ -104,25 +119,137 @@
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     }
 
-    let chatLogSaveTimer = null;
-    function saveChatLog() {
-        if (chatLogSaveTimer) { clearTimeout(chatLogSaveTimer); chatLogSaveTimer = null; }
-        try {
-            localStorage.setItem(CHAT_LOG_KEY, JSON.stringify(chatLog));
-        } catch (err) {
-            console.warn("Chat transcript storage full; trimming oldest records", err);
-            chatLog = chatLog.slice(-Math.floor(CHAT_LOG_LIMIT / 2));
-            try {
-                localStorage.setItem(CHAT_LOG_KEY, JSON.stringify(chatLog));
-            } catch (retryErr) {
-                console.warn("Unable to persist chat transcript", retryErr);
+    function openChatTranscriptDb() {
+        if (chatDbPromise) return chatDbPromise;
+        chatDbPromise = new Promise((resolve, reject) => {
+            if (!("indexedDB" in window)) {
+                reject(new Error("IndexedDB is not available in this browser context"));
+                return;
             }
+            const request = indexedDB.open(CHAT_DB_NAME, CHAT_DB_VERSION);
+            request.onupgradeneeded = () => {
+                const db = request.result;
+                if (!db.objectStoreNames.contains(CHAT_DB_STORE)) {
+                    db.createObjectStore(CHAT_DB_STORE, { keyPath: "seq" });
+                }
+            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error || new Error("Unable to open IndexedDB transcript storage"));
+            request.onblocked = () => console.warn("IndexedDB transcript upgrade is blocked by another Rumble tab");
+        });
+        return chatDbPromise;
+    }
+
+    function waitForChatTransaction(transaction) {
+        return new Promise((resolve, reject) => {
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error || new Error("Transcript IndexedDB transaction failed"));
+            transaction.onabort = () => reject(transaction.error || new Error("Transcript IndexedDB transaction aborted"));
+        });
+    }
+
+    async function putChatRecords(db, records) {
+        if (!Array.isArray(records) || !records.length) return;
+        const transaction = db.transaction(CHAT_DB_STORE, "readwrite");
+        const completed = waitForChatTransaction(transaction);
+        const store = transaction.objectStore(CHAT_DB_STORE);
+        records.forEach((record) => store.put(record));
+        await completed;
+    }
+
+    async function readAllChatRecords(db) {
+        const transaction = db.transaction(CHAT_DB_STORE, "readonly");
+        const completed = waitForChatTransaction(transaction);
+        const request = transaction.objectStore(CHAT_DB_STORE).getAll();
+        const records = await new Promise((resolve, reject) => {
+            request.onsuccess = () => resolve(request.result || []);
+            request.onerror = () => reject(request.error || new Error("Unable to read transcript IndexedDB"));
+        });
+        await completed;
+        return records.sort((a, b) => (Number(a.seq) || 0) - (Number(b.seq) || 0));
+    }
+
+    async function clearChatRecords(db) {
+        const transaction = db.transaction(CHAT_DB_STORE, "readwrite");
+        const completed = waitForChatTransaction(transaction);
+        transaction.objectStore(CHAT_DB_STORE).clear();
+        await completed;
+    }
+
+    function chatStorageSummaryText() {
+        const mode = chatStorageMode === "indexeddb"
+            ? "IndexedDB"
+            : chatStorageMode === "memory"
+                ? "memory only"
+                : chatStorageMode === "error"
+                    ? "IndexedDB write retrying"
+                    : "loading storage…";
+        return `${chatLog.length.toLocaleString()} saved messages · ${mode}`;
+    }
+
+    function updateChatStorageStatus(root = document) {
+        const status = root?.querySelector?.("#chatStorageStatus");
+        if (!status) return;
+        status.textContent = chatStorageSummaryText();
+        status.title = chatStorageLastError || "Transcript storage has no app-level message-count ceiling.";
+    }
+
+    async function initializeChatTranscriptStorage() {
+        if (chatStorageInitPromise) return chatStorageInitPromise;
+        chatStorageInitPromise = (async () => {
+            try {
+                const db = await openChatTranscriptDb();
+                if (legacyChatLog.length) await putChatRecords(db, legacyChatLog);
+                chatLog = await readAllChatRecords(db);
+                chatSequence = chatLog.length ? Math.max(...chatLog.map((r) => Number(r.seq) || 0)) : 0;
+                localStorage.removeItem(CHAT_LOG_KEY);
+                chatStorageMode = "indexeddb";
+                chatStorageLastError = "";
+                updateChatStorageStatus();
+                if (navigator.storage?.persist) {
+                    navigator.storage.persist().catch(() => false);
+                }
+            } catch (err) {
+                console.warn("IndexedDB transcript storage unavailable; preserving the legacy transcript and recording in memory for this session", err);
+                chatLog = legacyChatLog.slice();
+                chatSequence = chatLog.length ? Math.max(...chatLog.map((r) => Number(r.seq) || 0)) : 0;
+                chatStorageMode = "memory";
+                chatStorageLastError = String(err?.message || err);
+                updateChatStorageStatus();
+            }
+            return chatLog;
+        })();
+        return chatStorageInitPromise;
+    }
+
+    let chatLogSaveTimer = null;
+    let chatLogSaveInFlight = false;
+    async function saveChatLog() {
+        if (chatLogSaveTimer) { clearTimeout(chatLogSaveTimer); chatLogSaveTimer = null; }
+        if (chatLogSaveInFlight || !pendingChatWrites.length || chatStorageMode === "memory") return;
+        const batch = pendingChatWrites.splice(0);
+        chatLogSaveInFlight = true;
+        try {
+            const db = await openChatTranscriptDb();
+            await putChatRecords(db, batch);
+            chatStorageMode = "indexeddb";
+            chatStorageLastError = "";
+            updateChatStorageStatus();
+        } catch (err) {
+            pendingChatWrites = [...batch, ...pendingChatWrites];
+            chatStorageMode = "error";
+            chatStorageLastError = String(err?.message || err);
+            console.warn("Unable to persist chat transcript to IndexedDB; queued records will be retried", err);
+            updateChatStorageStatus();
+        } finally {
+            chatLogSaveInFlight = false;
+            if (pendingChatWrites.length && chatStorageMode !== "memory") scheduleChatLogSave();
         }
     }
 
     function scheduleChatLogSave() {
         if (chatLogSaveTimer) return;
-        chatLogSaveTimer = setTimeout(saveChatLog, 750);
+        chatLogSaveTimer = setTimeout(() => { void saveChatLog(); }, chatStorageMode === "error" ? 2000 : 750);
     }
 
     function extractMentions(text) {
@@ -150,17 +277,35 @@
         const burnMeta = consumePendingBurnEcho(record);
         if (burnMeta) Object.assign(record, burnMeta);
         chatLog.push(record);
-        if (chatLog.length > CHAT_LOG_LIMIT) chatLog.splice(0, chatLog.length - CHAT_LOG_LIMIT);
+        pendingChatWrites.push(record);
+        updateChatStorageStatus();
         maybeLearnSelfNickname(record);
         ingestCuratedRecord(record);
         scheduleChatLogSave();
     }
 
-    function clearChatLog() {
+    async function clearChatLog() {
+        await initializeChatTranscriptStorage();
+        if (chatLogSaveTimer) { clearTimeout(chatLogSaveTimer); chatLogSaveTimer = null; }
+        pendingChatWrites = [];
+        if (chatStorageMode !== "memory") {
+            try {
+                const db = await openChatTranscriptDb();
+                await clearChatRecords(db);
+            } catch (err) {
+                chatStorageMode = "error";
+                chatStorageLastError = String(err?.message || err);
+                updateChatStorageStatus();
+                console.warn("Unable to clear IndexedDB transcript", err);
+                return false;
+            }
+        }
         chatLog = [];
         chatSequence = 0;
         localStorage.removeItem(CHAT_LOG_KEY);
         clearCuratedBurns({ silent: true });
+        updateChatStorageStatus();
+        return true;
     }
 
     function csvEscape(value) {
@@ -168,7 +313,8 @@
         return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
     }
 
-    function exportChatLog(format = "json") {
+    async function exportChatLog(format = "json") {
+        await initializeChatTranscriptStorage();
         const stamp = new Date().toISOString().replace(/[:.]/g, "-");
         if (format === "csv") {
             const header = ["seq","capturedAt","username","displayName","message","mentions","rawHtml","rowClass","url","title","botGenerated","botEngine","botTarget","botFontStyle"];
@@ -540,10 +686,11 @@
         if (!options.deferSave) scheduleCuratedBurnSave();
     }
 
-    function rebuildCuratedBurnsFromTranscript(reset = true) {
+    async function rebuildCuratedBurnsFromTranscript(reset = true) {
+        await initializeChatTranscriptStorage();
         if (reset) curatedBurnStore = { schemaVersion: CURATED_BURNS_SCHEMA, lastProcessedSeq: 0, users: {} };
         const touched = new Set();
-        const records = chatLog.slice(-5000);
+        const records = chatLog.slice();
         records.forEach((record) => {
             if (!record?.username) return;
             ingestCuratedRecord(record, { force: true, deferSave: true, deferCurate: true });
@@ -560,7 +707,7 @@
     function backfillCuratedBurnsFromTranscript() {
         if (!settings.curatedBurnsEnabled || !chatLog.length) return;
         const lastProcessed = Number(curatedBurnStore.lastProcessedSeq) || 0;
-        const pending = chatLog.filter((record) => (Number(record.seq) || 0) > lastProcessed).slice(-5000);
+        const pending = chatLog.filter((record) => (Number(record.seq) || 0) > lastProcessed);
         if (!pending.length) return;
         const touched = new Set();
         pending.forEach((record) => {
@@ -1001,8 +1148,9 @@
             <b>Passive chat recorder</b>
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px">
                 <label><input type="checkbox" id="chatRecorderEnabledInput"${settings.chatRecorderEnabled ? " checked" : ""}> Record public chat locally</label>
-                <span style="font-size:12px;color:gray">${chatLog.length} saved messages</span>
+                <span id="chatStorageStatus" style="font-size:12px;color:gray">${chatStorageSummaryText()}</span>
             </div>
+            <div style="font-size:12px;color:gray;margin-top:4px">Transcript history is stored in IndexedDB with no app-level message-count ceiling. Browser storage quota still applies; a write problem is shown here instead of silently trimming old messages.</div>
             <div style="height:12px"></div>
 
             <b>Curated burn memory</b>
@@ -1095,6 +1243,7 @@
         applyThemeToPanel(panel);
         updateBackupStatus(panel);
         updateCuratedBurnStatus(panel);
+        updateChatStorageStatus(panel);
 
         panel.querySelector("#keywordActionHide").checked = settings.keywordAction === "hide";
         panel.querySelector("#keywordActionMask").checked = settings.keywordAction === "mask";
@@ -1233,9 +1382,9 @@
         buttonRow.appendChild(createAccentButton("Save", () => savePanelSettings(), "#4caf50", "💾"));
         buttonRow.appendChild(createAccentButton("Clear All", () => clearAllSettings(), "#f44336", "🗑️"));
         buttonRow.appendChild(createAccentButton("Export", () => exportData(), "#2196f3", "📤"));
-        buttonRow.appendChild(createAccentButton("Chat JSON", () => exportChatLog("json"), "#673ab7", "🧾"));
-        buttonRow.appendChild(createAccentButton("Chat CSV", () => exportChatLog("csv"), "#3f51b5", "📊"));
-        buttonRow.appendChild(createAccentButton("Clear Chat Log", () => { if (confirm("Clear saved local chat transcript?")) { clearChatLog(); alert("✅ Chat transcript cleared."); } }, "#795548", "🧹"));
+        buttonRow.appendChild(createAccentButton("Chat JSON", () => { void exportChatLog("json"); }, "#673ab7", "🧾"));
+        buttonRow.appendChild(createAccentButton("Chat CSV", () => { void exportChatLog("csv"); }, "#3f51b5", "📊"));
+        buttonRow.appendChild(createAccentButton("Clear Chat Log", async () => { if (!confirm("Clear saved local chat transcript?")) return; const cleared = await clearChatLog(); alert(cleared ? "✅ Chat transcript cleared." : "⚠️ Transcript could not be cleared from browser storage."); }, "#795548", "🧹"));
         buttonRow.appendChild(
             createAccentButton(
                 "Import",
@@ -1284,13 +1433,13 @@
 
         const rebuildCuratedBtn = panel.querySelector("#rebuildCuratedBurnsBtn");
         if (rebuildCuratedBtn) {
-            rebuildCuratedBtn.addEventListener("click", () => {
+            rebuildCuratedBtn.addEventListener("click", async () => {
                 settings.curatedBurnsEnabled = !!panel.querySelector("#curatedBurnsEnabledInput")?.checked;
                 settings.curatedBurnMinMessages = Math.max(3, Math.min(100, parseInt(panel.querySelector("#curatedBurnMinMessagesInput")?.value, 10) || 8));
                 settings.curatedBurnRefreshEvery = Math.max(1, Math.min(50, parseInt(panel.querySelector("#curatedBurnRefreshEveryInput")?.value, 10) || 3));
                 settings.curatedBurnMaxPerUser = Math.max(3, Math.min(40, parseInt(panel.querySelector("#curatedBurnMaxPerUserInput")?.value, 10) || 12));
                 saveSettings();
-                rebuildCuratedBurnsFromTranscript(true);
+                await rebuildCuratedBurnsFromTranscript(true);
                 updateCuratedBurnStatus(panel);
             });
         }
@@ -2843,8 +2992,9 @@
     /***********************
      * Wire up everything
      ***********************/
-    function boot() {
+    async function boot() {
         setupAutoBackup();
+        await initializeChatTranscriptStorage();
         backfillCuratedBurnsFromTranscript();
         initAudio();
 
@@ -2881,13 +3031,19 @@
         ensureFloatingSettingsButton();
         installOutgoingComposerFormatting();
         setInterval(installOutgoingComposerFormatting, 800);
-        window.addEventListener("beforeunload", saveChatLog, { once: true });
+        document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === "hidden") void saveChatLog();
+        });
+        window.addEventListener("beforeunload", () => {
+            void saveChatLog();
+            saveCuratedBurnStore();
+        }, { once: true });
     }
 
     if (document.readyState === "complete" || document.readyState === "interactive") {
-        boot();
+        void boot();
     } else {
-        window.addEventListener("DOMContentLoaded", boot);
+        window.addEventListener("DOMContentLoaded", () => { void boot(); }, { once: true });
     }
 
     // Expose API
