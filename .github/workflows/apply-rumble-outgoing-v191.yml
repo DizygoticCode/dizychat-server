@@ -1,0 +1,76 @@
+name: Apply and validate Rumble Companion v1.9.1 outgoing formatting
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    if: github.head_ref == 'fix/rumble-outgoing-format-v191'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Apply outgoing formatter repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -q '^// @version      1\.9\.1$' scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js; then
+            echo 'v1.9.1 already applied'
+          else
+            python scripts/tampermonkey/apply-v191-outgoing.py
+          fi
+
+      - name: Validate userscript contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+          grep -q '^// @version      1\.9\.1$' scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+          grep -q 'function formatOutgoingText(text)' scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+          grep -q 'function setOutgoingComposerValue(composer, value)' scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+          grep -q 'function installOutgoingComposerFormatting()' scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+          grep -q 'window.rumbleBlocker.formatOutgoing' scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+          ! grep -q 'applyConfiguredChatTextStyle' scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+          ! grep -q 'queryLocalFonts' scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+
+      - name: Build Chromium Firefox and Safari packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./browser-extension/scripts/fetch-vendor.sh
+          node browser-extension/build.mjs
+          ./browser-extension/scripts/package.sh
+          node --check browser-extension/dist/chromium/content-core.js
+          node --check browser-extension/dist/firefox/content-core.js
+          node --check browser-extension/dist/safari/content-core.js
+          python -c "import json,pathlib; r=pathlib.Path('browser-extension/dist'); assert all(json.loads((r/t/'manifest.json').read_text())['version']=='1.9.1' for t in ('chromium','firefox','safari'))"
+          cat browser-extension/dist/SHA256SUMS.txt
+
+      - name: Commit verified v1.9.1 branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f scripts/tampermonkey/apply-v191-outgoing.py ]; then
+            git rm scripts/tampermonkey/apply-v191-outgoing.py
+          fi
+          git add scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js README.md browser-extension/README.md
+          if git diff --cached --quiet; then
+            echo 'No product changes to commit'
+            exit 0
+          fi
+          git config user.name 'DizygoticCode'
+          git config user.email 'actions@users.noreply.github.com'
+          git commit -m 'Make Rumble font and colour controls outgoing-only in v1.9.1'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
