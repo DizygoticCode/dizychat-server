@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dizygotic Rumble Chat Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.8
+// @version      1.8.1
 // @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + transcript recorder/export + font controls + auto-burn + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.
 // @author       Dizygotic
 // @match        https://rumble.com/*
@@ -19,6 +19,7 @@
     const STORAGE_KEY = "rumbleBlockedUsers";
     const SETTINGS_KEY = "rumbleBlockerSettings";
     const BACKUP_KEY = "rumbleLastBackup";
+    const BACKUP_FILENAME = "dizygotic-rumble-chat-tool-settings-backup.json";
     const BTN_POS_KEY = "rumbleBlockerBtnPos";
     const CHAT_LOG_KEY = "rumbleChatTranscriptLogV1";
     const CHAT_LOG_LIMIT = 20000;
@@ -168,11 +169,48 @@
     /***********************
      * Export / Import / Backup
      ***********************/
+    function settingsSnapshot() {
+        return { blockedUsers, settings };
+    }
+
+    function getBackupStatusText() {
+        const raw = localStorage.getItem(BACKUP_KEY);
+        if (!raw) return `Last local backup: none yet · ${BACKUP_FILENAME}`;
+        try {
+            const backup = JSON.parse(raw);
+            const meta = backup?.backupMeta;
+            if (!meta?.savedAt) return `Last local backup: legacy backup present · ${BACKUP_FILENAME}`;
+            const saved = new Date(meta.savedAt);
+            const when = Number.isNaN(saved.getTime()) ? meta.savedAt : saved.toLocaleString();
+            return `Last local backup: ${when} · ${meta.filename || BACKUP_FILENAME}`;
+        } catch (err) {
+            console.warn("Unable to read local backup metadata", err);
+            return `Last local backup: unreadable · ${BACKUP_FILENAME}`;
+        }
+    }
+
+    function updateBackupStatus(root = document) {
+        const status = root?.querySelector?.("#lastAutoBackupStatus");
+        if (status) status.textContent = getBackupStatusText();
+    }
+
+    function saveLocalBackup(reason = "auto") {
+        const backup = {
+            ...settingsSnapshot(),
+            backupMeta: {
+                schemaVersion: 1,
+                filename: BACKUP_FILENAME,
+                savedAt: new Date().toISOString(),
+                reason
+            }
+        };
+        localStorage.setItem(BACKUP_KEY, JSON.stringify(backup));
+        updateBackupStatus();
+        return backup;
+    }
+
     function serializeData() {
-        const data = { blockedUsers, settings };
-        const serialized = JSON.stringify(data, null, 2);
-        localStorage.setItem(BACKUP_KEY, JSON.stringify(data));
-        return serialized;
+        return JSON.stringify(settingsSnapshot(), null, 2);
     }
 
     function fallbackDownload(filename, blob) {
@@ -246,6 +284,7 @@
 
     function exportData(filename = "dizygotic-rumble-chat-tool-settings.json", options = {}) {
         const serialized = serializeData();
+        saveLocalBackup("manual-export");
         triggerDownload(filename, serialized, options);
         return serialized;
     }
@@ -283,14 +322,11 @@
     let backupIntervalId = null;
     function setupAutoBackup() {
         if (backupIntervalId) clearInterval(backupIntervalId);
+        backupIntervalId = null;
         if (settings.autoBackupMinutes > 0) {
             backupIntervalId = setInterval(() => {
-                const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-                exportData(`dizygotic-rumble-chat-tool-settings-backup-${timestamp}.json`, {
-                    silent: true,
-                    prompt: false
-                });
-                console.log("💾 Auto-backup created");
+                saveLocalBackup("auto");
+                console.log(`💾 Auto-backup saved locally as ${BACKUP_FILENAME}`);
             }, settings.autoBackupMinutes * 60 * 1000);
         }
     }
@@ -512,6 +548,8 @@
                 <label>Auto-backup minutes (0 = off)</label>
                 <input type="number" id="autoBackupInput" value="${settings.autoBackupMinutes}" style="width:80px;margin-left:auto">
             </div>
+            <div id="lastAutoBackupStatus" style="font-size:12px;color:gray;margin-top:5px"></div>
+            <div style="font-size:12px;color:gray;margin-top:3px">Automatic backups silently overwrite one local browser backup slot. Only manual Export opens a file download.</div>
 
             <div style="height:14px"></div>
 
@@ -527,6 +565,7 @@
         `;
 
         applyThemeToPanel(panel);
+        updateBackupStatus(panel);
 
         const loadInstalledFontsBtn = panel.querySelector("#loadInstalledFontsBtn");
         if (loadInstalledFontsBtn) {

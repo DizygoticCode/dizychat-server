@@ -5,11 +5,11 @@ VENDOR="$ROOT/vendor"
 mkdir -p "$VENDOR"
 
 curl --fail --location --retry 3 --silent --show-error \
-  'https://unpkg.com/compromise@14.7.0/builds/compromise.min.js' \
+  'https://unpkg.com/compromise@14.14.4/builds/compromise.js' \
   -o "$VENDOR/compromise.min.js"
 
 curl --fail --location --retry 3 --silent --show-error \
-  'https://cdnjs.cloudflare.com/ajax/libs/rita/2.0.2/rita.min.js' \
+  'https://unpkg.com/rita@3.2.16/dist/rita.min.js' \
   -o "$VENDOR/rita.min.js"
 
 printf 'compromise: '; wc -c < "$VENDOR/compromise.min.js"
