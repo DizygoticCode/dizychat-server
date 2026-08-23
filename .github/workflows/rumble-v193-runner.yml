@@ -79,3 +79,5 @@ jobs:
           git config user.email 'rob.noyce@gmail.com'
           git commit -m 'Fix Burn Bot engine priority and repetition v1.9.3'
           git push origin HEAD:fix/rumble-burn-rotation-v193
+
+# trigger: 2026-08-23
