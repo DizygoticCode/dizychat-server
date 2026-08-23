@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dizygotic Rumble Chat Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.9.2
+// @version      1.9.3
 // @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + transcript recorder/export + automated curated burn memory + outgoing message styling + auto-burn + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.
 // @author       Dizygotic
 // @match        https://rumble.com/*
@@ -92,6 +92,8 @@
         defaultSettings.burnEnginesEnabled,
         settings.burnEnginesEnabled || {}
     );
+    // v1.9.3 auto-burn is deliberately hands-off; retire any persisted review prompt.
+    settings.curatedBurnReviewBeforeUse = false;
 
     function saveBlocklist() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(blockedUsers));
@@ -735,6 +737,7 @@
                     blockedUsers = data.blockedUsers;
                     settings = Object.assign({}, defaultSettings, data.settings);
                     settings.burnEnginesEnabled = Object.assign({}, defaultSettings.burnEnginesEnabled, data.settings?.burnEnginesEnabled || {});
+                    settings.curatedBurnReviewBeforeUse = false;
                     if (data.curatedBurns && typeof data.curatedBurns === "object") {
                         curatedBurnStore = normalizeCuratedStore(data.curatedBurns);
                         saveCuratedBurnStore();
@@ -957,7 +960,6 @@
                 <input type="number" id="curatedBurnRefreshEveryInput" min="1" max="50" value="${settings.curatedBurnRefreshEvery}" style="width:58px">
                 <label>Max/user</label>
                 <input type="number" id="curatedBurnMaxPerUserInput" min="3" max="40" value="${settings.curatedBurnMaxPerUser}" style="width:58px">
-                <label><input type="checkbox" id="curatedBurnReviewInput"${settings.curatedBurnReviewBeforeUse ? " checked" : ""}> Review before send</label>
             </div>
             <div id="curatedBurnStatus" style="font-size:12px;color:gray;margin-top:5px">${curatedBurnSummaryText()}</div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
@@ -976,12 +978,13 @@
                 <label><input type="checkbox" id="autoBurnToggle"${settings.autoBurnEnabled ? " checked" : ""}> Reply when someone tags me</label>
                 <label>Cooldown</label>
                 <input type="number" id="autoBurnCooldownInput" min="5" value="${settings.autoBurnCooldownSeconds}" style="width:70px">
-                <label>Preferred engine</label>
+                <label>Primary engine</label>
                 <select id="autoBurnEngineSelect">${burnEngineRecommendations.map((r) => `<option value="${r.key}"${settings.autoBurnEngine === r.key ? " selected" : ""}>${r.label}</option>`).join("")}</select>
             </div>
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:7px;font-size:12px">
                 ${burnEngineRecommendations.map((r) => `<label><input type="checkbox" data-burn-engine-toggle="${r.key}"${settings.burnEnginesEnabled?.[r.key] !== false ? " checked" : ""}> ${r.label}</label>`).join("")}
             </div>
+            <div style="font-size:12px;color:gray;margin-top:4px">The Primary engine runs first. Other enabled engines are fallbacks only when the primary cannot produce a fresh burn; exact recent burns are skipped instead of repeated.</div>
             <div style="font-size:12px;color:gray;margin-top:4px">Compromise and RiTa are loaded by Tampermonkey via @require. Markov uses a local word-chain generator so a CDN package change cannot kill the whole userscript.</div>
             <textarea id="burnMarkovCorpusInput" placeholder="Optional Markov corpus — one burn/example per line" style="width:100%;height:58px;margin-top:6px">${settings.burnMarkovCorpus || ""}</textarea>
             <div style="height:12px"></div>
@@ -1095,7 +1098,6 @@
             settings.curatedBurnMinMessages = Math.max(3, Math.min(100, parseInt(panel.querySelector("#curatedBurnMinMessagesInput")?.value, 10) || 8));
             settings.curatedBurnRefreshEvery = Math.max(1, Math.min(50, parseInt(panel.querySelector("#curatedBurnRefreshEveryInput")?.value, 10) || 3));
             settings.curatedBurnMaxPerUser = Math.max(3, Math.min(40, parseInt(panel.querySelector("#curatedBurnMaxPerUserInput")?.value, 10) || 12));
-            settings.curatedBurnReviewBeforeUse = !!panel.querySelector("#curatedBurnReviewInput")?.checked;
             settings.autoBurnEnabled = !!panel.querySelector("#autoBurnToggle")?.checked;
             settings.autoBurnCooldownSeconds = Math.max(5, parseInt(panel.querySelector("#autoBurnCooldownInput")?.value, 10) || 45);
             settings.autoBurnEngine = panel.querySelector("#autoBurnEngineSelect")?.value || "builtin";
@@ -1453,6 +1455,32 @@
         ({ target }) => `@${target} noted. Filing under 'draft tweets'.`
     ];
     let lastBurnTimestamp = 0;
+    const RECENT_BURN_LIMIT = 12;
+    let recentBurnResponses = [];
+    let lastBurnEngineUsed = "none";
+
+    function burnResponseKey(text) {
+        return String(text || "")
+            .replace(/^@[A-Za-z0-9_.-]+\s+/, "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .toLowerCase();
+    }
+
+    function isRecentBurn(text) {
+        const key = burnResponseKey(text);
+        return !!key && recentBurnResponses.includes(key);
+    }
+
+    function rememberRecentBurn(text) {
+        const key = burnResponseKey(text);
+        if (!key) return;
+        recentBurnResponses = recentBurnResponses.filter((item) => item !== key);
+        recentBurnResponses.push(key);
+        if (recentBurnResponses.length > RECENT_BURN_LIMIT) {
+            recentBurnResponses.splice(0, recentBurnResponses.length - RECENT_BURN_LIMIT);
+        }
+    }
 
     let burnSendInFlight = false;
     let pendingOutgoingIdentity = null;
@@ -1795,6 +1823,7 @@
 
     function generateBurnResponse(ctx) {
         pendingCuratedBurnSelection = null;
+        lastBurnEngineUsed = "none";
         const normalizedCtx = {
             target: ctx.target || "there",
             from: String(ctx.from || "").trim().toLowerCase(),
@@ -1802,45 +1831,42 @@
             snippet: (ctx.message || "").replace(/\s+/g, " ").trim().slice(0, 110)
         };
         const enabled = Object.assign({}, defaultSettings.burnEnginesEnabled, settings.burnEnginesEnabled || {});
-        const preferred = settings.autoBurnEngine || "builtin";
-        const engineOrder = ["curated", preferred, "custom", "compromise", "rita", "markov", "builtin"]
+        const primary = settings.autoBurnEngine || "builtin";
+        const engineOrder = [primary, "curated", "custom", "compromise", "rita", "markov", "builtin"]
             .filter((key, index, arr) => arr.indexOf(key) === index && enabled[key] !== false);
 
         const custom = window.rumbleBlocker?.customBurnGenerator;
-        const tryCustom = () => {
-            if (typeof custom !== "function") return null;
-            try { return custom(normalizedCtx) || null; } catch (err) { console.warn("Custom burn generator threw", err); return null; }
-        };
 
-        for (const engine of engineOrder) {
-            if (engine === "curated") {
-                const result = selectCuratedBurn(normalizedCtx);
-                if (result) return result;
-            }
+        const generateFromEngine = (engine) => {
+            if (engine === "curated") return selectCuratedBurn(normalizedCtx);
             if (engine === "custom") {
-                const result = tryCustom();
-                if (result) return String(result);
+                if (typeof custom !== "function") return null;
+                try { return custom(normalizedCtx) || null; } catch (err) { console.warn("Custom burn generator threw", err); return null; }
             }
             if (engine === "compromise") {
                 const nlpLib = typeof nlp !== "undefined" ? nlp : window.nlp;
-                if (nlpLib) {
-                    try {
-                        const doc = nlpLib(normalizedCtx.message);
-                        const verb = doc.verbs().toInfinitive().out("array")[0] || "ping";
-                        const noun = doc.nouns().out("array")[0] || "take";
-                        return `@${normalizedCtx.target} bold ${verb} on that ${noun}. Wanna run that again?`;
-                    } catch (err) { console.warn("Compromise burn failed", err); }
-                }
+                if (!nlpLib) return null;
+                try {
+                    const doc = nlpLib(normalizedCtx.message);
+                    const verb = doc.verbs().toInfinitive().out("array")[0] || "ping";
+                    const noun = doc.nouns().out("array")[0] || "take";
+                    const variants = [
+                        `@${normalizedCtx.target} bold ${verb} on that ${noun}. Wanna run that again?`,
+                        `@${normalizedCtx.target} that ${noun} just failed review. Maybe ${verb} it after the patch notes land.`,
+                        `@${normalizedCtx.target} impressive ${noun}. Shame the ${verb} part arrived without dependencies.`,
+                        `@${normalizedCtx.target} the logs saw that ${noun} and immediately requested a rollback.`
+                    ];
+                    return variants[Math.floor(Math.random() * variants.length)];
+                } catch (err) { console.warn("Compromise burn failed", err); return null; }
             }
             if (engine === "rita") {
                 const ritaLib = typeof RiTa !== "undefined" ? RiTa : window.RiTa;
-                if (ritaLib) {
-                    try {
-                        const lead = ritaLib.randomWord({ numSyllables: 1 });
-                        const noun = ritaLib.randomWord({ pos: "nn" });
-                        return `@${normalizedCtx.target} ${lead} ${noun} energy detected. Recompile your take.`;
-                    } catch (err) { console.warn("RiTa burn failed", err); }
-                }
+                if (!ritaLib) return null;
+                try {
+                    const lead = ritaLib.randomWord({ numSyllables: 1 });
+                    const noun = ritaLib.randomWord({ pos: "nn" });
+                    return `@${normalizedCtx.target} ${lead} ${noun} energy detected. Recompile your take.`;
+                } catch (err) { console.warn("RiTa burn failed", err); return null; }
             }
             if (engine === "markov") {
                 const supplied = String(settings.burnMarkovCorpus || "")
@@ -1859,13 +1885,31 @@
                     "your hot take just failed the deterministic test suite."
                 ];
                 const phrase = simpleMarkovGenerate([...supplied, ...hookCorpus, ...fallbackCorpus]);
-                if (phrase) return `@${normalizedCtx.target} ${phrase}`;
+                return phrase ? `@${normalizedCtx.target} ${phrase}` : null;
             }
             if (engine === "builtin") {
                 const template = builtInBurns[Math.floor(Math.random() * builtInBurns.length)];
-                return template(normalizedCtx);
+                return template ? template(normalizedCtx) : null;
+            }
+            return null;
+        };
+
+        for (const engine of engineOrder) {
+            const attempts = engine === "custom" ? 1 : 6;
+            for (let attempt = 0; attempt < attempts; attempt += 1) {
+                pendingCuratedBurnSelection = null;
+                const result = generateFromEngine(engine);
+                if (!result) break;
+                const candidate = String(result).trim();
+                if (!candidate) break;
+                if (!isRecentBurn(candidate)) {
+                    lastBurnEngineUsed = engine;
+                    return candidate;
+                }
+                pendingCuratedBurnSelection = null;
             }
         }
+        pendingCuratedBurnSelection = null;
         return null;
     }
 
@@ -1881,20 +1925,13 @@
             pendingCuratedBurnSelection = null;
             return;
         }
-        if (curatedSelection && settings.curatedBurnReviewBeforeUse) {
-            const approved = confirm(`Curated burn for @${ctx.target || ctx.from}:\n\n${response}\n\nSend it?`);
-            if (!approved) {
-                pendingCuratedBurnSelection = null;
-                setBurnRuntimeStatus({ lastAttempt: "review cancelled" });
-                return;
-            }
-        }
         burnSendInFlight = true;
-        setBurnRuntimeStatus({ lastAttempt: `generated for @${ctx.target || ctx.from}` });
+        setBurnRuntimeStatus({ lastAttempt: `generated via ${lastBurnEngineUsed} for @${ctx.target || ctx.from}` });
         try {
             const sent = await sendChatMessage(response);
             if (sent) {
                 lastBurnTimestamp = Date.now();
+                rememberRecentBurn(response);
                 if (curatedSelection) markCuratedBurnUsed(curatedSelection);
             }
         } catch (err) {
