@@ -64,7 +64,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -f scripts/tampermonkey/apply-v191-outgoing.py ]; then
-            git rm scripts/tampermonkey/apply-v191-outgoing.py
+            git rm -f scripts/tampermonkey/apply-v191-outgoing.py
           fi
           git add scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js README.md browser-extension/README.md
           if git diff --cached --quiet; then
