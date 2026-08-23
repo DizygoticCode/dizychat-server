@@ -1,0 +1,54 @@
+name: One-off burn bot savage v1.9.5 PR
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'burnbot-savage-v1.9.5'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Patch current userscript
+        run: python scripts/patch-burnbot-v195.py
+
+      - name: Verify JavaScript syntax
+        run: node --check scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+
+      - name: Verify patch boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F '// @version      1.9.5' scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+          grep -F 'const burnTagPressure = new Map();' scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+          grep -F 'you tagged me just to volunteer as the punchline' scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+          ! grep -F 'fallbackCorpus' scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+          ! grep -F 'your hot take just failed the deterministic test suite' scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+          git diff --check
+
+      - name: Commit verified userscript and remove one-off machinery
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f scripts/patch-burnbot-v195.py \
+            .github/workflows/oneoff-burnbot-savage-v195.yml \
+            .github/workflows/oneoff-burnbot-savage-v195-pr.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js \
+            scripts/patch-burnbot-v195.py \
+            .github/workflows/oneoff-burnbot-savage-v195.yml \
+            .github/workflows/oneoff-burnbot-savage-v195-pr.yml
+          git diff --cached --check
+          git commit -m 'Upgrade Rumble burn bot to savage v1.9.5'
+          git push origin HEAD:burnbot-savage-v1.9.5
