@@ -56,7 +56,7 @@ jobs:
           node --check browser-extension/dist/chromium/content-core.js
           node --check browser-extension/dist/firefox/content-core.js
           node --check browser-extension/dist/safari/content-core.js
-          python -c "import json,pathlib; root=pathlib.Path('browser-extension/dist'); [(_ for _ in ()).throw(AssertionError((t,json.loads((root/t/'manifest.json').read_text())['version']))) for t in ('chromium','firefox','safari') if json.loads((root/t/'manifest.json').read_text())['version'] != '1.9.0']"
+          python -c "import json,pathlib; root=pathlib.Path('browser-extension/dist'); [(_ for _ in ()).throw(AssertionError((t,json.loads((root/t/'manifest.json').read_text())['version']))) for t in ('chromium','firefox','safari') if json.loads((root/t/'manifest.json').read_text())['version'] != '1.9']"
           cat browser-extension/dist/SHA256SUMS.txt
 
       - name: Commit verified v1.9 branch
