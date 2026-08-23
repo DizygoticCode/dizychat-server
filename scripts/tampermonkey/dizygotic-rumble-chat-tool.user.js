@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dizygotic Rumble Chat Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.9.1
+// @version      1.9.2
 // @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + transcript recorder/export + automated curated burn memory + outgoing message styling + auto-burn + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.
 // @author       Dizygotic
 // @match        https://rumble.com/*
@@ -146,6 +146,7 @@
         };
         chatLog.push(record);
         if (chatLog.length > CHAT_LOG_LIMIT) chatLog.splice(0, chatLog.length - CHAT_LOG_LIMIT);
+        maybeLearnSelfNickname(record);
         ingestCuratedRecord(record);
         scheduleChatLogSave();
     }
@@ -167,10 +168,10 @@
         if (format === "csv") {
             const header = ["seq","capturedAt","username","displayName","message","mentions","rawHtml","rowClass","url","title"];
             const rows = chatLog.map((r) => [r.seq,r.capturedAt,r.username,r.displayName,r.message,(r.mentions||[]).join(" "),r.rawHtml||"",r.rowClass||"",r.url,r.title].map(csvEscape).join(","));
-            triggerDownload(`dizygotic-rumble-chat-${stamp}.csv`, [header.join(","), ...rows].join("\n"), { prompt: true });
+            triggerDownload(`dizygotic-rumble-chat-${stamp}.csv`, [header.join(","), ...rows].join("\n"), { prompt: true, mimeType: "text/csv;charset=utf-8" });
             return;
         }
-        triggerDownload(`dizygotic-rumble-chat-${stamp}.json`, JSON.stringify(chatLog, null, 2), { prompt: true });
+        triggerDownload(`dizygotic-rumble-chat-${stamp}.json`, JSON.stringify(chatLog, null, 2), { prompt: true, mimeType: "application/json;charset=utf-8" });
     }
 
     function escapeRegex(value) {
@@ -190,7 +191,7 @@
         "about","after","again","also","and","are","because","been","before","being","but","can","cant","could","did","does","doing","dont","for","from","get","got","had","has","have","here","how","into","its","just","like","more","not","now","off","one","only","our","out","really","said","say","says","some","than","that","the","their","them","then","there","they","this","those","too","was","were","what","when","where","which","who","why","will","with","would","you","your","youre"
     ]);
     const CURATED_SENSITIVE_PATTERN = /\b(?:address|postcode|phone|email|diagnos(?:ed|is)|cancer|hiv|autis(?:m|tic)|disabled|disability|pregnan(?:t|cy)|religion|muslim|christian|jew(?:ish)?|hindu|sikh|gay|lesbian|bisexual|trans(?:gender)?|race|racial|ethnicity)\b/i;
-    const CURATED_PERSONAL_DATA_PATTERN = /(?:https?:\/\/|www\.|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\b(?:\d{1,3}\.){3}\d{1,3}\b|(?:\+?\d[\d ()-]{7,}\d))/i;
+    const CURATED_PERSONAL_DATA_PATTERN = /(?:[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\b(?:\d{1,3}\.){3}\d{1,3}\b|(?:\+?\d[\d ()-]{7,}\d))/i;
     let curatedSaveTimer = null;
     let pendingCuratedBurnSelection = null;
 
@@ -282,17 +283,19 @@
     function normalizeCuratedText(text) {
         return String(text || "")
             .replace(/https?:\/\/\S+/gi, " ")
+            .replace(/www\.\S+/gi, " ")
             .replace(/@[A-Za-z0-9_.-]+/g, " ")
+            .replace(CURATED_SENSITIVE_PATTERN, " ")
             .replace(/\s+/g, " ")
             .trim()
             .slice(0, 220);
     }
 
     function isCuratableMessage(text) {
-        const value = normalizeCuratedText(text);
-        if (value.length < 8 || value.length > 220) return false;
-        if (CURATED_SENSITIVE_PATTERN.test(value) || CURATED_PERSONAL_DATA_PATTERN.test(value)) return false;
-        return true;
+        const raw = String(text || "");
+        if (CURATED_PERSONAL_DATA_PATTERN.test(raw)) return false;
+        const value = normalizeCuratedText(raw);
+        return value.length >= 8 && value.length <= 220;
     }
 
     function curatedWords(text) {
@@ -396,7 +399,7 @@
                 score: 12 + statCount(stat),
                 sourceSeqs: stat.seqs || [],
                 keywords: curatedTokens(stat.sample),
-                template: `@{target} you have already shipped “${stat.sample}” ${statCount(stat)} times. Even copy-paste wants royalties.`
+                template: `@{target} same paste again — the archive has clocked this template ${statCount(stat)} times. Even copy-paste wants royalties.`
             }));
 
         Object.entries(profile.phrases || {})
@@ -667,7 +670,7 @@
     function triggerDownload(filename, serialized, options = {}) {
         const silent = Boolean(options.silent);
         const prompt = options.prompt !== false;
-        const blob = new Blob([serialized], { type: "application/json" });
+        const blob = new Blob([serialized], { type: options.mimeType || "application/json;charset=utf-8" });
 
         if (typeof GM_download === "function") {
             const url = URL.createObjectURL(blob);
@@ -965,6 +968,11 @@
 
             <b>Auto-burn bot</b>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
+                <label>My Rumble username</label>
+                <input id="myNicknameInput" value="${String(settings.myNickname || "").replace(/"/g, "&quot;")}" placeholder="auto-detected after you send" style="width:170px">
+                <span id="autoBurnRuntimeStatus" style="font-size:12px;color:gray">${burnRuntimeStatusText()}</span>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
                 <label><input type="checkbox" id="autoBurnToggle"${settings.autoBurnEnabled ? " checked" : ""}> Reply when someone tags me</label>
                 <label>Cooldown</label>
                 <input type="number" id="autoBurnCooldownInput" min="5" value="${settings.autoBurnCooldownSeconds}" style="width:70px">
@@ -1078,6 +1086,7 @@
             settings.notifyOnHighlight = !!panel.querySelector("#notifyOnHighlightInput").checked;
             settings.highlightNotificationSoundEnabled = !!panel.querySelector("#highlightSoundInput").checked;
             settings.chatRecorderEnabled = !!panel.querySelector("#chatRecorderEnabledInput")?.checked;
+            settings.myNickname = sanitizeNickname(panel.querySelector("#myNicknameInput")?.value || settings.myNickname) || "";
             settings.outgoingFontStyle = panel.querySelector("#outgoingFontStyleInput")?.value || "default";
             settings.chatTextMode = panel.querySelector("#chatTextModeInput")?.value || "default";
             settings.chatTextColor = panel.querySelector("#chatTextColorInput")?.value || "#ffffff";
@@ -1445,25 +1454,171 @@
     ];
     let lastBurnTimestamp = 0;
 
-    function findChatComposer() {
-        const selectors = [
-            "textarea.chat-input", "textarea.chat-textarea", "textarea.chat-input__textarea",
-            "textarea#chat-message-text", "textarea[name='chat']", "textarea[data-role='chat-input']",
-            "textarea[data-qa='live-chat-input']", "input.chat-input", "input[name='chat']",
-            "div[contenteditable='true'][data-placeholder*='message' i]",
-            "div[contenteditable='true'][aria-label*='message' i]"
-        ];
-        for (const selector of selectors) { const el = document.querySelector(selector); if (el) return el; }
-        return null;
+    let burnSendInFlight = false;
+    let pendingOutgoingIdentity = null;
+    const burnRuntimeStatus = {
+        nickname: "",
+        composerFound: false,
+        lastAttempt: "none yet",
+        lastError: ""
+    };
+
+    function setBurnRuntimeStatus(patch = {}) {
+        Object.assign(burnRuntimeStatus, patch);
+        const status = document.querySelector("#autoBurnRuntimeStatus");
+        if (status) status.textContent = burnRuntimeStatusText();
     }
 
-    function findSendButton() {
+    function burnRuntimeStatusText() {
+        const nickname = sanitizeNickname(settings.myNickname || burnRuntimeStatus.nickname) || "not detected";
+        return `me: ${nickname} · composer: ${burnRuntimeStatus.composerFound ? "ready" : "not found"} · last: ${burnRuntimeStatus.lastAttempt}`;
+    }
+
+    function normalizeOutgoingEcho(text) {
+        return String(text || "").replace(/\s+/g, " ").trim();
+    }
+
+    function rememberPendingOutgoingIdentity(raw, formatted) {
+        const original = normalizeOutgoingEcho(raw);
+        const sent = normalizeOutgoingEcho(formatted);
+        if (!original && !sent) return;
+        pendingOutgoingIdentity = { raw: original, formatted: sent, expiresAt: Date.now() + 20000 };
+    }
+
+    function maybeLearnSelfNickname(record) {
+        if (!pendingOutgoingIdentity || !record?.username) return;
+        if (Date.now() > pendingOutgoingIdentity.expiresAt) {
+            pendingOutgoingIdentity = null;
+            return;
+        }
+        const observed = normalizeOutgoingEcho(record.message);
+        if (!observed || (observed !== pendingOutgoingIdentity.raw && observed !== pendingOutgoingIdentity.formatted)) return;
+        const learned = storeNicknameIfValid(record.displayName || record.username);
+        if (learned && learned.toLowerCase() !== "guest") {
+            setBurnRuntimeStatus({ nickname: learned, lastAttempt: `learned @${learned}` });
+            pendingOutgoingIdentity = null;
+        }
+    }
+
+    function elementIsVisible(element) {
+        if (!element || !element.isConnected || element.closest?.("#rumbleBlockerSettingsPanel")) return false;
+        const style = getComputedStyle(element);
+        if (style.display === "none" || style.visibility === "hidden") return false;
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+    }
+
+    function composerMetadata(element) {
+        return [
+            element.id,
+            element.className,
+            element.getAttribute?.("name"),
+            element.getAttribute?.("placeholder"),
+            element.getAttribute?.("aria-label"),
+            element.getAttribute?.("data-role"),
+            element.getAttribute?.("data-qa"),
+            element.getAttribute?.("data-js")
+        ].filter(Boolean).join(" ").toLowerCase();
+    }
+
+    function scoreChatComposer(element) {
+        if (!elementIsVisible(element)) return -1000;
+        const meta = composerMetadata(element);
+        let score = 0;
+        if (/chat/.test(meta)) score += 10;
+        if (/message/.test(meta)) score += 8;
+        if (/comment/.test(meta)) score += 2;
+        if (element.closest?.("section.chat, .chat, .chat-container, [class*='chat-container'], [data-js*='chat']")) score += 10;
+        if (element.closest?.("form")) score += 4;
+        if (element.tagName === "TEXTAREA") score += 4;
+        if (element.isContentEditable || element.getAttribute?.("role") === "textbox") score += 3;
+        if (element.tagName === "INPUT") score += 1;
+        return score;
+    }
+
+    function findChatComposer() {
         const selectors = [
-            "button.chat-send", "button.send-message", "button[type='submit'][aria-label*='send' i]",
-            "button[aria-label='Send message']", "button[aria-label='Send']", "button.chat__send", "button[data-role='send-button']"
+            "section.chat textarea", "section.chat [contenteditable='true']", "section.chat [role='textbox']",
+            "textarea.chat-input", "textarea.chat-textarea", "textarea.chat-input__textarea", "textarea[class*='chat' i]",
+            "textarea#chat-message-text", "textarea[name='chat']", "textarea[data-role='chat-input']",
+            "textarea[data-qa='live-chat-input']", "textarea[placeholder*='chat' i]", "textarea[placeholder*='message' i]",
+            "textarea[aria-label*='chat' i]", "textarea[aria-label*='message' i]",
+            "input.chat-input", "input[name='chat']", "input[placeholder*='chat' i]",
+            "div[contenteditable='true'][data-placeholder*='message' i]",
+            "div[contenteditable='true'][aria-label*='message' i]",
+            "[contenteditable='true'][role='textbox']", "[role='textbox'][contenteditable='true']"
         ];
-        for (const selector of selectors) { const btn = document.querySelector(selector); if (btn) return btn; }
-        return null;
+        const candidates = new Set();
+        selectors.forEach((selector) => document.querySelectorAll(selector).forEach((element) => candidates.add(element)));
+        document.querySelectorAll("textarea, input[type='text'], [contenteditable='true'], [role='textbox']")
+            .forEach((element) => candidates.add(element));
+        const ranked = [...candidates]
+            .map((element) => ({ element, score: scoreChatComposer(element) }))
+            .filter((entry) => entry.score >= 5)
+            .sort((a, b) => b.score - a.score);
+        const composer = ranked[0]?.element || null;
+        burnRuntimeStatus.composerFound = !!composer;
+        return composer;
+    }
+
+    function buttonMetadata(button) {
+        return [
+            button.id,
+            button.className,
+            button.textContent,
+            button.getAttribute?.("aria-label"),
+            button.getAttribute?.("title"),
+            button.getAttribute?.("data-role"),
+            button.getAttribute?.("data-js")
+        ].filter(Boolean).join(" ").toLowerCase();
+    }
+
+    function scoreSendButton(button, composer) {
+        if (!elementIsVisible(button)) return -1000;
+        const meta = buttonMetadata(button);
+        let score = 0;
+        if (/send/.test(meta)) score += 12;
+        if (/chat/.test(meta)) score += 4;
+        if (button.type === "submit") score += 7;
+        const form = composer?.closest?.("form");
+        if (form && button.closest?.("form") === form) score += 10;
+        if (composer && button.parentElement === composer.parentElement) score += 4;
+        return score;
+    }
+
+    function findSendButton(composer = findChatComposer()) {
+        const selectors = [
+            "button[type='submit']", "button.chat-send", "button.send-message",
+            "button[aria-label*='send' i]", "button[title*='send' i]", "button.chat__send",
+            "button[data-role*='send' i]", "button[data-js*='send' i]", "button[class*='send' i]"
+        ];
+        const scopes = [
+            composer?.closest?.("form"),
+            composer?.closest?.("section.chat, .chat, .chat-container, [class*='chat-container']"),
+            composer?.parentElement
+        ].filter(Boolean);
+        const candidates = new Set();
+        scopes.forEach((scope) => selectors.forEach((selector) => scope.querySelectorAll(selector).forEach((button) => candidates.add(button))));
+        if (!candidates.size) {
+            document.querySelectorAll("button[aria-label*='send' i], button[title*='send' i], button[data-role*='send' i], button[data-js*='send' i], button[class*='send' i]")
+                .forEach((button) => candidates.add(button));
+        }
+        return [...candidates]
+            .map((button) => ({ button, score: scoreSendButton(button, composer) }))
+            .filter((entry) => entry.score >= 5)
+            .sort((a, b) => b.score - a.score)[0]?.button || null;
+    }
+
+    function dispatchComposerInput(composer, value) {
+        try {
+            composer.dispatchEvent(new InputEvent("beforeinput", { bubbles: true, cancelable: true, inputType: "insertText", data: value }));
+        } catch (_) {}
+        try {
+            composer.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
+        } catch (_) {
+            composer.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        composer.dispatchEvent(new Event("change", { bubbles: true }));
     }
 
     function setComposerValue(composer, value) {
@@ -1473,11 +1628,10 @@
             const proto = composer.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
             const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
             if (setter) setter.call(composer, value); else composer.value = value;
-        } else if (composer.isContentEditable) {
-            composer.textContent = value;
+        } else if (composer.isContentEditable || composer.getAttribute?.("role") === "textbox") {
+            composer.replaceChildren(document.createTextNode(value));
         }
-        composer.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
-        composer.dispatchEvent(new Event("change", { bubbles: true }));
+        dispatchComposerInput(composer, value);
     }
 
     function getComposerPlainText(composer) {
@@ -1526,52 +1680,117 @@
             setComposerValue(composer, formatted);
             return formatted;
         }
-
         composer.focus();
         composer.replaceChildren();
         appendOutgoingColourNodes(composer, formatted, colourMode);
-        composer.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: formatted }));
-        composer.dispatchEvent(new Event("change", { bubbles: true }));
+        dispatchComposerInput(composer, formatted);
         return formatted;
     }
 
+    function sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    async function submitComposer(composer) {
+        if (!composer) return false;
+        for (let attempt = 0; attempt < 8; attempt += 1) {
+            await sleep(attempt === 0 ? 80 : 60);
+            const button = findSendButton(composer);
+            if (button && !button.disabled && button.getAttribute("aria-disabled") !== "true") {
+                button.click();
+                return true;
+            }
+        }
+        const form = composer.closest?.("form");
+        if (form && typeof form.requestSubmit === "function") {
+            try {
+                form.requestSubmit();
+                return true;
+            } catch (err) {
+                console.warn("Rumble form requestSubmit failed", err);
+            }
+        }
+        for (const type of ["keydown", "keypress", "keyup"]) {
+            composer.dispatchEvent(new KeyboardEvent(type, { key: "Enter", code: "Enter", bubbles: true, cancelable: true }));
+        }
+        return true;
+    }
+
+    let outgoingSubmitGuard = false;
     function prepareCurrentComposerForSend(composer) {
         const raw = getComposerPlainText(composer);
-        if (!raw.trim()) return;
-        setOutgoingComposerValue(composer, raw);
+        if (!raw.trim()) return { raw: "", formatted: "", changed: false };
+        const formatted = formatOutgoingText(raw);
+        const richColour = !!composer.isContentEditable && (settings.chatTextMode || "default") !== "default";
+        const changed = formatted !== raw || richColour;
+        if (changed) setOutgoingComposerValue(composer, raw);
+        rememberPendingOutgoingIdentity(raw, formatted);
+        return { raw, formatted, changed };
+    }
+
+    function deferNativeSend(event, composer) {
+        if (outgoingSubmitGuard) return false;
+        const prepared = prepareCurrentComposerForSend(composer);
+        if (!prepared.raw || !prepared.changed) return false;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        outgoingSubmitGuard = true;
+        void submitComposer(composer).finally(() => { outgoingSubmitGuard = false; });
+        return true;
     }
 
     function installOutgoingComposerFormatting() {
         const composer = findChatComposer();
+        setBurnRuntimeStatus({ composerFound: !!composer });
         if (!composer) return;
         if (!composer._dizyOutgoingFormattingBound) {
             composer._dizyOutgoingFormattingBound = true;
             composer.addEventListener("keydown", (event) => {
+                if (outgoingSubmitGuard) return;
                 if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || event.isComposing) return;
-                prepareCurrentComposerForSend(composer);
+                const prepared = prepareCurrentComposerForSend(composer);
+                if (!prepared.raw || !prepared.changed) return;
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                outgoingSubmitGuard = true;
+                void submitComposer(composer).finally(() => { outgoingSubmitGuard = false; });
             }, true);
             const form = composer.closest("form");
             if (form && !form._dizyOutgoingFormattingBound) {
                 form._dizyOutgoingFormattingBound = true;
-                form.addEventListener("submit", () => prepareCurrentComposerForSend(composer), true);
+                form.addEventListener("submit", (event) => {
+                    if (outgoingSubmitGuard) return;
+                    deferNativeSend(event, composer);
+                }, true);
             }
         }
-        const sendButton = findSendButton();
+        const sendButton = findSendButton(composer);
         if (sendButton && !sendButton._dizyOutgoingFormattingBound) {
             sendButton._dizyOutgoingFormattingBound = true;
-            sendButton.addEventListener("pointerdown", () => prepareCurrentComposerForSend(composer), true);
-            sendButton.addEventListener("mousedown", () => prepareCurrentComposerForSend(composer), true);
+            sendButton.addEventListener("click", (event) => {
+                if (outgoingSubmitGuard) return;
+                deferNativeSend(event, composer);
+            }, true);
         }
     }
 
-    function sendChatMessage(message) {
+    async function sendChatMessage(message) {
         const composer = findChatComposer();
-        if (!composer) return false;
-        setOutgoingComposerValue(composer, message);
-        const btn = findSendButton();
-        if (btn) { btn.click(); return true; }
-        composer.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }));
-        return true;
+        if (!composer) {
+            setBurnRuntimeStatus({ composerFound: false, lastAttempt: "failed: composer not found", lastError: "composer-not-found" });
+            return false;
+        }
+        const formatted = setOutgoingComposerValue(composer, message);
+        rememberPendingOutgoingIdentity(message, formatted);
+        setBurnRuntimeStatus({ composerFound: true, lastAttempt: "composer filled", lastError: "" });
+        outgoingSubmitGuard = true;
+        try {
+            const submitted = await submitComposer(composer);
+            setBurnRuntimeStatus({ lastAttempt: submitted ? "send dispatched" : "failed: no send path", lastError: submitted ? "" : "send-path-not-found" });
+            return submitted;
+        } finally {
+            outgoingSubmitGuard = false;
+        }
     }
 
     function generateBurnResponse(ctx) {
@@ -1650,25 +1869,41 @@
         return null;
     }
 
-    function maybeHandleAutoBurn(ctx) {
-        if (!settings.autoBurnEnabled) return;
+    async function maybeHandleAutoBurn(ctx) {
+        if (!settings.autoBurnEnabled || burnSendInFlight) return;
         const now = Date.now();
         const cooldownMs = Math.max(5, settings.autoBurnCooldownSeconds || 45) * 1000;
         if (now - lastBurnTimestamp < cooldownMs) return;
         const response = generateBurnResponse(ctx);
         const curatedSelection = pendingCuratedBurnSelection;
-        if (response && curatedSelection && settings.curatedBurnReviewBeforeUse) {
+        if (!response) {
+            setBurnRuntimeStatus({ lastAttempt: "no burn generated" });
+            pendingCuratedBurnSelection = null;
+            return;
+        }
+        if (curatedSelection && settings.curatedBurnReviewBeforeUse) {
             const approved = confirm(`Curated burn for @${ctx.target || ctx.from}:\n\n${response}\n\nSend it?`);
             if (!approved) {
                 pendingCuratedBurnSelection = null;
+                setBurnRuntimeStatus({ lastAttempt: "review cancelled" });
                 return;
             }
         }
-        if (response && sendChatMessage(response)) {
-            lastBurnTimestamp = now;
-            if (curatedSelection) markCuratedBurnUsed(curatedSelection);
+        burnSendInFlight = true;
+        setBurnRuntimeStatus({ lastAttempt: `generated for @${ctx.target || ctx.from}` });
+        try {
+            const sent = await sendChatMessage(response);
+            if (sent) {
+                lastBurnTimestamp = Date.now();
+                if (curatedSelection) markCuratedBurnUsed(curatedSelection);
+            }
+        } catch (err) {
+            console.warn("Auto-burn send failed", err);
+            setBurnRuntimeStatus({ lastAttempt: "failed: send exception", lastError: String(err?.message || err) });
+        } finally {
+            burnSendInFlight = false;
+            pendingCuratedBurnSelection = null;
         }
-        pendingCuratedBurnSelection = null;
     }
 
     /***********************
@@ -1825,8 +2060,9 @@
                 ) {
                     const mentionRegex = new RegExp(`\\b@?${escapeRegex(selfHandleLower)}\\b`, "i");
                     if (mentionRegex.test(lowerText)) {
-                        maybeHandleAutoBurn({ target: displayName.replace(/^@+/, ""), message: plainOriginal, from: username });
                         el._autoBurnHandled = true;
+                        setBurnRuntimeStatus({ nickname: selfHandle, lastAttempt: `tag detected from @${displayName.replace(/^@+/, "")}` });
+                        void maybeHandleAutoBurn({ target: displayName.replace(/^@+/, ""), message: plainOriginal, from: username });
                     }
                 }
 
@@ -2104,8 +2340,19 @@
     }
 
     function detectMyNickname() {
-        const fromGlobal = storeNicknameIfValid(window?.Rumble?.currentUser?.username);
-        if (fromGlobal) return fromGlobal;
+        const globalCandidates = [
+            window?.Rumble?.currentUser?.username,
+            window?.Rumble?.user?.username,
+            window?.currentUser?.username,
+            window?.user?.username
+        ];
+        for (const candidate of globalCandidates) {
+            const resolved = storeNicknameIfValid(candidate);
+            if (resolved && resolved.toLowerCase() !== "guest") {
+                burnRuntimeStatus.nickname = resolved;
+                return resolved;
+            }
+        }
 
         const stored = sanitizeNickname(settings.myNickname);
         if (stored && stored.toLowerCase() !== "guest") {
@@ -2113,33 +2360,33 @@
                 settings.myNickname = stored;
                 saveSettings();
             }
+            burnRuntimeStatus.nickname = stored;
             return stored;
         }
 
-        if (settings.myNickname) {
-            settings.myNickname = "";
-            saveSettings();
-        }
-
         const selectors = [
+            "[data-self='true'][data-username]",
+            "[data-current-user][data-username]",
             ".user-info .username",
             ".header-username",
             ".nav-item--user .username",
+            ".header-user-menu [data-username]",
+            ".user-menu [data-username]",
             "[data-profile-username]",
             "[data-username][data-user-id]",
-            "[data-username][data-self='true']",
             "[data-username]"
         ];
-
         for (const selector of selectors) {
             const matches = document.querySelectorAll(selector);
             for (const element of matches) {
                 const resolved = storeNicknameIfValid(readNicknameFromElement(element));
-                if (resolved) return resolved;
+                if (resolved && resolved.toLowerCase() !== "guest") {
+                    burnRuntimeStatus.nickname = resolved;
+                    return resolved;
+                }
             }
         }
-
-        return "Guest";
+        return "";
     }
 
     function openDirectMessage(targetDisplayName) {
@@ -2364,6 +2611,8 @@
     window.rumbleBlocker.rebuildCuratedBurns = () => rebuildCuratedBurnsFromTranscript(true);
     window.rumbleBlocker.clearCuratedBurns = () => clearCuratedBurns();
     window.rumbleBlocker.formatOutgoing = (text) => formatOutgoingText(text);
+    window.rumbleBlocker.getBurnRuntimeStatus = () => ({ ...burnRuntimeStatus, nickname: detectMyNickname(), composerFound: !!findChatComposer() });
+    window.rumbleBlocker.sendChatMessage = (message) => sendChatMessage(String(message || ""));
     window.rumbleBlocker.getBurnEngines = () => ({
         curated: true,
         builtin: true,
