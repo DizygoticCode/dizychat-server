@@ -41,11 +41,11 @@ DizyChat is a Socket.IO and Express-powered real-time chat backend designed for 
 ### Live broadcast companions
 - The dedicated Psybin Radio room surfaces a mini audio player that streams the live station, polls `/api/psybin/now-playing` for metadata, and exposes play/pause, mute, and volume controls with resilient reconnect logic.
 - Rumble live streams pop into a draggable, resizable modal so viewers can park the broadcast alongside chat without losing context.
-- **Dizygotic Rumble Chat Companion v1.8** extends Rumble itself with blocking/highlighting, keyword filtering, transcript capture/export, configurable chat appearance, DizyChat DM handoff, notifications, and independently switchable auto-burn engines from the companion userscript in `scripts/tampermonkey/`.
+- **Dizygotic Rumble Chat Companion v1.8.1** extends Rumble itself with blocking/highlighting, keyword filtering, transcript capture/export, configurable chat appearance, DizyChat DM handoff, notifications, and independently switchable auto-burn engines from the companion userscript in `scripts/tampermonkey/`.
 - Watch2Gether watch-party launchers create synced W2G rooms from inside a DizyChat room while keeping the API key server-side.
 
 ### Recently added
-- **Rumble Chat Companion v1.8** – the companion userscript now adds a bounded passive transcript recorder with JSON/CSV export, configurable installed fonts/font sizes/text colours, per-character rainbow and multi-colour display modes, independently enableable burn engines, backward-compatible settings import/export, and the existing block/highlight/DM toolset.
+- **Rumble Chat Companion v1.8.1** – the companion userscript now adds a bounded passive transcript recorder with JSON/CSV export, configurable installed fonts/font sizes/text colours, per-character rainbow and multi-colour display modes, independently enableable burn engines, backward-compatible settings import/export, and the existing block/highlight/DM toolset. Auto-backup now silently overwrites a single localStorage backup slot with timestamp/filename metadata; only manual Export opens a download.
 - **Push-to-talk voice notes** – the web client exposes a hold-to-record microphone button that uploads and posts audio clips with automatic cleanup and status toasts so moderators can manage voice memos alongside regular attachments.
 - **Theme & density toggles** – users can flip between dark/light themes and compact/comfortable layouts, both of which persist per browser via local storage to keep the interface feeling familiar across sessions.
 - **Inline Rumble embeds** – links to Rumble videos auto-expand into responsive iframes so shared broadcasts can play without leaving the room.
