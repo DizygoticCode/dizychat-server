@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dizygotic Rumble Chat Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.9.5
+// @version      1.9.6
 // @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + transcript recorder/export + automated curated burn memory + outgoing message styling + auto-burn + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.
 // @author       Dizygotic
 // @match        https://rumble.com/*
@@ -69,6 +69,7 @@
         chatMultiPalette: "#ff4d4d,#ffa64d,#ffff4d,#4dff88,#4dd2ff,#8c4dff,#ff4dd2",
         autoBurnEnabled: false,
         autoBurnCooldownSeconds: 45,
+        autoBurnReplyDelaySeconds: 5,
         autoBurnEngine: "builtin",
         curatedBurnsEnabled: true,
         curatedBurnMinMessages: 8,
@@ -92,7 +93,7 @@
         defaultSettings.burnEnginesEnabled,
         settings.burnEnginesEnabled || {}
     );
-    // v1.9.5 keeps auto-burn hands-off and hardens live burn quality; retire any persisted review prompt.
+    // v1.9.6 adds a configurable pre-send reply delay while keeping auto-burn hands-off; retire any persisted review prompt.
     settings.curatedBurnReviewBeforeUse = false;
 
     function saveBlocklist() {
@@ -1032,13 +1033,15 @@
                 <label><input type="checkbox" id="autoBurnToggle"${settings.autoBurnEnabled ? " checked" : ""}> Reply when someone tags me</label>
                 <label>Cooldown</label>
                 <input type="number" id="autoBurnCooldownInput" min="5" value="${settings.autoBurnCooldownSeconds}" style="width:70px">
+                <label>Reply delay (sec)</label>
+                <input type="number" id="autoBurnReplyDelayInput" min="0" max="120" step="1" value="${settings.autoBurnReplyDelaySeconds}" style="width:70px">
                 <label>Primary engine</label>
                 <select id="autoBurnEngineSelect">${burnEngineRecommendations.map((r) => `<option value="${r.key}"${settings.autoBurnEngine === r.key ? " selected" : ""}>${r.label}</option>`).join("")}</select>
             </div>
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:7px;font-size:12px">
                 ${burnEngineRecommendations.map((r) => `<label><input type="checkbox" data-burn-engine-toggle="${r.key}"${settings.burnEnginesEnabled?.[r.key] !== false ? " checked" : ""}> ${r.label}</label>`).join("")}
             </div>
-            <div style="font-size:12px;color:gray;margin-top:4px">The Primary engine runs first. Curated now favours live quote-backs, exact-repeat evidence and repeated-tag escalation; savage built-ins are the first fallback. Weak or malformed generated mashups are discarded instead of sent. Burn replies still wait for an empty idle composer rather than trampling a message you are typing.</div>
+            <div style="font-size:12px;color:gray;margin-top:4px">Reply delay controls how long Burn Bot waits after generating a reply before it sends (5 seconds by default); Cooldown remains the minimum gap after a successful send. The Primary engine runs first. Curated favours live quote-backs, exact-repeat evidence and repeated-tag escalation; savage built-ins are the first fallback. Weak or malformed generated mashups are discarded instead of sent. Burn replies still wait for an empty idle composer rather than trampling a message you are typing.</div>
             <div style="font-size:12px;color:gray;margin-top:4px">Successful Burn Bot echoes are labelled with engine, target and font style in new transcript exports so future live tests can be analysed directly.</div>
             <div style="font-size:12px;color:gray;margin-top:4px">Compromise and RiTa are loaded by Tampermonkey via @require. Markov uses a local word-chain generator so a CDN package change cannot kill the whole userscript.</div>
             <textarea id="burnMarkovCorpusInput" placeholder="Optional Markov corpus — one burn/example per line" style="width:100%;height:58px;margin-top:6px">${settings.burnMarkovCorpus || ""}</textarea>
@@ -1155,6 +1158,10 @@
             settings.curatedBurnMaxPerUser = Math.max(3, Math.min(40, parseInt(panel.querySelector("#curatedBurnMaxPerUserInput")?.value, 10) || 12));
             settings.autoBurnEnabled = !!panel.querySelector("#autoBurnToggle")?.checked;
             settings.autoBurnCooldownSeconds = Math.max(5, parseInt(panel.querySelector("#autoBurnCooldownInput")?.value, 10) || 45);
+            const replyDelaySeconds = parseInt(panel.querySelector("#autoBurnReplyDelayInput")?.value, 10);
+            settings.autoBurnReplyDelaySeconds = Number.isFinite(replyDelaySeconds)
+                ? Math.max(0, Math.min(120, replyDelaySeconds))
+                : 5;
             settings.autoBurnEngine = panel.querySelector("#autoBurnEngineSelect")?.value || "builtin";
             settings.burnEnginesEnabled = Object.assign({}, defaultSettings.burnEnginesEnabled);
             panel.querySelectorAll("[data-burn-engine-toggle]").forEach((input) => {
@@ -2163,8 +2170,20 @@
             return;
         }
         burnSendInFlight = true;
-        setBurnRuntimeStatus({ lastAttempt: `generated via ${lastBurnEngineUsed} for @${ctx.target || ctx.from} · tag #${tagCount}` });
+        const configuredReplyDelay = Number(settings.autoBurnReplyDelaySeconds);
+        const replyDelaySeconds = Number.isFinite(configuredReplyDelay)
+            ? Math.max(0, Math.min(120, configuredReplyDelay))
+            : 5;
+        const replyDelayMs = replyDelaySeconds * 1000;
+        setBurnRuntimeStatus({ lastAttempt: `generated via ${lastBurnEngineUsed} for @${ctx.target || ctx.from} · tag #${tagCount} · replying in ${replyDelaySeconds}s` });
         try {
+            if (replyDelayMs > 0) {
+                await new Promise((resolve) => setTimeout(resolve, replyDelayMs));
+            }
+            if (!settings.autoBurnEnabled) {
+                setBurnRuntimeStatus({ lastAttempt: "cancelled: auto-burn disabled during reply delay" });
+                return;
+            }
             const sent = await sendChatMessage(response, { engine: lastBurnEngineUsed, target: ctx.target || ctx.from || "" });
             if (sent) {
                 lastBurnTimestamp = Date.now();
