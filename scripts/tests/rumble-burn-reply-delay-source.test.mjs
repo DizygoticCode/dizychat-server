@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
+// Source-contract regression for the Tampermonkey burn-delay controls and send ordering.
 const sourcePath = new URL("../tampermonkey/dizygotic-rumble-chat-tool.user.js", import.meta.url);
 const source = fs.readFileSync(sourcePath, "utf8");
 
