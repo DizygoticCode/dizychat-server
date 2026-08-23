@@ -10,14 +10,14 @@ The extension build reads the canonical userscript at:
 
 It extracts that file's `@version`, strips only the Tampermonkey metadata block, and packages the same companion core. There is deliberately no second copy of the Rumble feature logic under `browser-extension/`, so Greasy Fork/Tampermonkey and browser-store editions cannot silently drift apart.
 
-The extension preserves the blocker/highlighter, keyword filters, compact mode, timestamps, notifications, autoscroll lock, long-message handling, DizyChat DM handoff, transcript recorder/export, font and colour controls, rainbow/multi-colour local rendering, portable settings, draggable settings UI, and selectable burn engines.
+The extension preserves the blocker/highlighter, keyword filters, compact mode, timestamps, notifications, autoscroll lock, long-message handling, DizyChat DM handoff, transcript recorder/export, automatic local curated-burn memory, font and colour controls, rainbow/multi-colour local rendering, portable settings, draggable settings UI, and selectable burn engines.
 
 ## Manifest V3 dependency handling
 
 The Tampermonkey edition loads Compromise and RiTa with `@require`. Browser-store Manifest V3 builds instead download the pinned versions **at build time** and place them inside the extension package:
 
-- Compromise `14.7.0`
-- RiTa `2.0.2`
+- Compromise `14.14.4`
+- RiTa `3.2.16`
 
 The installed extension therefore executes packaged code only; it does not fetch executable JavaScript from a CDN at runtime.
 
