@@ -1,0 +1,79 @@
+name: Run Rumble v1.9.2 runtime repair
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/rumble-v192-run.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-validate-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/rumble-burn-runtime-v192
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Load exact patch from main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git show FETCH_HEAD:scripts/maintenance/rumble-v192-runtime-patch.py > /tmp/rumble-v192-runtime-patch.py
+          python /tmp/rumble-v192-runtime-patch.py
+
+      - name: Validate userscript contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          SCRIPT=scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+          node --check "$SCRIPT"
+          grep -F '// @version      1.9.2' "$SCRIPT"
+          grep -F 'maybeLearnSelfNickname(record);' "$SCRIPT"
+          grep -F 'async function sendChatMessage(message)' "$SCRIPT"
+          grep -F 'async function maybeHandleAutoBurn(ctx)' "$SCRIPT"
+          grep -F 'id="myNicknameInput"' "$SCRIPT"
+          grep -F 'id="autoBurnRuntimeStatus"' "$SCRIPT"
+          grep -F 'text/csv;charset=utf-8' "$SCRIPT"
+          grep -F 'application/json;charset=utf-8' "$SCRIPT"
+          grep -F 'same paste again — the archive has clocked this template' "$SCRIPT"
+          grep -F 'window.rumbleBlocker.getBurnRuntimeStatus' "$SCRIPT"
+          grep -F 'window.rumbleBlocker.sendChatMessage' "$SCRIPT"
+          git diff --check
+
+      - name: Build Chromium Firefox and Safari source
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./browser-extension/scripts/fetch-vendor.sh
+          node browser-extension/build.mjs
+          ./browser-extension/scripts/package.sh
+          test -f browser-extension/dist/dizygotic-rumble-chat-companion-v1.9.2-chromium.zip
+          test -f browser-extension/dist/dizygotic-rumble-chat-companion-v1.9.2-firefox.zip
+          test -f browser-extension/dist/dizygotic-rumble-chat-companion-v1.9.2-safari-source.zip
+          node --check browser-extension/dist/chromium/content.js
+          node --check browser-extension/dist/firefox/content.js
+          node --check browser-extension/dist/safari/content.js
+          cat browser-extension/dist/SHA256SUMS.txt
+
+      - name: Commit only validated product files
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf browser-extension/vendor browser-extension/dist
+          git add scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js README.md browser-extension/README.md
+          git diff --cached --check
+          test "$(git diff --cached --name-only | wc -l)" -eq 3
+          git diff --cached --name-only
+          git config user.name 'DizygoticCode'
+          git config user.email 'rob.noyce@gmail.com'
+          git commit -m 'Fix Rumble Burn Bot live composer runtime v1.9.2'
+          git push origin HEAD:fix/rumble-burn-runtime-v192
