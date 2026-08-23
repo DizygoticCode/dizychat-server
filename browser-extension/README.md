@@ -10,7 +10,7 @@ The extension build reads the canonical userscript at:
 
 It extracts that file's `@version`, strips only the Tampermonkey metadata block, and packages the same companion core. There is deliberately no second copy of the Rumble feature logic under `browser-extension/`, so Greasy Fork/Tampermonkey and browser-store editions cannot silently drift apart.
 
-The extension preserves the blocker/highlighter, keyword filters, compact mode, timestamps, notifications, autoscroll lock, long-message handling, DizyChat DM handoff, transcript recorder/export, automatic local curated-burn memory, outgoing Unicode font styles and outgoing single/rainbow/multi-colour rich-composer formatting, portable settings, draggable settings UI, and selectable burn engines.
+The extension preserves the blocker/highlighter, keyword filters, compact mode, timestamps, notifications, autoscroll lock, long-message handling, DizyChat DM handoff, transcript recorder/export, automatic local curated-burn memory, outgoing Unicode font styles and outgoing single/rainbow/multi-colour rich-composer formatting, portable settings, draggable settings UI, and selectable burn engines. v1.9.2 also hardens runtime composer discovery/submission, automatically learns the signed-in handle from an outgoing chat echo, exposes a manual handle fallback plus runtime diagnostics, and emits JSON/CSV downloads with matching MIME types.
 
 ## Manifest V3 dependency handling
 
