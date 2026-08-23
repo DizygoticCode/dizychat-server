@@ -1,30 +1,22 @@
 name: One-off Rumble burn reply delay v1.9.6
 
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened]
+  pull_request:
+    branches: [main]
+    types: [synchronize, reopened, ready_for_review]
 
 permissions:
-  contents: write
-  pull-requests: read
+  contents: read
 
 jobs:
-  test-and-patch:
+  verify:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/rumble-burn-reply-delay-v196'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: fix/rumble-burn-reply-delay-v196
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
-
-      - name: Apply implementation patch when present
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -f scripts/patch-rumble-burn-delay-v196.py ]; then
-            python scripts/patch-rumble-burn-delay-v196.py
-          fi
 
       - name: Run burn reply delay regression test
         run: node --test scripts/tests/rumble-burn-reply-delay-source.test.mjs
@@ -32,22 +24,5 @@ jobs:
       - name: Verify userscript syntax
         run: node --check scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
 
-      - name: Verify diff whitespace
-        run: git diff --check
-
-      - name: Commit verified implementation when patch helper exists
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ ! -f scripts/patch-rumble-burn-delay-v196.py ]; then
-            exit 0
-          fi
-          rm scripts/patch-rumble-burn-delay-v196.py
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js \
-            scripts/tests/rumble-burn-reply-delay-source.test.mjs \
-            scripts/patch-rumble-burn-delay-v196.py
-          git diff --cached --check
-          git commit -m 'Add configurable Burn Bot reply delay v1.9.6'
-          git push origin HEAD:fix/rumble-burn-reply-delay-v196
+      - name: Verify PR diff whitespace
+        run: git diff --check origin/main...HEAD
