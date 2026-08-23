@@ -29,6 +29,7 @@ jobs:
           if grep -q '^// @version      1\.9\.1$' scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js; then
             echo 'v1.9.1 already applied'
           else
+            sed -i 's/helper_re\.subn(new_helpers, s, count=1)/helper_re.subn(lambda _m: new_helpers, s, count=1)/' scripts/tampermonkey/apply-v191-outgoing.py
             python scripts/tampermonkey/apply-v191-outgoing.py
           fi
 
