@@ -20,6 +20,13 @@ test("burn reply delay remains bounded with a 5 second default", () => {
   assert.match(source, /settings\.autoBurnReplyDelaySeconds\s*=\s*Number\.isFinite\(replyDelaySeconds\)[\s\S]*?Math\.max\(0, Math\.min\(120, replyDelaySeconds\)\)[\s\S]*?:\s*5;/);
 });
 
+test("auto-burn cooldown accepts the configured one-second minimum", () => {
+  assert.match(source, /id="autoBurnCooldownInput" min="1"/);
+  assert.match(source, /settings\.autoBurnCooldownSeconds\s*=\s*Math\.max\(1,/);
+  const fn = autoBurnFunctionSource();
+  assert.match(fn, /const cooldownMs = Math\.max\(1, settings\.autoBurnCooldownSeconds \|\| 45\) \* 1000;/);
+});
+
 test("auto-burn holds the in-flight lock while waiting and delays before send", () => {
   const fn = autoBurnFunctionSource();
   const lockIndex = fn.indexOf("burnSendInFlight = true;");
