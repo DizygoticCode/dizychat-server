@@ -1,40 +1,71 @@
 name: One-off Rumble Curated v1.10.1
 
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review]
+  issues:
+    types: [opened]
 
 permissions:
-  contents: read
+  contents: write
   issues: write
-  pull-requests: read
 
 jobs:
-  verify:
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/rumble-curated-relevance-v1101'
+  patch-and-verify:
+    if: github.event.issue.title == 'PATCH_RUMBLE_V1101'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: fix/rumble-curated-relevance-v1101
           fetch-depth: 0
-      - name: Run Curated v1.10.1 contract
-        id: contract
-        continue-on-error: true
+      - name: Prove RED contract before production patch
+        shell: bash
+        run: |
+          set +e
+          node --test scripts/tests/rumble-curated-relevance-v1101-source.test.mjs > /tmp/red.log 2>&1
+          rc=$?
+          cat /tmp/red.log
+          if [ "$rc" -eq 0 ]; then
+            echo 'RED contract unexpectedly passed before implementation'
+            exit 1
+          fi
+          echo 'RED contract failed as expected'
+      - name: Apply v1.10.1 implementation
+        run: python scripts/patch-rumble-curated-v1101.py
+      - name: Run v1.10.1 contract GREEN
         run: node --test scripts/tests/rumble-curated-relevance-v1101-source.test.mjs
-      - name: Report contract result on PR
+      - name: Run all Rumble source regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          for testfile in scripts/tests/rumble-*-source.test.mjs; do
+            node --test "$testfile"
+          done
+      - name: Verify userscript syntax
+        run: node --check scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+      - name: Verify diff whitespace
+        run: git diff --check origin/main...HEAD
+      - name: Commit verified implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm scripts/patch-rumble-curated-v1101.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js \
+            scripts/tests/rumble-curated-v2-source.test.mjs \
+            scripts/tests/rumble-curated-relevance-v1101-source.test.mjs \
+            scripts/patch-rumble-curated-v1101.py
+          git diff --cached --check
+          git commit -m 'Tune Rumble Burn Bot relevance and personas v1.10.1'
+          git push origin HEAD:fix/rumble-curated-relevance-v1101
+      - name: Report result
         if: always()
         uses: actions/github-script@v7
         with:
           script: |
-            const outcome = '${{ steps.contract.outcome }}';
-            const sha = context.payload.pull_request.head.sha;
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: `Curated v1.10.1 verifier: **${outcome.toUpperCase()}** on \`${sha}\``
-            });
-      - name: Enforce contract result
-        if: steps.contract.outcome != 'success'
-        run: exit 1
+            const ok = '${{ job.status }}' === 'success';
+            const body = ok
+              ? 'v1.10.1 RED→GREEN patch/verification completed successfully on `fix/rumble-curated-relevance-v1101`.'
+              : 'v1.10.1 patch/verification failed. Branch was not claimed green.';
+            await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body });
+            if (ok) await github.rest.issues.update({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, state: 'closed' });
