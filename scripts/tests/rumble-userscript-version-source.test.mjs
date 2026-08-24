@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
+// Temporary synchronization marker for the PR verifier.
 const sourcePath = new URL("../tampermonkey/dizygotic-rumble-chat-tool.user.js", import.meta.url);
 const source = fs.readFileSync(sourcePath, "utf8");
 
