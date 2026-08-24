@@ -52,9 +52,7 @@ test("aliases use the same automatic burn queue with case-insensitive whole-toke
   assert.match(matcher, /\[\^A-Za-z0-9_\]/);
   assert.match(matcher, /"i"/);
 
-  const refresh = between("function refreshBlockedMessages()", "function clearBlockedMessages()");
-  assert.match(refresh, /matchesAutoBurnTrigger\(plainOriginal, selfHandleLower\)/);
-  assert.match(refresh, /void maybeHandleAutoBurn\(/);
+  assert.match(source, /function refreshBlockedMessages\(\)[\s\S]*?matchesAutoBurnTrigger\(plainOriginal, selfHandleLower\)[\s\S]*?void maybeHandleAutoBurn\(/);
 });
 
 test("master toggle applies immediately and clears queued replies when turned off", () => {
