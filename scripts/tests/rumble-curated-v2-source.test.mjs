@@ -18,7 +18,7 @@ function quotedStringCount(block) {
 }
 
 test("v1.10+ ships a bounded structured Curated seed bank", () => {
-  assert.match(source, /\/\/ @version\s+1\.(?:10|11)\.\d+/);
+  assert.match(source, /\/\/ @version\s+1\.(?:10|11|12)\.\d+/);
   assert.match(source, /const CURATED_BURNS_SCHEMA = 2;/);
   const bank = between("const CURATED_SEED_BLUEPRINTS = Object.freeze({", "const CURATED_SEED_TEMPLATE_COUNT");
   const required = [
