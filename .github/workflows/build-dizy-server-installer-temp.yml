@@ -1,17 +1,11 @@
 name: Build temporary DIZY Server Installer
 
 on:
-  push:
-    branches:
-      - build/dizy-server-installer-2404
-    paths:
-      - 'installer/dizy-server-source.part-*'
-      - '.github/workflows/build-dizy-server-installer-temp.yml'
   pull_request:
     branches:
       - build/dizy-server-installer-2404
     paths:
-      - 'installer/**'
+      - 'installer/DIZY-ISO-BUILD-TRIGGER.txt'
       - '.github/workflows/build-dizy-server-installer-temp.yml'
   workflow_dispatch:
 
@@ -31,26 +25,19 @@ jobs:
         run: |
           set -euo pipefail
           cat \
-            installer/dizy-server-source.part-01 \
-            installer/dizy-server-source.part-02 \
-            installer/dizy-server-source.part-03 \
-            installer/dizy-server-source.part-04 \
+            installer/dizy-server-source-v3.part-01 \
+            installer/dizy-server-source-v3.part-02 \
+            installer/dizy-server-source-v3.part-03 \
+            installer/dizy-server-source-v3.part-04 \
+            installer/dizy-server-source-v3.part-05 \
+            installer/dizy-server-source-v3.part-06 \
             > /tmp/dizy-server-source.b64
           base64 --decode /tmp/dizy-server-source.b64 > /tmp/dizy-server-source.tar.gz
           mkdir -p installer/dizy-server
           tar -xzf /tmp/dizy-server-source.tar.gz -C installer/dizy-server
+          test -f installer/dizy-server/.github/workflows/build-dizy-server-installer.yml
           test -x installer/dizy-server/scripts/build-iso.sh || chmod +x installer/dizy-server/scripts/build-iso.sh
           test -x installer/dizy-server/tests/verify_iso.sh || chmod +x installer/dizy-server/tests/verify_iso.sh
-
-      - name: Upload reconstructed source for packaging repair
-        uses: actions/upload-artifact@v4
-        with:
-          name: DIZY-reconstructed-source
-          path: installer/dizy-server
-          include-hidden-files: true
-          compression-level: 0
-          retention-days: 1
-          if-no-files-found: error
 
       - name: Install ISO build and validation tools
         run: |
