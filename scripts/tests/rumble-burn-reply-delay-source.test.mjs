@@ -45,7 +45,5 @@ test("the queue drains serially and keeps the configured reply delay between tag
   assert.match(block, /await new Promise\(\(resolve\) => setTimeout\(resolve, replyDelayMs\)\);/);
   assert.match(block, /await sendChatMessage\(/);
   assert.match(block, /Math\.max\(0, Math\.min\(120, configuredReplyDelay\)\)/);
-  assert.match(block, /if \(!settings\.autoBurnEnabled\)/);
+  assert.match(block, /if \(!settings\.burnMasterEnabled \|\| !settings\.autoBurnEnabled\)/);
 });
-
-// synchronize trigger after retargeting PR #345 onto its temporary CI base.
