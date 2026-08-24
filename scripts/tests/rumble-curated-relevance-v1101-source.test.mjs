@@ -102,6 +102,7 @@ test("DRILL SARGE is a separate explicitly selected engine and never a normal fa
   const generate = between("function generateBurnResponse(ctx)", "async function maybeHandleAutoBurn(ctx)");
   assert.match(generate, /primary === "drill"/);
   assert.match(generate, /if \(engine === "drill"\)/);
-  const fallback = between("const normalFallbackOrder =", "const custom =");
-  assert.doesNotMatch(fallback, /["']drill["']/);
+  const fallbackMatch = generate.match(/const normalFallbackOrder = \[([^\]]*)\];/);
+  assert.ok(fallbackMatch, "normal fallback order should be explicit");
+  assert.doesNotMatch(fallbackMatch[1], /["']drill["']/);
 });
