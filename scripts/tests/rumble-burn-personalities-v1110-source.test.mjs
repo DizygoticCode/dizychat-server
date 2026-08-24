@@ -23,6 +23,8 @@ const personalities = [
   "australian",
   "american",
   "indian_callcentre",
+  "chinese",
+  "japanese",
   "dizycat",
   "derp",
   "incel"
@@ -56,12 +58,18 @@ test("each requested personality has an original style bank", () => {
   assert.match(personality, /ticket|verification|restart your argument/i);
   assert.match(personality, /DERP/i);
   assert.match(personality, /basement|forum|discord/i);
+  assert.match(personality, /quality control|factory|specification|inspection/i);
+  assert.match(personality, /meeting|manual|precision|formal/i);
 });
 
-test("Indian call-centre and incel styles roast behaviour rather than protected traits", () => {
+test("country/archetype styles roast behaviour rather than protected traits", () => {
   const personality = between("const BURN_PERSONALITY_KEYS = Object.freeze([", "function drillPrivateName(target)");
-  const indian = personality.slice(personality.indexOf("indian_callcentre:"), personality.indexOf("dizycat:"));
+  const indian = personality.slice(personality.indexOf("indian_callcentre:"), personality.indexOf("chinese:"));
   assert.doesNotMatch(indian, /paki|curry|dothead|brown skin/i);
+  const chinese = personality.slice(personality.indexOf("chinese:"), personality.indexOf("japanese:"));
+  assert.doesNotMatch(chinese, /chink|yellow|rice|eyes/i);
+  const japanese = personality.slice(personality.indexOf("japanese:"), personality.indexOf("dizycat:"));
+  assert.doesNotMatch(japanese, /jap\b|yellow|rice|eyes/i);
   const incel = personality.slice(personality.indexOf("incel:"), personality.indexOf("};", personality.indexOf("incel:")));
   assert.doesNotMatch(incel, /women are|girls are|female[s]? are|bitch(?:es)? are/i);
 });
@@ -75,7 +83,7 @@ test("random personality rotates only safe personalities and never DRILL SARGE",
   const generate = between("function generateBurnResponse(ctx)", "async function maybeHandleAutoBurn(ctx)");
   const fallbackMatch = generate.match(/const normalFallbackOrder = \[([^\]]*)\];/);
   assert.ok(fallbackMatch, "normal fallback order should remain explicit");
-  assert.doesNotMatch(fallbackMatch[1], /drill|british|scottish|irish|welsh|canadian|southern|australian|american|indian_callcentre|dizycat|derp|incel|random_personality/);
+  assert.doesNotMatch(fallbackMatch[1], /drill|british|scottish|irish|welsh|canadian|southern|australian|american|indian_callcentre|chinese|japanese|dizycat|derp|incel|random_personality/);
 });
 
 test("selected personalities render before normal fallback and preserve the outbound firewall", () => {
