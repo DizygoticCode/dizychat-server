@@ -110,5 +110,3 @@ test("panel reports the Curated seed-bank size", () => {
 test("Curated keeps up to 300 learned user profiles", () => {
   assert.match(source, /const CURATED_MAX_USERS = 300;/);
 });
-
-// TDD RED synchronization marker for the temporary PR verifier.
