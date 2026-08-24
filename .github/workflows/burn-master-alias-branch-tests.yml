@@ -7,20 +7,40 @@ on:
     paths:
       - 'scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js'
       - 'scripts/tests/**'
+      - 'scripts/patch-rumble-burn-master-alias.mjs'
       - '.github/workflows/burn-master-alias-branch-tests.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   source-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: feat/burn-master-alias-triggers
+          persist-credentials: true
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Apply guarded v1.12.1 patch when needed
+        run: |
+          if grep -q '^// @version      1\.12\.0$' scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js; then
+            node scripts/patch-rumble-burn-master-alias.mjs
+          fi
       - name: Check userscript syntax
         run: node --check scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
       - name: Run userscript source tests
         run: node --test scripts/tests/*.test.mjs
+      - name: Commit verified userscript
+        run: |
+          if git diff --quiet -- scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js; then
+            echo 'Userscript already patched.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+          git commit -m 'Add Burn Bot master switch and alias triggers'
+          git push origin HEAD:feat/burn-master-alias-triggers
