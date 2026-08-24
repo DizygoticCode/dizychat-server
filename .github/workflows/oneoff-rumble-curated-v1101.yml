@@ -30,6 +30,8 @@ jobs:
             exit 1
           fi
           echo 'RED contract failed as expected'
+      - name: Disambiguate patch helper anchor
+        run: python scripts/fix-v1101-helper-anchor.py
       - name: Apply v1.10.1 implementation
         id: patch
         continue-on-error: true
@@ -88,13 +90,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm scripts/patch-rumble-curated-v1101.py
+          rm scripts/patch-rumble-curated-v1101.py scripts/fix-v1101-helper-anchor.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js \
             scripts/tests/rumble-curated-v2-source.test.mjs \
             scripts/tests/rumble-curated-relevance-v1101-source.test.mjs \
-            scripts/patch-rumble-curated-v1101.py
+            scripts/patch-rumble-curated-v1101.py \
+            scripts/fix-v1101-helper-anchor.py
           git diff --cached --check
           git commit -m 'Tune Rumble Burn Bot relevance and personas v1.10.1'
           git push origin HEAD:fix/rumble-curated-relevance-v1101
