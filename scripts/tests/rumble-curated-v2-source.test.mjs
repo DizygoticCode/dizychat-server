@@ -106,3 +106,7 @@ test("panel reports the Curated seed-bank size", () => {
   assert.match(source, /CURATED_SEED_TEMPLATE_COUNT\.toLocaleString\(\)/);
   assert.match(source, /seed combinations/);
 });
+
+test("Curated keeps up to 300 learned user profiles", () => {
+  assert.match(source, /const CURATED_MAX_USERS = 300;/);
+});
