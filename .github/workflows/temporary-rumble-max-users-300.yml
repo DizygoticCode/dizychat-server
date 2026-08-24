@@ -1,0 +1,62 @@
+name: Temporary Rumble Curated max users 300 verifier
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  verify:
+    if: github.event.issue.title == 'VERIFY RUMBLE MAX USERS 300'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/rumble-curated-max-users-300
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Record tested head
+        id: head
+        shell: bash
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Verify userscript syntax
+        run: node --check scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+
+      - name: Run Rumble source regressions
+        run: node --test scripts/tests/*.test.mjs
+
+      - name: Record success
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_URL: ${{ github.event.issue.comments_url }}
+          TESTED_SHA: ${{ steps.head.outputs.sha }}
+        shell: bash
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$ISSUE_URL" \
+            -d "{\"body\":\"✅ Rumble max-users verifier GREEN on exact branch head $TESTED_SHA: userscript syntax and all scripts/tests/*.test.mjs passed.\"}"
+
+      - name: Record failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_URL: ${{ github.event.issue.comments_url }}
+          TESTED_SHA: ${{ steps.head.outputs.sha }}
+        shell: bash
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$ISSUE_URL" \
+            -d "{\"body\":\"❌ Rumble max-users verifier RED on exact branch head $TESTED_SHA. Inspect the failing source regression before production changes.\"}"
