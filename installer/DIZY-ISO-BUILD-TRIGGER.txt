@@ -1,2 +1,3 @@
 Temporary exact-head trigger for DIZY Server Installer ISO build.
 No production code or secrets.
+Retry after exact chunk reconstruction fix.
