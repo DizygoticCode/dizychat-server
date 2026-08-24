@@ -41,7 +41,6 @@ jobs:
           python scripts/patch-rumble-curated-v1101.py > /tmp/patch.log 2>&1
           rc=$?
           cat /tmp/patch.log
-          echo "rc=$rc" >> "$GITHUB_OUTPUT"
           exit $rc
       - name: Report patch diagnostic
         if: steps.patch.outcome != 'success'
@@ -76,17 +75,68 @@ jobs:
         if: steps.green.outcome != 'success'
         run: exit 1
       - name: Run all Rumble source regressions
+        id: regress
+        continue-on-error: true
         shell: bash
         run: |
-          set -euo pipefail
+          set +e
+          : > /tmp/regress.log
+          rc=0
           for testfile in scripts/tests/rumble-*-source.test.mjs; do
-            node --test "$testfile"
+            echo "===== $testfile =====" | tee -a /tmp/regress.log
+            node --test "$testfile" >> /tmp/regress.log 2>&1 || rc=$?
+            if [ "$rc" -ne 0 ]; then break; fi
           done
+          cat /tmp/regress.log
+          exit $rc
+      - name: Report regression diagnostic
+        if: steps.regress.outcome != 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const log = fs.existsSync('/tmp/regress.log') ? fs.readFileSync('/tmp/regress.log','utf8').slice(-10000) : 'no regression log';
+            await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body: `v1.10.1 broader regression failed:\n\n\`\`\`text\n${log}\n\`\`\`` });
+      - name: Enforce regression success
+        if: steps.regress.outcome != 'success'
+        run: exit 1
       - name: Verify userscript syntax
+        id: syntax
+        continue-on-error: true
         run: node --check scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+      - name: Report syntax diagnostic
+        if: steps.syntax.outcome != 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body: 'v1.10.1 userscript syntax check failed.' });
+      - name: Enforce syntax success
+        if: steps.syntax.outcome != 'success'
+        run: exit 1
       - name: Verify diff whitespace
-        run: git diff --check origin/main...HEAD
+        id: diffcheck
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          git diff --check origin/main...HEAD > /tmp/diffcheck.log 2>&1
+          rc=$?
+          cat /tmp/diffcheck.log
+          exit $rc
+      - name: Report diff diagnostic
+        if: steps.diffcheck.outcome != 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const log = fs.existsSync('/tmp/diffcheck.log') ? fs.readFileSync('/tmp/diffcheck.log','utf8').slice(-6000) : 'no diff log';
+            await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body: `v1.10.1 diff check failed:\n\n\`\`\`text\n${log}\n\`\`\`` });
+      - name: Enforce diff success
+        if: steps.diffcheck.outcome != 'success'
+        run: exit 1
       - name: Commit verified implementation
+        id: commitstep
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -101,6 +151,15 @@ jobs:
           git diff --cached --check
           git commit -m 'Tune Rumble Burn Bot relevance and personas v1.10.1'
           git push origin HEAD:fix/rumble-curated-relevance-v1101
+      - name: Report commit diagnostic
+        if: steps.commitstep.outcome != 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body: 'v1.10.1 commit/push step failed after tests were green.' });
+      - name: Enforce commit success
+        if: steps.commitstep.outcome != 'success'
+        run: exit 1
       - name: Report result
         if: always()
         uses: actions/github-script@v7
