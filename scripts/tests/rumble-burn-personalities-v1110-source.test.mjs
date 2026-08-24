@@ -31,7 +31,7 @@ const personalities = [
 ];
 
 test("v1.11+ exposes the personality engines in Burn Bot preferences", () => {
-  assert.match(source, /\/\/ @version\s+1\.11\.\d+/);
+  assert.match(source, /\/\/ @version\s+1\.(?:11|12)\.\d+/);
   const recommendations = between("const burnEngineRecommendations = [", "];\n\n    const CURATED_STOP_WORDS");
   for (const key of personalities) assert.match(recommendations, new RegExp(`key: ["']${key}["']`));
   assert.match(recommendations, /key: ["']random_personality["']/);
