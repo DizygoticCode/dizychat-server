@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-// Final-head read-only verification trigger; production userscript is unchanged by this commit.
 const sourcePath = new URL("../tampermonkey/dizygotic-rumble-chat-tool.user.js", import.meta.url);
 const source = fs.readFileSync(sourcePath, "utf8");
 
@@ -107,6 +106,26 @@ test("panel reports the Curated seed-bank size", () => {
   assert.match(source, /seed combinations/);
 });
 
-test("Curated keeps up to 300 learned user profiles", () => {
-  assert.match(source, /const CURATED_MAX_USERS = 300;/);
+test("Curated memory limits scale from the settings panel instead of hard-coded ceilings", () => {
+  assert.match(source, /curatedBurnMaxPerUser:\s*60,/);
+  assert.match(source, /curatedBurnMaxUsers:\s*0,/);
+  assert.doesNotMatch(source, /const CURATED_MAX_USERS = 300;/);
+  assert.match(source, /id="curatedBurnMaxPerUserInput" min="3" value=/);
+  assert.doesNotMatch(source, /id="curatedBurnMaxPerUserInput"[^>]*max="40"/);
+  assert.match(source, /id="curatedBurnMaxUsersInput" min="0" value=/);
+  const prune = between("function pruneCuratedStore()", "function saveCuratedBurnStore()");
+  assert.match(prune, /const maxUsers = Math\.max\(0,/);
+  assert.match(prune, /if \(maxUsers > 0 && users\.length > maxUsers\)/);
+});
+
+test("Curated rebuild is single-flight, yields to the UI, and reports progress", () => {
+  assert.match(source, /let curatedRebuildPromise = null;/);
+  assert.match(source, /let curatedRebuildProgress =/);
+  const rebuild = between("async function rebuildCuratedBurnsFromTranscript(reset = true)", "function backfillCuratedBurnsFromTranscript()");
+  assert.match(rebuild, /if \(curatedRebuildPromise\) return curatedRebuildPromise;/);
+  assert.match(rebuild, /curatedRebuildProgress\.processed/);
+  assert.match(rebuild, /setTimeout\(resolve, 0\)/);
+  assert.match(source, /Rebuilding curated memory/);
+  assert.match(source, /rebuildCuratedBtn\.disabled = true/);
+  assert.match(source, /rebuildCuratedBtn\.disabled = false/);
 });
