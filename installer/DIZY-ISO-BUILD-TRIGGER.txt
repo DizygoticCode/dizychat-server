@@ -1,3 +1,3 @@
 Temporary exact-head trigger for DIZY Server Installer ISO build.
 No production code or secrets.
-Verify Ubuntu checksum-format repair through full ISO build and verifier gate.
+Verify final artifact checksum from the out directory and upload the verified ISO.
