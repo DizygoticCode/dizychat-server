@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-// Trigger the read-only PR verifier after its workflow exists on main.
 const sourcePath = new URL("../tampermonkey/dizygotic-rumble-chat-tool.user.js", import.meta.url);
 const source = fs.readFileSync(sourcePath, "utf8");
 
@@ -43,6 +42,9 @@ test("every generated burn passes the final outbound account-protection firewall
   const clean = between("function cleanGeneratedBurn(text, target)", "function burnResponseKey(text)");
   assert.match(clean, /isBlockedBurnSubject\(candidate\)/);
   assert.match(clean, /BURN_DIRECT_THREAT_PATTERN\.test\(candidate\)/);
+
+  const send = between("async function sendChatMessage(message, meta = {})", "function generateBurnResponse(ctx)");
+  assert.match(send, /isBlockedBurnSubject\(message\)/);
 
   const generate = between("function generateBurnResponse(ctx)", "async function maybeHandleAutoBurn(ctx)");
   assert.match(generate, /cleanGeneratedBurn\(result, normalizedCtx\.target\)/);
@@ -89,4 +91,17 @@ test("Curated ships a British DIZY banter family and rotates local insults", () 
   const classify = between("function classifyCuratedContext(ctx, profile)", "function buildSeededCuratedCandidates(");
   assert.match(classify, /bump\("british_banter"/);
   assert.match(source, /recentSeedFamilies/);
+});
+
+test("DRILL SARGE is a separate explicitly selected engine and never a normal fallback", () => {
+  assert.match(source, /\{ key: "drill", label: "DRILL SARGE/);
+  assert.match(source, /function drillPrivateName\(target\)/);
+  assert.match(source, /const drillSargeBurns = \[/);
+  assert.match(source, /PRIVATE \$\{drillPrivateName\(target\)\}/);
+  assert.match(source, /joker747/i);
+  const generate = between("function generateBurnResponse(ctx)", "async function maybeHandleAutoBurn(ctx)");
+  assert.match(generate, /primary === "drill"/);
+  assert.match(generate, /if \(engine === "drill"\)/);
+  const fallback = between("const normalFallbackOrder =", "const custom =");
+  assert.doesNotMatch(fallback, /["']drill["']/);
 });
