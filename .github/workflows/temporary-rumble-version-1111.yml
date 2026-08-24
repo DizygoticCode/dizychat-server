@@ -6,17 +6,80 @@ on:
       - fix/rumble-userscript-version-1111
 
 permissions:
-  contents: read
+  contents: write
+  issues: write
+  pull-requests: write
 
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: fix/rumble-userscript-version-1111
+          fetch-depth: 0
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+
+      - name: Bump Tampermonkey metadata to v1.11.1 if needed
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js')
+          text = path.read_text()
+          old = '// @version      1.11.0'
+          new = '// @version      1.11.1'
+          if old in text:
+              if text.count(old) != 1:
+                  raise SystemExit('expected exactly one v1.11.0 metadata line')
+              path.write_text(text.replace(old, new, 1))
+          elif new not in text:
+              raise SystemExit('userscript metadata is neither v1.11.0 nor v1.11.1')
+          PY
+          if ! git diff --quiet -- scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+            git commit -m 'fix: bump Rumble userscript to v1.11.1'
+            git push origin HEAD:fix/rumble-userscript-version-1111
+          fi
+
+      - name: Capture exact tested head
+        id: head
+        shell: bash
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Userscript syntax
         run: node --check scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+
       - name: Rumble source regressions
         run: node --test scripts/tests/*.test.mjs
+
+      - name: Comment GREEN on PR 343
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TESTED_SHA: ${{ steps.head.outputs.sha }}
+        shell: bash
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/343/comments" \
+            -d "{\"body\":\"✅ v1.11.1 verifier GREEN on exact head $TESTED_SHA: userscript syntax and all scripts/tests/*.test.mjs passed.\"}"
+
+      - name: Comment RED on PR 343
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TESTED_SHA: ${{ steps.head.outputs.sha }}
+        shell: bash
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/343/comments" \
+            -d "{\"body\":\"❌ v1.11.1 verifier RED on head $TESTED_SHA. Inspect the failed metadata/syntax/source regression step.\"}"
