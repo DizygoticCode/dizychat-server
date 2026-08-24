@@ -5,7 +5,7 @@ on:
     branches:
       - build/dizy-server-installer-2404
     paths:
-      - 'installer/dizy-server-source.part-*'
+      - 'installer/dizy-server-source-v2.b64'
       - '.github/workflows/build-dizy-server-installer-temp.yml'
   pull_request:
     branches:
@@ -30,17 +30,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat \
-            installer/dizy-server-source.part-01 \
-            installer/dizy-server-source.part-02 \
-            installer/dizy-server-source.part-03 \
-            installer/dizy-server-source.part-04 \
-            > /tmp/dizy-server-source.b64
-          base64 --decode /tmp/dizy-server-source.b64 > /tmp/dizy-server-source.tar.gz
+          base64 --decode installer/dizy-server-source-v2.b64 > /tmp/dizy-server-source.tar.gz
           mkdir -p installer/dizy-server
           tar -xzf /tmp/dizy-server-source.tar.gz -C installer/dizy-server
-          mkdir -p installer/dizy-server/.github/workflows
-          cp .github/workflows/build-dizy-server-installer-temp.yml installer/dizy-server/.github/workflows/build-dizy-server-installer.yml
+          test -f installer/dizy-server/.github/workflows/build-dizy-server-installer.yml
           test -x installer/dizy-server/scripts/build-iso.sh || chmod +x installer/dizy-server/scripts/build-iso.sh
           test -x installer/dizy-server/tests/verify_iso.sh || chmod +x installer/dizy-server/tests/verify_iso.sh
 
