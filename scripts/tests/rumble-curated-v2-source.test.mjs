@@ -18,14 +18,14 @@ function quotedStringCount(block) {
   return [...block.matchAll(/`(?:\\.|[^`])*`|"(?:\\.|[^"])*"/g)].length;
 }
 
-test("v1.10.0 ships a 300-500 combination structured Curated seed bank", () => {
-  assert.match(source, /\/\/ @version\s+1\.10\.0/);
+test("v1.10.x ships a bounded structured Curated seed bank", () => {
+  assert.match(source, /\/\/ @version\s+1\.10\.\d+/);
   assert.match(source, /const CURATED_BURNS_SCHEMA = 2;/);
   const bank = between("const CURATED_SEED_BLUEPRINTS = Object.freeze({", "const CURATED_SEED_TEMPLATE_COUNT");
   const required = [
     "weak_comeback", "bad_argument", "overconfidence", "repetition", "contradiction",
     "moving_goalposts", "no_evidence", "too_much_talking", "failed_roast", "tag_pressure",
-    "self_own", "topic_dodge", "generic_savage"
+    "self_own", "topic_dodge", "finisher", "british_banter", "generic_savage"
   ];
   required.forEach((category) => assert.match(bank, new RegExp(`\\b${category}:\\s*\\{`)));
 
@@ -34,7 +34,7 @@ test("v1.10.0 ships a 300-500 combination structured Curated seed bank", () => {
   assert.equal(categories.length, required.length, "all seed categories should use the tested blueprint shape");
   const combinations = categories.reduce((sum, match) => sum + quotedStringCount(match[2]) * quotedStringCount(match[3]), 0);
   assert.ok(combinations >= 300, `expected at least 300 seed combinations, got ${combinations}`);
-  assert.ok(combinations <= 500, `expected at most 500 seed combinations, got ${combinations}`);
+  assert.ok(combinations <= 520, `expected at most 520 seed combinations, got ${combinations}`);
   assert.match(source, /CURATED_SEED_TEMPLATE_COUNT\s*=\s*Object\.values\(CURATED_SEED_BLUEPRINTS\)/);
 });
 
@@ -49,7 +49,8 @@ test("Curated classifies live context into relevant roast families", () => {
   const classify = between("function classifyCuratedContext(ctx, profile)", "function buildSeededCuratedCandidates(");
   [
     "repetition", "contradiction", "moving_goalposts", "no_evidence", "overconfidence",
-    "too_much_talking", "failed_roast", "tag_pressure", "self_own", "topic_dodge", "weak_comeback"
+    "too_much_talking", "failed_roast", "tag_pressure", "self_own", "topic_dodge", "weak_comeback",
+    "finisher", "british_banter"
   ].forEach((category) => assert.match(classify, new RegExp(`['\"]${category}['\"]`)));
   assert.match(classify, /tagCount/);
   assert.match(classify, /repeatStat/);
