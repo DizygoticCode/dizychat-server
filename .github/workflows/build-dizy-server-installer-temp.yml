@@ -27,7 +27,10 @@ jobs:
           cat \
             installer/dizy-server-source-v3.part-01 \
             installer/dizy-server-source-v3.part-02 \
-            installer/dizy-server-source-v3.part-03 \
+            installer/dizy-server-source-v3.part-03a \
+            installer/dizy-server-source-v3.part-03b \
+            installer/dizy-server-source-v3.part-03c \
+            installer/dizy-server-source-v3.part-03d \
             installer/dizy-server-source-v3.part-04 \
             installer/dizy-server-source-v3.part-05 \
             installer/dizy-server-source-v3.part-06 \
