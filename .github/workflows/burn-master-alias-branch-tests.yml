@@ -1,0 +1,26 @@
+name: Burn master alias branch tests
+
+on:
+  push:
+    branches:
+      - feat/burn-master-alias-triggers
+    paths:
+      - 'scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js'
+      - 'scripts/tests/**'
+      - '.github/workflows/burn-master-alias-branch-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  source-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check userscript syntax
+        run: node --check scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+      - name: Run userscript source tests
+        run: node --test scripts/tests/*.test.mjs
