@@ -1,0 +1,22 @@
+name: Rumble userscript source tests
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js'
+      - 'scripts/tests/**'
+      - '.github/workflows/rumble-userscript-source-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  source-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run userscript source tests
+        run: node --test scripts/tests/*.test.mjs
