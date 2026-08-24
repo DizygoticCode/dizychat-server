@@ -5,7 +5,7 @@ on:
     types: [opened, synchronize, reopened]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   verify:
@@ -26,6 +26,31 @@ jobs:
         run: |
           echo "head=$(git rev-parse HEAD)"
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - name: Repair accidental no-op ordering hunk if present
+        shell: bash
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js')
+          text = path.read_text()
+          wrong = '''                span.textContent = char;\n                target.appendChild(span);\n                colourIndex += 1;'''
+          right = '''                span.textContent = char;\n                colourIndex += 1;\n                target.appendChild(span);'''
+          count = text.count(wrong)
+          if count not in (0, 1):
+              raise SystemExit(f'unexpected accidental-hunk count: {count}')
+          if count == 1:
+              path.write_text(text.replace(wrong, right, 1))
+          PY
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+            git commit -m "chore: restore unchanged colour formatter ordering"
+            git push origin HEAD:"$HEAD_BRANCH"
+          fi
 
       - name: Userscript syntax
         run: node --check scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
