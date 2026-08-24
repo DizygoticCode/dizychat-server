@@ -1,3 +1,3 @@
 Temporary exact-head trigger for DIZY Server Installer ISO build.
 No production code or secrets.
-Verify repaired source v3 with packaged workflow and ShellCheck fixes.
+Verify byte-exact repaired source v3 after bounded chunk-3 transport fix.
