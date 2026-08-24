@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dizygotic Rumble Chat Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.12.0
+// @version      1.12.1
 // @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + transcript recorder/export + automated curated burn memory + outgoing message styling + auto-burn + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.
 // @author       Dizygotic
 // @match        https://rumble.com/*
@@ -81,7 +81,9 @@
         chatTextMode: "default",
         chatTextColor: "#ffffff",
         chatMultiPalette: "#ff4d4d,#ffa64d,#ffff4d,#4dff88,#4dd2ff,#8c4dff,#ff4dd2",
+        burnMasterEnabled: true,
         autoBurnEnabled: false,
+        autoBurnNameAliases: "Dizy,Dizygotic",
         autoBurnCooldownSeconds: 45,
         autoBurnReplyDelaySeconds: 5,
         autoBurnEngine: "british",
@@ -1717,12 +1719,15 @@
 
             <b>Auto-burn bot</b>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
+                <label><input type="checkbox" id="burnMasterToggle"${settings.burnMasterEnabled ? " checked" : ""}> Burn Bot enabled</label>
                 <label>My Rumble username</label>
                 <input id="myNicknameInput" value="${String(settings.myNickname || "").replace(/"/g, "&quot;")}" placeholder="auto-detected after you send" style="width:170px">
                 <span id="autoBurnRuntimeStatus" style="font-size:12px;color:gray">${burnRuntimeStatusText()}</span>
             </div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
-                <label><input type="checkbox" id="autoBurnToggle"${settings.autoBurnEnabled ? " checked" : ""}> Reply when someone tags me</label>
+                <label><input type="checkbox" id="autoBurnToggle"${settings.autoBurnEnabled ? " checked" : ""}> Reply when someone tags/names me</label>
+                <label>Name aliases</label>
+                <input type="text" id="autoBurnNameAliasesInput" value="${String(settings.autoBurnNameAliases || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;")}" placeholder="Dizy,Dizygotic" title="Comma-separated aliases; matched case-insensitively as whole words" style="width:150px">
                 <label>Cooldown</label>
                 <input type="number" id="autoBurnCooldownInput" min="0" value="${settings.autoBurnCooldownSeconds}" style="width:70px">
                 <label>Reply delay (sec)</label>
@@ -1733,7 +1738,7 @@
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:7px;font-size:12px">
                 ${burnEngineRecommendations.map((r) => `<label><input type="checkbox" data-burn-engine-toggle="${r.key}"${settings.burnEnginesEnabled?.[r.key] !== false ? " checked" : ""}> ${r.label}</label>`).join("")}
             </div>
-            <div style="font-size:12px;color:gray;margin-top:4px">Reply delay controls how long Burn Bot waits before each queued reply sends (5 seconds by default). Cooldown 0 disables tag suppression, so every detected tag is queued and answered serially; a positive cooldown keeps the old minimum-gap suppression. The Primary engine runs first. Personality engines share the Curated/history brain, then restyle the safe result; Random personality never includes DRILL SARGE. Curated favours live quote-backs, exact-repeat evidence and repeated-tag escalation; savage built-ins are the first fallback. Weak or malformed generated mashups are discarded instead of sent. Burn replies still wait for an empty idle composer rather than trampling a message you are typing.</div>
+            <div style="font-size:12px;color:gray;margin-top:4px">Burn Bot enabled is the master kill switch: OFF clears queued replies and blocks burn generation/sending while transcript recording and Curated learning continue. Reply when someone tags/names me listens for your Rumble username plus comma-separated Name aliases using case-insensitive whole-word matching. Reply delay controls how long Burn Bot waits before each queued reply sends (5 seconds by default). Cooldown 0 disables trigger suppression, so every detected tag/name is queued and answered serially; a positive cooldown keeps the minimum-gap suppression. The Primary engine runs first. Personality engines share the Curated/history brain, then restyle the safe result; Random personality never includes DRILL SARGE. Curated favours live quote-backs, exact-repeat evidence and repeated-tag escalation; savage built-ins are the first fallback. Weak or malformed generated mashups are discarded instead of sent. Burn replies still wait for an empty idle composer rather than trampling a message you are typing.</div>
             <div style="font-size:12px;color:gray;margin-top:4px">Successful Burn Bot echoes are labelled with engine, target, font style, strategy and context in transcript exports so future live tests can be analysed directly.</div>
             <div style="font-size:12px;color:gray;margin-top:4px">Compromise and RiTa are loaded by Tampermonkey via @require. Markov uses a local word-chain generator so a CDN package change cannot kill the whole userscript.</div>
             <textarea id="burnMarkovCorpusInput" placeholder="Optional Markov corpus — one burn/example per line" style="width:100%;height:58px;margin-top:6px">${settings.burnMarkovCorpus || ""}</textarea>
@@ -1852,7 +1857,9 @@
             settings.curatedBurnMaxPerUser = Number.isFinite(maxPerUserValue) ? Math.max(3, maxPerUserValue) : 60;
             const maxUsersValue = parseInt(panel.querySelector("#curatedBurnMaxUsersInput")?.value, 10);
             settings.curatedBurnMaxUsers = Number.isFinite(maxUsersValue) ? Math.max(0, maxUsersValue) : 0;
+            settings.burnMasterEnabled = !!panel.querySelector("#burnMasterToggle")?.checked;
             settings.autoBurnEnabled = !!panel.querySelector("#autoBurnToggle")?.checked;
+            settings.autoBurnNameAliases = panel.querySelector("#autoBurnNameAliasesInput")?.value || "";
             const cooldownSeconds = parseInt(panel.querySelector("#autoBurnCooldownInput")?.value, 10);
             settings.autoBurnCooldownSeconds = Math.max(0, Number.isFinite(cooldownSeconds) ? cooldownSeconds : 45);
             const replyDelaySeconds = parseInt(panel.querySelector("#autoBurnReplyDelayInput")?.value, 10);
@@ -1977,6 +1984,13 @@
             };
             volumeSliderEl.addEventListener("input", syncVolumeDisplay);
             syncVolumeDisplay();
+        }
+
+        const burnMasterToggle = panel.querySelector("#burnMasterToggle");
+        if (burnMasterToggle) {
+            burnMasterToggle.addEventListener("change", () => {
+                setBurnMasterEnabled(!!burnMasterToggle.checked, { persist: true });
+            });
         }
 
         const rebuildCuratedBtn = panel.querySelector("#rebuildCuratedBurnsBtn");
@@ -2526,7 +2540,20 @@
 
     function burnRuntimeStatusText() {
         const nickname = sanitizeNickname(settings.myNickname || burnRuntimeStatus.nickname) || "not detected";
-        return `me: ${nickname} · composer: ${burnRuntimeStatus.composerFound ? "ready" : "not found"} · last: ${burnRuntimeStatus.lastAttempt}`;
+        const master = settings.burnMasterEnabled ? "on" : "off";
+        return `burn: ${master} · me: ${nickname} · composer: ${burnRuntimeStatus.composerFound ? "ready" : "not found"} · last: ${burnRuntimeStatus.lastAttempt}`;
+    }
+
+    function setBurnMasterEnabled(enabled, options = {}) {
+        settings.burnMasterEnabled = !!enabled;
+        if (!settings.burnMasterEnabled) {
+            burnTagQueue.length = 0;
+            pendingCuratedBurnSelection = null;
+            setBurnRuntimeStatus({ lastAttempt: "Burn Bot disabled · queue cleared" });
+        } else {
+            setBurnRuntimeStatus({ lastAttempt: "Burn Bot enabled" });
+        }
+        if (options.persist !== false) saveSettings();
     }
 
     function normalizeOutgoingEcho(text) {
@@ -2944,6 +2971,7 @@
     }
 
     function generateBurnResponse(ctx) {
+        if (!settings.burnMasterEnabled) return null;
         pendingCuratedBurnSelection = null;
         lastBurnEngineUsed = "none";
         const normalizedCtx = {
@@ -3053,13 +3081,13 @@
     }
 
     async function maybeHandleAutoBurn(ctx) {
-        if (!settings.autoBurnEnabled) return;
+        if (!settings.burnMasterEnabled || !settings.autoBurnEnabled) return;
         burnTagQueue.push({ ...ctx });
-        setBurnRuntimeStatus({ lastAttempt: `queued: ${burnTagQueue.length} tag${burnTagQueue.length === 1 ? "" : "s"} waiting` });
+        setBurnRuntimeStatus({ lastAttempt: `queued: ${burnTagQueue.length} trigger${burnTagQueue.length === 1 ? "" : "s"} waiting` });
         if (!burnQueueDrainPromise) {
             burnQueueDrainPromise = drainBurnTagQueue().finally(() => {
                 burnQueueDrainPromise = null;
-                if (settings.autoBurnEnabled) setBurnRuntimeStatus({ lastAttempt: "queue clear" });
+                if (settings.burnMasterEnabled && settings.autoBurnEnabled) setBurnRuntimeStatus({ lastAttempt: "queue clear" });
             });
         }
         return burnQueueDrainPromise;
@@ -3067,7 +3095,7 @@
 
     async function drainBurnTagQueue() {
         while (burnTagQueue.length) {
-            if (!settings.autoBurnEnabled) {
+            if (!settings.burnMasterEnabled || !settings.autoBurnEnabled) {
                 burnTagQueue.length = 0;
                 return;
             }
@@ -3077,6 +3105,10 @@
     }
 
     async function processQueuedAutoBurn(ctx) {
+        if (!settings.burnMasterEnabled || !settings.autoBurnEnabled) {
+            burnTagQueue.length = 0;
+            return;
+        }
         const tagCount = noteBurnPressure(ctx.from || ctx.target);
         const configuredCooldown = Number(settings.autoBurnCooldownSeconds);
         const cooldownSeconds = Number.isFinite(configuredCooldown)
@@ -3106,9 +3138,9 @@
             if (replyDelayMs > 0) {
                 await new Promise((resolve) => setTimeout(resolve, replyDelayMs));
             }
-            if (!settings.autoBurnEnabled) {
+            if (!settings.burnMasterEnabled || !settings.autoBurnEnabled) {
                 burnTagQueue.length = 0;
-                setBurnRuntimeStatus({ lastAttempt: "cancelled: auto-burn disabled during reply delay" });
+                setBurnRuntimeStatus({ lastAttempt: "cancelled: Burn Bot or auto-reply disabled during reply delay" });
                 return;
             }
             const sent = await sendChatMessage(response, {
@@ -3130,6 +3162,19 @@
             burnSendInFlight = false;
             pendingCuratedBurnSelection = null;
         }
+    }
+
+    function matchesAutoBurnTrigger(text, selfHandleLower) {
+        const aliases = String(settings.autoBurnNameAliases || "")
+            .split(",")
+            .map((value) => value.trim().replace(/^@+/, "").toLowerCase())
+            .filter(Boolean);
+        const candidates = [...new Set([String(selfHandleLower || "").trim().toLowerCase(), ...aliases].filter(Boolean))];
+        const input = String(text || "");
+        return candidates.some((name) => {
+            const triggerRegex = new RegExp(`(^|[^A-Za-z0-9_])@?${escapeRegex(name)}(?=$|[^A-Za-z0-9_])`, "i");
+            return triggerRegex.test(input);
+        });
     }
 
     /***********************
@@ -3277,6 +3322,7 @@
 
                 const userIsBlocked = username && blockedUsers.includes(username);
                 if (
+                    settings.burnMasterEnabled &&
                     settings.autoBurnEnabled &&
                     !el._autoBurnHandled &&
                     el._recentlyAdded &&
@@ -3284,10 +3330,9 @@
                     username !== selfHandleLower &&
                     !userIsBlocked && !isSystem
                 ) {
-                    const mentionRegex = new RegExp(`\\b@?${escapeRegex(selfHandleLower)}\\b`, "i");
-                    if (mentionRegex.test(lowerText)) {
+                    if (matchesAutoBurnTrigger(plainOriginal, selfHandleLower)) {
                         el._autoBurnHandled = true;
-                        setBurnRuntimeStatus({ nickname: selfHandle, lastAttempt: `tag detected from @${displayName.replace(/^@+/, "")}` });
+                        setBurnRuntimeStatus({ nickname: selfHandle, lastAttempt: `tag/name detected from @${displayName.replace(/^@+/, "")}` });
                         void maybeHandleAutoBurn({ target: displayName.replace(/^@+/, ""), message: plainOriginal, from: username });
                     }
                 }
