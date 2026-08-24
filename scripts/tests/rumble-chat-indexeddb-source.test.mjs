@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-// Final-head verification trigger; production userscript is unchanged by this commit.
+// Source-contract regression for the unbounded IndexedDB transcript storage introduced in v1.9.7.
 const sourcePath = new URL("../tampermonkey/dizygotic-rumble-chat-tool.user.js", import.meta.url);
 const source = fs.readFileSync(sourcePath, "utf8");
 
@@ -14,8 +14,7 @@ function between(startNeedle, endNeedle) {
   return source.slice(start, end);
 }
 
-test("v1.9.7 stores the transcript in IndexedDB with no app message-count ceiling", () => {
-  assert.match(source, /\/\/ @version\s+1\.9\.7/);
+test("transcript remains in IndexedDB with no app message-count ceiling", () => {
   assert.match(source, /const CHAT_DB_NAME = "dizygoticRumbleChat";/);
   assert.match(source, /const CHAT_DB_STORE = "messages";/);
   assert.match(source, /indexedDB\.open\(CHAT_DB_NAME, CHAT_DB_VERSION\)/);

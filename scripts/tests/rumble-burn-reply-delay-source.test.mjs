@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-// Source-contract regression for the Tampermonkey burn-delay controls and send ordering.
+// Source-contract regression for the Tampermonkey burn-delay controls and send ordering introduced in v1.9.6.
 const sourcePath = new URL("../tampermonkey/dizygotic-rumble-chat-tool.user.js", import.meta.url);
 const source = fs.readFileSync(sourcePath, "utf8");
 
@@ -14,8 +14,7 @@ function autoBurnFunctionSource() {
   return source.slice(start, end);
 }
 
-test("v1.9.6 exposes and persists a bounded burn reply delay with a 5 second default", () => {
-  assert.match(source, /\/\/ @version\s+1\.9\.6/);
+test("burn reply delay remains bounded with a 5 second default", () => {
   assert.match(source, /autoBurnReplyDelaySeconds:\s*5/);
   assert.match(source, /id="autoBurnReplyDelayInput"[^>]*min="0"[^>]*max="120"[^>]*value="\$\{settings\.autoBurnReplyDelaySeconds\}"/);
   assert.match(source, /settings\.autoBurnReplyDelaySeconds\s*=\s*Number\.isFinite\(replyDelaySeconds\)[\s\S]*?Math\.max\(0, Math\.min\(120, replyDelaySeconds\)\)[\s\S]*?:\s*5;/);
