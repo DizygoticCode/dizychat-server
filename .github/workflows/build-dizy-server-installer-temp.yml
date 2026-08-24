@@ -7,6 +7,12 @@ on:
     paths:
       - 'installer/dizy-server-source.part-*'
       - '.github/workflows/build-dizy-server-installer-temp.yml'
+  pull_request:
+    branches:
+      - build/dizy-server-installer-2404
+    paths:
+      - 'installer/**'
+      - '.github/workflows/build-dizy-server-installer-temp.yml'
   workflow_dispatch:
 
 permissions:
