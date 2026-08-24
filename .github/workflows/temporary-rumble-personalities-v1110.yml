@@ -1,0 +1,79 @@
+name: Temporary Rumble personalities v1.11.0 verifier
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  patch-and-verify:
+    if: github.event.issue.title == 'RUN RUMBLE PERSONALITIES V1.11.0 TDD'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/rumble-burn-personalities-v1110
+          fetch-depth: 0
+
+      - name: RED - prove new personality contract fails first
+        id: red
+        shell: bash
+        run: |
+          set +e
+          node --test scripts/tests/rumble-burn-personalities-v1110-source.test.mjs > /tmp/red.log 2>&1
+          code=$?
+          set -e
+          cat /tmp/red.log
+          if [ "$code" -eq 0 ]; then
+            echo "Expected RED personality contract before implementation"
+            exit 1
+          fi
+          echo "RED confirmed"
+
+      - name: Apply minimal implementation
+        shell: bash
+        run: python3 scripts/ci/patch-rumble-personalities-v1110.py
+
+      - name: GREEN - syntax and all Rumble source regressions
+        shell: bash
+        run: |
+          node --check scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+          node --test scripts/tests/*.test.mjs
+
+      - name: Commit verified production change
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+          git commit -m "feat: add Curated burn personalities v1.11.0"
+          git push origin HEAD:feat/rumble-burn-personalities-v1110
+
+      - name: Record success on trigger issue
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_URL: ${{ github.event.issue.comments_url }}
+        shell: bash
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$ISSUE_URL" \
+            -d '{"body":"✅ Rumble personalities v1.11.0 RED→GREEN succeeded: new contract failed before patch; userscript syntax and all Rumble source tests passed; verified production patch pushed to feature branch."}'
+
+      - name: Record failure on trigger issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_URL: ${{ github.event.issue.comments_url }}
+        shell: bash
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$ISSUE_URL" \
+            -d '{"body":"❌ Rumble personalities v1.11.0 verifier failed. Inspect the workflow job before changing production code further."}'
