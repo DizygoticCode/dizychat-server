@@ -27,7 +27,7 @@
     const CHAT_DB_STORE = "messages";
     const CURATED_BURNS_KEY = "rumbleCuratedBurnsV1";
     const CURATED_BURNS_SCHEMA = 2;
-    const CURATED_MAX_USERS = 120;
+    const CURATED_MAX_USERS = 300;
 
     let blockedUsers = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
     let settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
@@ -2704,8 +2704,8 @@
                     ? `hsl(${(colourIndex * 41) % 360} 100% 62%)`
                     : palette[colourIndex % palette.length];
                 span.textContent = char;
-                colourIndex += 1;
                 target.appendChild(span);
+                colourIndex += 1;
             });
         });
     }
