@@ -2704,8 +2704,8 @@
                     ? `hsl(${(colourIndex * 41) % 360} 100% 62%)`
                     : palette[colourIndex % palette.length];
                 span.textContent = char;
-                target.appendChild(span);
                 colourIndex += 1;
+                target.appendChild(span);
             });
         });
     }
