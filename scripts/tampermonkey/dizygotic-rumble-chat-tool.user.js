@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dizygotic Rumble Chat Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.11.1
+// @version      1.12.0
 // @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + transcript recorder/export + automated curated burn memory + outgoing message styling + auto-burn + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.
 // @author       Dizygotic
 // @match        https://rumble.com/*
@@ -27,7 +27,6 @@
     const CHAT_DB_STORE = "messages";
     const CURATED_BURNS_KEY = "rumbleCuratedBurnsV1";
     const CURATED_BURNS_SCHEMA = 2;
-    const CURATED_MAX_USERS = 300;
 
     let blockedUsers = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
     let settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
@@ -89,7 +88,8 @@
         curatedBurnsEnabled: true,
         curatedBurnMinMessages: 8,
         curatedBurnRefreshEvery: 3,
-        curatedBurnMaxPerUser: 12,
+        curatedBurnMaxPerUser: 60,
+        curatedBurnMaxUsers: 0,
         curatedBurnReviewBeforeUse: false,
         burnEnginesEnabled: {
             curated: true,
@@ -680,6 +680,8 @@
             !CURATED_PERSONAL_DATA_PATTERN.test(value);
     }
     let curatedSaveTimer = null;
+    let curatedRebuildPromise = null;
+    let curatedRebuildProgress = null;
     let pendingCuratedBurnSelection = null;
 
     function normalizeCuratedStore(value) {
@@ -715,14 +717,15 @@
             profile.repeats = pruneStatMap(profile.repeats, 30);
             profile.recent = Array.isArray(profile.recent) ? profile.recent.slice(-18) : [];
             profile.burns = Array.isArray(profile.burns)
-                ? profile.burns.slice(0, Math.max(3, Number(settings.curatedBurnMaxPerUser) || 12))
+                ? profile.burns.slice(0, Math.max(3, Number(settings.curatedBurnMaxPerUser) || 60))
                 : [];
         });
         const users = Object.entries(curatedBurnStore.users);
-        if (users.length > CURATED_MAX_USERS) {
+        const maxUsers = Math.max(0, Number(settings.curatedBurnMaxUsers) || 0);
+        if (maxUsers > 0 && users.length > maxUsers) {
             users
                 .sort((a, b) => String(b[1]?.updatedAt || "").localeCompare(String(a[1]?.updatedAt || "")))
-                .slice(CURATED_MAX_USERS)
+                .slice(maxUsers)
                 .forEach(([key]) => delete curatedBurnStore.users[key]);
         }
         curatedBurnStore.recentSeedIds = [...new Set(curatedBurnStore.recentSeedIds || [])].slice(-30);
@@ -768,6 +771,11 @@
     }
 
     function curatedBurnSummaryText() {
+        if (curatedRebuildProgress) {
+            const processed = Math.max(0, Number(curatedRebuildProgress.processed) || 0);
+            const total = Math.max(0, Number(curatedRebuildProgress.total) || 0);
+            return `Rebuilding curated memory… ${processed.toLocaleString()} / ${total.toLocaleString()} messages · please wait`;
+        }
         const profiles = Object.values(curatedBurnStore?.users || {});
         const burns = profiles.reduce((sum, profile) => sum + (Array.isArray(profile.burns) ? profile.burns.length : 0), 0);
         const ready = profiles.filter((profile) => (profile.messageCount || 0) >= Math.max(3, Number(settings.curatedBurnMinMessages) || 8)).length;
@@ -1065,7 +1073,7 @@
                 seen.add(candidate.id);
                 deduped.push(candidate);
             });
-        return deduped.slice(0, Math.max(3, Number(settings.curatedBurnMaxPerUser) || 12));
+        return deduped.slice(0, Math.max(3, Number(settings.curatedBurnMaxPerUser) || 60));
     }
 
     function regenerateCuratedBurns(profile) {
@@ -1118,21 +1126,45 @@
     }
 
     async function rebuildCuratedBurnsFromTranscript(reset = true) {
-        await initializeChatTranscriptStorage();
-        if (reset) curatedBurnStore = { schemaVersion: CURATED_BURNS_SCHEMA, lastProcessedSeq: 0, users: {}, seedUsage: {}, recentSeedIds: [], recentSeedFamilies: [] };
-        const touched = new Set();
-        const records = chatLog.slice();
-        records.forEach((record) => {
-            if (!record?.username) return;
-            ingestCuratedRecord(record, { force: true, deferSave: true, deferCurate: true });
-            touched.add(String(record.username).toLowerCase());
-        });
-        touched.forEach((username) => {
-            const profile = curatedBurnStore.users[username];
-            if (profile && profile.messageCount >= Math.max(3, Number(settings.curatedBurnMinMessages) || 8)) regenerateCuratedBurns(profile);
-        });
-        saveCuratedBurnStore();
-        return curatedBurnSummaryText();
+        if (curatedRebuildPromise) return curatedRebuildPromise;
+        curatedRebuildPromise = (async () => {
+            await initializeChatTranscriptStorage();
+            if (reset) curatedBurnStore = { schemaVersion: CURATED_BURNS_SCHEMA, lastProcessedSeq: 0, users: {}, seedUsage: {}, recentSeedIds: [], recentSeedFamilies: [] };
+            const touched = new Set();
+            const records = chatLog.slice();
+            curatedRebuildProgress = { processed: 0, total: records.length };
+            updateCuratedBurnStatus();
+            const yieldEvery = 250;
+            for (let index = 0; index < records.length; index += 1) {
+                const record = records[index];
+                if (record?.username) {
+                    ingestCuratedRecord(record, { force: true, deferSave: true, deferCurate: true });
+                    touched.add(String(record.username).toLowerCase());
+                }
+                curatedRebuildProgress.processed = index + 1;
+                if ((index + 1) % yieldEvery === 0) {
+                    updateCuratedBurnStatus();
+                    await new Promise((resolve) => setTimeout(resolve, 0));
+                }
+            }
+            updateCuratedBurnStatus();
+            let finalized = 0;
+            for (const username of touched) {
+                const profile = curatedBurnStore.users[username];
+                if (profile && profile.messageCount >= Math.max(3, Number(settings.curatedBurnMinMessages) || 8)) regenerateCuratedBurns(profile);
+                finalized += 1;
+                if (finalized % 50 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+            }
+            saveCuratedBurnStore();
+            return curatedBurnSummaryText();
+        })();
+        try {
+            return await curatedRebuildPromise;
+        } finally {
+            curatedRebuildPromise = null;
+            curatedRebuildProgress = null;
+            updateCuratedBurnStatus();
+        }
     }
 
     function backfillCuratedBurnsFromTranscript() {
@@ -1671,8 +1703,11 @@
                 <label>Refresh every</label>
                 <input type="number" id="curatedBurnRefreshEveryInput" min="1" max="50" value="${settings.curatedBurnRefreshEvery}" style="width:58px">
                 <label>Max/user</label>
-                <input type="number" id="curatedBurnMaxPerUserInput" min="3" max="40" value="${settings.curatedBurnMaxPerUser}" style="width:58px">
+                <input type="number" id="curatedBurnMaxPerUserInput" min="3" value="${settings.curatedBurnMaxPerUser}" style="width:68px">
+                <label>Max users</label>
+                <input type="number" id="curatedBurnMaxUsersInput" min="0" value="${settings.curatedBurnMaxUsers}" title="0 = unlimited" style="width:76px">
             </div>
+            <div style="font-size:11px;color:gray;margin-top:4px">Max users: 0 = unlimited. Rebuild rescans the saved transcript using the current limits.</div>
             <div id="curatedBurnStatus" style="font-size:12px;color:gray;margin-top:5px">${curatedBurnSummaryText()}</div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
                 <button type="button" id="rebuildCuratedBurnsBtn">Rebuild from transcript</button>
@@ -1689,7 +1724,7 @@
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
                 <label><input type="checkbox" id="autoBurnToggle"${settings.autoBurnEnabled ? " checked" : ""}> Reply when someone tags me</label>
                 <label>Cooldown</label>
-                <input type="number" id="autoBurnCooldownInput" min="5" value="${settings.autoBurnCooldownSeconds}" style="width:70px">
+                <input type="number" id="autoBurnCooldownInput" min="0" value="${settings.autoBurnCooldownSeconds}" style="width:70px">
                 <label>Reply delay (sec)</label>
                 <input type="number" id="autoBurnReplyDelayInput" min="0" max="120" step="1" value="${settings.autoBurnReplyDelaySeconds}" style="width:70px">
                 <label>Primary engine</label>
@@ -1698,7 +1733,7 @@
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:7px;font-size:12px">
                 ${burnEngineRecommendations.map((r) => `<label><input type="checkbox" data-burn-engine-toggle="${r.key}"${settings.burnEnginesEnabled?.[r.key] !== false ? " checked" : ""}> ${r.label}</label>`).join("")}
             </div>
-            <div style="font-size:12px;color:gray;margin-top:4px">Reply delay controls how long Burn Bot waits after generating a reply before it sends (5 seconds by default); Cooldown remains the minimum gap after a successful send. The Primary engine runs first. Personality engines share the Curated/history brain, then restyle the safe result; Random personality never includes DRILL SARGE. Curated favours live quote-backs, exact-repeat evidence and repeated-tag escalation; savage built-ins are the first fallback. Weak or malformed generated mashups are discarded instead of sent. Burn replies still wait for an empty idle composer rather than trampling a message you are typing.</div>
+            <div style="font-size:12px;color:gray;margin-top:4px">Reply delay controls how long Burn Bot waits before each queued reply sends (5 seconds by default). Cooldown 0 disables tag suppression, so every detected tag is queued and answered serially; a positive cooldown keeps the old minimum-gap suppression. The Primary engine runs first. Personality engines share the Curated/history brain, then restyle the safe result; Random personality never includes DRILL SARGE. Curated favours live quote-backs, exact-repeat evidence and repeated-tag escalation; savage built-ins are the first fallback. Weak or malformed generated mashups are discarded instead of sent. Burn replies still wait for an empty idle composer rather than trampling a message you are typing.</div>
             <div style="font-size:12px;color:gray;margin-top:4px">Successful Burn Bot echoes are labelled with engine, target, font style, strategy and context in transcript exports so future live tests can be analysed directly.</div>
             <div style="font-size:12px;color:gray;margin-top:4px">Compromise and RiTa are loaded by Tampermonkey via @require. Markov uses a local word-chain generator so a CDN package change cannot kill the whole userscript.</div>
             <textarea id="burnMarkovCorpusInput" placeholder="Optional Markov corpus — one burn/example per line" style="width:100%;height:58px;margin-top:6px">${settings.burnMarkovCorpus || ""}</textarea>
@@ -1813,9 +1848,13 @@
             settings.curatedBurnsEnabled = !!panel.querySelector("#curatedBurnsEnabledInput")?.checked;
             settings.curatedBurnMinMessages = Math.max(3, Math.min(100, parseInt(panel.querySelector("#curatedBurnMinMessagesInput")?.value, 10) || 8));
             settings.curatedBurnRefreshEvery = Math.max(1, Math.min(50, parseInt(panel.querySelector("#curatedBurnRefreshEveryInput")?.value, 10) || 3));
-            settings.curatedBurnMaxPerUser = Math.max(3, Math.min(40, parseInt(panel.querySelector("#curatedBurnMaxPerUserInput")?.value, 10) || 12));
+            const maxPerUserValue = parseInt(panel.querySelector("#curatedBurnMaxPerUserInput")?.value, 10);
+            settings.curatedBurnMaxPerUser = Number.isFinite(maxPerUserValue) ? Math.max(3, maxPerUserValue) : 60;
+            const maxUsersValue = parseInt(panel.querySelector("#curatedBurnMaxUsersInput")?.value, 10);
+            settings.curatedBurnMaxUsers = Number.isFinite(maxUsersValue) ? Math.max(0, maxUsersValue) : 0;
             settings.autoBurnEnabled = !!panel.querySelector("#autoBurnToggle")?.checked;
-            settings.autoBurnCooldownSeconds = Math.max(5, parseInt(panel.querySelector("#autoBurnCooldownInput")?.value, 10) || 45);
+            const cooldownSeconds = parseInt(panel.querySelector("#autoBurnCooldownInput")?.value, 10);
+            settings.autoBurnCooldownSeconds = Math.max(0, Number.isFinite(cooldownSeconds) ? cooldownSeconds : 45);
             const replyDelaySeconds = parseInt(panel.querySelector("#autoBurnReplyDelayInput")?.value, 10);
             settings.autoBurnReplyDelaySeconds = Number.isFinite(replyDelaySeconds)
                 ? Math.max(0, Math.min(120, replyDelaySeconds))
@@ -1943,13 +1982,26 @@
         const rebuildCuratedBtn = panel.querySelector("#rebuildCuratedBurnsBtn");
         if (rebuildCuratedBtn) {
             rebuildCuratedBtn.addEventListener("click", async () => {
+                if (rebuildCuratedBtn.disabled) return;
                 settings.curatedBurnsEnabled = !!panel.querySelector("#curatedBurnsEnabledInput")?.checked;
                 settings.curatedBurnMinMessages = Math.max(3, Math.min(100, parseInt(panel.querySelector("#curatedBurnMinMessagesInput")?.value, 10) || 8));
                 settings.curatedBurnRefreshEvery = Math.max(1, Math.min(50, parseInt(panel.querySelector("#curatedBurnRefreshEveryInput")?.value, 10) || 3));
-                settings.curatedBurnMaxPerUser = Math.max(3, Math.min(40, parseInt(panel.querySelector("#curatedBurnMaxPerUserInput")?.value, 10) || 12));
+                const maxPerUserValue = parseInt(panel.querySelector("#curatedBurnMaxPerUserInput")?.value, 10);
+                settings.curatedBurnMaxPerUser = Number.isFinite(maxPerUserValue) ? Math.max(3, maxPerUserValue) : 60;
+                const maxUsersValue = parseInt(panel.querySelector("#curatedBurnMaxUsersInput")?.value, 10);
+                settings.curatedBurnMaxUsers = Number.isFinite(maxUsersValue) ? Math.max(0, maxUsersValue) : 0;
                 saveSettings();
-                await rebuildCuratedBurnsFromTranscript(true);
+                const originalLabel = rebuildCuratedBtn.textContent;
+                rebuildCuratedBtn.disabled = true;
+                rebuildCuratedBtn.textContent = "Rebuilding… please wait";
                 updateCuratedBurnStatus(panel);
+                try {
+                    await rebuildCuratedBurnsFromTranscript(true);
+                } finally {
+                    rebuildCuratedBtn.disabled = false;
+                    rebuildCuratedBtn.textContent = originalLabel;
+                    updateCuratedBurnStatus(panel);
+                }
             });
         }
         const clearCuratedBtn = panel.querySelector("#clearCuratedBurnsBtn");
@@ -2451,6 +2503,8 @@
     }
 
     let burnSendInFlight = false;
+    const burnTagQueue = [];
+    let burnQueueDrainPromise = null;
     let pendingOutgoingIdentity = null;
     let pendingBurnEcho = null;
     let lastTrustedComposerInputAt = 0;
@@ -2999,15 +3053,45 @@
     }
 
     async function maybeHandleAutoBurn(ctx) {
-        if (!settings.autoBurnEnabled || burnSendInFlight) return;
+        if (!settings.autoBurnEnabled) return;
+        burnTagQueue.push({ ...ctx });
+        setBurnRuntimeStatus({ lastAttempt: `queued: ${burnTagQueue.length} tag${burnTagQueue.length === 1 ? "" : "s"} waiting` });
+        if (!burnQueueDrainPromise) {
+            burnQueueDrainPromise = drainBurnTagQueue().finally(() => {
+                burnQueueDrainPromise = null;
+                if (settings.autoBurnEnabled) setBurnRuntimeStatus({ lastAttempt: "queue clear" });
+            });
+        }
+        return burnQueueDrainPromise;
+    }
+
+    async function drainBurnTagQueue() {
+        while (burnTagQueue.length) {
+            if (!settings.autoBurnEnabled) {
+                burnTagQueue.length = 0;
+                return;
+            }
+            const next = burnTagQueue.shift();
+            await processQueuedAutoBurn(next);
+        }
+    }
+
+    async function processQueuedAutoBurn(ctx) {
         const tagCount = noteBurnPressure(ctx.from || ctx.target);
+        const configuredCooldown = Number(settings.autoBurnCooldownSeconds);
+        const cooldownSeconds = Number.isFinite(configuredCooldown)
+            ? Math.max(0, configuredCooldown)
+            : 45;
+        const cooldownMs = cooldownSeconds * 1000;
         const now = Date.now();
-        const cooldownMs = Math.max(5, settings.autoBurnCooldownSeconds || 45) * 1000;
-        if (now - lastBurnTimestamp < cooldownMs) return;
+        if (cooldownMs > 0 && now - lastBurnTimestamp < cooldownMs) {
+            setBurnRuntimeStatus({ lastAttempt: `skipped by ${cooldownSeconds}s cooldown · queued: ${burnTagQueue.length}` });
+            return;
+        }
         const response = generateBurnResponse({ ...ctx, tagCount });
         const curatedSelection = pendingCuratedBurnSelection;
         if (!response) {
-            setBurnRuntimeStatus({ lastAttempt: "no burn generated" });
+            setBurnRuntimeStatus({ lastAttempt: `no burn generated · queued: ${burnTagQueue.length}` });
             pendingCuratedBurnSelection = null;
             return;
         }
@@ -3017,12 +3101,13 @@
             ? Math.max(0, Math.min(120, configuredReplyDelay))
             : 5;
         const replyDelayMs = replyDelaySeconds * 1000;
-        setBurnRuntimeStatus({ lastAttempt: `generated via ${lastBurnEngineUsed} for @${ctx.target || ctx.from} · tag #${tagCount} · replying in ${replyDelaySeconds}s` });
+        setBurnRuntimeStatus({ lastAttempt: `generated via ${lastBurnEngineUsed} for @${ctx.target || ctx.from} · tag #${tagCount} · replying in ${replyDelaySeconds}s · queued: ${burnTagQueue.length}` });
         try {
             if (replyDelayMs > 0) {
                 await new Promise((resolve) => setTimeout(resolve, replyDelayMs));
             }
             if (!settings.autoBurnEnabled) {
+                burnTagQueue.length = 0;
                 setBurnRuntimeStatus({ lastAttempt: "cancelled: auto-burn disabled during reply delay" });
                 return;
             }
@@ -3036,10 +3121,11 @@
                 lastBurnTimestamp = Date.now();
                 rememberRecentBurn(response);
                 if (curatedSelection) markCuratedBurnUsed(curatedSelection);
+                setBurnRuntimeStatus({ lastAttempt: `send dispatched · queued: ${burnTagQueue.length}` });
             }
         } catch (err) {
             console.warn("Auto-burn send failed", err);
-            setBurnRuntimeStatus({ lastAttempt: "failed: send exception", lastError: String(err?.message || err) });
+            setBurnRuntimeStatus({ lastAttempt: `failed: send exception · queued: ${burnTagQueue.length}`, lastError: String(err?.message || err) });
         } finally {
             burnSendInFlight = false;
             pendingCuratedBurnSelection = null;
