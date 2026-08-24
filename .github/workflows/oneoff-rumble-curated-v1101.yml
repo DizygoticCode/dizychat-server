@@ -1,0 +1,21 @@
+name: One-off Rumble Curated v1.10.1
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  verify:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/rumble-curated-relevance-v1101'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Run Curated v1.10.1 contract
+        run: node --test scripts/tests/rumble-curated-relevance-v1101-source.test.mjs
