@@ -13,8 +13,8 @@ function between(startNeedle, endNeedle) {
   return source.slice(start, end);
 }
 
-test("v1.10.1 adds a hard account-protection subject and threat firewall", () => {
-  assert.match(source, /\/\/ @version\s+1\.10\.1/);
+test("v1.10.1+ retains the hard account-protection subject and threat firewall", () => {
+  assert.match(source, /\/\/ @version\s+1\.(?:10\.1|11\.0)/);
   assert.match(source, /const BURN_ACCOUNT_PROTECTION_PATTERN =/);
   assert.match(source, /jews\?|jewish/);
   assert.match(source, /military/);
