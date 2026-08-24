@@ -79,3 +79,14 @@ test("Curated adds a profanity-allowed finisher family without putting profanity
   const classify = between("function classifyCuratedContext(ctx, profile)", "function buildSeededCuratedCandidates(");
   assert.match(classify, /bump\("finisher"/);
 });
+
+test("Curated ships a British DIZY banter family and rotates local insults", () => {
+  const bank = between("const CURATED_SEED_BLUEPRINTS = Object.freeze({", "const CURATED_SEED_TEMPLATE_COUNT");
+  assert.match(bank, /\bbritish_banter:\s*\{/);
+  for (const phrase of ["sod off", "wanker", "bellend", "muppet", "numpty", "pillock", "tosser", "git", "knobhead"]) {
+    assert.match(bank.toLowerCase(), new RegExp(phrase.replace(" ", "\\s+")));
+  }
+  const classify = between("function classifyCuratedContext(ctx, profile)", "function buildSeededCuratedCandidates(");
+  assert.match(classify, /bump\("british_banter"/);
+  assert.match(source, /recentSeedFamilies/);
+});
