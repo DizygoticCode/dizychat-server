@@ -72,7 +72,7 @@ jobs:
         working-directory: installer/dizy-server
         run: |
           ./tests/verify_iso.sh ./out/DIZY-Server-Installer-24.04.4-amd64.iso
-          sha256sum -c ./out/DIZY-Server-Installer-24.04.4-amd64.iso.sha256
+          (cd out && sha256sum -c DIZY-Server-Installer-24.04.4-amd64.iso.sha256)
           stat -c '%n %s bytes' ./out/DIZY-Server-Installer-24.04.4-amd64.iso ./out/DIZY-Server-Installer-24.04.4-amd64.iso.sha256 ./out/DIZY-Server-Installer-24.04.4-amd64.iso.manifest.txt
 
       - name: Upload DIZY installer artifact
