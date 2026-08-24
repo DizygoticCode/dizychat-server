@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dizygotic Rumble Chat Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.10.0
+// @version      1.10.1
 // @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + transcript recorder/export + automated curated burn memory + outgoing message styling + auto-burn + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.
 // @author       Dizygotic
 // @match        https://rumble.com/*
@@ -93,6 +93,7 @@
         curatedBurnReviewBeforeUse: false,
         burnEnginesEnabled: {
             curated: true,
+            drill: true,
             builtin: true,
             compromise: true,
             rita: true,
@@ -331,6 +332,7 @@
 
     const burnEngineRecommendations = [
         { key: "curated", label: "Curated history" },
+        { key: "drill", label: "DRILL SARGE · explicit only" },
         { key: "builtin", label: "Built-in quips" },
         { key: "compromise", label: "compromise NLP" },
         { key: "rita", label: "RiTa creative" },
@@ -346,6 +348,14 @@
     ]);
     const CURATED_SENSITIVE_PATTERN = /\b(?:address|postcode|phone|email|diagnos(?:ed|is)|cancer|hiv|autis(?:m|tic)|disabled|disability|pregnan(?:t|cy)|religion|muslims?|christians?|jews?|jewish|hindus?|sikhs?|gays?|lesbians?|bisexuals?|trans(?:gender)?|race|racial|ethnicity)\b/gi;
     const CURATED_PERSONAL_DATA_PATTERN = /(?:[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\b(?:\d{1,3}\.){3}\d{1,3}\b|(?:\+?\d[\d ()-]{7,}\d))/i;
+    const BURN_ACCOUNT_PROTECTION_PATTERN = /\b(?:jews?|jewish|military|army|navy|marines?|air\s+force|kill(?:ed|ing|s)?|death|dead|die(?:d|s)?|murder(?:ed|ing|s)?|shoot(?:ing|s)?|shot)\b/i;
+    const BURN_DIRECT_THREAT_PATTERN = /\b(?:(?:i(?:'ll|\s+will|\s+am\s+going\s+to)|we(?:'ll|\s+will)|gonna|going\s+to)\s+(?:fucking\s+)?(?:kill|murder|shoot)\s+(?:you|u|him|her|them|@[a-z0-9_.-]+)|(?:you|u|@[a-z0-9_.-]+)\s+(?:should|need\s+to|deserve\s+to)\s+(?:die|be\s+(?:killed|shot)))\b/i;
+
+    function isBlockedBurnSubject(text) {
+        const value = String(text || "").replace(/\s+/g, " ").trim();
+        return !!value && (BURN_ACCOUNT_PROTECTION_PATTERN.test(value) || BURN_DIRECT_THREAT_PATTERN.test(value));
+    }
+
     const CURATED_SEED_BLUEPRINTS = Object.freeze({
         weak_comeback: {
             baseScore: 25,
@@ -563,6 +573,46 @@
                 "and somehow you returned with everything except an answer."
             ]
         },
+        finisher: {
+            baseScore: 31,
+            openers: [
+                "fuck me, that was a shambles",
+                "what a load of absolute shit",
+                "you've properly fucked that one",
+                "mate, you've talked yourself into a fucking corner",
+                "that comeback is fucking bankrupt"
+            ],
+            closers: [
+                "pack it in before the argument asks for annual leave.",
+                "even your confidence wants its name taken off it.",
+                "the sentence has already disowned the performance.",
+                "you've finished your own argument for everyone.",
+                "there's nothing left to rescue but your typing finger.",
+                "call it there, because the material already has."
+            ]
+        },
+        british_banter: {
+            baseScore: 29,
+            openers: [
+                "sod off, you grotty wanker",
+                "you absolute bellend",
+                "have a word with yourself, you muppet",
+                "steady on, you numpty",
+                "pack it in, you pillock",
+                "do one, you tosser",
+                "listen to yourself, you daft git",
+                "you absolute knobhead",
+                "that's well bang out",
+                "that's bang out of order"
+            ],
+            closers: [
+                "that comeback couldn't organise a piss-up in a brewery.",
+                "you've made a proper dog's dinner of that one.",
+                "the point's gone walkabout and left you holding the bag.",
+                "fookin' hell mate, even the excuse needs an excuse.",
+                "sort yourself out before the sentence embarrasses you again."
+            ]
+        },
         generic_savage: {
             baseScore: 14,
             openers: [
@@ -713,6 +763,7 @@
     function isCuratableMessage(text) {
         const raw = String(text || "");
         if (CURATED_PERSONAL_DATA_PATTERN.test(raw)) return false;
+        if (isBlockedBurnSubject(raw)) return false;
         const value = normalizeCuratedText(raw);
         return value.length >= 8 && value.length <= 220;
     }
@@ -838,6 +889,8 @@
         if (/\b(?:i dont care|i don't care|not mad|im not mad|i'm not mad|doesnt bother me|doesn't bother me|whatever)\b/i.test(currentText) && (tagCount >= 2 || currentText.length > 80)) bump("self_own", 34);
         if (/\b(?:anyway|what about|besides|different topic|change the subject|not the point)\b/i.test(currentText)) bump("topic_dodge", 33);
         if (currentText.split(/\s+/).filter(Boolean).length <= 6 || /^(?:lol|lmao|cope|clown|weak|boring|whatever|nice try)[!. ]*$/i.test(currentText)) bump("weak_comeback", 30);
+        if (tagCount >= 3 || /\b(?:try harder|is that it|weak|boring|cope|owned|rekt|destroyed|comeback)\b/i.test(currentText)) bump("finisher", 36);
+        bump("british_banter", tagCount >= 2 ? 31 : 27);
 
         return [...ranked.entries()]
             .map(([family, score]) => ({ family, score, repeatStat, contradiction }))
@@ -1076,12 +1129,24 @@
         updateCuratedBurnStatus();
     }
 
+    function curatedHistoryRelevance(burn, currentTokens, currentText) {
+        if (!burn) return 0;
+        const overlap = overlapCount(currentTokens, burn.keywords || []);
+        if (burn.kind === "contradiction") return overlap >= 2 ? 14 + Math.min(8, overlap * 2) : 0;
+        if (burn.kind === "repeat") return overlap >= 2 ? 12 + Math.min(8, overlap * 2) : 0;
+        if (burn.kind === "phrase") return overlap >= 2 ? 9 + Math.min(6, overlap * 2) : 0;
+        if (burn.kind === "callback") return overlap >= 1 ? 7 + Math.min(6, overlap * 2) : 0;
+        if (burn.kind === "topic") return overlap >= 1 && String(currentText || "").length >= 6 ? 6 + Math.min(4, overlap) : 0;
+        return 0;
+    }
+
     function selectCuratedBurn(ctx) {
         if (!settings.curatedBurnsEnabled || settings.burnEnginesEnabled?.curated === false) return null;
         const username = String(ctx.from || "").trim().toLowerCase();
         const profile = curatedBurnStore.users?.[username] || null;
         const minMessages = Math.max(3, Number(settings.curatedBurnMinMessages) || 8);
-        const profileReady = !!profile && (Number(profile.messageCount) || 0) >= minMessages;
+        const incomingBlocked = isBlockedBurnSubject(ctx.message || "");
+        const profileReady = !incomingBlocked && !!profile && (Number(profile.messageCount) || 0) >= minMessages;
 
         const target = String(ctx.target || profile?.displayName || username || "there")
             .replace(/^@+/, "")
@@ -1090,32 +1155,54 @@
         const currentTokens = curatedTokens(ctx.message || "");
         const currentText = normalizeCuratedText(ctx.message || "");
         const tagCount = Math.max(1, Number(ctx.tagCount) || 1);
-        const quote = safeBurnQuote(ctx.message || "");
-        const contextRanking = classifyCuratedContext(ctx, profile);
+        const quote = incomingBlocked ? "" : safeBurnQuote(ctx.message || "");
+        const contextRanking = incomingBlocked
+            ? [{ family: "british_banter", score: 34 }, { family: "generic_savage", score: 32 }]
+            : classifyCuratedContext(ctx, profile);
         const primaryContext = contextRanking[0]?.family || "generic_savage";
         const ranked = profileReady && Array.isArray(profile.burns)
-            ? profile.burns.map((burn) => ({
-                burn,
-                live: false,
-                seeded: false,
-                context: primaryContext,
-                rank: (CURATED_HISTORY_RANKS[burn.kind] || 32) + Math.min(10, Number(burn.score) || 0) + overlapCount(currentTokens, burn.keywords || []) * 4 - (Number(burn.timesUsed) || 0) * 3
-            }))
+            ? profile.burns.map((burn) => {
+                const relevance = curatedHistoryRelevance(burn, currentTokens, currentText);
+                return {
+                    burn,
+                    live: false,
+                    seeded: false,
+                    relevance,
+                    context: primaryContext,
+                    rank: (CURATED_HISTORY_RANKS[burn.kind] || 32) + Math.min(10, Number(burn.score) || 0) + relevance + overlapCount(currentTokens, burn.keywords || []) * 4 - (Number(burn.timesUsed) || 0) * 3
+                };
+            }).filter((entry) => entry.relevance > 0)
             : [];
 
         const repeatKey = currentText.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
-        const repeatStat = repeatKey.length >= 12 ? profile?.repeats?.[simpleCuratedHash(repeatKey)] : null;
+        const repeatStat = !incomingBlocked && repeatKey.length >= 12 ? profile?.repeats?.[simpleCuratedHash(repeatKey)] : null;
         if (repeatStat && statCount(repeatStat) >= 2) {
             ranked.push({
                 live: true,
                 seeded: false,
                 context: "repetition",
-                rank: 72 + Math.min(10, statCount(repeatStat)),
+                rank: 74 + Math.min(10, statCount(repeatStat)),
                 burn: {
                     id: `live-repeat:${simpleCuratedHash(repeatKey)}`,
                     kind: "repeat",
                     timesUsed: 0,
                     template: `@{target} you've posted that exact line ${statCount(repeatStat)} times. Your copy button is carrying the whole act.`
+                }
+            });
+        }
+
+        const liveContradiction = !incomingBlocked ? contextRanking.find((item) => item.family === "contradiction" && item.contradiction) : null;
+        if (liveContradiction) {
+            ranked.push({
+                live: true,
+                seeded: false,
+                context: "contradiction",
+                rank: 68,
+                burn: {
+                    id: `live-contradiction:${simpleCuratedHash(`${username}:${currentText}`)}`,
+                    kind: "contradiction",
+                    timesUsed: 0,
+                    template: `@{target} your latest version just ran into your earlier one. Pick a lane before the transcript does it for you.`
                 }
             });
         }
@@ -2076,6 +2163,41 @@
         ({ target }) => `@${target} that wasn't a mic drop; you just lost grip of the conversation.`,
         ({ target }) => `@${target} you keep serving leftovers and acting surprised nobody asked for seconds.`
     ];
+    const britishBuiltInBurns = [
+        ({ target }) => `@${target} sod off, you grotty wanker; that comeback couldn't organise a piss-up in a brewery.`,
+        ({ target }) => `@${target} you absolute bellend, you've made a proper dog's dinner of that argument.`,
+        ({ target }) => `@${target} have a word with yourself, you muppet; the point's gone walkabout.`,
+        ({ target }) => `@${target} steady on, you numpty. All that noise and the argument still forgot its trousers.`,
+        ({ target }) => `@${target} pack it in, you pillock; even your confidence looks embarrassed.`,
+        ({ target }) => `@${target} do one, you tosser. That was well bang out and still somehow boring.`,
+        ({ target }) => `@${target} listen to yourself, you daft git; the sentence has grassed you up.`,
+        ({ target }) => `@${target} you absolute knobhead, that point couldn't find its arse with both hands.`,
+        ({ target }) => `@${target} fookin' hell mate, you've turned a simple comeback into unpaid admin.`,
+        ({ target }) => `@${target} that's bang out of order — mostly because you made logic watch it happen.`,
+        ({ target }) => `@${target} sort yourself out, mate; you're arguing like the pub's closing and you've lost your coat.`,
+        ({ target }) => `@${target} absolute state of that reply. Give your keyboard a day off.`
+    ];
+
+    function drillPrivateName(target) {
+        const clean = String(target || "recruit").replace(/^@+/, "").replace(/[^A-Za-z0-9_.-]/g, "");
+        if (/^joker747$/i.test(clean)) return "JOKER";
+        const withoutDigits = clean.replace(/\d+$/g, "");
+        return (withoutDigits || clean || "RECRUIT").slice(0, 18).toUpperCase();
+    }
+
+    const drillSargeBurns = [
+        ({ target }) => `@${target} PRIVATE ${drillPrivateName(target)}! FRONT AND CENTRE! Was that a comeback or did your sentence report for inspection unfinished?`,
+        ({ target }) => `@${target} PRIVATE ${drillPrivateName(target)}! I asked for a point, not a bag of loose words rolling round the parade square!`,
+        ({ target }) => `@${target} PRIVATE ${drillPrivateName(target)}! STAND STILL WHILE YOUR ARGUMENT TRIES TO REMEMBER WHY IT TURNED UP!`,
+        ({ target }) => `@${target} PRIVATE ${drillPrivateName(target)}! That reply is a disgrace to organised shouting!`,
+        ({ target }) => `@${target} PRIVATE ${drillPrivateName(target)}! Your confidence passed inspection and your reasoning went missing!`,
+        ({ target }) => `@${target} PRIVATE ${drillPrivateName(target)}! Pick that comeback up, dust it off, and apologise to the English language!`,
+        ({ target }) => `@${target} PRIVATE ${drillPrivateName(target)}! I've seen queue barriers hold a straighter line than that argument!`,
+        ({ target }) => `@${target} PRIVATE ${drillPrivateName(target)}! You arrived ready for inspection with half a thought and no paperwork!`,
+        ({ target }) => `@${target} PRIVATE ${drillPrivateName(target)}! Stop polishing the confidence and fix the bloody sentence!`,
+        ({ target }) => `@${target} PRIVATE ${drillPrivateName(target)}! That comeback needs three laps round the car park and a written apology!`
+    ];
+
     let lastBurnTimestamp = 0;
     const RECENT_BURN_LIMIT = 12;
     let recentBurnResponses = [];
@@ -2086,7 +2208,7 @@
 
     function safeBurnQuote(text, maxLength = 72) {
         const raw = String(text || "").replace(/\s+/g, " ").trim();
-        if (!raw || CURATED_PERSONAL_DATA_PATTERN.test(raw) || BURN_QUOTE_SENSITIVE_PATTERN.test(raw)) return "";
+        if (!raw || CURATED_PERSONAL_DATA_PATTERN.test(raw) || BURN_QUOTE_SENSITIVE_PATTERN.test(raw) || isBlockedBurnSubject(raw)) return "";
         const cleaned = normalizeCuratedText(raw)
             .replace(/^[-–—:;,.!? ]+|[-–—:;,.!? ]+$/g, "")
             .trim();
@@ -2124,6 +2246,7 @@
         if (!candidate) return null;
         if (!/^@[A-Za-z0-9_.-]+\b/.test(candidate)) candidate = `@${target} ${candidate}`;
         if (candidate.length < 18 || candidate.length > 240) return null;
+        if (isBlockedBurnSubject(candidate) || BURN_DIRECT_THREAT_PATTERN.test(candidate)) return null;
         const body = candidate.replace(/^@[A-Za-z0-9_.-]+\s+/, "");
         if (body.split(/\s+/).filter(Boolean).length < 4) return null;
         if (/\b(?:and|but|or)\s+(?:and|but|or)\b/i.test(body)) return null;
@@ -2570,6 +2693,10 @@
         }
 
         const isBurn = !!meta.engine;
+        if (isBurn && (isBlockedBurnSubject(message) || BURN_DIRECT_THREAT_PATTERN.test(String(message || "")))) {
+            setBurnRuntimeStatus({ lastAttempt: "blocked: account-protection firewall", lastError: "blocked-burn-subject" });
+            return false;
+        }
         if (isBurn) {
             composer = await waitForBurnComposerIdle(composer);
             if (!composer) return false;
@@ -2611,12 +2738,17 @@
         };
         const enabled = Object.assign({}, defaultSettings.burnEnginesEnabled, settings.burnEnginesEnabled || {});
         const primary = settings.autoBurnEngine || "builtin";
-        const engineOrder = [primary, "curated", "builtin", "compromise", "rita", "custom", "markov"]
+        const normalFallbackOrder = ["curated", "builtin", "compromise", "rita", "custom", "markov"];
+        const engineOrder = (primary === "drill" ? ["drill", ...normalFallbackOrder] : [primary, ...normalFallbackOrder])
             .filter((key, index, arr) => arr.indexOf(key) === index && enabled[key] !== false);
 
         const custom = window.rumbleBlocker?.customBurnGenerator;
 
         const generateFromEngine = (engine) => {
+            if (engine === "drill") {
+                const template = drillSargeBurns[Math.floor(Math.random() * drillSargeBurns.length)];
+                return template ? template(normalizedCtx) : null;
+            }
             if (engine === "curated") return selectCuratedBurn(normalizedCtx);
             if (engine === "custom") {
                 if (typeof custom !== "function") return null;
@@ -2669,7 +2801,8 @@
                 return phrase ? `@${normalizedCtx.target} ${phrase}` : null;
             }
             if (engine === "builtin") {
-                const template = builtInBurns[Math.floor(Math.random() * builtInBurns.length)];
+                const pool = Math.random() < 0.72 ? britishBuiltInBurns : builtInBurns;
+                const template = pool[Math.floor(Math.random() * pool.length)];
                 return template ? template(normalizedCtx) : null;
             }
             return null;
