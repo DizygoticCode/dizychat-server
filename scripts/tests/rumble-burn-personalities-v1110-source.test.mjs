@@ -41,9 +41,10 @@ test("personality engines are enabled independently and share Curated memory", (
   for (const key of personalities) assert.match(defaults, new RegExp(`${key}: true`));
   assert.match(defaults, /random_personality: true/);
 
-  assert.match(source, /function selectCuratedBurn\(ctx, options = \{\}\)/);
+  assert.match(source, /function selectCuratedBurn\(ctx\)/);
+  assert.match(source, /function selectCuratedBurnWithOptions\(ctx, options = \{\}\)/);
   const personality = between("const BURN_PERSONALITY_KEYS = Object.freeze([", "function drillPrivateName(target)");
-  assert.match(personality, /selectCuratedBurn\(ctx, \{ allowEngineDisabled: true \}\)/);
+  assert.match(personality, /selectCuratedBurnWithOptions\(ctx, \{ allowEngineDisabled: true \}\)/);
   assert.match(personality, /function renderPersonalityBurn\(engine, ctx\)/);
 });
 
