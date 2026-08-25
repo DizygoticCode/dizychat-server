@@ -17,7 +17,7 @@ jobs:
         with:
           node-version: '22'
       - name: Apply selected-user trigger patch
-        run: node scripts/patch-rumble-burn-selected-user.mjs
+        run: node scripts/patch-rumble-burn-selected-user-wrapper.mjs
       - name: Check userscript syntax
         run: node --check scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
       - name: Run userscript source-contract tests
