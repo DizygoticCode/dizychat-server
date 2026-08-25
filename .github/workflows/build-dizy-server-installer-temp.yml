@@ -1,81 +1,48 @@
-name: Build temporary DIZY Server Installer
+name: Diagnose DIZY Server Installer
 
 on:
   push:
     branches:
-      - build/dizy-server-installer-2404
+      - build/dizy-server-installer-run
     paths:
-      - 'installer/dizy-server-source.part-*'
       - '.github/workflows/build-dizy-server-installer-temp.yml'
-  pull_request:
-    branches:
-      - build/dizy-server-installer-2404
-    paths:
-      - 'installer/**'
-      - '.github/workflows/build-dizy-server-installer-temp.yml'
+      - 'installer/DIZY-ISO-BUILD-TRIGGER.txt'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  diagnose:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 10
     steps:
-      - name: Checkout temporary build branch
-        uses: actions/checkout@v4
-
-      - name: Reconstruct tested installer source
+      - uses: actions/checkout@v4
+      - name: Reconstruct exact installer source
         shell: bash
         run: |
           set -euo pipefail
-          cat installer/dizy-server-source.part-* > /tmp/dizy-server-source.b64
+          cat \
+            installer/dizy-server-source-v3.part-01 \
+            installer/dizy-server-source-v3.part-02 \
+            installer/dizy-server-source-v3.part-03a \
+            installer/dizy-server-source-v3.part-03b \
+            installer/dizy-server-source-v3.part-03c \
+            installer/dizy-server-source-v3.part-03d \
+            installer/dizy-server-source-v3.part-04 \
+            installer/dizy-server-source-v3.part-05 \
+            installer/dizy-server-source-v3.part-06 \
+            > /tmp/dizy-server-source.b64
           base64 --decode /tmp/dizy-server-source.b64 > /tmp/dizy-server-source.tar.gz
-          mkdir -p installer/dizy-server
-          tar -xzf /tmp/dizy-server-source.tar.gz -C installer/dizy-server
-          test -x installer/dizy-server/scripts/build-iso.sh || chmod +x installer/dizy-server/scripts/build-iso.sh
-          test -x installer/dizy-server/tests/verify_iso.sh || chmod +x installer/dizy-server/tests/verify_iso.sh
-
-      - name: Install ISO build and validation tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xorriso shellcheck
-
-      - name: Run installer contract tests
-        working-directory: installer/dizy-server
-        run: python3 -m unittest discover -s tests -v
-
-      - name: Validate shell syntax
-        working-directory: installer/dizy-server
+          mkdir -p /tmp/dizy-server
+          tar -xzf /tmp/dizy-server-source.tar.gz -C /tmp/dizy-server
+      - name: Show failing CLI extraction seam
         shell: bash
         run: |
           set -euo pipefail
-          while IFS= read -r -d '' file; do bash -n "$file"; done < <(find dizy scripts tests -type f -name '*.sh' -print0)
-
-      - name: ShellCheck installer scripts
-        working-directory: installer/dizy-server
-        run: shellcheck dizy/*.sh scripts/*.sh tests/*.sh
-
-      - name: Build custom Ubuntu ISO
-        working-directory: installer/dizy-server
-        run: ./scripts/build-iso.sh
-
-      - name: Verify ISO payload, boot metadata and USB fit
-        working-directory: installer/dizy-server
-        run: |
-          ./tests/verify_iso.sh ./out/DIZY-Server-Installer-24.04.4-amd64.iso
-          sha256sum -c ./out/DIZY-Server-Installer-24.04.4-amd64.iso.sha256
-          stat -c '%n %s bytes' ./out/DIZY-Server-Installer-24.04.4-amd64.iso ./out/DIZY-Server-Installer-24.04.4-amd64.iso.sha256 ./out/DIZY-Server-Installer-24.04.4-amd64.iso.manifest.txt
-
-      - name: Upload DIZY installer artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: DIZY-Server-Installer-24.04.4-amd64
-          path: |
-            installer/dizy-server/out/DIZY-Server-Installer-24.04.4-amd64.iso
-            installer/dizy-server/out/DIZY-Server-Installer-24.04.4-amd64.iso.sha256
-            installer/dizy-server/out/DIZY-Server-Installer-24.04.4-amd64.iso.manifest.txt
-          compression-level: 0
-          retention-days: 1
-          if-no-files-found: error
+          echo '=== exact error string matches ==='
+          grep -RFn -C 35 -- 'Could not extract a working CLI binary' /tmp/dizy-server || true
+          grep -RFn -C 35 -- 'could not extract a working CLI binary' /tmp/dizy-server || true
+          echo '=== gh / cli install references ==='
+          grep -RniE -C 12 -- 'gh_cli|github cli|cli binary|gh version|gh_' /tmp/dizy-server/dizy /tmp/dizy-server/scripts /tmp/dizy-server/tests || true
+          exit 1
