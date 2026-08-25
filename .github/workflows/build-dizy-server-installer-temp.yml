@@ -1,4 +1,4 @@
-name: Diagnose DIZY Server Installer
+name: Build repaired DIZY Server Installer
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - build/dizy-server-installer-run
     paths:
       - '.github/workflows/build-dizy-server-installer-temp.yml'
+      - 'installer/dizy-server-overrides/**'
       - 'installer/DIZY-ISO-BUILD-TRIGGER.txt'
   workflow_dispatch:
 
@@ -13,25 +14,80 @@ permissions:
   contents: read
 
 jobs:
-  diagnose:
+  build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-      - name: Reconstruct exact installer source
+
+      - name: Reconstruct exact installer source and apply proven repair
         shell: bash
         run: |
           set -euo pipefail
-          cat installer/dizy-server-source-v3.part-01 installer/dizy-server-source-v3.part-02 installer/dizy-server-source-v3.part-03a installer/dizy-server-source-v3.part-03b installer/dizy-server-source-v3.part-03c installer/dizy-server-source-v3.part-03d installer/dizy-server-source-v3.part-04 installer/dizy-server-source-v3.part-05 installer/dizy-server-source-v3.part-06 > /tmp/dizy-server-source.b64
+          cat \
+            installer/dizy-server-source-v3.part-01 \
+            installer/dizy-server-source-v3.part-02 \
+            installer/dizy-server-source-v3.part-03a \
+            installer/dizy-server-source-v3.part-03b \
+            installer/dizy-server-source-v3.part-03c \
+            installer/dizy-server-source-v3.part-03d \
+            installer/dizy-server-source-v3.part-04 \
+            installer/dizy-server-source-v3.part-05 \
+            installer/dizy-server-source-v3.part-06 \
+            > /tmp/dizy-server-source.b64
           base64 --decode /tmp/dizy-server-source.b64 > /tmp/dizy-server-source.tar.gz
-          mkdir -p /tmp/dizy-server
-          tar -xzf /tmp/dizy-server-source.tar.gz -C /tmp/dizy-server
-      - name: Show exact nvme-cli contract
+          rm -rf installer/dizy-server
+          mkdir -p installer/dizy-server
+          tar -xzf /tmp/dizy-server-source.tar.gz -C installer/dizy-server
+          cp installer/dizy-server-overrides/scripts/build-iso.sh installer/dizy-server/scripts/build-iso.sh
+          bash installer/dizy-server-overrides/scripts/patch-preflight-nvme.sh installer/dizy-server/dizy/preflight.sh
+          chmod +x installer/dizy-server/scripts/build-iso.sh installer/dizy-server/dizy/preflight.sh
+          test -x installer/dizy-server/tests/verify_iso.sh || chmod +x installer/dizy-server/tests/verify_iso.sh
+          grep -Fq 'no network or PXE dependency is permitted here' installer/dizy-server/dizy/preflight.sh
+
+      - name: Install ISO build and validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xorriso shellcheck
+
+      - name: Run installer contract tests
+        working-directory: installer/dizy-server
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Validate shell syntax and ShellCheck
+        working-directory: installer/dizy-server
         shell: bash
         run: |
           set -euo pipefail
-          echo '=== preflight nvme block ==='
-          sed -n '1,130p' /tmp/dizy-server/dizy/preflight.sh
-          echo '=== all NVME_BIN / nvme-cli uses ==='
-          grep -RniE -C 6 -- 'NVME_BIN|nvme-cli|nvme format|nvme sanitize' /tmp/dizy-server/dizy /tmp/dizy-server/tests || true
-          exit 1
+          while IFS= read -r -d '' file; do bash -n "$file"; done < <(find dizy scripts tests -type f -name '*.sh' -print0)
+          shellcheck dizy/*.sh scripts/*.sh tests/*.sh
+
+      - name: Build custom Ubuntu ISO
+        working-directory: installer/dizy-server
+        run: ./scripts/build-iso.sh
+
+      - name: Verify ISO payload, boot metadata and USB fit
+        working-directory: installer/dizy-server
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./tests/verify_iso.sh ./out/DIZY-Server-Installer-24.04.4-amd64.iso
+          (cd out && sha256sum -c DIZY-Server-Installer-24.04.4-amd64.iso.sha256)
+          mkdir -p /tmp/iso-proof
+          xorriso -osirrox on -indev ./out/DIZY-Server-Installer-24.04.4-amd64.iso \
+            -extract /dizy/preflight.sh /tmp/iso-proof/preflight.sh >/dev/null 2>&1
+          grep -Fq 'no network or PXE dependency is permitted here' /tmp/iso-proof/preflight.sh
+          grep -Fq 'readlink "$candidate"' /tmp/iso-proof/preflight.sh
+          stat -c '%n %s bytes' ./out/DIZY-Server-Installer-24.04.4-amd64.iso ./out/DIZY-Server-Installer-24.04.4-amd64.iso.sha256 ./out/DIZY-Server-Installer-24.04.4-amd64.iso.manifest.txt
+
+      - name: Upload repaired DIZY installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DIZY-Server-Installer-24.04.4-amd64-REPAIRED
+          path: |
+            installer/dizy-server/out/DIZY-Server-Installer-24.04.4-amd64.iso
+            installer/dizy-server/out/DIZY-Server-Installer-24.04.4-amd64.iso.sha256
+            installer/dizy-server/out/DIZY-Server-Installer-24.04.4-amd64.iso.manifest.txt
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
