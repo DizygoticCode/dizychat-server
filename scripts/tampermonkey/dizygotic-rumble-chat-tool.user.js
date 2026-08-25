@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dizygotic Rumble Chat Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.12.2
+// @version      1.12.3
 // @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + transcript recorder/export + automated curated burn memory + outgoing message styling + auto-burn + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.
 // @author       Dizygotic
 // @match        https://rumble.com/*
@@ -1225,7 +1225,9 @@
         const currentTokens = curatedTokens(ctx.message || "");
         const currentText = normalizeCuratedText(ctx.message || "");
         const tagCount = Math.max(1, Number(ctx.tagCount) || 1);
-        const quote = incomingBlocked ? "" : safeBurnQuote(ctx.message || "");
+        const quote = incomingBlocked || !shouldUseBurnQuote(ctx, "curated")
+            ? ""
+            : safeBurnQuote(ctx.message || "");
         const contextRanking = incomingBlocked
             ? [{ family: "british_banter", score: 34 }, { family: "generic_savage", score: 32 }]
             : classifyCuratedContext(ctx, profile);
@@ -1317,7 +1319,7 @@
             strategy: selected.seeded ? `seed:${chosen.kind}` : selected.live ? `live:${chosen.kind}` : `history:${chosen.kind}`,
             context: selected.context || primaryContext
         };
-        return String(chosen.template || "").replace(/\{target\}/g, target).slice(0, 240);
+        return String(chosen.template || "").replace(/\{target\}/g, target);
     }
 
     function markCuratedBurnUsed(selection) {
@@ -2419,8 +2421,7 @@
     function drillPrivateName(target) {
         const clean = String(target || "recruit").replace(/^@+/, "").replace(/[^A-Za-z0-9_.-]/g, "");
         if (/^joker747$/i.test(clean)) return "JOKER";
-        const withoutDigits = clean.replace(/\d+$/g, "");
-        return (withoutDigits || clean || "RECRUIT").slice(0, 18).toUpperCase();
+        return (clean || "RECRUIT").toUpperCase();
     }
 
     const drillSargeBurns = [
@@ -2444,6 +2445,9 @@
     const BURN_PRESSURE_WINDOW_MS = 20 * 60 * 1000;
     const BURN_QUOTE_SENSITIVE_PATTERN = /\b(?:address|postcode|phone|email|diagnos(?:ed|is)|cancer|hiv|autis(?:m|tic)|disabled|disability|pregnan(?:t|cy)|religion|muslims?|christians?|jews?|jewish|hindus?|sikhs?|gays?|lesbians?|bisexuals?|trans(?:gender)?|race|racial|ethnicity)\b/i;
 
+    const RUMBLE_CHAT_MESSAGE_LIMIT = 200;
+    const BURN_QUOTE_BUCKETS = 5;
+
     function safeBurnQuote(text, maxLength = 72) {
         const raw = String(text || "").replace(/\s+/g, " ").trim();
         if (!raw || CURATED_PERSONAL_DATA_PATTERN.test(raw) || BURN_QUOTE_SENSITIVE_PATTERN.test(raw) || isBlockedBurnSubject(raw)) return "";
@@ -2456,6 +2460,15 @@
         const cut = clipped.lastIndexOf(" ");
         const bounded = cut >= Math.floor(maxLength * 0.6) ? clipped.slice(0, cut) : cleaned.slice(0, maxLength);
         return `${bounded.trim()}…`;
+    }
+
+    function shouldUseBurnQuote(ctx, source = "curated") {
+        const message = String(ctx?.message || "").replace(/\s+/g, " ").trim().toLowerCase();
+        const from = String(ctx?.from || ctx?.target || "").trim().toLowerCase();
+        const tagCount = Math.max(1, Number(ctx?.tagCount) || 1);
+        if (!message) return false;
+        const bucket = parseInt(simpleCuratedHash(`${source}:${from}:${tagCount}:${message}`).slice(-2), 36);
+        return Number.isFinite(bucket) && bucket % BURN_QUOTE_BUCKETS === 0;
     }
 
     function noteBurnPressure(username) {
@@ -2483,7 +2496,7 @@
             .trim();
         if (!candidate) return null;
         if (!/^@[A-Za-z0-9_.-]+\b/.test(candidate)) candidate = `@${target} ${candidate}`;
-        if (candidate.length < 18 || candidate.length > 240) return null;
+        if (candidate.length < 18) return null;
         if (isBlockedBurnSubject(candidate) || BURN_DIRECT_THREAT_PATTERN.test(candidate)) return null;
         const body = candidate.replace(/^@[A-Za-z0-9_.-]+\s+/, "");
         if (body.split(/\s+/).filter(Boolean).length < 4) return null;
@@ -2499,7 +2512,26 @@
         ];
         const lower = body.toLowerCase();
         if (staleTechFiller.some((fragment) => lower.includes(fragment))) return null;
-        return candidate;
+        return clampBurnMessageForRumble(candidate, target);
+    }
+
+    function clampBurnMessageForRumble(message, target, maxLength = RUMBLE_CHAT_MESSAGE_LIMIT) {
+        const raw = String(message || "").replace(/\s+/g, " ").trim();
+        const leadingTarget = raw.match(/^@([A-Za-z0-9_.-]+)\b/)?.[1] || "";
+        const safeTarget = String(target || leadingTarget || "there")
+            .replace(/^@+/, "")
+            .replace(/[^A-Za-z0-9_.-]/g, "") || "there";
+        const mention = `@${safeTarget}`;
+        const body = raw.replace(/^@[A-Za-z0-9_.-]+\b\s*/, "").trim();
+        const prefix = `${mention} `;
+        const full = `${prefix}${body}`.trim();
+        if (Array.from(full).length <= maxLength) return full;
+
+        const availableBodyChars = Math.max(1, maxLength - Array.from(prefix).length - 1);
+        const clipped = Array.from(body).slice(0, availableBodyChars).join("");
+        const cut = clipped.lastIndexOf(" ");
+        const bounded = (cut >= Math.floor(clipped.length * 0.6) ? clipped.slice(0, cut) : clipped).trim();
+        return `${prefix}${bounded}…`.trim();
     }
 
     function burnResponseKey(text) {
@@ -2952,6 +2984,9 @@
             setBurnRuntimeStatus({ lastAttempt: "blocked: account-protection firewall", lastError: "blocked-burn-subject" });
             return false;
         }
+        const outboundMessage = isBurn
+            ? clampBurnMessageForRumble(message, meta.target || "")
+            : message;
         if (isBurn) {
             composer = await waitForBurnComposerIdle(composer);
             if (!composer) return false;
@@ -2964,16 +2999,16 @@
         let formatted = "";
         botComposerMutationGuard = isBurn;
         try {
-            formatted = setOutgoingComposerValue(composer, message);
+            formatted = setOutgoingComposerValue(composer, outboundMessage);
         } finally {
             botComposerMutationGuard = false;
         }
-        rememberPendingOutgoingIdentity(message, formatted);
+        rememberPendingOutgoingIdentity(outboundMessage, formatted);
         setBurnRuntimeStatus({ composerFound: true, lastAttempt: isBurn ? "burn composer filled" : "composer filled", lastError: "" });
         outgoingSubmitGuard = true;
         try {
             const submitted = await submitComposer(composer, isBurn ? formatted : null);
-            if (submitted && isBurn) rememberPendingBurnEcho(message, formatted, meta);
+            if (submitted && isBurn) rememberPendingBurnEcho(outboundMessage, formatted, meta);
             setBurnRuntimeStatus({ lastAttempt: submitted ? "send dispatched" : (isBurn ? "burn send cancelled" : "failed: no send path"), lastError: submitted ? "" : burnRuntimeStatus.lastError || "send-path-not-found" });
             return submitted;
         } finally {
@@ -3022,7 +3057,9 @@
                         .replace(/\s+/g, " ")
                         .trim()
                         .slice(0, 48);
-                    const quote = safeBurnQuote(normalizedCtx.message);
+                    const quote = shouldUseBurnQuote(normalizedCtx, "compromise")
+                        ? safeBurnQuote(normalizedCtx.message)
+                        : "";
                     const variants = [
                         quote ? `@${normalizedCtx.target} “${quote}” — that wasn't a comeback, that was evidence.` : null,
                         noun ? `@${normalizedCtx.target} you somehow made ${noun} less convincing by typing about it.` : null,
@@ -3035,7 +3072,9 @@
                 const ritaLib = typeof RiTa !== "undefined" ? RiTa : window.RiTa;
                 if (!ritaLib) return null;
                 try {
-                    const quote = safeBurnQuote(normalizedCtx.message);
+                    const quote = shouldUseBurnQuote(normalizedCtx, "rita")
+                        ? safeBurnQuote(normalizedCtx.message)
+                        : "";
                     const variants = [
                         quote ? `@${normalizedCtx.target} “${quote}” — even the sentence is trying to leave you behind.` : null,
                         `@${normalizedCtx.target} premium confidence, bargain-bin material.`,
