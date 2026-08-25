@@ -31,8 +31,8 @@ test("master-off clears queued burns and blocks generation and sending while Cur
   assert.match(generate, /if \(!settings\.burnMasterEnabled\) return null;/);
 
   const queue = between("async function maybeHandleAutoBurn(ctx)", "/***********************\n     * Core message refresh");
-  assert.match(queue, /if \(!settings\.burnMasterEnabled \|\| !settings\.autoBurnEnabled\) return;/);
-  assert.match(queue, /if \(!settings\.burnMasterEnabled \|\| !settings\.autoBurnEnabled\)/);
+  assert.match(queue, /if \(!settings\.burnMasterEnabled \|\| !automaticBurnTriggersEnabled\(\)\) return;/);
+  assert.match(queue, /if \(!settings\.burnMasterEnabled \|\| !automaticBurnTriggersEnabled\(\)\)/);
   assert.match(queue, /burnTagQueue\.length\s*=\s*0/);
 });
 
