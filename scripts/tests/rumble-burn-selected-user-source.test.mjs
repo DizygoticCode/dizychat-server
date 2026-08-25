@@ -39,7 +39,7 @@ test("selected-user trigger is independent from name-tag trigger but shares the 
   assert.match(queue, /if \(!settings\.burnMasterEnabled \|\| !automaticBurnTriggersEnabled\(\)\) return;/);
   assert.match(queue, /if \(!settings\.burnMasterEnabled \|\| !automaticBurnTriggersEnabled\(\)\)/);
 
-  const refresh = between("function refreshBlockedMessages()", "function scheduleRefresh()");
+  const refresh = between("function refreshBlockedMessages()", "function initChatObserver(container)");
   assert.match(refresh, /settings\.autoBurnEnabled\s*&&\s*matchesAutoBurnTrigger\(plainOriginal, selfHandleLower\)/);
   assert.match(refresh, /settings\.autoBurnSelectedUsersEnabled\s*&&\s*matchesSelectedAutoBurnUser\(username\)/);
   assert.match(refresh, /nameTriggerMatched\s*\|\|\s*selectedUserTriggerMatched/);
