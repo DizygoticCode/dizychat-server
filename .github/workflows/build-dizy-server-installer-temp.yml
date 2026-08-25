@@ -40,15 +40,16 @@ jobs:
           mkdir -p installer/dizy-server
           tar -xzf /tmp/dizy-server-source.tar.gz -C installer/dizy-server
           cp installer/dizy-server-overrides/scripts/build-iso.sh installer/dizy-server/scripts/build-iso.sh
+          cp installer/dizy-server-overrides/tests/test_nvme_runtime_contract.py installer/dizy-server/tests/test_nvme_runtime_contract.py
           bash installer/dizy-server-overrides/scripts/patch-preflight-nvme.sh installer/dizy-server/dizy/preflight.sh
           chmod +x installer/dizy-server/scripts/build-iso.sh installer/dizy-server/dizy/preflight.sh
           test -x installer/dizy-server/tests/verify_iso.sh || chmod +x installer/dizy-server/tests/verify_iso.sh
-          grep -Fq 'no network or PXE dependency is permitted here' installer/dizy-server/dizy/preflight.sh
+          grep -Fq 'Bundled nvme-cli runtime is missing from the installation media.' installer/dizy-server/dizy/preflight.sh
 
       - name: Install ISO build and validation tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y xorriso shellcheck
+          sudo apt-get install -y xorriso shellcheck nvme-cli
 
       - name: Run installer contract tests
         working-directory: installer/dizy-server
@@ -73,17 +74,21 @@ jobs:
           set -euo pipefail
           ./tests/verify_iso.sh ./out/DIZY-Server-Installer-24.04.4-amd64.iso
           (cd out && sha256sum -c DIZY-Server-Installer-24.04.4-amd64.iso.sha256)
+          rm -rf /tmp/iso-proof
           mkdir -p /tmp/iso-proof
           xorriso -osirrox on -indev ./out/DIZY-Server-Installer-24.04.4-amd64.iso \
-            -extract /dizy/preflight.sh /tmp/iso-proof/preflight.sh >/dev/null 2>&1
-          grep -Fq 'no network or PXE dependency is permitted here' /tmp/iso-proof/preflight.sh
-          grep -Fq 'readlink "$candidate"' /tmp/iso-proof/preflight.sh
+            -extract /dizy/preflight.sh /tmp/iso-proof/preflight.sh \
+            -extract /dizy/nvme-runtime /tmp/iso-proof/nvme-runtime >/dev/null 2>&1
+          grep -Fq '/cdrom/dizy/nvme-runtime' /tmp/iso-proof/preflight.sh
+          test -x /tmp/iso-proof/nvme-runtime/nvme
+          test -d /tmp/iso-proof/nvme-runtime/lib
+          LD_LIBRARY_PATH=/tmp/iso-proof/nvme-runtime/lib /tmp/iso-proof/nvme-runtime/nvme version
           stat -c '%n %s bytes' ./out/DIZY-Server-Installer-24.04.4-amd64.iso ./out/DIZY-Server-Installer-24.04.4-amd64.iso.sha256 ./out/DIZY-Server-Installer-24.04.4-amd64.iso.manifest.txt
 
       - name: Upload repaired DIZY installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DIZY-Server-Installer-24.04.4-amd64-REPAIRED
+          name: DIZY-Server-Installer-24.04.4-amd64-REPAIRED-V2
           path: |
             installer/dizy-server/out/DIZY-Server-Installer-24.04.4-amd64.iso
             installer/dizy-server/out/DIZY-Server-Installer-24.04.4-amd64.iso.sha256
