@@ -18,12 +18,16 @@ class NvmeRuntimeContractTests(unittest.TestCase):
         self.assertIn('nvme-runtime', text)
         self.assertIn('ldd "$NVME_SOURCE"', text)
         self.assertIn('cp -L', text)
-        self.assertIn('LD_LIBRARY_PATH=', text)
+        self.assertIn('ld-linux-x86-64.so.2', text)
+        self.assertIn('--library-path', text)
 
     def test_preflight_uses_bundled_runtime_when_system_nvme_is_unusable(self):
         text = read("dizy/preflight.sh")
         self.assertIn('/cdrom/dizy/nvme-runtime', text)
         self.assertIn('Bundled nvme-cli runtime is missing', text)
+        self.assertIn('Bundled nvme-cli loader is missing', text)
+        self.assertIn('ld-linux-x86-64.so.2', text)
+        self.assertIn('--library-path', text)
         self.assertIn('Bundled nvme-cli runtime cannot execute', text)
 
 

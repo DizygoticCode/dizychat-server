@@ -21,7 +21,7 @@ need() {
   }
 }
 
-for cmd in curl xorriso sha256sum python3 git awk grep sed find sort xargs; do
+for cmd in curl xorriso sha256sum python3 git awk grep sed find sort xargs ldd basename cp; do
   need "$cmd"
 done
 
@@ -40,11 +40,48 @@ fi
   sha256sum -c "${BASE_NAME}.sha256.expected"
 )
 
-printf 'Staging DIZY payload and generating its integrity manifest...\n'
+printf 'Staging DIZY payload...\n'
 cp -a "$ROOT/dizy" "$WORK_DIR/dizy"
 find "$WORK_DIR/dizy" -type d -name __pycache__ -prune -exec rm -rf {} +
 find "$WORK_DIR/dizy" -type f -name '*.pyc' -delete
 rm -f "$WORK_DIR/dizy/SHA256SUMS"
+
+printf 'Bundling a self-contained nvme-cli runtime for live preflight...\n'
+NVME_SOURCE="$(command -v nvme 2>/dev/null || true)"
+if [[ -z "$NVME_SOURCE" || ! -x "$NVME_SOURCE" ]]; then
+  printf 'nvme-cli is required on the ISO build host.\n' >&2
+  exit 1
+fi
+NVME_RUNTIME="$WORK_DIR/dizy/nvme-runtime"
+rm -rf "$NVME_RUNTIME"
+mkdir -p "$NVME_RUNTIME/lib"
+cp -L "$NVME_SOURCE" "$NVME_RUNTIME/nvme"
+chmod 0755 "$NVME_RUNTIME/nvme"
+
+LOADER_SOURCE="$(ldd "$NVME_SOURCE" | awk '/ld-linux/ {print $1; exit}')"
+if [[ -z "$LOADER_SOURCE" || ! -f "$LOADER_SOURCE" ]]; then
+  printf 'Could not locate the dynamic loader required by nvme-cli.\n' >&2
+  exit 1
+fi
+cp -L "$LOADER_SOURCE" "$NVME_RUNTIME/ld-linux-x86-64.so.2"
+chmod 0755 "$NVME_RUNTIME/ld-linux-x86-64.so.2"
+
+lib_count=0
+while IFS= read -r lib; do
+  [[ -f "$lib" ]] || continue
+  cp -L "$lib" "$NVME_RUNTIME/lib/$(basename "$lib")"
+  lib_count=$((lib_count + 1))
+done < <(ldd "$NVME_SOURCE" | awk '/=> \// {print $3}' | sort -u)
+if (( lib_count == 0 )); then
+  printf 'No nvme-cli shared libraries were discovered; refusing incomplete runtime.\n' >&2
+  exit 1
+fi
+
+"$NVME_RUNTIME/ld-linux-x86-64.so.2" \
+  --library-path "$NVME_RUNTIME/lib" \
+  "$NVME_RUNTIME/nvme" version >/dev/null
+
+printf 'Generating DIZY payload integrity manifest...\n'
 manifest_tmp="$WORK_DIR/dizy.SHA256SUMS.tmp"
 rm -f "$manifest_tmp"
 (
@@ -100,6 +137,7 @@ DizyChat main observed at build: $dizychat_sha
 Application install policy: fetch current main over Ethernet at installation time
 Node runtime: 22.23.1
 DizyTrades execution defaults: OFF
+NVMe preflight runtime: bundled nvme-cli + loader + ldd-resolved libraries
 MANIFEST
 
 printf '\nBuilt: %s\n' "$OUT_ISO"

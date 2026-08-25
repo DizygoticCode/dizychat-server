@@ -37,22 +37,23 @@ new = '''ensure_nvme_cli() {
     return 0
   fi
 
-  # Do not trust the package layout inside /cdrom/pool here. The live-server
-  # environment and the package pool are not the same root filesystem, and a
-  # dynamically linked nvme binary can exist yet still be unusable because its
-  # shared-library dependencies are absent. The ISO builder therefore embeds a
-  # known-good nvme-cli binary together with every library reported by ldd.
-  # This fallback is fully offline and is verified from the finished ISO.
+  # The live-server root is not the package-pool root. Extracting one nvme-cli
+  # .deb is insufficient when the executable's loader/shared libraries are not
+  # present in the live environment. Use the runtime embedded into /dizy by the
+  # ISO builder instead: nvme itself, its ELF loader and all ldd dependencies.
   runtime=/cdrom/dizy/nvme-runtime
   [[ -x "$runtime/nvme" ]] || fatal "Bundled nvme-cli runtime is missing from the installation media."
+  [[ -x "$runtime/ld-linux-x86-64.so.2" ]] || fatal "Bundled nvme-cli loader is missing from the installation media."
   [[ -d "$runtime/lib" ]] || fatal "Bundled nvme-cli libraries are missing from the installation media."
 
   wrapper=/run/dizy-nvme
   cat > "$wrapper" <<'WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
-export LD_LIBRARY_PATH="/cdrom/dizy/nvme-runtime/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-exec /cdrom/dizy/nvme-runtime/nvme "$@"
+runtime=/cdrom/dizy/nvme-runtime
+exec "$runtime/ld-linux-x86-64.so.2" \
+  --library-path "$runtime/lib" \
+  "$runtime/nvme" "$@"
 WRAPPER
   chmod 0755 "$wrapper"
 
