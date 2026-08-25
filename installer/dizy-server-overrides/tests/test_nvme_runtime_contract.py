@@ -30,6 +30,15 @@ class NvmeRuntimeContractTests(unittest.TestCase):
         self.assertIn('--library-path', text)
         self.assertIn('Bundled nvme-cli runtime cannot execute', text)
 
+    def test_preflight_copies_bundled_runtime_off_cdrom_before_execution(self):
+        text = read("dizy/preflight.sh")
+        self.assertIn('runtime_source=/cdrom/dizy/nvme-runtime', text)
+        self.assertIn('runtime=/run/dizy-nvme-runtime', text)
+        self.assertIn('cp -a "$runtime_source/." "$runtime/"', text)
+        copy_pos = text.index('cp -a "$runtime_source/." "$runtime/"')
+        exec_pos = text.index('exec "$runtime/ld-linux-x86-64.so.2"')
+        self.assertLess(copy_pos, exec_pos)
+
 
 if __name__ == "__main__":
     unittest.main()
