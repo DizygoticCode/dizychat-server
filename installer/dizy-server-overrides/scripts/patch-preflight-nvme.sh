@@ -28,7 +28,7 @@ old = '''ensure_nvme_cli() {
 }
 '''
 new = '''ensure_nvme_cli() {
-  local system_nvme runtime wrapper
+  local system_nvme runtime_source runtime wrapper
 
   system_nvme="$(command -v nvme 2>/dev/null || true)"
   if [[ -n "$system_nvme" ]] && "$system_nvme" version >/dev/null 2>&1; then
@@ -37,20 +37,25 @@ new = '''ensure_nvme_cli() {
     return 0
   fi
 
-  # The live-server root is not the package-pool root. Extracting one nvme-cli
-  # .deb is insufficient when the executable's loader/shared libraries are not
-  # present in the live environment. Use the runtime embedded into /dizy by the
-  # ISO builder instead: nvme itself, its ELF loader and all ldd dependencies.
-  runtime=/cdrom/dizy/nvme-runtime
-  [[ -x "$runtime/nvme" ]] || fatal "Bundled nvme-cli runtime is missing from the installation media."
-  [[ -x "$runtime/ld-linux-x86-64.so.2" ]] || fatal "Bundled nvme-cli loader is missing from the installation media."
-  [[ -d "$runtime/lib" ]] || fatal "Bundled nvme-cli libraries are missing from the installation media."
+  # The installation medium may be mounted noexec. Treat /cdrom only as a
+  # read-only source, then copy the complete bundled nvme runtime into /run
+  # before executing its loader and binary.
+  runtime_source=/cdrom/dizy/nvme-runtime
+  [[ -r "$runtime_source/nvme" ]] || fatal "Bundled nvme-cli runtime is missing from the installation media."
+  [[ -r "$runtime_source/ld-linux-x86-64.so.2" ]] || fatal "Bundled nvme-cli loader is missing from the installation media."
+  [[ -d "$runtime_source/lib" ]] || fatal "Bundled nvme-cli libraries are missing from the installation media."
+
+  runtime=/run/dizy-nvme-runtime
+  rm -rf "$runtime"
+  mkdir -p "$runtime"
+  cp -a "$runtime_source/." "$runtime/"
+  chmod 0755 "$runtime/nvme" "$runtime/ld-linux-x86-64.so.2"
 
   wrapper=/run/dizy-nvme
   cat > "$wrapper" <<'WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
-runtime=/cdrom/dizy/nvme-runtime
+runtime=/run/dizy-nvme-runtime
 exec "$runtime/ld-linux-x86-64.so.2" \
   --library-path "$runtime/lib" \
   "$runtime/nvme" "$@"
