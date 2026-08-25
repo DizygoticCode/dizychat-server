@@ -62,7 +62,7 @@ test("risky incoming tags bypass history and quote-backs but can use safe unrela
   const select = between("function selectCuratedBurn(ctx)", "function markCuratedBurnUsed(selection)");
   assert.match(select, /const incomingBlocked = isBlockedBurnSubject\(ctx\.message \|\| ""\)/);
   assert.match(select, /const profileReady = !incomingBlocked/);
-  assert.match(select, /const quote = incomingBlocked \? "" : safeBurnQuote/);
+  assert.match(select, /const quote = incomingBlocked \|\| !shouldUseBurnQuote\(ctx, "curated"\)[\s\S]*\? ""[\s\S]*: safeBurnQuote/);
   assert.match(select, /incomingBlocked[\s\S]*generic_savage/);
 });
 
