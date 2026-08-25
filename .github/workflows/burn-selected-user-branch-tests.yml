@@ -1,0 +1,22 @@
+name: Burn selected-user branch tests
+
+on:
+  push:
+    branches:
+      - feat/burn-selected-user-triggers
+
+permissions:
+  contents: read
+
+jobs:
+  source-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check userscript syntax
+        run: node --check scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+      - name: Run userscript source-contract tests
+        run: node --test scripts/tests/*.test.mjs
