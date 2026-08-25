@@ -28,52 +28,36 @@ old = '''ensure_nvme_cli() {
 }
 '''
 new = '''ensure_nvme_cli() {
-  if command -v nvme >/dev/null 2>&1; then
-    NVME_BIN="$(command -v nvme)"
+  local system_nvme runtime wrapper
+
+  system_nvme="$(command -v nvme 2>/dev/null || true)"
+  if [[ -n "$system_nvme" ]] && "$system_nvme" version >/dev/null 2>&1; then
+    NVME_BIN="$system_nvme"
     export NVME_BIN
     return 0
   fi
 
-  local pkg extract candidate link
-  pkg="$(find /cdrom/pool/main/n/nvme-cli -maxdepth 1 -type f -name 'nvme-cli_*_amd64.deb' 2>/dev/null | head -n1 || true)"
-  [[ -n "$pkg" ]] || fatal "nvme-cli is unavailable on the installation media."
+  # Do not trust the package layout inside /cdrom/pool here. The live-server
+  # environment and the package pool are not the same root filesystem, and a
+  # dynamically linked nvme binary can exist yet still be unusable because its
+  # shared-library dependencies are absent. The ISO builder therefore embeds a
+  # known-good nvme-cli binary together with every library reported by ldd.
+  # This fallback is fully offline and is verified from the finished ISO.
+  runtime=/cdrom/dizy/nvme-runtime
+  [[ -x "$runtime/nvme" ]] || fatal "Bundled nvme-cli runtime is missing from the installation media."
+  [[ -d "$runtime/lib" ]] || fatal "Bundled nvme-cli libraries are missing from the installation media."
 
-  extract=/run/dizy-nvme-cli
-  rm -rf "$extract"
-  mkdir -p "$extract"
-  dpkg-deb -x "$pkg" "$extract"
+  wrapper=/run/dizy-nvme
+  cat > "$wrapper" <<'WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+export LD_LIBRARY_PATH="/cdrom/dizy/nvme-runtime/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec /cdrom/dizy/nvme-runtime/nvme "$@"
+WRAPPER
+  chmod 0755 "$wrapper"
 
-  # Ubuntu media may package /usr/bin/nvme as a symlink. The old probe used
-  # `find -type f -name nvme`, which ignores symlinks and stopped before the
-  # installer could even inspect the target disk. Resolve the packaged entry
-  # entirely from /cdrom; no network or PXE dependency is permitted here.
-  NVME_BIN=""
-  for candidate in \
-    "$extract/usr/bin/nvme" \
-    "$extract/usr/sbin/nvme" \
-    "$extract/bin/nvme" \
-    "$extract/sbin/nvme"; do
-    [[ -e "$candidate" || -L "$candidate" ]] || continue
-    if [[ -L "$candidate" ]]; then
-      link="$(readlink "$candidate")"
-      if [[ "$link" == /* ]]; then
-        candidate="$extract$link"
-      else
-        candidate="$(dirname "$candidate")/$link"
-      fi
-    fi
-    if [[ -f "$candidate" && -x "$candidate" ]]; then
-      NVME_BIN="$candidate"
-      break
-    fi
-  done
-
-  if [[ -z "$NVME_BIN" ]]; then
-    NVME_BIN="$(find "$extract" -type f -perm /111 \( -name nvme -o -name 'nvme.*' -o -name 'nvme-*' \) -print 2>/dev/null | head -n1 || true)"
-  fi
-
-  [[ -n "$NVME_BIN" && -x "$NVME_BIN" ]] || fatal "Could not extract a working nvme-cli binary from the installation media."
-  "$NVME_BIN" version >/dev/null 2>&1 || fatal "The nvme-cli binary on the installation media cannot run in the live environment."
+  "$wrapper" version >/dev/null 2>&1 || fatal "Bundled nvme-cli runtime cannot execute in the live environment."
+  NVME_BIN="$wrapper"
   export NVME_BIN
 }
 '''
