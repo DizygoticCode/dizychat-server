@@ -22,27 +22,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat \
-            installer/dizy-server-source-v3.part-01 \
-            installer/dizy-server-source-v3.part-02 \
-            installer/dizy-server-source-v3.part-03a \
-            installer/dizy-server-source-v3.part-03b \
-            installer/dizy-server-source-v3.part-03c \
-            installer/dizy-server-source-v3.part-03d \
-            installer/dizy-server-source-v3.part-04 \
-            installer/dizy-server-source-v3.part-05 \
-            installer/dizy-server-source-v3.part-06 \
-            > /tmp/dizy-server-source.b64
+          cat installer/dizy-server-source-v3.part-01 installer/dizy-server-source-v3.part-02 installer/dizy-server-source-v3.part-03a installer/dizy-server-source-v3.part-03b installer/dizy-server-source-v3.part-03c installer/dizy-server-source-v3.part-03d installer/dizy-server-source-v3.part-04 installer/dizy-server-source-v3.part-05 installer/dizy-server-source-v3.part-06 > /tmp/dizy-server-source.b64
           base64 --decode /tmp/dizy-server-source.b64 > /tmp/dizy-server-source.tar.gz
           mkdir -p /tmp/dizy-server
           tar -xzf /tmp/dizy-server-source.tar.gz -C /tmp/dizy-server
-      - name: Show failing CLI extraction seam
+      - name: Show exact nvme-cli contract
         shell: bash
         run: |
           set -euo pipefail
-          echo '=== exact error string matches ==='
-          grep -RFn -C 35 -- 'Could not extract a working CLI binary' /tmp/dizy-server || true
-          grep -RFn -C 35 -- 'could not extract a working CLI binary' /tmp/dizy-server || true
-          echo '=== gh / cli install references ==='
-          grep -RniE -C 12 -- 'gh_cli|github cli|cli binary|gh version|gh_' /tmp/dizy-server/dizy /tmp/dizy-server/scripts /tmp/dizy-server/tests || true
+          echo '=== preflight nvme block ==='
+          sed -n '1,130p' /tmp/dizy-server/dizy/preflight.sh
+          echo '=== all NVME_BIN / nvme-cli uses ==='
+          grep -RniE -C 6 -- 'NVME_BIN|nvme-cli|nvme format|nvme sanitize' /tmp/dizy-server/dizy /tmp/dizy-server/tests || true
           exit 1
