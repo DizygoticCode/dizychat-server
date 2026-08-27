@@ -65,7 +65,7 @@ test("novelty metadata is additive, compact and bounded without copying source m
   const novelty = between("function memoryBurnFingerprint(text)", "function selectCuratedBurn(ctx)");
   assert.match(novelty, /simpleCuratedHash/);
   assert.match(novelty, /recentResponseFingerprints/);
-  assert.match(novelty, /noveltyRerolls/);
+  assert.match(source, /curatedBurnStore\.noveltyRerolls/);
   assert.doesNotMatch(novelty, /sourceMessage|rawHtml|chatLog/);
 });
 
