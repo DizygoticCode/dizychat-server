@@ -20,8 +20,9 @@ test("quote-backs are gated to a deterministic minority of eligible burns", () =
   assert.match(quoteGate, /simpleCuratedHash/);
   assert.match(quoteGate, /% BURN_QUOTE_BUCKETS === 0/);
 
-  const curated = between("function selectCuratedBurn(ctx)", "function markCuratedBurnUsed(selection)");
-  assert.match(curated, /shouldUseBurnQuote\(ctx, "curated"\)/);
+  const retrieval = between("function buildBurnMemoryContext(ctx, profile)", "function chooseBurnMemoryAngle(memoryContext)");
+  assert.match(retrieval, /shouldUseBurnQuote\(ctx, "curated"\)/);
+  assert.match(retrieval, /safeBurnQuote\(ctx\.message \|\| ""\)/);
 
   const generate = between("function generateBurnResponse(ctx)", "async function maybeHandleAutoBurn(ctx)");
   assert.match(generate, /shouldUseBurnQuote\(normalizedCtx, "compromise"\)/);
