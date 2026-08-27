@@ -1,0 +1,32 @@
+name: Rumble Userscript CI
+
+on:
+  push:
+    paths:
+      - 'scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js'
+      - 'scripts/tests/**'
+      - 'scripts/maintenance/**'
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - 'scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js'
+      - 'scripts/tests/**'
+      - 'scripts/maintenance/**'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check userscript
+        run: node --check scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+      - name: Run userscript regression tests
+        run: node --test scripts/tests/*.test.mjs
