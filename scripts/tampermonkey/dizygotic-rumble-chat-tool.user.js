@@ -1243,9 +1243,15 @@
         const currentText = normalizeCuratedText(ctx?.message || "");
         const currentTokens = curatedTokens(currentText);
         const incomingBlocked = isBlockedBurnSubject(ctx?.message || "") || !isCuratableMessage(ctx?.message || "");
+        const profileReady = !incomingBlocked && !!profile;
+        const tagCount = Math.max(1, Number(ctx?.tagCount) || 1);
+        const quote = incomingBlocked || !shouldUseBurnQuote(ctx, "curated")
+            ? ""
+            : safeBurnQuote(ctx.message || "");
         const contextRanking = incomingBlocked
             ? [{ family: "british_banter", score: 34 }, { family: "generic_savage", score: 32 }]
             : classifyCuratedContext(ctx, profile);
+        const primaryContext = contextRanking[0]?.family || "generic_savage";
         const evidence = [];
         const addEvidence = (item) => {
             if (!item?.text || !isCuratableMessage(item.text) || isBlockedBurnSubject(item.text)) return;
@@ -1262,28 +1268,70 @@
                 burnId: item.burnId ? String(item.burnId).slice(0, 140) : null
             }));
         };
+        const recent = profileReady && Array.isArray(profile.recent) ? profile.recent.slice(-18) : [];
+        const historySourceText = (burn) => {
+            const seqs = new Set((Array.isArray(burn?.sourceSeqs) ? burn.sourceSeqs : []).map((value) => Number(value) || 0).filter(Boolean));
+            const sourceEntry = recent.slice().reverse().find((entry) => seqs.has(Number(entry?.seq) || 0));
+            if (sourceEntry?.text) return sourceEntry.text;
+            if (burn?.kind === "repeat" && String(burn.id || "").startsWith("repeat:")) {
+                const hash = String(burn.id).slice("repeat:".length);
+                const sample = profile?.repeats?.[hash]?.sample;
+                if (sample) return sample;
+            }
+            if (burn?.kind === "topic" && String(burn.id || "").startsWith("topic:")) return String(burn.id).slice("topic:".length);
+            if (Array.isArray(burn?.keywords) && burn.keywords.length) return burn.keywords.slice(0, 6).join(" ");
+            return "";
+        };
 
-        if (!incomingBlocked && profile) {
+        if (profileReady && Array.isArray(profile.burns)) {
+            profile.burns.map((burn) => {
+                const relevance = curatedHistoryRelevance(burn, currentTokens, currentText);
+                const rawHistoryRank = (CURATED_HISTORY_RANKS[burn.kind] || 32)
+                    + Math.min(10, Number(burn.score) || 0)
+                    + relevance
+                    + overlapCount(currentTokens, burn.keywords || []) * 4
+                    - (Number(burn.timesUsed) || 0) * 3;
+                return { burn, relevance, rank: Math.min(82, Math.max(58, rawHistoryRank)) };
+            }).filter((entry) => entry.relevance > 0).slice(0, 8).forEach((entry) => {
+                addEvidence({
+                    id: entry.burn.id,
+                    source: "history",
+                    kind: entry.burn.kind,
+                    family: entry.burn.kind || primaryContext,
+                    text: historySourceText(entry.burn),
+                    rank: entry.rank,
+                    burnId: entry.burn.id
+                });
+            });
+        }
+
+        if (profileReady) {
             const repeatKey = currentText.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
             const repeatStat = repeatKey.length >= 12 ? profile.repeats?.[simpleCuratedHash(repeatKey)] : null;
             if (repeatStat && statCount(repeatStat) >= 2 && repeatStat.sample) {
-                addEvidence({ id: `repeat:${simpleCuratedHash(repeatKey)}`, source: "live", kind: "repeat", family: "repetition", text: repeatStat.sample, count: statCount(repeatStat), rank: 92, burnId: `live-repeat:${simpleCuratedHash(repeatKey)}` });
+                addEvidence({
+                    id: `repeat:${simpleCuratedHash(repeatKey)}`,
+                    source: "live",
+                    kind: "repeat",
+                    family: "repetition",
+                    text: repeatStat.sample,
+                    count: statCount(repeatStat),
+                    rank: 92 + Math.min(10, statCount(repeatStat)),
+                    burnId: `live-repeat:${simpleCuratedHash(repeatKey)}`
+                });
             }
 
-            const recent = Array.isArray(profile.recent) ? profile.recent.slice(-18) : [];
-            for (let i = 0; i < recent.length; i += 1) {
-                const a = recent[i];
-                if (!a?.text || !isCuratableMessage(a.text) || isBlockedBurnSubject(a.text)) continue;
-                for (let j = i + 1; j < recent.length; j += 1) {
-                    const b = recent[j];
-                    if (!b?.text || !isCuratableMessage(b.text) || isBlockedBurnSubject(b.text)) continue;
-                    const overlap = overlapCount(a.tokens || [], b.tokens || []);
-                    if (overlap < 2 || a.negated === b.negated || a.text === b.text) continue;
-                    const aLive = overlapCount(currentTokens, a.tokens || []);
-                    const bLive = overlapCount(currentTokens, b.tokens || []);
-                    const relevance = Math.max(aLive, bLive);
-                    if (relevance >= 1) addEvidence({ id: `flip:${a.seq}:${b.seq}`, source: "history", kind: "contradiction", family: "contradiction", text: bLive >= aLive ? b.text : a.text, rank: 88 + relevance, burnId: `flip:${Math.min(a.seq, b.seq)}:${Math.max(a.seq, b.seq)}` });
-                }
+            const liveContradiction = contextRanking.find((item) => item.family === "contradiction" && item.contradiction);
+            if (liveContradiction) {
+                addEvidence({
+                    id: `live-contradiction:${simpleCuratedHash(`${ctx?.from || ""}:${currentText}`)}`,
+                    source: "live",
+                    kind: "contradiction",
+                    family: "contradiction",
+                    text: liveContradiction.contradiction?.text || currentText,
+                    rank: 88,
+                    burnId: `live-contradiction:${simpleCuratedHash(`${ctx?.from || ""}:${currentText}`)}`
+                });
             }
 
             recent.slice().reverse().forEach((entry, index) => {
@@ -1291,7 +1339,27 @@
                 if (!text) return;
                 const overlap = overlapCount(currentTokens, entry.tokens || []);
                 if (overlap < 1) return;
-                addEvidence({ id: `recent:${entry.seq || simpleCuratedHash(text)}`, source: "history", kind: "callback", family: contextRanking[0]?.family || "generic_savage", text, rank: 58 + overlap * 7 - index, burnId: `callback:${entry.seq || simpleCuratedHash(text)}` });
+                addEvidence({
+                    id: `recent:${entry.seq || simpleCuratedHash(text)}`,
+                    source: "history",
+                    kind: "callback",
+                    family: primaryContext,
+                    text,
+                    rank: Math.min(76, 58 + overlap * 7 - index),
+                    burnId: `callback:${entry.seq || simpleCuratedHash(text)}`
+                });
+            });
+        }
+
+        if (quote) {
+            addEvidence({
+                id: `live-quote:${simpleCuratedHash(`${quote}:${tagCount}`)}`,
+                source: "live",
+                kind: "callback",
+                family: tagCount >= 2 ? "tag_pressure" : primaryContext,
+                text: quote,
+                rank: 48 + Math.min(tagCount, 6),
+                burnId: `live-quote:${simpleCuratedHash(`${quote}:${tagCount}`)}`
             });
         }
 
@@ -1299,7 +1367,16 @@
             .filter((entry) => entry?.burn?.template && isCuratableMessage(entry.burn.template) && !isBlockedBurnSubject(entry.burn.template))
             .slice(0, 8);
         evidence.sort((a, b) => b.rank - a.rank);
-        return Object.freeze({ target, currentText, currentTokens, contextRanking, evidence: Object.freeze(evidence.slice(0, 8)), seededCandidates: Object.freeze(seededCandidates), incomingBlocked });
+        return Object.freeze({
+            target,
+            currentText,
+            currentTokens,
+            contextRanking,
+            evidence: Object.freeze(evidence.slice(0, 8)),
+            seededCandidates: Object.freeze(seededCandidates),
+            incomingBlocked,
+            profileReady
+        });
     }
 
     function chooseBurnMemoryAngle(memoryContext) {
@@ -1316,8 +1393,11 @@
         const strongest = memoryContext.evidence?.[0] || null;
         if (strongest?.kind === "contradiction") add("contradiction_callback", strongest.source, "contradiction", strongest.rank + 28, strongest);
         if (strongest?.kind === "repeat") add("repeat_callback", strongest.source, "repetition", strongest.rank + 24, strongest);
+        if (strongest && strongest.kind !== "contradiction" && strongest.kind !== "repeat") {
+            add("attack_reversal", strongest.source, strongest.family || strongest.kind || "callback", strongest.rank + 8, strongest);
+        }
         const callback = (memoryContext.evidence || []).find((item) => item.kind === "callback");
-        if (callback) add("attack_reversal", callback.source, callback.family || "callback", callback.rank + 6, callback);
+        if (callback && callback !== strongest) add("attack_reversal", callback.source, callback.family || "callback", callback.rank + 6, callback);
         const text = memoryContext.currentText || "";
         if (/\b(?:best|better than|smartest|genius|expert|always right|never wrong|easy win|destroyed|owned|rekt)\b/i.test(text)) add("brag_deflation", "live", "bragging", 63, callback);
         if (/\b(?:idiot|moron|stupid|clown|loser|pathetic|dumb|muppet|bellend|wanker|tosser)\b/i.test(text)) add("attack_reversal", "live", "direct_attack", 60, callback);
@@ -1406,7 +1486,9 @@
         const username = String(ctx.from || "").trim().toLowerCase();
         const profile = curatedBurnStore.users?.[username] || null;
         const minMessages = Math.max(3, Number(settings.curatedBurnMinMessages) || 8);
-        const memoryContext = buildBurnMemoryContext(ctx, profile && (Number(profile.messageCount) || 0) >= minMessages ? profile : null);
+        const incomingBlocked = isBlockedBurnSubject(ctx.message || "") || !isCuratableMessage(ctx.message || "");
+        const profileReady = !incomingBlocked && !!profile && (Number(profile.messageCount) || 0) >= minMessages;
+        const memoryContext = buildBurnMemoryContext(ctx, profileReady ? profile : null);
         let angle = chooseBurnMemoryAngle(memoryContext);
         if (!angle) return null;
         let candidate = null;
