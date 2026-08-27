@@ -62,10 +62,14 @@ test("history outranks seeded material, while seeds work without a ready profile
   assert.match(source, /contradiction:\s*4\d/);
   const select = between("function selectCuratedBurn(ctx)", "function markCuratedBurnUsed(selection)");
   assert.match(select, /const profileReady =/);
-  assert.match(select, /buildSeededCuratedCandidates\(/);
-  assert.match(select, /ranked\.push\(\.\.\.seeded\)/);
   assert.doesNotMatch(select, /if \(!profile \|\|[^\n]*messageCount[^\n]*\) return null;/);
   assert.match(select, /pendingCuratedBurnSelection = \{[\s\S]*?kind:/);
+
+  const retrieval = between("function buildBurnMemoryContext(ctx, profile)", "function chooseBurnMemoryAngle(memoryContext)");
+  assert.match(retrieval, /curatedHistoryRelevance\(burn, currentTokens, currentText\)/);
+  assert.match(retrieval, /CURATED_HISTORY_RANKS\[burn\.kind\]/);
+  assert.match(retrieval, /buildSeededCuratedCandidates\(ctx, profile, contextRanking\)/);
+  assert.match(retrieval, /seededCandidates/);
 });
 
 test("seed novelty penalizes exact repeats and recently used families", () => {

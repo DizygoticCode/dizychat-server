@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dizygotic Rumble Chat Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.12.3
+// @version      1.12.4
 // @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + transcript recorder/export + automated curated burn memory + outgoing message styling + auto-burn + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.
 // @author       Dizygotic
 // @match        https://rumble.com/*
@@ -694,6 +694,19 @@
         if (!store.seedUsage || typeof store.seedUsage !== "object" || Array.isArray(store.seedUsage)) store.seedUsage = {};
         store.recentSeedIds = Array.isArray(store.recentSeedIds) ? store.recentSeedIds.slice(-30) : [];
         store.recentSeedFamilies = Array.isArray(store.recentSeedFamilies) ? store.recentSeedFamilies.slice(-16) : [];
+        store.recentResponseFingerprints = Array.isArray(store.recentResponseFingerprints) ? store.recentResponseFingerprints.slice(-24) : [];
+        store.recentAngleIds = Array.isArray(store.recentAngleIds) ? store.recentAngleIds.slice(-16) : [];
+        store.recentMemoryFamilies = Array.isArray(store.recentMemoryFamilies) ? store.recentMemoryFamilies.slice(-16) : [];
+        store.noveltyRerolls = Math.max(0, Number(store.noveltyRerolls) || 0);
+        const diagnostic = store.lastMemoryDiagnostic;
+        store.lastMemoryDiagnostic = diagnostic && typeof diagnostic === "object" && !Array.isArray(diagnostic)
+            ? {
+                source: String(diagnostic.source || "").slice(0, 24),
+                angle: String(diagnostic.angle || "").slice(0, 40),
+                family: String(diagnostic.family || "").slice(0, 40),
+                at: String(diagnostic.at || "").slice(0, 40)
+            }
+            : null;
         store.schemaVersion = CURATED_BURNS_SCHEMA;
         store.lastProcessedSeq = Number(store.lastProcessedSeq) || 0;
         return store;
@@ -734,6 +747,9 @@
         }
         curatedBurnStore.recentSeedIds = [...new Set(curatedBurnStore.recentSeedIds || [])].slice(-30);
         curatedBurnStore.recentSeedFamilies = (curatedBurnStore.recentSeedFamilies || []).slice(-16);
+        curatedBurnStore.recentResponseFingerprints = [...new Set(curatedBurnStore.recentResponseFingerprints || [])].slice(-24);
+        curatedBurnStore.recentAngleIds = (curatedBurnStore.recentAngleIds || []).slice(-16);
+        curatedBurnStore.recentMemoryFamilies = (curatedBurnStore.recentMemoryFamilies || []).slice(-16);
         const seedUsage = Object.entries(curatedBurnStore.seedUsage || {});
         if (seedUsage.length > 300) {
             seedUsage
@@ -789,6 +805,14 @@
     function updateCuratedBurnStatus(root = document) {
         const status = root?.querySelector?.("#curatedBurnStatus");
         if (status) status.textContent = curatedBurnSummaryText();
+        const memoryStatus = root?.querySelector?.("#curatedBurnMemoryDiagnostic");
+        if (memoryStatus) {
+            const diagnostic = curatedBurnStore?.lastMemoryDiagnostic;
+            const rerolls = Math.max(0, Number(curatedBurnStore?.noveltyRerolls) || 0);
+            memoryStatus.textContent = diagnostic?.angle
+                ? `Last memory angle: ${diagnostic.angle} · ${diagnostic.source || "local"} · novelty rerolls ${rerolls}`
+                : `Memory intelligence ready · novelty rerolls ${rerolls}`;
+        }
     }
 
     function normalizeCuratedText(text) {
@@ -1206,6 +1230,253 @@
         return 0;
     }
 
+    function safeBurnMemorySnippet(value, max = 82) {
+        const text = normalizeCuratedText(value);
+        if (!isCuratableMessage(text) || isBlockedBurnSubject(text)) return "";
+        return text.replace(/[“”]/g, '"').slice(0, max).trim();
+    }
+
+    function buildBurnMemoryContext(ctx, profile) {
+        curatedBurnStore = normalizeCuratedStore(curatedBurnStore);
+        const target = String(ctx?.target || profile?.displayName || ctx?.from || "there")
+            .replace(/^@+/, "").replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 40) || "there";
+        const currentText = normalizeCuratedText(ctx?.message || "");
+        const currentTokens = curatedTokens(currentText);
+        const incomingBlocked = isBlockedBurnSubject(ctx?.message || "") || !isCuratableMessage(ctx?.message || "");
+        const profileReady = !incomingBlocked && !!profile;
+        const tagCount = Math.max(1, Number(ctx?.tagCount) || 1);
+        const quote = incomingBlocked || !shouldUseBurnQuote(ctx, "curated")
+            ? ""
+            : safeBurnQuote(ctx.message || "");
+        const contextRanking = incomingBlocked
+            ? [{ family: "british_banter", score: 34 }, { family: "generic_savage", score: 32 }]
+            : classifyCuratedContext(ctx, profile);
+        const primaryContext = contextRanking[0]?.family || "generic_savage";
+        const evidence = [];
+        const addEvidence = (item) => {
+            if (!item?.text || !isCuratableMessage(item.text) || isBlockedBurnSubject(item.text)) return;
+            const text = safeBurnMemorySnippet(item.text);
+            if (!text) return;
+            evidence.push(Object.freeze({
+                id: String(item.id || simpleCuratedHash(text)).slice(0, 120),
+                source: item.source === "seed" ? "seed" : item.source === "live" ? "live" : "history",
+                kind: String(item.kind || "callback").slice(0, 40),
+                family: String(item.family || item.kind || "generic_savage").slice(0, 40),
+                text,
+                count: Math.max(0, Number(item.count) || 0),
+                rank: Number(item.rank) || 0,
+                burnId: item.burnId ? String(item.burnId).slice(0, 140) : null
+            }));
+        };
+        const recent = profileReady && Array.isArray(profile.recent) ? profile.recent.slice(-18) : [];
+        const historySourceText = (burn) => {
+            const seqs = new Set((Array.isArray(burn?.sourceSeqs) ? burn.sourceSeqs : []).map((value) => Number(value) || 0).filter(Boolean));
+            const sourceEntry = recent.slice().reverse().find((entry) => seqs.has(Number(entry?.seq) || 0));
+            if (sourceEntry?.text) return sourceEntry.text;
+            if (burn?.kind === "repeat" && String(burn.id || "").startsWith("repeat:")) {
+                const hash = String(burn.id).slice("repeat:".length);
+                const sample = profile?.repeats?.[hash]?.sample;
+                if (sample) return sample;
+            }
+            if (burn?.kind === "topic" && String(burn.id || "").startsWith("topic:")) return String(burn.id).slice("topic:".length);
+            if (Array.isArray(burn?.keywords) && burn.keywords.length) return burn.keywords.slice(0, 6).join(" ");
+            return "";
+        };
+
+        if (profileReady && Array.isArray(profile.burns)) {
+            profile.burns.map((burn) => {
+                const relevance = curatedHistoryRelevance(burn, currentTokens, currentText);
+                const rawHistoryRank = (CURATED_HISTORY_RANKS[burn.kind] || 32)
+                    + Math.min(10, Number(burn.score) || 0)
+                    + relevance
+                    + overlapCount(currentTokens, burn.keywords || []) * 4
+                    - (Number(burn.timesUsed) || 0) * 3;
+                return { burn, relevance, rank: Math.min(82, Math.max(58, rawHistoryRank)) };
+            }).filter((entry) => entry.relevance > 0).slice(0, 8).forEach((entry) => {
+                addEvidence({
+                    id: entry.burn.id,
+                    source: "history",
+                    kind: entry.burn.kind,
+                    family: entry.burn.kind || primaryContext,
+                    text: historySourceText(entry.burn),
+                    rank: entry.rank,
+                    burnId: entry.burn.id
+                });
+            });
+        }
+
+        if (profileReady) {
+            const repeatKey = currentText.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+            const repeatStat = repeatKey.length >= 12 ? profile.repeats?.[simpleCuratedHash(repeatKey)] : null;
+            if (repeatStat && statCount(repeatStat) >= 2 && repeatStat.sample) {
+                addEvidence({
+                    id: `repeat:${simpleCuratedHash(repeatKey)}`,
+                    source: "live",
+                    kind: "repeat",
+                    family: "repetition",
+                    text: repeatStat.sample,
+                    count: statCount(repeatStat),
+                    rank: 92 + Math.min(10, statCount(repeatStat)),
+                    burnId: `live-repeat:${simpleCuratedHash(repeatKey)}`
+                });
+            }
+
+            const liveContradiction = contextRanking.find((item) => item.family === "contradiction" && item.contradiction);
+            if (liveContradiction) {
+                addEvidence({
+                    id: `live-contradiction:${simpleCuratedHash(`${ctx?.from || ""}:${currentText}`)}`,
+                    source: "live",
+                    kind: "contradiction",
+                    family: "contradiction",
+                    text: liveContradiction.contradiction?.text || currentText,
+                    rank: 88,
+                    burnId: `live-contradiction:${simpleCuratedHash(`${ctx?.from || ""}:${currentText}`)}`
+                });
+            }
+
+            recent.slice().reverse().forEach((entry, index) => {
+                const text = safeBurnMemorySnippet(entry?.text);
+                if (!text) return;
+                const overlap = overlapCount(currentTokens, entry.tokens || []);
+                if (overlap < 1) return;
+                addEvidence({
+                    id: `recent:${entry.seq || simpleCuratedHash(text)}`,
+                    source: "history",
+                    kind: "callback",
+                    family: primaryContext,
+                    text,
+                    rank: Math.min(76, 58 + overlap * 7 - index),
+                    burnId: `callback:${entry.seq || simpleCuratedHash(text)}`
+                });
+            });
+        }
+
+        if (quote) {
+            addEvidence({
+                id: `live-quote:${simpleCuratedHash(`${quote}:${tagCount}`)}`,
+                source: "live",
+                kind: "callback",
+                family: tagCount >= 2 ? "tag_pressure" : primaryContext,
+                text: quote,
+                rank: 48 + Math.min(tagCount, 6),
+                burnId: `live-quote:${simpleCuratedHash(`${quote}:${tagCount}`)}`
+            });
+        }
+
+        const seededCandidates = buildSeededCuratedCandidates(ctx, profile, contextRanking)
+            .filter((entry) => entry?.burn?.template && isCuratableMessage(entry.burn.template) && !isBlockedBurnSubject(entry.burn.template))
+            .slice(0, 8);
+        evidence.sort((a, b) => b.rank - a.rank);
+        return Object.freeze({
+            target,
+            currentText,
+            currentTokens,
+            contextRanking,
+            evidence: Object.freeze(evidence.slice(0, 8)),
+            seededCandidates: Object.freeze(seededCandidates),
+            incomingBlocked,
+            profileReady
+        });
+    }
+
+    function chooseBurnMemoryAngle(memoryContext) {
+        curatedBurnStore = normalizeCuratedStore(curatedBurnStore);
+        if (!memoryContext) return null;
+        const angles = [];
+        const recentAngleIds = curatedBurnStore.recentAngleIds || [];
+        const recentMemoryFamilies = curatedBurnStore.recentMemoryFamilies || [];
+        const add = (id, source, family, rank, evidence = null, seed = null) => {
+            const anglePenalty = recentAngleIds.slice(-8).filter((value) => value === id).length * 9;
+            const familyPenalty = recentMemoryFamilies.slice(-8).filter((value) => value === family).length * 5;
+            angles.push({ id, source, family, evidence, seed, rank: rank - anglePenalty - familyPenalty });
+        };
+        const strongest = memoryContext.evidence?.[0] || null;
+        if (strongest?.kind === "contradiction") add("contradiction_callback", strongest.source, "contradiction", strongest.rank + 28, strongest);
+        if (strongest?.kind === "repeat") add("repeat_callback", strongest.source, "repetition", strongest.rank + 24, strongest);
+        if (strongest && strongest.kind !== "contradiction" && strongest.kind !== "repeat") {
+            add("attack_reversal", strongest.source, strongest.family || strongest.kind || "callback", strongest.rank + 8, strongest);
+        }
+        const callback = (memoryContext.evidence || []).find((item) => item.kind === "callback");
+        if (callback && callback !== strongest) add("attack_reversal", callback.source, callback.family || "callback", callback.rank + 6, callback);
+        const text = memoryContext.currentText || "";
+        if (/\b(?:best|better than|smartest|genius|expert|always right|never wrong|easy win|destroyed|owned|rekt)\b/i.test(text)) add("brag_deflation", "live", "bragging", 63, callback);
+        if (/\b(?:idiot|moron|stupid|clown|loser|pathetic|dumb|muppet|bellend|wanker|tosser)\b/i.test(text)) add("attack_reversal", "live", "direct_attack", 60, callback);
+        if (/\?|\b(?:why|what|how|prove it|answer me|come on|try harder|is that it)\b/i.test(text)) add("bait_deflection", "live", "bait", 54, callback);
+        const seed = memoryContext.seededCandidates?.[0] || null;
+        if (seed) add("generic_banter", "seed", seed.context || seed.burn?.kind || "generic_savage", 36 + Math.min(18, Number(seed.rank) || 0), null, seed);
+        add("generic_banter", "live", memoryContext.contextRanking?.[0]?.family || "generic_savage", 28);
+        angles.sort((a, b) => b.rank - a.rank);
+        return angles[0] ? Object.freeze(angles[0]) : null;
+    }
+
+    function composeMemoryBurn(memoryContext, angle, attempt = 0) {
+        if (!memoryContext || !angle) return null;
+        const target = memoryContext.target || "there";
+        const callback = safeBurnMemorySnippet(angle.evidence?.text || "", 72);
+        const count = Math.max(2, Number(angle.evidence?.count) || 2);
+        const variants = {
+            contradiction_callback: [
+                callback ? `@${target} you said “${callback}” and now you're arguing with your own archive. Pick a version.` : `@${target} your latest version just collided with the archive. Pick a story before the transcript does.`,
+                callback ? `@${target} “${callback}” is still in the archive, mate. Today's rewrite didn't survive contact with it.` : `@${target} the archive has entered the chat and your current story has immediately requested a lawyer.`,
+                callback ? `@${target} the callback is “${callback}”. Awkward time to launch the opposite version.` : `@${target} your old claim and new claim are fighting over custody of the truth.`
+            ],
+            repeat_callback: [
+                callback ? `@${target} “${callback}” again — that's at least lap ${count}. Even your copy button looks knackered.` : `@${target} same line again. The copy button is doing more work than the material.`,
+                callback ? `@${target} we've already got “${callback}” on repeat. ${count} spins and still no remix.` : `@${target} another rerun. At this point the comeback needs an episode guide.`,
+                callback ? `@${target} ${count} outings for “${callback}”. Retire it before it starts claiming a pension.` : `@${target} the line came back again and somehow brought even less luggage.`
+            ],
+            brag_deflation: [
+                `@${target} that's premium confidence strapped to budget evidence.`,
+                `@${target} magnificent victory speech. Tiny issue: the victory forgot to happen.`,
+                callback ? `@${target} huge confidence today, especially with “${callback}” still sitting in the archive.` : `@${target} confidence at stadium volume, point still on mute.`
+            ],
+            attack_reversal: [
+                callback ? `@${target} you're swinging again while “${callback}” is still sitting behind you like unattended evidence.` : `@${target} all that swinging and the point still hasn't taken a scratch.`,
+                `@${target} you brought an insult to a logic fight and somehow dropped both.`,
+                callback ? `@${target} bold attack from the author of “${callback}”. The archive really does write its own material.` : `@${target} the aggression arrived first; the argument apparently missed the bus.`
+            ],
+            bait_deflection: [
+                `@${target} nice bait. Put a point on the hook next time.`,
+                `@${target} you keep rattling the cage but forgot to bring anything worth answering.`,
+                callback ? `@${target} bait noted. “${callback}” is still the more interesting thing you accidentally contributed.` : `@${target} that's a lot of beckoning for somebody with no destination.`
+            ],
+            generic_banter: [
+                angle.seed?.burn?.template ? String(angle.seed.burn.template).replace(/\{target\}/g, target) : `@${target} enormous delivery, microscopic payload.`,
+                `@${target} you've brought theatre again. The script still hasn't brought a point.`,
+                `@${target} that comeback arrived fully dressed and forgot to pack the material.`
+            ]
+        };
+        const pool = variants[angle.id] || variants.generic_banter;
+        return pool[Math.abs(Number(attempt) || 0) % pool.length] || null;
+    }
+
+    function memoryBurnFingerprint(text) {
+        const normalized = String(text || "").toLowerCase().replace(/@[a-z0-9_.-]+/gi, "@target").replace(/[^a-z0-9@ ]+/g, " ").replace(/\s+/g, " ").trim();
+        return simpleCuratedHash(normalized);
+    }
+
+    function isNovelMemoryBurn(candidate, angle) {
+        curatedBurnStore = normalizeCuratedStore(curatedBurnStore);
+        const fingerprint = memoryBurnFingerprint(candidate);
+        if (!candidate || curatedBurnStore.recentResponseFingerprints.includes(fingerprint)) return false;
+        const recentAngles = curatedBurnStore.recentAngleIds.slice(-5);
+        const recentFamilies = curatedBurnStore.recentMemoryFamilies.slice(-6);
+        if (angle?.id && recentAngles.length >= 3 && recentAngles.slice(-3).every((id) => id === angle.id)) return false;
+        if (angle?.family && recentFamilies.length >= 4 && recentFamilies.slice(-4).every((family) => family === angle.family)) return false;
+        return true;
+    }
+
+    function rememberMemoryBurn(candidate, angle) {
+        if (!candidate || !angle) return;
+        curatedBurnStore = normalizeCuratedStore(curatedBurnStore);
+        const fingerprint = memoryBurnFingerprint(candidate);
+        curatedBurnStore.recentResponseFingerprints = [...curatedBurnStore.recentResponseFingerprints.filter((value) => value !== fingerprint), fingerprint].slice(-24);
+        curatedBurnStore.recentAngleIds = [...curatedBurnStore.recentAngleIds, String(angle.id || "generic_banter")].slice(-16);
+        curatedBurnStore.recentMemoryFamilies = [...curatedBurnStore.recentMemoryFamilies, String(angle.family || "generic_savage")].slice(-16);
+        curatedBurnStore.lastMemoryDiagnostic = { source: String(angle.source || "local").slice(0, 24), angle: String(angle.id || "generic_banter").slice(0, 40), family: String(angle.family || "generic_savage").slice(0, 40), at: new Date().toISOString() };
+        scheduleCuratedBurnSave();
+    }
+
     function selectCuratedBurn(ctx) {
         return selectCuratedBurnWithOptions(ctx);
     }
@@ -1215,142 +1486,59 @@
         const username = String(ctx.from || "").trim().toLowerCase();
         const profile = curatedBurnStore.users?.[username] || null;
         const minMessages = Math.max(3, Number(settings.curatedBurnMinMessages) || 8);
-        const incomingBlocked = isBlockedBurnSubject(ctx.message || "");
+        const incomingBlocked = isBlockedBurnSubject(ctx.message || "") || !isCuratableMessage(ctx.message || "");
         const profileReady = !incomingBlocked && !!profile && (Number(profile.messageCount) || 0) >= minMessages;
-
-        const target = String(ctx.target || profile?.displayName || username || "there")
-            .replace(/^@+/, "")
-            .replace(/[^A-Za-z0-9_.-]/g, "")
-            .slice(0, 40) || "there";
-        const currentTokens = curatedTokens(ctx.message || "");
-        const currentText = normalizeCuratedText(ctx.message || "");
-        const tagCount = Math.max(1, Number(ctx.tagCount) || 1);
-        const quote = incomingBlocked || !shouldUseBurnQuote(ctx, "curated")
-            ? ""
-            : safeBurnQuote(ctx.message || "");
-        const contextRanking = incomingBlocked
-            ? [{ family: "british_banter", score: 34 }, { family: "generic_savage", score: 32 }]
-            : classifyCuratedContext(ctx, profile);
-        const primaryContext = contextRanking[0]?.family || "generic_savage";
-        const ranked = profileReady && Array.isArray(profile.burns)
-            ? profile.burns.map((burn) => {
-                const relevance = curatedHistoryRelevance(burn, currentTokens, currentText);
-                return {
-                    burn,
-                    live: false,
-                    seeded: false,
-                    relevance,
-                    context: primaryContext,
-                    rank: (CURATED_HISTORY_RANKS[burn.kind] || 32) + Math.min(10, Number(burn.score) || 0) + relevance + overlapCount(currentTokens, burn.keywords || []) * 4 - (Number(burn.timesUsed) || 0) * 3
-                };
-            }).filter((entry) => entry.relevance > 0)
-            : [];
-
-        const repeatKey = currentText.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
-        const repeatStat = !incomingBlocked && repeatKey.length >= 12 ? profile?.repeats?.[simpleCuratedHash(repeatKey)] : null;
-        if (repeatStat && statCount(repeatStat) >= 2) {
-            ranked.push({
-                live: true,
-                seeded: false,
-                context: "repetition",
-                rank: 74 + Math.min(10, statCount(repeatStat)),
-                burn: {
-                    id: `live-repeat:${simpleCuratedHash(repeatKey)}`,
-                    kind: "repeat",
-                    timesUsed: 0,
-                    template: `@{target} you've posted that exact line ${statCount(repeatStat)} times. Your copy button is carrying the whole act.`
-                }
-            });
+        const memoryContext = buildBurnMemoryContext(ctx, profileReady ? profile : null);
+        let angle = chooseBurnMemoryAngle(memoryContext);
+        if (!angle) return null;
+        let candidate = null;
+        let rerolls = 0;
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+            candidate = composeMemoryBurn(memoryContext, angle, attempt);
+            if (candidate && isNovelMemoryBurn(candidate, angle)) break;
+            candidate = null;
+            rerolls += 1;
+            curatedBurnStore.noveltyRerolls = Math.max(0, Number(curatedBurnStore.noveltyRerolls) || 0) + 1;
+            if (attempt === 2 && angle.id !== "generic_banter") angle = chooseBurnMemoryAngle(Object.freeze({ ...memoryContext, evidence: Object.freeze([]) })) || angle;
         }
-
-        const liveContradiction = !incomingBlocked ? contextRanking.find((item) => item.family === "contradiction" && item.contradiction) : null;
-        if (liveContradiction) {
-            ranked.push({
-                live: true,
-                seeded: false,
-                context: "contradiction",
-                rank: 68,
-                burn: {
-                    id: `live-contradiction:${simpleCuratedHash(`${username}:${currentText}`)}`,
-                    kind: "contradiction",
-                    timesUsed: 0,
-                    template: `@{target} your latest version just ran into your earlier one. Pick a lane before the transcript does it for you.`
-                }
-            });
-        }
-
-        if (quote) {
-            const template = tagCount >= 5
-                ? `@{target} “${quote}” — tag #${tagCount}. You're not fighting back; you're renewing the subscription.`
-                : tagCount >= 3
-                    ? `@{target} “${quote}” — tag #${tagCount} and you're still bringing your own punchline.`
-                    : tagCount >= 2
-                        ? `@{target} “${quote}” — back again? You didn't bring a comeback, you brought another target.`
-                        : `@{target} “${quote}” — you tagged me just to volunteer as the punchline.`;
-            ranked.push({
-                live: true,
-                seeded: false,
-                context: tagCount >= 2 ? "tag_pressure" : primaryContext,
-                rank: 42 + Math.min(tagCount, 6),
-                burn: {
-                    id: `live-quote:${simpleCuratedHash(`${quote}:${tagCount}`)}`,
-                    kind: "callback",
-                    timesUsed: 0,
-                    template
-                }
-            });
-        }
-
-        const seeded = buildSeededCuratedCandidates(ctx, profile, contextRanking);
-        ranked.push(...seeded);
-        if (!ranked.length) return null;
-        ranked.sort((a, b) => b.rank - a.rank || (Number(a.burn.timesUsed) || 0) - (Number(b.burn.timesUsed) || 0));
-        const bestRank = ranked[0]?.rank;
-        const pool = ranked.filter((entry) => entry.rank >= bestRank - 2).slice(0, 4);
-        const selected = pool[Math.floor(Math.random() * pool.length)];
-        const chosen = selected?.burn;
-        if (!chosen) return null;
-
+        if (!candidate) return null;
+        const evidence = angle.evidence || null;
+        const seed = angle.seed || null;
         pendingCuratedBurnSelection = {
-            kind: selected.seeded ? "seed" : selected.live ? "live" : "history",
+            kind: seed ? "seed" : evidence?.source === "history" ? "history" : "live",
             username,
-            burnId: chosen.id,
-            family: chosen.kind || selected.context || primaryContext,
-            strategy: selected.seeded ? `seed:${chosen.kind}` : selected.live ? `live:${chosen.kind}` : `history:${chosen.kind}`,
-            context: selected.context || primaryContext
+            burnId: seed?.burn?.id || evidence?.burnId || evidence?.id || `memory:${angle.id}`,
+            family: angle.family || "generic_savage",
+            strategy: `memory:${angle.id}`,
+            context: angle.family || memoryContext.contextRanking?.[0]?.family || "generic_savage",
+            angle: { id: angle.id, source: angle.source, family: angle.family },
+            response: candidate,
+            rerolls
         };
-        return String(chosen.template || "").replace(/\{target\}/g, target);
+        return candidate;
     }
 
     function markCuratedBurnUsed(selection) {
         if (!selection?.burnId) return;
+        if (selection.response && selection.angle) rememberMemoryBurn(selection.response, selection.angle);
         if (selection.kind === "seed") {
             curatedBurnStore = normalizeCuratedStore(curatedBurnStore);
             const old = curatedBurnStore.seedUsage[selection.burnId] || {};
             const usedAt = new Date().toISOString();
-            curatedBurnStore.seedUsage[selection.burnId] = {
-                family: selection.family || old.family || "generic_savage",
-                timesUsed: (Number(old.timesUsed) || 0) + 1,
-                lastUsedAt: usedAt
-            };
-            curatedBurnStore.recentSeedIds = [
-                ...(curatedBurnStore.recentSeedIds || []).filter((id) => id !== selection.burnId),
-                selection.burnId
-            ].slice(-30);
-            curatedBurnStore.recentSeedFamilies = [
-                ...(curatedBurnStore.recentSeedFamilies || []),
-                selection.family || "generic_savage"
-            ].slice(-16);
+            curatedBurnStore.seedUsage[selection.burnId] = { family: selection.family || old.family || "generic_savage", timesUsed: (Number(old.timesUsed) || 0) + 1, lastUsedAt: usedAt };
+            curatedBurnStore.recentSeedIds = [...(curatedBurnStore.recentSeedIds || []).filter((id) => id !== selection.burnId), selection.burnId].slice(-30);
+            curatedBurnStore.recentSeedFamilies = [...(curatedBurnStore.recentSeedFamilies || []), selection.family || "generic_savage"].slice(-16);
             scheduleCuratedBurnSave();
             return;
         }
         if (selection.kind === "live" || !selection.username) return;
         const profile = curatedBurnStore.users?.[selection.username];
         const burn = profile?.burns?.find((item) => item.id === selection.burnId);
-        if (!burn) return;
-        burn.timesUsed = (Number(burn.timesUsed) || 0) + 1;
-        burn.lastUsedAt = new Date().toISOString();
-        profile.updatedAt = burn.lastUsedAt;
+        if (burn) {
+            burn.timesUsed = (Number(burn.timesUsed) || 0) + 1;
+            burn.lastUsedAt = new Date().toISOString();
+            profile.updatedAt = burn.lastUsedAt;
+        }
         scheduleCuratedBurnSave();
     }
 
@@ -1715,6 +1903,7 @@
             </div>
             <div style="font-size:11px;color:gray;margin-top:4px">Max users: 0 = unlimited. Rebuild rescans the saved transcript using the current limits.</div>
             <div id="curatedBurnStatus" style="font-size:12px;color:gray;margin-top:5px">${curatedBurnSummaryText()}</div>
+            <div id="curatedBurnMemoryDiagnostic" style="font-size:11px;color:gray;margin-top:3px">${curatedBurnStore.lastMemoryDiagnostic?.angle ? `Last memory angle: ${curatedBurnStore.lastMemoryDiagnostic.angle} · ${curatedBurnStore.lastMemoryDiagnostic.source || "local"} · novelty rerolls ${Math.max(0, Number(curatedBurnStore.noveltyRerolls) || 0)}` : `Memory intelligence ready · novelty rerolls ${Math.max(0, Number(curatedBurnStore.noveltyRerolls) || 0)}`}</div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
                 <button type="button" id="rebuildCuratedBurnsBtn">Rebuild from transcript</button>
                 <button type="button" id="clearCuratedBurnsBtn">Clear curated bank</button>
@@ -3034,6 +3223,13 @@
             .filter((key, index, arr) => arr.indexOf(key) === index && enabled[key] !== false);
 
         const custom = window.rumbleBlocker?.customBurnGenerator;
+        const customProfile = curatedBurnStore.users?.[normalizedCtx.from] || null;
+        const customRawMemoryContext = buildBurnMemoryContext(normalizedCtx, customProfile);
+        const customAngle = chooseBurnMemoryAngle(customRawMemoryContext);
+        const customMemoryContext = Object.freeze({
+            angle: customAngle ? Object.freeze({ id: customAngle.id, source: customAngle.source, family: customAngle.family }) : null,
+            evidence: Object.freeze((customRawMemoryContext.evidence || []).slice(0, 4).map((item) => Object.freeze({ source: item.source, kind: item.kind, family: item.family, text: safeBurnMemorySnippet(item.text, 72), count: item.count })))
+        });
 
         const generateFromEngine = (engine) => {
             if (BURN_PERSONALITY_KEYS.includes(engine) || engine === "random_personality") {
@@ -3046,7 +3242,7 @@
             if (engine === "curated") return selectCuratedBurn(normalizedCtx);
             if (engine === "custom") {
                 if (typeof custom !== "function") return null;
-                try { return custom(normalizedCtx) || null; } catch (err) { console.warn("Custom burn generator threw", err); return null; }
+                try { return custom(normalizedCtx, customMemoryContext) || null; } catch (err) { console.warn("Custom burn generator threw", err); return null; }
             }
             if (engine === "compromise") {
                 const nlpLib = typeof nlp !== "undefined" ? nlp : window.nlp;
