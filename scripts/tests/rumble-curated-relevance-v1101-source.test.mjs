@@ -52,24 +52,25 @@ test("every generated burn passes the final outbound account-protection firewall
 
 test("history candidates need live-message relevance before they can outrank seeds", () => {
   assert.match(source, /function curatedHistoryRelevance\(burn, currentTokens, currentText\)/);
-  const select = between("function selectCuratedBurn(ctx)", "function markCuratedBurnUsed(selection)");
-  assert.match(select, /curatedHistoryRelevance\(burn, currentTokens, currentText\)/);
-  assert.match(select, /relevance > 0/);
-  assert.match(select, /overlapCount\(currentTokens, burn\.keywords \|\| \[\]\)/);
+  const retrieval = between("function buildBurnMemoryContext(ctx, profile)", "function chooseBurnMemoryAngle(memoryContext)");
+  assert.match(retrieval, /curatedHistoryRelevance\(burn, currentTokens, currentText\)/);
+  assert.match(retrieval, /relevance > 0/);
+  assert.match(retrieval, /overlapCount\(currentTokens, burn\.keywords \|\| \[\]\)/);
 });
 
 test("risky incoming tags bypass history and quote-backs but can use safe unrelated seeds", () => {
-  const select = between("function selectCuratedBurn(ctx)", "function markCuratedBurnUsed(selection)");
-  assert.match(select, /const incomingBlocked = isBlockedBurnSubject\(ctx\.message \|\| ""\)/);
-  assert.match(select, /const profileReady = !incomingBlocked/);
-  assert.match(select, /const quote = incomingBlocked \|\| !shouldUseBurnQuote\(ctx, "curated"\)[\s\S]*\? ""[\s\S]*: safeBurnQuote/);
-  assert.match(select, /incomingBlocked[\s\S]*generic_savage/);
+  const retrieval = between("function buildBurnMemoryContext(ctx, profile)", "function chooseBurnMemoryAngle(memoryContext)");
+  assert.match(retrieval, /const incomingBlocked = isBlockedBurnSubject\(ctx\?\.message \|\| ""\)/);
+  assert.match(retrieval, /const profileReady = !incomingBlocked/);
+  assert.match(retrieval, /const quote = incomingBlocked \|\| !shouldUseBurnQuote\(ctx, "curated"\)[\s\S]*\? ""[\s\S]*: safeBurnQuote/);
+  assert.match(retrieval, /incomingBlocked[\s\S]*generic_savage/);
+  assert.match(retrieval, /buildSeededCuratedCandidates\(ctx, profile, contextRanking\)/);
 });
 
 test("live repeat and contradiction evidence stay above relevant history and seeds", () => {
-  const select = between("function selectCuratedBurn(ctx)", "function markCuratedBurnUsed(selection)");
-  assert.match(select, /rank:\s*7\d\s*\+\s*Math\.min\(10, statCount\(repeatStat\)\)/);
-  assert.match(select, /context:\s*"contradiction"[\s\S]*rank:\s*6\d/);
+  const retrieval = between("function buildBurnMemoryContext(ctx, profile)", "function chooseBurnMemoryAngle(memoryContext)");
+  assert.match(retrieval, /rank:\s*9\d\s*\+\s*Math\.min\(10, statCount\(repeatStat\)\)/);
+  assert.match(retrieval, /source:\s*"live"[\s\S]*kind:\s*"contradiction"[\s\S]*rank:\s*8\d/);
 });
 
 test("Curated adds a profanity-allowed finisher family without putting profanity on the blocklist", () => {
