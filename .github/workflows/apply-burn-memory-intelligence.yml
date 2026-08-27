@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           if grep -q '^// @version      1\.12\.3$' scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js; then
-            node scripts/maintenance/apply-burn-memory-intelligence.mjs
+            python3 scripts/maintenance/apply-burn-memory-intelligence.py
             node --check scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
             node --test scripts/tests/rumble-burn-memory-intelligence-source.test.mjs scripts/tests/rumble-userscript-version-source.test.mjs
             git config user.name github-actions[bot]
