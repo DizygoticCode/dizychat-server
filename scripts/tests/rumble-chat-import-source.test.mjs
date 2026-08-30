@@ -8,7 +8,9 @@ const source = fs.readFileSync(sourcePath, "utf8");
 test("chat transcript JSON can be merged back into IndexedDB without clearing existing history", () => {
   assert.match(source, /async function importChatLogFile\(file\)/);
   assert.match(source, /await initializeChatTranscriptStorage\(\)/);
-  assert.match(source, /await putChatRecords\(db, importedRecords\)/);
+  assert.match(source, /async function putChatRecordsInBatches\(db, records, batchSize = 2000\)/);
+  assert.match(source, /await putChatRecords\(db, records\.slice\(index, index \+ batchSize\)\)/);
+  assert.match(source, /await putChatRecordsInBatches\(db, importedRecords\)/);
   const importBlock = source.match(/async function importChatLogFile\(file\)[\s\S]*?\n    }\n/);
   assert.ok(importBlock, "missing importChatLogFile implementation");
   assert.doesNotMatch(importBlock[0], /clearChatRecords|\.clear\(\)/);
