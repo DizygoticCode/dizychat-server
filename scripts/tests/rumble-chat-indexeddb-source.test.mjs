@@ -34,6 +34,12 @@ test("legacy localStorage transcript migrates before the old key is removed", ()
   assert.ok(init.indexOf("chatLog = await readAllChatRecords(db)") < init.indexOf("localStorage.removeItem(CHAT_LOG_KEY)"));
 });
 
+test("large transcript boot avoids spreading the full history into Math.max", () => {
+  const init = between("async function initializeChatTranscriptStorage()", "function extractMentions(text)");
+  assert.doesNotMatch(init, /Math\.max\(\.\.\.chatLog\.map/);
+  assert.match(init, /chatLog\.reduce\(/);
+});
+
 test("new records are queued and batch-written to IndexedDB instead of rewriting the whole transcript", () => {
   const save = between("async function saveChatLog()", "function scheduleChatLogSave()");
   const record = between("function recordChatMessage(el, username, displayName, message)", "async function clearChatLog()");

@@ -221,7 +221,10 @@
                 const db = await openChatTranscriptDb();
                 if (legacyChatLog.length) await putChatRecords(db, legacyChatLog);
                 chatLog = await readAllChatRecords(db);
-                chatSequence = chatLog.length ? Math.max(...chatLog.map((r) => Number(r.seq) || 0)) : 0;
+                chatSequence = chatLog.reduce(
+                    (max, record) => Math.max(max, Number(record.seq) || 0),
+                    0
+                );
                 localStorage.removeItem(CHAT_LOG_KEY);
                 chatStorageMode = "indexeddb";
                 chatStorageLastError = "";
@@ -232,7 +235,10 @@
             } catch (err) {
                 console.warn("IndexedDB transcript storage unavailable; preserving the legacy transcript and recording in memory for this session", err);
                 chatLog = legacyChatLog.slice();
-                chatSequence = chatLog.length ? Math.max(...chatLog.map((r) => Number(r.seq) || 0)) : 0;
+                chatSequence = chatLog.reduce(
+                    (max, record) => Math.max(max, Number(record.seq) || 0),
+                    0
+                );
                 chatStorageMode = "memory";
                 chatStorageLastError = String(err?.message || err);
                 updateChatStorageStatus();
