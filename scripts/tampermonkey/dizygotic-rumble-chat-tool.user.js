@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dizygotic Rumble Chat Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.12.4
+// @version      1.12.5
 // @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + transcript recorder/export + automated curated burn memory + outgoing message styling + auto-burn + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.
 // @author       Dizygotic
 // @match        https://rumble.com/*
@@ -349,6 +349,113 @@
             return;
         }
         triggerDownload(`dizygotic-rumble-chat-${stamp}.json`, JSON.stringify(chatLog, null, 2), { prompt: true, mimeType: "application/json;charset=utf-8" });
+    }
+
+    function chatImportFingerprint(record) {
+        return JSON.stringify([
+            String(record?.capturedAt || ""),
+            String(record?.username || "").trim().toLowerCase(),
+            String(record?.displayName || "").trim().toLowerCase(),
+            String(record?.message || "").replace(/\s+/g, " ").trim(),
+            String(record?.url || "")
+        ]);
+    }
+
+    function normalizeImportedChatRecord(record) {
+        if (!record || typeof record !== "object" || Array.isArray(record)) return null;
+        const username = String(record.username || "").trim().replace(/^@+/, "").toLowerCase();
+        const displayName = String(record.displayName || record.username || username).trim().replace(/^@+/, "");
+        const message = String(record.message || "").replace(/\s+/g, " ").trim();
+        if (!username || !message) return null;
+
+        const capturedDate = record.capturedAt ? new Date(record.capturedAt) : null;
+        const capturedAt = capturedDate && !Number.isNaN(capturedDate.getTime())
+            ? capturedDate.toISOString()
+            : new Date().toISOString();
+        const mentions = Array.isArray(record.mentions)
+            ? [...new Set(record.mentions.map((value) => String(value || "").replace(/^@+/, "").trim().toLowerCase()).filter(Boolean))]
+            : extractMentions(message);
+
+        return {
+            capturedAt,
+            username,
+            displayName: displayName || username,
+            message,
+            mentions,
+            rawHtml: String(record.rawHtml || ""),
+            rowClass: String(record.rowClass || ""),
+            url: String(record.url || ""),
+            title: String(record.title || ""),
+            botGenerated: record.botGenerated === true,
+            botEngine: String(record.botEngine || ""),
+            botTarget: String(record.botTarget || ""),
+            botFontStyle: String(record.botFontStyle || ""),
+            botStrategy: String(record.botStrategy || ""),
+            botContext: String(record.botContext || ""),
+            botTrigger: String(record.botTrigger || "")
+        };
+    }
+
+    async function putChatRecordsInBatches(db, records, batchSize = 2000) {
+        for (let index = 0; index < records.length; index += batchSize) {
+            await putChatRecords(db, records.slice(index, index + batchSize));
+        }
+    }
+
+    async function importChatLogFile(file) {
+        await initializeChatTranscriptStorage();
+        if (!file || typeof file.text !== "function") throw new Error("Choose a JSON chat transcript file to import");
+
+        const parsed = JSON.parse(await file.text());
+        const candidates = Array.isArray(parsed)
+            ? parsed
+            : Array.isArray(parsed?.chatLog)
+                ? parsed.chatLog
+                : Array.isArray(parsed?.messages)
+                    ? parsed.messages
+                    : Array.isArray(parsed?.transcript)
+                        ? parsed.transcript
+                        : null;
+        if (!candidates) throw new Error("This JSON does not contain a supported chat transcript array");
+
+        const existingFingerprints = new Set(chatLog.map(chatImportFingerprint));
+        const importedRecords = [];
+        let duplicateCount = 0;
+        let invalidCount = 0;
+
+        for (const candidate of candidates) {
+            const normalized = normalizeImportedChatRecord(candidate);
+            if (!normalized) {
+                invalidCount += 1;
+                continue;
+            }
+            const fingerprint = chatImportFingerprint(normalized);
+            if (existingFingerprints.has(fingerprint)) {
+                duplicateCount += 1;
+                continue;
+            }
+            const record = { ...normalized, seq: ++chatSequence };
+            importedRecords.push(record);
+            existingFingerprints.add(fingerprint);
+        }
+
+        if (importedRecords.length) {
+            const db = await openChatTranscriptDb();
+            await putChatRecordsInBatches(db, importedRecords);
+            chatLog.push(...importedRecords);
+            chatStorageMode = "indexeddb";
+            chatStorageLastError = "";
+            updateChatStorageStatus();
+            backfillCuratedBurnsFromTranscript();
+        }
+
+        return {
+            total: candidates.length,
+            imported: importedRecords.length,
+            duplicates: duplicateCount,
+            invalid: invalidCount,
+            saved: chatLog.length
+        };
     }
 
     function escapeRegex(value) {
@@ -2145,6 +2252,23 @@
         buttonRow.appendChild(createAccentButton("Export", () => exportData(), "#2196f3", "📤"));
         buttonRow.appendChild(createAccentButton("Chat JSON", () => { void exportChatLog("json"); }, "#673ab7", "🧾"));
         buttonRow.appendChild(createAccentButton("Chat CSV", () => { void exportChatLog("csv"); }, "#3f51b5", "📊"));
+        buttonRow.appendChild(createAccentButton("Chat Import", () => {
+            const input = document.createElement("input");
+            input.type = "file";
+            input.accept = ".json";
+            input.onchange = async (event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                try {
+                    const result = await importChatLogFile(file);
+                    alert(`✅ Chat import complete. Imported ${result.imported.toLocaleString()} messages · ${result.duplicates.toLocaleString()} duplicates skipped · ${result.invalid.toLocaleString()} invalid skipped · ${result.saved.toLocaleString()} saved total.`);
+                } catch (err) {
+                    console.error("Chat transcript import failed", err);
+                    alert(`⚠️ Chat import failed: ${String(err?.message || err)}`);
+                }
+            };
+            input.click();
+        }, "#009688", "📥"));
         buttonRow.appendChild(createAccentButton("Clear Chat Log", async () => { if (!confirm("Clear saved local chat transcript?")) return; const cleared = await clearChatLog(); alert(cleared ? "✅ Chat transcript cleared." : "⚠️ Transcript could not be cleared from browser storage."); }, "#795548", "🧹"));
         buttonRow.appendChild(
             createAccentButton(
@@ -4175,6 +4299,7 @@
     window.rumbleBlocker.getSettings = () => settings;
     window.rumbleBlocker.getBlocked = () => blockedUsers;
     window.rumbleBlocker.exportChat = exportChatLog;
+    window.rumbleBlocker.importChat = importChatLogFile;
     window.rumbleBlocker.clearChat = clearChatLog;
     window.rumbleBlocker.getChatLog = () => chatLog.slice();
     window.rumbleBlocker.getCuratedBurns = () => JSON.parse(JSON.stringify(curatedBurnStore));
