@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - chore/remove-legacy-hosting
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -18,7 +19,7 @@ jobs:
           ref: chore/remove-legacy-hosting
           fetch-depth: 0
 
-      - name: Remove legacy hosting references
+      - name: Remove legacy hosting references from normal files
         shell: bash
         run: |
           python3 - <<'PY'
@@ -28,36 +29,32 @@ jobs:
 
           root = Path('.')
 
-          # Obsolete provider-specific CI/test files are superseded by the local CI harness below.
-          for rel in [
-              '.github/workflows/render-ui-test.yml',
-              'tests/render-interaction.test.js',
-          ]:
-              p = root / rel
-              if p.exists():
-                  p.unlink()
+          # Provider-specific test superseded by the local UI smoke test.
+          old_test = root / 'tests/render-interaction.test.js'
+          if old_test.exists():
+              old_test.unlink()
 
           readme = root / 'README.md'
-          text = readme.read_text()
-          text = text.replace('store it server-side in Render environment variables.', 'store it in the protected service environment.')
-          text = text.replace('Keep this server-side in Render environment variables; clients only see generated W2G room links.', 'Keep this in the protected service environment; clients only see generated W2G room links.')
-          text = text.replace('add the key to Render as `GIPHY_SDK_KEY` and redeploy.', 'set `GIPHY_SDK_KEY` in the protected service environment and restart the service.')
-          text = re.sub(r'^3\. \*\*Use Render only if.*?same Node/Express process\.\n', '', text, flags=re.M)
-          text = text.replace('4. **Use `livekit-server --dev` only for local testing.**', '3. **Use `livekit-server --dev` only for local testing.**')
-          text = text.replace('Set those variables only when you want Render to point users at', 'Set those variables only when you want the deployment to point users at')
-          text = text.replace('smoke tests that hit the deployed Render instance', 'smoke tests that hit the configured DizyChat instance')
-          text = text.replace('node tests/ui-test.cjs             # Playwright only', 'node tests/ui-test.cjs             # Playwright only; defaults to local server')
-          text += '''\n\n## Self-hosted production\n\nThe production DizyChat service is self-hosted behind Caddy at `https://dizychat.com`. The Node service listens on a private local port, MongoDB remains bound to localhost, and persistent soundboards/uploads live under `/var/soundboards`. Runtime secrets belong in a protected service environment file and are never committed. Only the reverse-proxy HTTP/HTTPS edge should be public.\n'''
-          readme.write_text(text)
-
-          security = root / 'docs/security-runbook.md'
-          if security.exists():
-              s = security.read_text().replace('WAF / reverse proxy / Render rules', 'reverse proxy / firewall rules')
-              security.write_text(s)
+          if readme.exists():
+              s = readme.read_text()
+              s = s.replace('store it server-side in Render environment variables.', 'store it in the protected service environment.')
+              s = s.replace('Keep this server-side in Render environment variables; clients only see generated W2G room links.', 'Keep this in the protected service environment; clients only see generated W2G room links.')
+              s = s.replace('add the key to Render as `GIPHY_SDK_KEY` and redeploy.', 'set `GIPHY_SDK_KEY` in the protected service environment and restart the service.')
+              s = re.sub(r'^3\. \*\*Use Render only if.*?same Node/Express process\.\n', '', s, flags=re.M)
+              s = s.replace('4. **Use `livekit-server --dev` only for local testing.**', '3. **Use `livekit-server --dev` only for local testing.**')
+              s = s.replace('Set those variables only when you want Render to point users at', 'Set those variables only when you want the deployment to point users at')
+              s = s.replace('smoke tests that hit the deployed Render instance', 'smoke tests that hit the configured DizyChat instance')
+              s = s.replace('node tests/ui-test.cjs             # Playwright only', 'node tests/ui-test.cjs             # Playwright only; defaults to local server')
+              marker = '## Self-hosted production'
+              if marker not in s:
+                  s += '\n\n## Self-hosted production\n\nThe production DizyChat service is self-hosted behind Caddy at `https://dizychat.com`. The Node service listens on a private local port, MongoDB remains bound to localhost, and persistent soundboards/uploads live under `/var/soundboards`. Runtime secrets belong in a protected service environment file and are never committed. Only the reverse-proxy HTTP/HTTPS edge should be public.\n'
+              readme.write_text(s)
 
           app_config = root / 'public/app-config.js'
           if app_config.exists():
               s = app_config.read_text()
+              s = re.sub(r'socketUrl:\s*"https://(?:dizychat-server\.)?onrender\.com"', 'socketUrl: ""', s)
+              s = re.sub(r'defaultNativeSocketUrl:\s*"https://(?:dizychat-server\.)?onrender\.com"', 'defaultNativeSocketUrl: "https://dizychat.com"', s)
               s = s.replace('https://dizychat-server.onrender.com', 'https://dizychat.com')
               s = s.replace('https://dizychat.onrender.com', 'https://dizychat.com')
               app_config.write_text(s)
@@ -69,15 +66,19 @@ jobs:
               s = s.replace('console.log("⏳ Waiting 15s for Render app to fully initialize...");\n    await delay(15000);', 'console.log("⏳ Waiting briefly for the configured DizyChat service...");\n    await delay(1000);')
               ui_test.write_text(s)
 
-          ci = root / '.github/workflows/ui-test.yml'
-          ci.write_text('''name: DizyChat UI Test\n\non:\n  push:\n    branches:\n      - main\n  pull_request:\n    branches:\n      - main\n  workflow_dispatch:\n\npermissions:\n  contents: read\n\njobs:\n  ui-test:\n    runs-on: ubuntu-latest\n    services:\n      mongo:\n        image: mongo:8.0\n        ports:\n          - 27017:27017\n        options: >-\n          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1})'"\n          --health-interval 10s\n          --health-timeout 5s\n          --health-retries 10\n    env:\n      NODE_ENV: test\n      PORT: 10000\n      MONGO_URI: mongodb://127.0.0.1:27017/dizychat_ci\n      DISABLE_SB_FETCH: 1\n    steps:\n      - name: Checkout repository\n        uses: actions/checkout@v4\n\n      - name: Setup Node.js\n        uses: actions/setup-node@v4\n        with:\n          node-version: 22\n          cache: npm\n\n      - name: Install dependencies\n        run: npm ci\n\n      - name: Install browser test tools\n        run: |\n          npm install --no-save playwright puppeteer\n          npx playwright install --with-deps chromium\n\n      - name: Start local DizyChat service\n        run: |\n          npm start > /tmp/dizychat.log 2>&1 &\n          for i in {1..60}; do\n            if curl --fail --silent http://127.0.0.1:10000/ >/dev/null; then\n              exit 0\n            fi\n            sleep 1\n          done\n          cat /tmp/dizychat.log\n          exit 1\n\n      - name: Run UI smoke test\n        env:\n          DEPLOY_URL: http://127.0.0.1:10000\n        run: node tests/ui-test.cjs\n\n      - name: Upload UI artifacts\n        if: always()\n        uses: actions/upload-artifact@v4\n        with:\n          name: ui-test-artifacts\n          path: ui-test-artifacts/\n          if-no-files-found: ignore\n''')
+          security = root / 'docs/security-runbook.md'
+          if security.exists():
+              s = security.read_text().replace('WAF / reverse proxy / Render rules', 'reverse proxy / firewall rules')
+              security.write_text(s)
 
-          # Remove any remaining current-tree provider branding/URLs while preserving ordinary
-          # lower-case UI verbs such as render/rendering.
+          # Replace provider branding/URLs in normal tracked text only. Workflow files are
+          # handled directly through the GitHub app because Actions cannot rewrite them here.
           tracked = subprocess.check_output(['git', 'ls-files', '-z']).decode().split('\0')
           for rel in filter(None, tracked):
+              if rel.startswith('.github/workflows/'):
+                  continue
               p = root / rel
-              if not p.exists() or p == root / '.github/workflows/hosting-cleanup.yml':
+              if not p.exists():
                   continue
               try:
                   s = p.read_text()
@@ -97,13 +98,10 @@ jobs:
               if s != old:
                   p.write_text(s)
 
-          # This bootstrap workflow must not survive the cleanup commit.
-          (root / '.github/workflows/hosting-cleanup.yml').unlink()
-
-          banned = ['onrender.com', 'api.render.com', 'RENDER_', 'Render']
+          banned = ['onrender.com', 'api.render.com', 'RENDER_']
           leftovers = []
           for rel in subprocess.check_output(['git', 'ls-files', '-z']).decode().split('\0'):
-              if not rel:
+              if not rel or rel.startswith('.github/workflows/'):
                   continue
               p = root / rel
               if not p.exists():
@@ -115,6 +113,8 @@ jobs:
               for token in banned:
                   if token in s:
                       leftovers.append(f'{rel}: {token}')
+              if re.search(r'\bRender\b', s):
+                  leftovers.append(f'{rel}: standalone provider name')
           if leftovers:
               raise SystemExit('Legacy hosting references remain:\n' + '\n'.join(leftovers))
           PY
@@ -122,8 +122,12 @@ jobs:
       - name: Commit cleanup
         shell: bash
         run: |
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "No normal-file cleanup changes required."
+            exit 0
+          fi
           git config user.name "DizygoticCode"
           git config user.email "rob.noyce@gmail.com"
-          git add -A
+          git add -A -- ':!.github/workflows'
           git commit -m "chore: remove legacy hosting integration"
           git push origin HEAD:chore/remove-legacy-hosting
