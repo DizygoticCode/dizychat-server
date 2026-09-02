@@ -1,0 +1,82 @@
+name: DizyChat UI Test
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  ui-test:
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:8.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install application dependencies
+        run: npm ci
+
+      - name: Install browser test dependencies
+        run: |
+          npm install --no-save puppeteer playwright
+          npx playwright install --with-deps chromium
+
+      - name: Start local DizyChat
+        env:
+          NODE_ENV: test
+          PORT: 10000
+          MONGO_URI: mongodb://127.0.0.1:27017/dizychat-ci
+          DISABLE_SB_FETCH: "1"
+          SOCKET_IO_CORS_ORIGINS: http://127.0.0.1:10000
+        run: |
+          npm start > /tmp/dizychat-ci.log 2>&1 &
+          echo $! > /tmp/dizychat-ci.pid
+          for i in {1..60}; do
+            if curl --fail --silent --output /dev/null http://127.0.0.1:10000/; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/dizychat-ci.log
+          exit 1
+
+      - name: Prepare UI artifacts
+        run: |
+          TIMESTAMP=$(date +%s)
+          mkdir -p ui-test-artifacts/playwright_videos
+          echo "$TIMESTAMP" > ui-test-artifacts/run_timestamp.txt
+          echo "TIMESTAMP=$TIMESTAMP" >> "$GITHUB_ENV"
+
+      - name: Run UI tests against local service
+        env:
+          TIMESTAMP: ${{ env.TIMESTAMP }}
+          DEPLOY_URL: http://127.0.0.1:10000
+        run: node tests/ui-test.cjs --puppeteer
+
+      - name: Upload UI artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-test-artifacts-${{ env.TIMESTAMP }}
+          path: ui-test-artifacts/
+          if-no-files-found: warn
+
+      - name: Show server log on failure
+        if: failure()
+        run: cat /tmp/dizychat-ci.log || true
