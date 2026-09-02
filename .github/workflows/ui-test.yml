@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+      - chore/remove-legacy-hosting
+  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -22,6 +24,40 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Assert self-hosted repository contract
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import subprocess
+
+          forbidden = [
+              'on' + 'render.com',
+              'api.' + 'render.com',
+              'RE' + 'NDER_',
+          ]
+          provider_word = ''.join(['Ren', 'der'])
+          failures = []
+          for rel in subprocess.check_output(['git', 'ls-files', '-z']).decode().split('\0'):
+              if not rel:
+                  continue
+              p = Path(rel)
+              try:
+                  text = p.read_text()
+              except (UnicodeDecodeError, IsADirectoryError):
+                  continue
+              for token in forbidden:
+                  if token in text:
+                      failures.append(f'{rel}: forbidden hosting token')
+              if re.search(rf'\b{re.escape(provider_word)}\b', text):
+                  failures.append(f'{rel}: legacy hosting provider name')
+              if provider_word.lower() in rel.lower():
+                  failures.append(f'{rel}: legacy hosting provider filename')
+          if failures:
+              raise SystemExit('\n'.join(failures))
+          PY
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
