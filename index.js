@@ -1,4 +1,4 @@
-// ===== DIZYCHAT FUSION — SUPERNOVA LIVE (Render Edition) =====
+// ===== DIZYCHAT FUSION — SUPERNOVA LIVE (self-hosted deployment Edition) =====
 require('dotenv').config();
 
 // ---------------- Imports ----------------
@@ -2564,7 +2564,7 @@ io.on('connection', socket => {
       io.to(roomName).emit('watch-party:external-created', payload);
     } catch (err) {
       const message = err?.code === 'W2G_NOT_CONFIGURED'
-        ? 'Watch2Gether is not configured yet. Add W2G_API_KEY in Render.'
+        ? 'Watch2Gether is not configured yet. Add W2G_API_KEY in self-hosted deployment.'
         : err?.name === 'AbortError'
           ? 'Watch2Gether took too long to respond. Try again shortly.'
           : 'Could not create a Watch2Gether room right now.';

@@ -7,7 +7,7 @@ import { execFile } from "child_process";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// where your app serves from (symlinked to /var/soundboards on Render)
+// where your app serves from (symlinked to /var/soundboards on self-hosted deployment)
 const PUBLIC_SOUNDBOARDS = path.resolve(__dirname, "..", "public", "soundboards");
 
 function run(cmd, args = []) {

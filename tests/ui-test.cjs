@@ -9,7 +9,7 @@ const path = require('path');
 // ✅ Config
 const BASE_URL = process.env.DEPLOY_URL
   ? String(process.env.DEPLOY_URL).replace(/\/$/, "")
-  : "https://dizychat-server.onrender.com";
+  : "http://127.0.0.1:10000";
 const SITE = `${BASE_URL}/login.html`;
 const ARTIFACT_DIR = path.join(process.cwd(), 'ui-test-artifacts');
 const VIDEO_DIR = path.join(ARTIFACT_DIR, 'playwright_videos');
@@ -32,8 +32,8 @@ async function runPlaywrightTest() {
   const page = await context.newPage();
 
   try {
-    console.log("⏳ Waiting 15s for Render app to fully initialize...");
-    await delay(15000);
+    console.log("⏳ Waiting briefly for the configured DizyChat service...");
+    await delay(1000);
 
     await page.goto(SITE, { waitUntil: 'networkidle', timeout: 60000 });
     console.log('✅ Page loaded');

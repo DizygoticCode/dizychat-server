@@ -4090,7 +4090,7 @@
             prompt("Enter the username to DM:", "general")?.toString().replace(/\s+/g, " ").trim() ||
             "general";
 
-        const landingBaseURL = "https://dizychat-server.onrender.com/";
+        const landingBaseURL = "https://dizychat.com/";
         const params = new URLSearchParams();
         params.set("usernamePlaceholder", "Put your username here");
         params.set("roomPlaceholder", "Put your room name here");

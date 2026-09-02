@@ -56,7 +56,7 @@
       if (result?.ok) window.close();
     });
     els.openRumble.addEventListener("click", () => api.tabs.create({ url: "https://rumble.com/" }));
-    els.openDizyChat.addEventListener("click", () => api.tabs.create({ url: "https://dizychat-server.onrender.com/" }));
+    els.openDizyChat.addEventListener("click", () => api.tabs.create({ url: "https://dizychat.com/" }));
   };
 
   init().catch((error) => {

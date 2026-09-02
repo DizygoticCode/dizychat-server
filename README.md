@@ -102,8 +102,8 @@ Create a `.env` file in the project root with the following keys:
 | `LIVEKIT_URL` | Required when LiveKit calls are enabled. LiveKit Cloud/server WebSocket URL (for example `wss://<project>.livekit.cloud`). |
 | `LIVEKIT_API_KEY` | Required when LiveKit calls are enabled. LiveKit API key used by the backend to issue room-scoped access tokens. |
 | `LIVEKIT_API_SECRET` | Required when LiveKit calls are enabled. LiveKit API secret paired with `LIVEKIT_API_KEY`. |
-| `GIPHY_SDK_KEY` | Required for the GIF picker. Create a GIPHY SDK key in the GIPHY Developer Dashboard and store it server-side in Render environment variables. |
-| `W2G_API_KEY` | Required for Watch2Gether watch-party room creation. Keep this server-side in Render environment variables; clients only see generated W2G room links. Aliases `WATCH2GETHER_API_KEY` and `WATCH_2_GETHER_API_KEY` are also accepted. |
+| `GIPHY_SDK_KEY` | Required for the GIF picker. Create a GIPHY SDK key in the GIPHY Developer Dashboard and store it in the protected service environment. |
+| `W2G_API_KEY` | Required for Watch2Gether watch-party room creation. Keep this in the protected service environment; clients only see generated W2G room links. Aliases `WATCH2GETHER_API_KEY` and `WATCH_2_GETHER_API_KEY` are also accepted. |
 | `W2G_REQUEST_TIMEOUT_MS` | (Optional) Timeout for Watch2Gether API room creation; defaults to 10000 ms. |
 | `JACKTRIP_STUDIO_CREATE_URL` | (Optional) Override the JackTrip create-studio URL used by the Jam Session launcher; defaults to `https://app.jacktrip.org/studios/create`. |
 | `JACKTRIP_STUDIO_INVITE_URL` | (Optional) If you already have a reusable JackTrip studio invite, expose that directly instead of the create-studio page. |
@@ -111,7 +111,7 @@ Create a `.env` file in the project root with the following keys:
 
 ### GIPHY setup
 
-Yes, the GIF picker requires your own `GIPHY_SDK_KEY`; there is no bundled shared key and no fallback key name. Create a GIPHY developer account, create an SDK key in the GIPHY Developer Dashboard, then add the key to Render as `GIPHY_SDK_KEY` and redeploy. The browser never receives the key directly because the composer calls DizyChat's `/giphy-search` endpoint, and the server forwards requests to GIPHY.
+Yes, the GIF picker requires your own `GIPHY_SDK_KEY`; there is no bundled shared key and no fallback key name. Create a GIPHY developer account, create an SDK key in the GIPHY Developer Dashboard, then set `GIPHY_SDK_KEY` in the protected service environment and restart the service. The browser never receives the key directly because the composer calls DizyChat's `/giphy-search` endpoint, and the server forwards requests to GIPHY.
 
 GIPHY SDK keys start as beta keys with limited hourly usage. If chat traffic grows beyond beta limits, upgrade the key from the GIPHY dashboard before relying on the GIF picker in production.
 
@@ -139,8 +139,7 @@ Recommended options:
 
 1. **Use LiveKit Cloud** for the fastest production path. Create a LiveKit Cloud project, copy its project URL plus API key/secret, then set those values as `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` in the DizyChat deployment environment. If LiveKit shows the project URL as `https://...`, paste it as-is or change it to `wss://...`; DizyChat normalizes it before sending it to the browser. DizyChat also accepts common aliases such as `LIVE_KIT_URL`, `LIVE_KIT_API_KEY`, and `LIVE_KIT_API_SECRET`, but the canonical `LIVEKIT_*` names are recommended because they match LiveKit's own examples.
 2. **Self-host LiveKit on infrastructure that supports WebRTC networking** if you need full control. A production LiveKit server needs a trusted TLS certificate, public DNS such as `wss://livekit.example.com`, TCP signaling, and exposed ICE UDP/TCP ports. This usually fits a VM, Kubernetes cluster, or LiveKit-focused host better than a standard single-port app service.
-3. **Use Render only if you can satisfy LiveKit's networking requirements with a Docker service and the required public ports.** DizyChat itself can stay on Render, but LiveKit media traffic is a separate realtime media service and should not be bundled into the same Node/Express process.
-4. **Use `livekit-server --dev` only for local testing.** The dev server uses the built-in `devkey` / `secret` credentials and is not a production deployment.
+3. **Use `livekit-server --dev` only for local testing.** The dev server uses the built-in `devkey` / `secret` credentials and is not a production deployment.
 
 For audio and optional camera video, configure only the LiveKit variables above. DizyChat uses the same LiveKit room connection for microphone and camera tracks; users join with audio first and can press **Add video** in the live call panel to publish their camera. Browser camera access requires HTTPS or localhost, and the current server permissions policy allows both microphone and camera access.
 
@@ -150,7 +149,7 @@ When users choose **Music mode On**, the token endpoint marks the call as music 
 
 The **Jam Session** button is an external pro-audio handoff for musician rooms. It recommends JackTrip first because JackTrip currently offers a free hosted-studio test path for up to 5 musicians for 30 minutes, then exposes SonoBus as a free fallback for open-source peer-to-peer audio with ASIO support through its native app.
 
-No JackTrip API key is required for the default launcher. If `JACKTRIP_STUDIO_CREATE_URL`, `JACKTRIP_STUDIO_INVITE_URL`, and `SONOBUS_DOWNLOAD_URL` are unset, DizyChat works as-is by opening JackTrip's create-studio page and SonoBus's download page. Set those variables only when you want Render to point users at a specific reusable JackTrip studio invite, a different JackTrip landing page, or a mirrored SonoBus URL.
+No JackTrip API key is required for the default launcher. If `JACKTRIP_STUDIO_CREATE_URL`, `JACKTRIP_STUDIO_INVITE_URL`, and `SONOBUS_DOWNLOAD_URL` are unset, DizyChat works as-is by opening JackTrip's create-studio page and SonoBus's download page. Set those variables only when you want the deployment to point users at a specific reusable JackTrip studio invite, a different JackTrip landing page, or a mirrored SonoBus URL.
 
 DizyChat does not handle ASIO audio directly in the browser. The launcher opens the external provider and gives room-specific instructions so musicians can use the provider's native desktop app/audio-interface support while staying coordinated in DizyChat.
 
@@ -192,7 +191,7 @@ different environments without rebuilding the native project.
 
 ## Automated UI smoke tests
 
-The `tests/` folder contains Playwright- and Puppeteer-based smoke tests that hit the deployed Render instance and capture screenshots/video artifacts. They are optional and require installing the browsers locally:
+The `tests/` folder contains Playwright- and Puppeteer-based smoke tests that hit the configured DizyChat instance and capture screenshots/video artifacts. They are optional and require installing the browsers locally:
 
 ```bash
 npm install --save-dev playwright puppeteer
@@ -201,7 +200,7 @@ npm install --save-dev playwright puppeteer
 Run the CommonJS harness (which includes retries and artifact generation) with Node.js:
 
 ```bash
-node tests/ui-test.cjs             # Playwright only
+node tests/ui-test.cjs             # Playwright only; defaults to local server
 node tests/ui-test.cjs --puppeteer # Playwright + Puppeteer snapshot
 ```
 
@@ -345,3 +344,8 @@ Until that standalone package exists, the GitHub-backed userscript in `scripts/t
 ---
 
 Feel free to open issues or PRs to collaborate on future iterations of DizyChat!
+
+
+## Self-hosted production
+
+The production DizyChat service is self-hosted behind Caddy at `https://dizychat.com`. The Node service listens on a private local port, MongoDB remains bound to localhost, and persistent soundboards/uploads live under `/var/soundboards`. Runtime secrets belong in a protected service environment file and are never committed. Only the reverse-proxy HTTP/HTTPS edge should be public.

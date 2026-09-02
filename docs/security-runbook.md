@@ -16,7 +16,7 @@ Monitor structured logs prefixed with `[SecurityEvent]` for:
 
 ## Immediate containment
 
-1. Restrict ingress at edge (WAF / reverse proxy / Render rules) for abusive source IPs.
+1. Restrict ingress at edge (reverse proxy / firewall rules) for abusive source IPs.
 2. Rotate secrets immediately if compromise is suspected:
    - `ADMIN_PASSWORD_HASH` / `ADMIN_CREDENTIALS_HASHED`
 3. Increase temporary hardening thresholds as needed:
