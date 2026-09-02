@@ -78,11 +78,11 @@ tests/                # Automated tests (if/when added)
    npm install
    ```
 2. Ensure MongoDB is running/available.
-3. Create a `.env` file (see below) or configure environment variables in your host.
+3. Create a local `.env` file for development or configure the service runtime environment on the host.
 
 ## Environment variables
 
-Create a `.env` file in the project root with the following keys:
+Local `.env` files and host runtime environment files are deliberately excluded by `.gitignore`. Never commit production credentials, API keys, MongoDB credentials, or service environment files. Commit only scrubbed example templates such as `.env.example` when documentation is needed.
 
 | Variable | Description |
 | --- | --- |
@@ -102,8 +102,8 @@ Create a `.env` file in the project root with the following keys:
 | `LIVEKIT_URL` | Required when LiveKit calls are enabled. LiveKit Cloud/server WebSocket URL (for example `wss://<project>.livekit.cloud`). |
 | `LIVEKIT_API_KEY` | Required when LiveKit calls are enabled. LiveKit API key used by the backend to issue room-scoped access tokens. |
 | `LIVEKIT_API_SECRET` | Required when LiveKit calls are enabled. LiveKit API secret paired with `LIVEKIT_API_KEY`. |
-| `GIPHY_SDK_KEY` | Required for the GIF picker. Create a GIPHY SDK key in the GIPHY Developer Dashboard and store it server-side in Render environment variables. |
-| `W2G_API_KEY` | Required for Watch2Gether watch-party room creation. Keep this server-side in Render environment variables; clients only see generated W2G room links. Aliases `WATCH2GETHER_API_KEY` and `WATCH_2_GETHER_API_KEY` are also accepted. |
+| `GIPHY_SDK_KEY` | Required for the GIF picker. Keep the key only in the server runtime environment, outside source control. |
+| `W2G_API_KEY` | Required for Watch2Gether watch-party room creation. Keep this server-side in the runtime environment; clients only see generated W2G room links. Aliases `WATCH2GETHER_API_KEY` and `WATCH_2_GETHER_API_KEY` are also accepted. |
 | `W2G_REQUEST_TIMEOUT_MS` | (Optional) Timeout for Watch2Gether API room creation; defaults to 10000 ms. |
 | `JACKTRIP_STUDIO_CREATE_URL` | (Optional) Override the JackTrip create-studio URL used by the Jam Session launcher; defaults to `https://app.jacktrip.org/studios/create`. |
 | `JACKTRIP_STUDIO_INVITE_URL` | (Optional) If you already have a reusable JackTrip studio invite, expose that directly instead of the create-studio page. |
@@ -111,7 +111,7 @@ Create a `.env` file in the project root with the following keys:
 
 ### GIPHY setup
 
-Yes, the GIF picker requires your own `GIPHY_SDK_KEY`; there is no bundled shared key and no fallback key name. Create a GIPHY developer account, create an SDK key in the GIPHY Developer Dashboard, then add the key to Render as `GIPHY_SDK_KEY` and redeploy. The browser never receives the key directly because the composer calls DizyChat's `/giphy-search` endpoint, and the server forwards requests to GIPHY.
+Yes, the GIF picker requires your own `GIPHY_SDK_KEY`; there is no bundled shared key and no fallback key name. Create a GIPHY developer account, create an SDK key in the GIPHY Developer Dashboard, add the key to the server's protected runtime environment, and restart the DizyChat service. The browser never receives the key directly because the composer calls DizyChat's `/giphy-search` endpoint, and the server forwards requests to GIPHY.
 
 GIPHY SDK keys start as beta keys with limited hourly usage. If chat traffic grows beyond beta limits, upgrade the key from the GIPHY dashboard before relying on the GIF picker in production.
 
@@ -137,9 +137,9 @@ Live audio/video calls are **not self-contained inside the DizyChat server**. Th
 
 Recommended options:
 
-1. **Use LiveKit Cloud** for the fastest production path. Create a LiveKit Cloud project, copy its project URL plus API key/secret, then set those values as `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` in the DizyChat deployment environment. If LiveKit shows the project URL as `https://...`, paste it as-is or change it to `wss://...`; DizyChat normalizes it before sending it to the browser. DizyChat also accepts common aliases such as `LIVE_KIT_URL`, `LIVE_KIT_API_KEY`, and `LIVE_KIT_API_SECRET`, but the canonical `LIVEKIT_*` names are recommended because they match LiveKit's own examples.
+1. **Use LiveKit Cloud** for the fastest production path. Create a LiveKit Cloud project, copy its project URL plus API key/secret, then set those values as `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` in the DizyChat runtime environment. If LiveKit shows the project URL as `https://...`, paste it as-is or change it to `wss://...`; DizyChat normalizes it before sending it to the browser. DizyChat also accepts common aliases such as `LIVE_KIT_URL`, `LIVE_KIT_API_KEY`, and `LIVE_KIT_API_SECRET`, but the canonical `LIVEKIT_*` names are recommended because they match LiveKit's own examples.
 2. **Self-host LiveKit on infrastructure that supports WebRTC networking** if you need full control. A production LiveKit server needs a trusted TLS certificate, public DNS such as `wss://livekit.example.com`, TCP signaling, and exposed ICE UDP/TCP ports. This usually fits a VM, Kubernetes cluster, or LiveKit-focused host better than a standard single-port app service.
-3. **Use Render only if you can satisfy LiveKit's networking requirements with a Docker service and the required public ports.** DizyChat itself can stay on Render, but LiveKit media traffic is a separate realtime media service and should not be bundled into the same Node/Express process.
+3. **Keep LiveKit separate from the DizyChat Node process.** Whether LiveKit Cloud or a self-hosted LiveKit server is used, its realtime media networking is a separate service and should not be bundled into the same Express process.
 4. **Use `livekit-server --dev` only for local testing.** The dev server uses the built-in `devkey` / `secret` credentials and is not a production deployment.
 
 For audio and optional camera video, configure only the LiveKit variables above. DizyChat uses the same LiveKit room connection for microphone and camera tracks; users join with audio first and can press **Add video** in the live call panel to publish their camera. Browser camera access requires HTTPS or localhost, and the current server permissions policy allows both microphone and camera access.
@@ -150,7 +150,7 @@ When users choose **Music mode On**, the token endpoint marks the call as music 
 
 The **Jam Session** button is an external pro-audio handoff for musician rooms. It recommends JackTrip first because JackTrip currently offers a free hosted-studio test path for up to 5 musicians for 30 minutes, then exposes SonoBus as a free fallback for open-source peer-to-peer audio with ASIO support through its native app.
 
-No JackTrip API key is required for the default launcher. If `JACKTRIP_STUDIO_CREATE_URL`, `JACKTRIP_STUDIO_INVITE_URL`, and `SONOBUS_DOWNLOAD_URL` are unset, DizyChat works as-is by opening JackTrip's create-studio page and SonoBus's download page. Set those variables only when you want Render to point users at a specific reusable JackTrip studio invite, a different JackTrip landing page, or a mirrored SonoBus URL.
+No JackTrip API key is required for the default launcher. If `JACKTRIP_STUDIO_CREATE_URL`, `JACKTRIP_STUDIO_INVITE_URL`, and `SONOBUS_DOWNLOAD_URL` are unset, DizyChat works as-is by opening JackTrip's create-studio page and SonoBus's download page. Set those variables only when you want the self-hosted DizyChat service to point users at a specific reusable JackTrip studio invite, a different JackTrip landing page, or a mirrored SonoBus URL.
 
 DizyChat does not handle ASIO audio directly in the browser. The launcher opens the external provider and gives room-specific instructions so musicians can use the provider's native desktop app/audio-interface support while staying coordinated in DizyChat.
 
@@ -192,7 +192,7 @@ different environments without rebuilding the native project.
 
 ## Automated UI smoke tests
 
-The `tests/` folder contains Playwright- and Puppeteer-based smoke tests that hit the deployed Render instance and capture screenshots/video artifacts. They are optional and require installing the browsers locally:
+The `tests/` folder contains Playwright- and Puppeteer-based smoke tests that run against an isolated local DizyChat instance in CI and capture screenshots/video artifacts. They are optional and require installing the browsers locally:
 
 ```bash
 npm install --save-dev playwright puppeteer
@@ -274,12 +274,13 @@ All marketing routes serve the hero experience from `public/index.html`; the cha
 - Prefer hashed admin credentials (`ADMIN_PASSWORD_HASH` / `ADMIN_CREDENTIALS_HASHED`); plaintext admin passwords are still accepted for migration compatibility.
 - Admin authentication now includes anti-bruteforce controls (progressive retry delay + temporary lockout after repeated failures).
 - HTTP responses include hardened security headers (CSP, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, and `Permissions-Policy`) while allowing trusted inline media frames from YouTube, Spotify, SoundCloud, and Rumble so chat link embeds keep working; Express `x-powered-by` is disabled.
+- Keep production environment files outside the repository with restrictive filesystem permissions. `.gitignore` blocks `.env`, `.env.*`, `*.env`, and `*.env.*` while allowing scrubbed example templates.
 
 ## Deployment notes
 
-- Behind a reverse proxy, ensure WebSocket upgrades are forwarded to the Node server.
+- The canonical production deployment is self-hosted behind a reverse proxy; ensure WebSocket upgrades are forwarded to the Node server.
 - Provision persistent storage for `public/uploads` if you need to retain files across deploys.
-- Configure process managers (PM2, systemd, Docker, etc.) to supply environment variables securely.
+- Configure process managers (PM2, systemd, Docker, etc.) to supply environment variables securely from outside the Git checkout.
 - Rotate admin credentials on a fixed cadence (for example every 60–90 days) and immediately after suspected exposure.
 - Scale horizontally by sharing the same MongoDB and enabling a Socket.IO adapter (e.g., Redis) if broadcasting across instances is required.
 
