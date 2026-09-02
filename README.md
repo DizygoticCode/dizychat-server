@@ -200,7 +200,7 @@ npm install --save-dev playwright puppeteer
 Run the CommonJS harness (which includes retries and artifact generation) with Node.js:
 
 ```bash
-node tests/ui-test.cjs             # Playwright only; defaults to local server; defaults to local server
+node tests/ui-test.cjs             # Playwright only; defaults to local server; defaults to local server; defaults to local server
 node tests/ui-test.cjs --puppeteer # Playwright + Puppeteer snapshot
 ```
 
