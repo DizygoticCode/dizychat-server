@@ -2,6 +2,15 @@ node_modules/
 npm-debug.log*
 ui-test-artifacts/
 .DS_Store
+
+# Local/runtime environment files — never commit secrets
+.env
+.env.*
+*.env
+*.env.*
+!.env.example
+!*.env.example
+
 public/soundboards/*
 !public/soundboards/.gitkeep
 
