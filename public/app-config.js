@@ -2,16 +2,14 @@ window.dizychatConfig = Object.assign(
   {
     /**
      * Optional base URL for the Socket.IO connection.
-     * Set this to your deployed server when running the web app
-     * from a Capacitor/WebView build (e.g. "https://dizychat.onrender.com").
-     * Leave empty to use the current origin.
+     * Leave empty for the web app so Socket.IO uses the current origin.
      */
-    socketUrl: "https://dizychat-server.onrender.com",
+    socketUrl: "",
     /**
-     * Optional URL used automatically when the app is loaded from a
+     * Public URL used automatically when the app is loaded from a
      * non-HTTP origin (e.g. capacitor://localhost).
      */
-    defaultNativeSocketUrl: "https://dizychat-server.onrender.com",
+    defaultNativeSocketUrl: "https://dizychat.com",
     /**
      * Additional options that are passed to io(...).
      * Example: { transports: ["websocket"] }
