@@ -35,7 +35,6 @@ android {
         buildConfigField "String", "NODE_VERSION", "\"${localProperties.getProperty('NODE_VERSION', '')}\""
         buildConfigField "String", "PORT", "\"${localProperties.getProperty('PORT', '')}\""
         buildConfigField "String", "GIPHY_SDK_KEY", "\"${localProperties.getProperty('GIPHY_SDK_KEY', '')}\""
-        buildConfigField "String", "RENDER_API_URL", "\"${localProperties.getProperty('RENDER_API_URL', '')}\""
     }
     buildTypes {
         release {
