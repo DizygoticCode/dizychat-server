@@ -10,10 +10,10 @@ const joinStart = indexSource.indexOf("socket.on('join room'");
 const joinEnd = indexSource.indexOf("socket.on('leave room'", joinStart);
 const joinSource = indexSource.slice(joinStart, joinEnd > joinStart ? joinEnd : undefined);
 
-test('join room no longer accepts adminToken as an identity escalation input', () => {
+test('join room no longer accepts or references legacy admin sessions', () => {
   assert.match(joinSource, /socket\.on\('join room', async \(\{ room, username, password \}\) => \{/);
   assert.doesNotMatch(joinSource, /resolveAdminSession\(adminToken\)/);
-  assert.doesNotMatch(joinSource, /adminSession\?\.username/);
+  assert.doesNotMatch(joinSource, /adminSession/);
 });
 
 test('authenticated room identity comes only from the server-side account principal', () => {
