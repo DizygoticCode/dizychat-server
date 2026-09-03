@@ -24,6 +24,7 @@ jobs:
         run: |
           node scripts/auth-v2/apply-index-patch.cjs
           node scripts/auth-v2/cleanup-task4-legacy-admin-session.cjs
+          node scripts/auth-v2/apply-task5-authorization.cjs
 
       - name: Commit generated server patch
         shell: bash
