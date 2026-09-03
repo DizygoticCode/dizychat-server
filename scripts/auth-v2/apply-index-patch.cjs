@@ -77,5 +77,25 @@ if (!task3Applied) {
   );
 }
 
+const task4Applied =
+  source.includes("socket.on('join room', async ({ room, username, password }) => {") &&
+  source.includes('await accountService.isRegisteredUsername(guestUsername)') &&
+  source.includes('socket.identityKind = effectivePrincipal.kind;') &&
+  source.includes('socket.role = effectivePrincipal.role;');
+
+if (!task4Applied) {
+  replaceOnce(
+    'remove adminToken from room join identity input',
+    "socket.on('join room', async ({ room, username, password, adminToken }) => {",
+    "socket.on('join room', async ({ room, username, password }) => {"
+  );
+
+  replaceOnce(
+    'server-authoritative room identity',
+    "    const previousRoom = socket.currentRoom;\n    if (previousRoom && previousRoom !== roomName) {\n      removeSocketFromRoom(socket, previousRoom);\n      emitRoomListUpdate();\n    }\n\n    const adminSession = resolveAdminSession(adminToken);\n\n    // Track user identity & room\n    const fallbackUser = `Guest-${socket.id.slice(0, 4)}`;\n    const requestedUsername = adminSession?.username ?? username;\n    socket.username = normaliseUsername(requestedUsername, fallbackUser);\n    socket.isAdmin = Boolean(adminSession);\n    const canonicalUser = canonicalUsername(socket.username);",
+    "    const fallbackUser = `Guest-${socket.id.slice(0, 4)}`;\n    let effectivePrincipal;\n    if (socket.principal?.kind === 'account') {\n      effectivePrincipal = socket.principal;\n    } else {\n      const guestUsername = normaliseUsername(username, fallbackUser);\n      if (await accountService.isRegisteredUsername(guestUsername)) {\n        logSecurityEvent('registered_username_guest_join_attempt', {\n          room: roomName,\n          username: guestUsername,\n          ip: getSocketRemoteAddress(socket),\n          socketId: socket.id,\n        });\n        sendJoinError(socket, 'That username is reserved. Sign in to use it.');\n        return;\n      }\n      effectivePrincipal = {\n        kind: 'guest',\n        username: guestUsername,\n        canonicalUsername: canonicalUsername(guestUsername),\n        role: 'guest',\n      };\n    }\n\n    socket.username = effectivePrincipal.username;\n    socket.canonicalUsername = effectivePrincipal.canonicalUsername;\n    socket.identityKind = effectivePrincipal.kind;\n    socket.role = effectivePrincipal.role;\n    socket.isAdmin = false;\n\n    const previousRoom = socket.currentRoom;\n    if (previousRoom && previousRoom !== roomName) {\n      removeSocketFromRoom(socket, previousRoom);\n      emitRoomListUpdate();\n    }\n\n    const canonicalUser = socket.canonicalUsername;"
+  );
+}
+
 fs.writeFileSync(target, source);
-console.log('Applied guarded Auth v2 index.js patch through Task 3.');
+console.log('Applied guarded Auth v2 index.js patch through Task 4.');
