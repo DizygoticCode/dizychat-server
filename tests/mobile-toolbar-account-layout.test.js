@@ -6,7 +6,14 @@ const fs = require('fs');
 const path = require('path');
 
 const loginSource = fs.readFileSync(path.resolve(__dirname, '../public/login.html'), 'utf8');
-const cssSource = fs.readFileSync(path.resolve(__dirname, '../public/chat.css'), 'utf8');
+const baseCssSource = fs.readFileSync(path.resolve(__dirname, '../public/chat.css'), 'utf8');
+const mobileCssPath = path.resolve(__dirname, '../public/mobile-toolbar.css');
+const mobileCssSource = fs.existsSync(mobileCssPath) ? fs.readFileSync(mobileCssPath, 'utf8') : '';
+const cssSource = `${baseCssSource}\n${mobileCssSource}`;
+
+test('chat loads the narrow-screen toolbar override after the base stylesheet', () => {
+  assert.match(loginSource, /<link rel="stylesheet" href="\/chat\.css" \/>[\s\S]*<link rel="stylesheet" href="\/mobile-toolbar\.css" \/>/);
+});
 
 test('authenticated identity and sign-out controls share one toolbar group', () => {
   assert.match(
@@ -16,7 +23,7 @@ test('authenticated identity and sign-out controls share one toolbar group', () 
 });
 
 test('narrow chat toolbar becomes a width-contained stacked layout', () => {
-  const mobileStart = cssSource.indexOf('@media (max-width: 600px)');
+  const mobileStart = cssSource.lastIndexOf('@media (max-width: 600px)');
   assert.notEqual(mobileStart, -1, 'expected a 600px mobile toolbar breakpoint');
   const mobileSource = cssSource.slice(mobileStart);
 
@@ -26,7 +33,7 @@ test('narrow chat toolbar becomes a width-contained stacked layout', () => {
 });
 
 test('mobile account controls keep identity compact and sign-out touch safe', () => {
-  const mobileStart = cssSource.indexOf('@media (max-width: 600px)');
+  const mobileStart = cssSource.lastIndexOf('@media (max-width: 600px)');
   assert.notEqual(mobileStart, -1, 'expected a 600px mobile toolbar breakpoint');
   const mobileSource = cssSource.slice(mobileStart);
 
