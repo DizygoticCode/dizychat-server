@@ -16,8 +16,8 @@ assert.doesNotMatch(securityRunbookSource, /\bRender\b/i, 'security runbook must
 assert.doesNotMatch(serverSource, /\bRender\b/i, 'server runtime copy must not reference retired Render hosting');
 assert.doesNotMatch(
   readmeSource,
-  /Media uploads with antivirus scanning|Streams uploads to OPSWAT MetaDefender Cloud; rejects infected files/i,
-  'README must not claim upload antivirus enforcement while runtime enforcement is disabled'
+  /Media uploads with antivirus scanning|Streams uploads to OPSWAT MetaDefender Cloud; rejects infected files|Accepts an allowlisted set of common/i,
+  'README must not claim upload antivirus or file-type enforcement while those runtime gates are disabled'
 );
 assert.match(source, /socketUrl:\s*""/, 'web clients should use the current origin');
 assert.match(
