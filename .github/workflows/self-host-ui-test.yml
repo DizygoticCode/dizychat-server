@@ -30,6 +30,35 @@ jobs:
       - name: Verify self-host configuration
         run: npm test
 
+      - name: Smoke test self-hosted LiveKit
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          compose=(docker compose -f deploy/livekit/compose.yaml)
+          cleanup() {
+            status=$?
+            if (( status != 0 )); then
+              "${compose[@]}" logs --no-color livekit || true
+            fi
+            "${compose[@]}" down --volumes --remove-orphans || true
+            rm -f deploy/livekit/livekit.yaml
+            exit "$status"
+          }
+          trap cleanup EXIT
+
+          ./deploy/livekit/generate-config.sh > /dev/null
+          "${compose[@]}" config --quiet
+          "${compose[@]}" up --detach livekit
+
+          for _ in {1..60}; do
+            if curl --silent --output /dev/null --max-time 2 http://127.0.0.1:7880/; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "LiveKit signaling listener did not become reachable" >&2
+          exit 1
+
       - name: Install browser test runtime
         run: |
           npm install --no-save --package-lock=false playwright

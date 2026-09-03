@@ -1,0 +1,19 @@
+# Copy to livekit.yaml with ./generate-config.sh; never deploy these placeholders.
+port: 7880
+bind_addresses:
+  - "0.0.0.0"
+rtc:
+  # WebRTC-over-TCP fallback. This is not the TLS reverse-proxy port.
+  tcp_port: 7881
+  # Keep this range identical in the host firewall/NAT configuration.
+  port_range_start: 50000
+  port_range_end: 50100
+  # Public hosts: discover and advertise the host's public address via STUN.
+  # LAN-only hosts: set false and set node_ip to the server's reachable LAN IP.
+  use_external_ip: true
+keys:
+  LIVEKIT_API_KEY_PLACEHOLDER: LIVEKIT_API_SECRET_PLACEHOLDER
+logging:
+  level: info
+room:
+  auto_create: true

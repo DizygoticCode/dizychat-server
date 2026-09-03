@@ -99,7 +99,7 @@ Local `.env` files and host runtime environment files are deliberately excluded 
 | `MESSAGE_HISTORY_CHUNK_SIZE` | Page size (25-500) for history fetches; defaults to 150. |
 | `MAX_UPLOAD_SIZE_MB` | File upload cap; accepts values like `50`, `50mb`, or `2gb`. Use `unlimited` to disable the limit. |
 | `ENABLE_VOICE_CALLS` | (Optional) Set to `true`/`false` to force LiveKit call availability. The legacy name is still used for compatibility; when enabled, calls support microphone audio and optional camera video. If unset, calls enable automatically when all LiveKit credentials are present. |
-| `LIVEKIT_URL` | Required when LiveKit calls are enabled. LiveKit Cloud/server WebSocket URL (for example `wss://<project>.livekit.cloud`). |
+| `LIVEKIT_URL` | Required when LiveKit calls are enabled. Browser-reachable LiveKit WebSocket URL; for self-hosting use the trusted TLS endpoint you configured (for example `wss://<your-livekit-host>`). |
 | `LIVEKIT_API_KEY` | Required when LiveKit calls are enabled. LiveKit API key used by the backend to issue room-scoped access tokens. |
 | `LIVEKIT_API_SECRET` | Required when LiveKit calls are enabled. LiveKit API secret paired with `LIVEKIT_API_KEY`. |
 | `GIPHY_SDK_KEY` | Required for the GIF picker. Keep the key only in the server runtime environment, outside source control. |
@@ -132,6 +132,8 @@ npm start
 The server will log the active port, build/version information, and upload limit during boot.
 
 ### LiveKit call provider setup
+
+> **Self-hosted deployment:** Use the production-oriented Compose service and complete network/TLS runbook in [`deploy/livekit/README.md`](deploy/livekit/README.md). It preserves the existing `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` application contract; no call or authentication code changes are required.
 
 Live audio/video calls are **not self-contained inside the DizyChat server**. The chat server provides the UI, room lifecycle events, and LiveKit access-token minting, but real-time microphone/camera transport still requires a LiveKit Cloud project or a self-hosted LiveKit server. Until `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` are configured, `/api/calls/status` reports `configured: false` with a `missingRequiredEnv` list, and the client shows the missing server variables instead of a generic setup error.
 

@@ -25,3 +25,6 @@ android/app/intermediates/
 android/app/generated/
 android/app/debug.keystore
 android/local.properties
+
+# Generated self-hosted LiveKit configuration contains API credentials.
+deploy/livekit/livekit.yaml
