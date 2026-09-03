@@ -34,13 +34,16 @@ test('guest room identity is allowed only when the canonical name is not a regis
 });
 
 test('room password validation remains independent from account role and happens before identity mutation', () => {
-  const passwordCheck = joinSource.indexOf('storedPassword !== undefined && storedPassword !== providedPassword');
+  const passwordCheck = joinSource.indexOf('roomPasswordService.claimOrVerify(roomName, providedPassword)');
+  const passwordDecision = joinSource.indexOf('if (!roomPasswordResult.ok)');
   const principalCheck = joinSource.indexOf("socket.principal?.kind === 'account'");
   const usernameMutation = joinSource.indexOf('socket.username = effectivePrincipal.username');
 
   assert.notEqual(passwordCheck, -1);
+  assert.notEqual(passwordDecision, -1);
   assert.notEqual(principalCheck, -1);
   assert.notEqual(usernameMutation, -1);
-  assert.ok(passwordCheck < principalCheck);
+  assert.ok(passwordCheck < passwordDecision);
+  assert.ok(passwordDecision < principalCheck);
   assert.ok(principalCheck < usernameMutation);
 });
