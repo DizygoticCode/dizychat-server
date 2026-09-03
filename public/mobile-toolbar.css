@@ -1,3 +1,8 @@
+/* Keep desktop toolbar semantics unchanged while grouping account controls for mobile. */
+.account-session-controls {
+  display: contents;
+}
+
 /* Narrow portrait toolbar containment for phones such as the Huawei P30. */
 @media (max-width: 600px) {
   #chat-container > header {
@@ -60,10 +65,6 @@
     gap: 6px;
     min-width: 0;
     max-width: 100%;
-  }
-
-  .account-session-controls[hidden] {
-    display: none !important;
   }
 
   .account-identity {
