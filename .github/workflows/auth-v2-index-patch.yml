@@ -20,21 +20,22 @@ jobs:
           ref: feat/auth-v2-account-foundation
           fetch-depth: 0
 
-      - name: Apply guarded index patch
+      - name: Apply guarded Auth v2 patches
         run: |
           node scripts/auth-v2/apply-index-patch.cjs
           node scripts/auth-v2/cleanup-task4-legacy-admin-session.cjs
           node scripts/auth-v2/apply-task5-authorization.cjs
+          node scripts/auth-v2/apply-task6-client.cjs
 
-      - name: Commit generated server patch
+      - name: Commit generated Auth v2 patch
         shell: bash
         run: |
-          if git diff --quiet -- index.js; then
-            echo "No index.js changes to commit."
+          if git diff --quiet -- index.js public/login.html public/chat.js public/chat.css tests/ui-test.cjs; then
+            echo "No generated Auth v2 changes to commit."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add index.js
-          git commit -m "feat: advance Auth v2 server wiring"
+          git add index.js public/login.html public/chat.js public/chat.css tests/ui-test.cjs
+          git commit -m "feat: complete Auth v2 browser cutover"
           git push origin HEAD:feat/auth-v2-account-foundation
