@@ -15,10 +15,12 @@ const sanitizeHtml = require('sanitize-html');
 const crypto = require('crypto');
 const Message = require('./src/models/message');
 const User = require('./src/models/user');
+const Room = require('./src/models/room');
 const { createAccountService } = require('./src/auth/account-service');
 const { readLegacyAdminCredentials } = require('./src/auth/legacy-admin-credentials');
 const { createSessionStore } = require('./src/auth/session-store');
 const { requireModerator, requireOwner } = require('./src/auth/authorization');
+const { createRoomPasswordService } = require('./src/rooms/room-password-service');
 const soundboardStore = require('./src/utils/soundboard');
 
 const nodeFetchModulePromise = import('node-fetch');
@@ -325,6 +327,15 @@ const buildAdminCredentials = () => {
 const adminCredentials = readLegacyAdminCredentials(process.env);
 const accountService = createAccountService({ UserModel: User, legacyCredentials: adminCredentials });
 const accountSessions = createSessionStore({ ttlMs: ADMIN_SESSION_TTL_MS });
+const roomPasswordService = createRoomPasswordService({ RoomModel: Room });
+const roomPasswords = new Map();
+const PERSISTENT_ROOMS = [
+  'General Chat',
+  'AJN Chat',
+  'Drum & Bass Chat',
+  'Psybin Radio',
+];
+const PERSISTENT_ROOM_SET = new Set(PERSISTENT_ROOMS);
 const plaintextAdminCredentialCount = [...adminCredentials.values()].filter((item) => item.kind === 'plaintext').length;
 if (plaintextAdminCredentialCount > 0) {
   console.warn(`[Admin] ${plaintextAdminCredentialCount} plaintext admin credential(s) detected. Migrate to ADMIN_PASSWORD_HASH / ADMIN_CREDENTIALS_HASHED.`);
@@ -410,8 +421,15 @@ const connectMongoWithRetry = async () => {
   try {
     await mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true });
     await accountService.bootstrapProtectedAccounts();
+    await roomPasswordService.ensureRooms(PERSISTENT_ROOMS);
+    const persistedRoomPasswords = await roomPasswordService.loadAll();
+    roomPasswords.clear();
+    for (const [roomName, passwordHash] of persistedRoomPasswords.entries()) {
+      roomPasswords.set(roomName, passwordHash);
+    }
     console.log("[Mongo] Connected");
     console.log("[Auth v2] Protected accounts bootstrapped");
+    console.log(`[Rooms] Loaded ${roomPasswords.size} persisted room password state(s)`);
   } catch (err) {
     if (mongoose.connection.readyState === 1) {
       try {
@@ -1827,10 +1845,8 @@ app.post('/api/calls/token', express.json(), (req, res) => {
   }
 });
 
-
 // ---------------- Socket.IO ----------------
 const typingUsersByRoom = new Map();
-const roomPasswords = new Map();
 const roomMembers = new Map();
 const roomPresence = new Map();
 const roomUserHistory = new Map();
@@ -1838,19 +1854,10 @@ const roomBans = new Map();
 const roomBlocks = new Map();
 const roomMutes = new Map();
 
-const PERSISTENT_ROOMS = [
-  'General Chat',
-  'AJN Chat',
-  'Drum & Bass Chat',
-  'Psybin Radio',
-];
-const PERSISTENT_ROOM_SET = new Set(PERSISTENT_ROOMS);
-
 PERSISTENT_ROOMS.forEach((roomName) => {
   if (!roomMembers.has(roomName)) {
     roomMembers.set(roomName, new Set());
   }
-  roomPasswords.set(roomName, '');
 });
 
 const canonicalUsername = (username) => {
@@ -2496,8 +2503,17 @@ io.on('connection', socket => {
     }
 
     const providedPassword = normalisePassword(password);
-    const storedPassword = roomPasswords.get(roomName);
-    if (storedPassword !== undefined && storedPassword !== providedPassword) {
+    let roomPasswordResult;
+    try {
+      roomPasswordResult = await roomPasswordService.claimOrVerify(roomName, providedPassword);
+      roomPasswords.set(roomName, roomPasswordResult.passwordHash);
+    } catch (err) {
+      console.error('[Room] Password verification failed:', err?.message || err);
+      sendJoinError(socket, 'Unable to verify room password');
+      return;
+    }
+
+    if (!roomPasswordResult.ok) {
       logSecurityEvent('room_password_mismatch', {
         room: roomName,
         ip: getSocketRemoteAddress(socket),
@@ -2505,10 +2521,6 @@ io.on('connection', socket => {
       });
       sendJoinError(socket, 'Incorrect room password');
       return;
-    }
-
-    if (storedPassword === undefined) {
-      roomPasswords.set(roomName, providedPassword);
     }
 
     const fallbackUser = `Guest-${socket.id.slice(0, 4)}`;
@@ -2783,7 +2795,6 @@ io.on('connection', socket => {
     activeRoomCallVideoBlocks.delete(roomName);
     io.to(roomName).emit('call:ended', { room: roomName, callId: active.callId, endedBy: socket.username, endedAt: Date.now() });
   });
-
 
   // ----- Chat message -----
   socket.on('chat message', async (msgDataRaw = {}) => {
