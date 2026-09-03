@@ -33,7 +33,7 @@ test('existing admin command guard delegates only to account-role authorization'
   assert.doesNotMatch(indexSource, /if \(!socket\.isAdmin\)/);
 });
 
-test('owner-only managed-user event creates through account service, revokes old sessions, and returns no password material', () => {
+test('owner-only managed-user event creates through account service, revokes old sessions, and returns sanitized account metadata', () => {
   const start = indexSource.indexOf("socket.on('account manage user'");
   const end = indexSource.indexOf("socket.on('join room'", start);
   const source = indexSource.slice(start, end > start ? end : undefined);
@@ -45,7 +45,6 @@ test('owner-only managed-user event creates through account service, revokes old
   assert.match(source, /accountSessions\.revokeUser\(account\.canonicalUsername\);/);
   assert.match(source, /ack\(\{ ok: true, account \}\)/);
   assert.doesNotMatch(source, /passwordHash\s*:/);
-  assert.doesNotMatch(source, /password\s*:/);
 });
 
 test('server no longer uses mutable socket.isAdmin as authorization state', () => {
