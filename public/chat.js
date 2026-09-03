@@ -49,8 +49,39 @@ const resolveSocketConfig = () => {
   return { url: url || undefined, options };
 };
 
-const { url: socketUrl, options: socketOptions } = resolveSocketConfig();
+const { url: socketUrl, options: baseSocketOptions } = resolveSocketConfig();
+const DIZYCHAT_ACCOUNT_SESSION_KEY = "dizychat-account-session-v2";
 
+const readAccountSessionToken = () => {
+  try {
+    return String(sessionStorage.getItem(DIZYCHAT_ACCOUNT_SESSION_KEY) || "").trim();
+  } catch {
+    return "";
+  }
+};
+
+const storeAccountSessionToken = (token) => {
+  try {
+    const value = String(token || "").trim();
+    if (value) sessionStorage.setItem(DIZYCHAT_ACCOUNT_SESSION_KEY, value);
+    else sessionStorage.removeItem(DIZYCHAT_ACCOUNT_SESSION_KEY);
+  } catch {
+    /* ignore tab-scoped storage failures */
+  }
+};
+
+const buildSocketOptions = (options = {}) => {
+  const next = options && typeof options === "object" ? { ...options } : {};
+  const auth = next.auth && typeof next.auth === "object" ? { ...next.auth } : {};
+  const sessionToken = readAccountSessionToken();
+  if (sessionToken) auth.sessionToken = sessionToken;
+  else delete auth.sessionToken;
+  if (Object.keys(auth).length) next.auth = auth;
+  else delete next.auth;
+  return Object.keys(next).length ? next : undefined;
+};
+
+const socketOptions = buildSocketOptions(baseSocketOptions);
 let socket;
 if (socketUrl && socketOptions) {
   socket = io(socketUrl, socketOptions);
@@ -80,6 +111,61 @@ let lastRoomName = "";
 let lastRoomPassword = "";
 let latestPublicRooms = [];
 
+const accountState = {
+  sessionToken: readAccountSessionToken(),
+  identity: null,
+  expiresAt: 0,
+};
+
+function accountRoleCanModerate() {
+  const role = accountState.identity?.role;
+  return role === "owner" || role === "admin";
+}
+
+function syncAccountUi() {
+  const identity = accountState.identity;
+  if (accountIdentity) {
+    accountIdentity.hidden = !identity;
+    accountIdentity.textContent = identity
+      ? `${identity.username} · ${String(identity.role || "user").toUpperCase()}`
+      : "";
+  }
+  if (accountLogoutBtn) accountLogoutBtn.hidden = !identity;
+  if (accountLoginStatus) {
+    accountLoginStatus.textContent = identity
+      ? `Signed in as ${identity.username} (${identity.role || "user"})`
+      : "";
+  }
+  if (identity && accountUsernameInput && !accountUsernameInput.value) {
+    accountUsernameInput.value = identity.username || "";
+  }
+  appState.isAdmin = accountRoleCanModerate();
+  refreshActionMenus();
+  renderUserSidebar(appState.users || []);
+}
+
+function applyAccountSession(session) {
+  const token = String(session?.token || "").trim();
+  accountState.sessionToken = token;
+  accountState.identity = session?.identity && typeof session.identity === "object" ? session.identity : null;
+  accountState.expiresAt = Number(session?.expiresAt || 0);
+  storeAccountSessionToken(token);
+  socket.auth = socket.auth && typeof socket.auth === "object" ? { ...socket.auth } : {};
+  if (token) socket.auth.sessionToken = token;
+  else delete socket.auth.sessionToken;
+  syncAccountUi();
+}
+
+function clearAccountSession() {
+  accountState.sessionToken = "";
+  accountState.identity = null;
+  accountState.expiresAt = 0;
+  storeAccountSessionToken("");
+  socket.auth = socket.auth && typeof socket.auth === "object" ? { ...socket.auth } : {};
+  delete socket.auth.sessionToken;
+  syncAccountUi();
+}
+
 const replyState = {
   targetId: null,
 };
@@ -108,11 +194,18 @@ const quickEmojiPanel = document.getElementById("quick-emoji-panel");
 const siteLanding = document.getElementById("site-landing");
 const usernamePrompt = document.getElementById("username-prompt");
 const chatContainer = document.getElementById("chat-container");
-const joinBtn = document.getElementById("join-btn");
-const usernameInput = document.getElementById("username-input");
+const registeredJoinBtn = document.getElementById("registered-join-btn");
+const guestJoinBtn = document.getElementById("guest-join-btn");
+const accountUsernameInput = document.getElementById("account-username");
+const accountPasswordInput = document.getElementById("account-password");
+const guestUsernameInput = document.getElementById("guest-username");
 const roomInput = document.getElementById("room-input");
 const passwordInput = document.getElementById("room-password");
-const adminPasswordInput = document.getElementById("admin-password");
+const accountLoginStatus = document.getElementById("account-login-status");
+const accountLogoutBtn = document.getElementById("account-logout-btn");
+const accountIdentity = document.getElementById("account-identity");
+const joinBtn = guestJoinBtn;
+const usernameInput = guestUsernameInput;
 const roomName = document.getElementById("room-name");
 const themeToggle = document.getElementById("toggle-theme");
 const compactToggle = document.getElementById("toggle-density");
@@ -829,30 +922,6 @@ const infowarsModalState = {
 
 const ADMIN_PASSWORD_HINT_USERS = new Set(["psybin", "dizygotic"]);
 
-function normaliseAdminHintValue(value) {
-  return typeof value === "string" ? value.trim().toLowerCase() : "";
-}
-
-function shouldRevealAdminPassword(usernameValue) {
-  if (!adminPasswordInput) return false;
-  if (adminPasswordInput.value?.trim()) return true;
-  const normalised = normaliseAdminHintValue(usernameValue);
-  return ADMIN_PASSWORD_HINT_USERS.has(normalised);
-}
-
-function updateAdminPasswordVisibility() {
-  if (!adminPasswordInput) return;
-  const usernameValue = usernameInput?.value || "";
-  const reveal = shouldRevealAdminPassword(usernameValue);
-  adminPasswordInput.toggleAttribute("hidden", !reveal);
-  adminPasswordInput.setAttribute("aria-hidden", String(!reveal));
-}
-
-if (usernameInput && adminPasswordInput) {
-  usernameInput.addEventListener("input", updateAdminPasswordVisibility);
-  usernameInput.addEventListener("blur", updateAdminPasswordVisibility);
-  updateAdminPasswordVisibility();
-}
 
 function parsePositiveNumber(value) {
   if (value === null || value === undefined) return null;
@@ -1802,7 +1871,12 @@ if (userContextMenu) {
 const urlParams = new URLSearchParams(window.location.search);
 const prefillUsername = urlParams.get("username") || urlParams.get("user") || "";
 const prefillRoom = urlParams.get("room") || "";
-const prefillPassword = urlParams.get("password") || "";
+if (urlParams.has("password")) {
+  urlParams.delete("password");
+  const cleanQuery = urlParams.toString();
+  const cleanUrl = `${window.location.pathname}${cleanQuery ? `?${cleanQuery}` : ""}`;
+  window.history.replaceState({}, "", cleanUrl);
+}
 const usernamePlaceholder = urlParams.get("usernamePlaceholder") || "";
 const roomPlaceholder = urlParams.get("roomPlaceholder") || "";
 
@@ -1818,13 +1892,8 @@ if (prefillRoom) {
   if (roomInput) roomInput.value = prefillRoom;
 }
 
-if (prefillPassword) {
-  lastRoomPassword = prefillPassword;
-  if (passwordInput) passwordInput.value = prefillPassword;
-}
-
-if (prefillRoom || prefillPassword) {
-  updateQueryParams(prefillRoom, prefillPassword);
+if (prefillRoom) {
+  updateQueryParams(prefillRoom);
 }
 
 if (usernamePlaceholder && usernameInput) {
@@ -3641,14 +3710,19 @@ socket.on("connect", () => {
   renderPublicRooms([], { state: "loading" });
   socket.emit("request rooms");
 
-  // If we were previously in a room, automatically rejoin it after reconnecting.
-  if (window.currentRoom && window.currentUser) {
-    socket.emit("join room", {
-      room: window.currentRoom,
-      username: window.currentUser,
-      password: window.currentPassword || "",
-    });
-  }
+  socket.emit("account session", {}, (ack = {}) => {
+    if (ack?.ok && ack?.session) applyAccountSession(ack.session);
+    else clearAccountSession();
+
+    if (window.currentRoom && window.currentUser) {
+      const username = accountState.identity?.username || window.currentUser;
+      socket.emit("join room", {
+        room: window.currentRoom,
+        username,
+        password: window.currentPassword || "",
+      });
+    }
+  });
 });
 socket.on("disconnect", () => {
   showToast("Disconnected — attempting to reconnect…", "warn");
@@ -3695,11 +3769,12 @@ socket.on("moderation notice", (payload = {}) => {
   handleModerationNotice(payload);
 });
 
-function updateQueryParams(room, password) {
+function updateQueryParams(room) {
   try {
-    const params = new URLSearchParams();
+    const params = new URLSearchParams(window.location.search);
+    params.delete("password");
     if (room) params.set("room", room);
-    if (password) params.set("password", password);
+    else params.delete("room");
     const query = params.toString();
     const newUrl = `${window.location.pathname}${query ? `?${query}` : ""}`;
     if (window.location.search !== (query ? `?${query}` : "")) {
@@ -3714,7 +3789,7 @@ function showLanding({ focusUsername = true } = {}) {
   isViewingChat = false;
   closeWatchPartyModal();
   resetChromeToolbarAttention();
-  appState.isAdmin = false;
+  appState.isAdmin = accountRoleCanModerate();
   clearReplyTarget();
   cancelEnsureMessagesAtBottom();
   setViewMode("landing");
@@ -3756,7 +3831,7 @@ function showLanding({ focusUsername = true } = {}) {
   if (usernameInput) usernameInput.value = "";
   if (focusUsername) usernameInput?.focus();
 
-  updateQueryParams(lastRoomName, lastRoomPassword);
+  updateQueryParams(lastRoomName);
 
   if (socket?.connected) {
     socket.emit("request rooms");
@@ -5236,7 +5311,7 @@ function completeRoomJoin(username, room, password) {
   setInfowarsStreamRoom(room);
   closeWatchPartyModal();
 
-  appState.isAdmin = false;
+  appState.isAdmin = accountRoleCanModerate();
   loadHiddenMessagesForRoom(room);
   loadUserVisibilityForRoom(room);
   appState.messages.clear();
@@ -5257,7 +5332,7 @@ function completeRoomJoin(username, room, password) {
   }
   renderUserSidebar([]);
 
-  updateQueryParams(room, password);
+  updateQueryParams(room);
 
   if (roomName) roomName.textContent = room ? `#${room}` : "";
   if (siteLanding) siteLanding.style.display = "none";
@@ -5270,27 +5345,76 @@ function completeRoomJoin(username, room, password) {
   scrollMessagesToBottom({ behavior: "smooth", delay: 200, force: true });
 }
 
-function emitJoinRequest() {
-  const username = usernameInput?.value.trim();
-  const room = roomInput?.value.trim();
-  const password = passwordInput?.value.trim() || "";
+function joinCurrentRoomAsAccount(room, password) {
+  const identity = accountState.identity;
+  if (!identity?.username) {
+    showToast("Sign in to a registered account first.", "error");
+    return;
+  }
+  completeRoomJoin(identity.username, room, password);
+  socket.emit("join room", { room, username: identity.username, password });
+}
 
-  if (!username || !room) {
-    showToast("Enter a username and room", "error");
+function emitRegisteredJoinRequest() {
+  const room = roomInput?.value.trim();
+  const roomPassword = passwordInput?.value || "";
+  if (!room) {
+    showToast("Enter a room name.", "warn");
+    roomInput?.focus();
     return;
   }
 
-  if (window.currentRoom && window.currentRoom !== room) {
-    socket.emit("leave room", { room: window.currentRoom });
+  if (accountState.identity) {
+    joinCurrentRoomAsAccount(room, roomPassword);
+    return;
   }
 
-  completeRoomJoin(username, room, password);
-  socket.emit("join room", { room, username, password });
-
-  const adminPassword = adminPasswordInput?.value.trim();
-  if (adminPassword) {
-    socket.emit("admin auth", { room, username, adminPassword });
+  const username = accountUsernameInput?.value.trim();
+  const password = accountPasswordInput?.value || "";
+  if (!username || !password) {
+    showToast("Enter your registered username and password.", "warn");
+    (!username ? accountUsernameInput : accountPasswordInput)?.focus();
+    return;
   }
+
+  if (accountLoginStatus) accountLoginStatus.textContent = "Signing in…";
+  socket.emit("account login", { username, password }, (ack = {}) => {
+    if (!ack?.ok || !ack?.session?.identity) {
+      if (accountLoginStatus) accountLoginStatus.textContent = ack?.error || "Sign in failed.";
+      showToast(ack?.error || "Sign in failed.", "error");
+      return;
+    }
+    applyAccountSession(ack.session);
+    if (accountPasswordInput) accountPasswordInput.value = "";
+    joinCurrentRoomAsAccount(room, roomPassword);
+  });
+}
+
+function emitJoinRequest() {
+  const username = usernameInput?.value.trim();
+  const room = roomInput?.value.trim();
+  const password = passwordInput?.value || "";
+
+  if (!username || !room) {
+    showToast("Enter a guest username and room name.", "warn");
+    (!username ? usernameInput : roomInput)?.focus();
+    return;
+  }
+
+  const joinAsGuest = () => {
+    completeRoomJoin(username, room, password);
+    socket.emit("join room", { room, username, password });
+  };
+
+  if (accountState.identity) {
+    socket.emit("account logout", {}, () => {
+      clearAccountSession();
+      joinAsGuest();
+    });
+    return;
+  }
+
+  joinAsGuest();
 }
 
 function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
@@ -5378,8 +5502,11 @@ function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
 if (joinBtn) {
   joinBtn.addEventListener("click", emitJoinRequest);
 }
+if (registeredJoinBtn) {
+  registeredJoinBtn.addEventListener("click", emitRegisteredJoinRequest);
+}
 
-[usernameInput, roomInput, passwordInput, adminPasswordInput]
+[usernameInput, roomInput, passwordInput, accountUsernameInput, accountPasswordInput]
   .filter(Boolean)
   .forEach((inputEl) => {
     inputEl.addEventListener("keydown", (event) => {
@@ -5403,6 +5530,19 @@ if (leaveBtn) {
   });
 }
 
+if (accountLogoutBtn) {
+  accountLogoutBtn.addEventListener("click", () => {
+    const finish = () => {
+      if (window.currentRoom) socket.emit("leave room", { room: window.currentRoom });
+      clearAccountSession();
+      clearReplyTarget();
+      showLanding({ focusUsername: false });
+      accountUsernameInput?.focus();
+      showToast("Signed out", "info");
+    };
+    socket.emit("account logout", {}, finish);
+  });
+}
 if (copyJoinLinkBtn) {
   copyJoinLinkBtn.addEventListener("click", async () => {
     if (!window.currentRoom) {
@@ -6996,17 +7136,7 @@ socket.on("search results", ({ room, results } = {}) => {
   renderSearchResults(results || []);
 });
 
-socket.on("admin status", ({ isAdmin }) => {
-  const previous = appState.isAdmin;
-  appState.isAdmin = Boolean(isAdmin);
-  refreshActionMenus();
-  renderUserSidebar(appState.users);
-  if (appState.isAdmin && !previous) {
-    showToast("Admin mode enabled", "success");
-  } else if (!appState.isAdmin && previous) {
-    showToast("Admin mode disabled", "info");
-  }
-});
+// Auth v2 role metadata drives moderation affordances; no admin-password status event.
 
 // ------------------- File Upload Helpers -------------------
 const createUploadOverlay = () => {

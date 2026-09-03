@@ -25,19 +25,29 @@
         data-light-src="/logo-light.svg"
       />
       <h1>Welcome to DizyChat</h1>
-      <div class="landing-inputs">
-        <input id="username-input" placeholder="Choose your username" />
-        <input id="room-input" placeholder="Enter room name" />
-        <input id="room-password" type="password" placeholder="Room password (optional)" />
-        <input
-          id="admin-password"
-          type="password"
-          placeholder="Admin Password"
-          hidden
-          aria-hidden="true"
-          autocomplete="current-password"
-        />
-        <button id="join-btn">Join Chat</button>
+      <div class="landing-inputs auth-v2-landing">
+        <div class="room-entry-fields" aria-label="Room details">
+          <input id="room-input" placeholder="Enter room name" autocomplete="off" />
+          <input id="room-password" type="password" placeholder="Room password (optional)" autocomplete="current-password" />
+        </div>
+
+        <div class="auth-entry-grid">
+          <section id="registered-login" class="auth-entry-card" aria-labelledby="registered-login-title">
+            <h2 id="registered-login-title">Registered account</h2>
+            <p>Use your protected DizyChat identity.</p>
+            <input id="account-username" placeholder="Account username" autocomplete="username" />
+            <input id="account-password" type="password" placeholder="Account password" autocomplete="current-password" />
+            <button id="registered-join-btn" type="button">Sign in & join</button>
+            <p id="account-login-status" class="auth-entry-status" aria-live="polite"></p>
+          </section>
+
+          <section id="guest-login" class="auth-entry-card" aria-labelledby="guest-login-title">
+            <h2 id="guest-login-title">Guest</h2>
+            <p>Join without an account. Registered names are protected.</p>
+            <input id="guest-username" placeholder="Guest username" autocomplete="nickname" />
+            <button id="guest-join-btn" type="button">Join as guest</button>
+          </section>
+        </div>
       </div>
 
       <div id="room-list">
@@ -112,6 +122,8 @@
           <span class="icon" aria-hidden="true">🔗</span>
           <span class="label">Copy Join Link</span>
         </button>
+        <span id="account-identity" class="account-identity" hidden></span>
+        <button id="account-logout-btn" type="button" title="Sign out of registered account" hidden>Sign out</button>
         <button id="leave-btn" title="Exit Chat">Leave</button>
       </div>
     </header>
@@ -250,6 +262,7 @@
        =========================== -->
   <script src="/socket.io/socket.io.js"></script>
   <script src="/app-config.js"></script>
+  <script src="/auth-v2-client.js"></script>
   <script src="/chat.js"></script>
 
   <script>
@@ -279,30 +292,5 @@
     Rumble("play", { video: "v771yrk", div: "rumble_v771yrk" });
   </script>
 
-  <script>
-    const ADMIN_USERNAMES = new Set(["dizygotic", "psybin"]);
-    const u = document.getElementById("username-input");
-    const ap = document.getElementById("admin-password");
-
-    function normaliseUsername(value) {
-      return typeof value === "string" ? value.trim().toLowerCase() : "";
-    }
-
-    function shouldShowAdminField(value) {
-      return ADMIN_USERNAMES.has(normaliseUsername(value));
-    }
-
-    function toggleAdminField() {
-      if (!u || !ap) return;
-      const show = shouldShowAdminField(u.value);
-      ap.style.display = show ? "block" : "none";
-      ap.toggleAttribute("hidden", !show);
-      ap.setAttribute("aria-hidden", String(!show));
-    }
-    if (u) {
-      u.addEventListener("input", toggleAdminField);
-      toggleAdminField();
-    }
-  </script>
 </body>
 </html>
