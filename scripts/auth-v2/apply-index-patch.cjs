@@ -6,6 +6,14 @@ const path = require('path');
 const target = path.resolve(__dirname, '../../index.js');
 let source = fs.readFileSync(target, 'utf8');
 
+if (
+  source.includes("const { createAccountService } = require('./src/auth/account-service');") &&
+  source.includes('await accountService.bootstrapProtectedAccounts();')
+) {
+  console.log('Auth v2 Task 2 index.js patch is already applied.');
+  process.exit(0);
+}
+
 function replaceOnce(label, needle, replacement) {
   const first = source.indexOf(needle);
   if (first === -1) throw new Error(`${label}: expected seam not found`);
