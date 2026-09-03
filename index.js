@@ -2607,14 +2607,6 @@ io.on('connection', socket => {
     socket.emit('call token nonce', { room: roomName, token: socket.callTokenNonce, socketId: socket.id });
     console.log(`User joined room: ${roomName} as ${socket.username}`);
 
-    if (adminSession) {
-      socket.emit('admin status', {
-        isAdmin: true,
-        token: adminSession.token,
-        expiresAt: adminSession.expiresAt,
-      });
-    }
-
     // Emit successful room join
     socket.emit('join room success');  // Added this line!
     emitRoomListUpdate();
