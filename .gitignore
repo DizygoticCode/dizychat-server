@@ -11,6 +11,9 @@ ui-test-artifacts/
 !.env.example
 !*.env.example
 
+# Local Auth v2 runtime database — never commit account/session data
+.data/
+
 # Self-hosted runtime media mounts may be directories or symlinks.
 public/soundboards
 public/uploads
