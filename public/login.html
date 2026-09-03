@@ -9,6 +9,7 @@
   <title>DizyChat</title>
   <link rel="icon" href="/logo.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/chat.css" />
+  <link rel="stylesheet" href="/mobile-toolbar.css" />
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 
@@ -122,8 +123,10 @@
           <span class="icon" aria-hidden="true">🔗</span>
           <span class="label">Copy Join Link</span>
         </button>
-        <span id="account-identity" class="account-identity" hidden></span>
-        <button id="account-logout-btn" type="button" title="Sign out of registered account" hidden>Sign out</button>
+        <div class="account-session-controls">
+          <span id="account-identity" class="account-identity" hidden></span>
+          <button id="account-logout-btn" type="button" title="Sign out of registered account" hidden>Sign out</button>
+        </div>
         <button id="leave-btn" title="Exit Chat">Leave</button>
       </div>
     </header>
