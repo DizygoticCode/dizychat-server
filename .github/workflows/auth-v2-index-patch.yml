@@ -27,6 +27,7 @@ jobs:
           node scripts/auth-v2/apply-task5-authorization.cjs
           node scripts/auth-v2/cleanup-task6-admin-password-hint.cjs
           node scripts/auth-v2/apply-task6-client.cjs
+          node scripts/auth-v2/cleanup-task6-duplicate-browser-wiring.cjs
 
       - name: Commit generated Auth v2 patch
         shell: bash
