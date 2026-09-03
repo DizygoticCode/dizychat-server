@@ -5390,51 +5390,6 @@ function emitRegisteredJoinRequest() {
   });
 }
 
-function joinCurrentRoomAsAccount(room, password) {
-  const identity = accountState.identity;
-  if (!identity?.username) {
-    showToast("Sign in to a registered account first.", "error");
-    return;
-  }
-  completeRoomJoin(identity.username, room, password);
-  socket.emit("join room", { room, username: identity.username, password });
-}
-
-function emitRegisteredJoinRequest() {
-  const room = roomInput?.value.trim();
-  const roomPassword = passwordInput?.value || "";
-  if (!room) {
-    showToast("Enter a room name.", "warn");
-    roomInput?.focus();
-    return;
-  }
-
-  if (accountState.identity) {
-    joinCurrentRoomAsAccount(room, roomPassword);
-    return;
-  }
-
-  const username = accountUsernameInput?.value.trim();
-  const password = accountPasswordInput?.value || "";
-  if (!username || !password) {
-    showToast("Enter your registered username and password.", "warn");
-    (!username ? accountUsernameInput : accountPasswordInput)?.focus();
-    return;
-  }
-
-  if (accountLoginStatus) accountLoginStatus.textContent = "Signing in…";
-  socket.emit("account login", { username, password }, (ack = {}) => {
-    if (!ack?.ok || !ack?.session?.identity) {
-      if (accountLoginStatus) accountLoginStatus.textContent = ack?.error || "Sign in failed.";
-      showToast(ack?.error || "Sign in failed.", "error");
-      return;
-    }
-    applyAccountSession(ack.session);
-    if (accountPasswordInput) accountPasswordInput.value = "";
-    joinCurrentRoomAsAccount(room, roomPassword);
-  });
-}
-
 function emitJoinRequest() {
   const username = usernameInput?.value.trim();
   const room = roomInput?.value.trim();
