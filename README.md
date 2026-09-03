@@ -1,6 +1,6 @@
 # DizyChat Server
 
-DizyChat is a Socket.IO and Express-powered real-time chat backend designed for music and community discussions. It ships with MongoDB persistence, media uploads with antivirus scanning, granular moderation, and rich UX niceties such as link previews and GIF embedding.
+DizyChat is a Socket.IO and Express-powered real-time chat backend designed for music and community discussions. It ships with MongoDB persistence, media uploads, granular moderation, and rich UX niceties such as link previews and GIF embedding.
 
 ## Features
 
@@ -9,9 +9,9 @@ DizyChat is a Socket.IO and Express-powered real-time chat backend designed for 
 - Persists chat history, reactions, pins, stars, replies, and delivery status in MongoDB through a comprehensive `Message` schema.
 - Provides paginated history fetching so clients can lazy-load older messages without over-fetching.
 
-### Media uploads with antivirus scanning
-- Accepts an allowlisted set of common image/audio/video/document formats via `/upload` (JPEG/JPG, PNG, GIF, WebP, HEIC/HEIF, MP3, M4A, WAV, OGG/Opus, WebM, MP4/M4V/MOV, PDF, text/CSV/JSON/Markdown, ZIP, and Office documents), stores assets under `public/uploads`, and advertises the configured size limit in logs.
-- Streams uploads to OPSWAT MetaDefender Cloud; rejects infected files and cleans up temporary artifacts automatically.
+### Media uploads
+- Accepts uploads via `/upload`, stores assets under `public/uploads`, and advertises the configured size limit in logs.
+- MIME, file-signature, and antivirus enforcement are currently disabled while mobile camera/library upload compatibility is being verified; uploaded files are not passing through those security gates for now.
 - Supports configurable size caps (including "unlimited") through `MAX_UPLOAD_SIZE_MB`.
 
 ### Rich content previews
