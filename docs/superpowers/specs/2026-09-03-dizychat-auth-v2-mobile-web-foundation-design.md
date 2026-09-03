@@ -26,7 +26,7 @@ This phase deliberately stops before Android/iOS push implementation. It produce
 3. `Dizygotic` becomes the protected `owner` identity.
 4. `Psybin` remains a protected `admin` identity; if no usable legacy credential exists, the identity remains reserved/disabled rather than being deleted or claimable.
 5. Opaque persisted login sessions usable by web clients and later native WebViews.
-6. Registered usernames cannot be impersonated by guests.
+6. Registered usernames/login identifiers cannot be impersonated by guests.
 7. Guest access remains available for `ShittyChat` only during migration.
 8. Guest identities are explicitly marked as guests and never receive account/admin authority.
 9. Room passwords remain a separate room-access concept, but passwords never appear in URLs, copied room links, browser history or client navigation state.
@@ -35,6 +35,9 @@ This phase deliberately stops before Android/iOS push implementation. It produce
 12. Mobile-responsive web fixes for narrow Android Chrome, dynamic browser chrome, software keyboard, safe areas, toolbar/composer overflow, sidebar, GIF/emoji surfaces and fixed modals.
 13. Regression tests for auth boundaries, guest compatibility, password URL leakage and responsive layout contracts.
 14. Security/runbook documentation updated to describe the account/session model and retirement path for plaintext admin credentials.
+15. A login identifier may be a conventional username or a mobile-number-shaped identifier. A separate screen/display name is always required and is the only identity shown publicly in chat.
+16. Optional mobile-number aliases may be normalised and used for login, but they are not considered verified and are never used as SMS recovery credentials unless a future explicit verification feature is introduced.
+17. No SMS provider, SMS verification, or paid per-code authentication dependency is introduced.
 
 ### Explicitly deferred
 
@@ -42,7 +45,8 @@ This phase deliberately stops before Android/iOS push implementation. It produce
 - Android push notifications, badges and notification quick reply.
 - iOS project generation, APNs and private distribution.
 - Public account signup.
-- Password reset email / email verification.
+- Password reset email / email verification implementation.
+- TOTP enrollment UI / enforcement implementation.
 - DizyTrades mobile app.
 - Replacing MongoDB message persistence in this phase.
 - ClamAV upload scanning and self-hosted LiveKit are follow-on infrastructure phases after this branch is green.
@@ -60,20 +64,34 @@ The database lives under a runtime-only data directory (`DATA_DIR` when supplied
 Persist at least:
 
 - `id` — stable opaque identifier.
-- `username` and canonical lowercase `username_normalized`.
-- `display_name`.
+- `username` and canonical lowercase `username_normalized`; this is the primary login identifier and may be a conventional username or a mobile-number-shaped identifier.
+- `display_name` — required screen name shown publicly in chat; login identifiers are never substituted into public message/presence rendering.
+- optional `mobile_number` and canonical `mobile_normalized` alias for login; unique when present, not considered verified merely because it was entered.
+- optional `recovery_email` for the later email-recovery phase.
 - `role` — `owner`, `admin`, or `user`.
 - `password_hash` — nullable only for a deliberately disabled/reserved identity.
 - `state` — `active` or `disabled`.
 - timestamps.
 
-Usernames are unique case-insensitively. Registered names and reserved privileged names cannot be used by guests.
+Usernames/login identifiers are unique case-insensitively. Mobile aliases are unique after normalisation. Registered names and reserved privileged names cannot be used by guests.
+
+Authentication accepts either the primary `username` identifier or a configured mobile alias. Phone-number-looking identifiers are treated only as login identifiers; they do not imply ownership verification and never trigger SMS.
 
 ### Passwords
 
 New account hashes use the DizyTrades-style versioned scrypt format and timing-safe verification. Plaintext passwords are never persisted.
 
 The legacy DizyChat scrypt format may be verified only for migration compatibility. A successful one-way migration stores a new versioned hash in SQLite; the old environment credential is no longer authoritative after migration completion.
+
+### Recovery and MFA direction
+
+DizyChat Auth v2 must not depend on SMS. The intended free recovery/MFA path is:
+
+- recovery email through a dedicated DizyChat Gmail/SMTP mailbox or another SMTP sender;
+- short-lived, single-use password-reset tokens stored only as digests;
+- optional TOTP (Google Authenticator-compatible) for owner/admin and later selected users.
+
+A mobile number may be a login identifier or alias but is not a recovery authority unless a future explicit verification mechanism is added.
 
 ### Sessions
 
@@ -100,7 +118,7 @@ Migration is one-way and idempotent.
 Guest mode exists only as a migration bridge for `ShittyChat`.
 
 - An unauthenticated client may join `ShittyChat` with a chosen display name.
-- The display name is normalised and checked against registered/reserved usernames. Collisions are rejected.
+- The display name is normalised and checked against registered/reserved usernames and display names. Collisions with protected identities are rejected.
 - Guest presence and new guest messages carry `identityType: "guest"` and no account ID.
 - Guests cannot authenticate as admin, access privileged account APIs, or use owner/admin-only moderation operations.
 - Other rooms require a valid account session.
@@ -126,7 +144,7 @@ Room passwords are server-owned. A joining client may prove knowledge of a confi
 After Auth v2:
 
 - Server-owned socket identity is populated only from a valid persisted session or the explicit ShittyChat guest bridge.
-- For authenticated users, `socket.username` is derived from the account, not from the join payload.
+- For authenticated users, `socket.username` is derived from the account display name, not from the join payload or login identifier.
 - For ShittyChat guests, the join payload may supply a guest display name after collision checks.
 - Message creation always overwrites client-supplied identity fields with server-owned identity data.
 - Privileged authorization checks use server-owned account role/session state.
@@ -147,8 +165,9 @@ Existing records with only `user` remain valid.
 
 The landing/chat entry surface becomes account-aware:
 
-- Existing active account session: show signed-in identity and normal room picker.
-- No session: offer account login.
+- Existing active account session: show signed-in screen name and normal room picker.
+- No session: offer account login using username or configured mobile alias.
+- Account creation/enrollment requires a separate screen name even when the login identifier is a mobile number.
 - ShittyChat additionally offers a clearly labelled guest path so the existing visitor can continue entering without an account.
 - Public self-signup is not introduced in this phase.
 - A later private enrollment flow can create selected user accounts without changing the session model.
@@ -172,6 +191,7 @@ After this foundation is green:
 
 1. Local ClamAV upload gate using `clamd`, fail-closed or quarantined according to an explicit upload policy, replacing the retired OPSWAT cloud dependency.
 2. Self-hosted LiveKit Server for DizyChat audio/video calls with trusted TLS, public DNS, static public IP/firewall rules and the required WebRTC UDP/TCP ports.
-3. Repair Android Capacitor shell against the current web assets and account/session model.
-4. Add Android push/badge/notification reply.
-5. Port the proven private client to iOS and add APNs handling.
+3. Repair the 101Soundboards importer so canonical slug/direct original assets are authoritative and processed/preview variants with extra audio are rejected or flagged before local caching.
+4. Repair Android Capacitor shell against the current web assets and account/session model.
+5. Add Android push/badge/notification reply.
+6. Port the proven private client to iOS and add APNs handling.
