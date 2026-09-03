@@ -2522,7 +2522,7 @@ io.on('connection', socket => {
     if (typeof ack === 'function') ack({ ok: true });
   });
 
-  socket.on('join room', async ({ room, username, password, adminToken }) => {
+  socket.on('join room', async ({ room, username, password }) => {
     const roomName = normaliseRoomName(room);
     if (!roomName) {
       sendJoinError(socket, 'Room name is required');
@@ -2545,20 +2545,43 @@ io.on('connection', socket => {
       roomPasswords.set(roomName, providedPassword);
     }
 
+    const fallbackUser = `Guest-${socket.id.slice(0, 4)}`;
+    let effectivePrincipal;
+    if (socket.principal?.kind === 'account') {
+      effectivePrincipal = socket.principal;
+    } else {
+      const guestUsername = normaliseUsername(username, fallbackUser);
+      if (await accountService.isRegisteredUsername(guestUsername)) {
+        logSecurityEvent('registered_username_guest_join_attempt', {
+          room: roomName,
+          username: guestUsername,
+          ip: getSocketRemoteAddress(socket),
+          socketId: socket.id,
+        });
+        sendJoinError(socket, 'That username is reserved. Sign in to use it.');
+        return;
+      }
+      effectivePrincipal = {
+        kind: 'guest',
+        username: guestUsername,
+        canonicalUsername: canonicalUsername(guestUsername),
+        role: 'guest',
+      };
+    }
+
+    socket.username = effectivePrincipal.username;
+    socket.canonicalUsername = effectivePrincipal.canonicalUsername;
+    socket.identityKind = effectivePrincipal.kind;
+    socket.role = effectivePrincipal.role;
+    socket.isAdmin = false;
+
     const previousRoom = socket.currentRoom;
     if (previousRoom && previousRoom !== roomName) {
       removeSocketFromRoom(socket, previousRoom);
       emitRoomListUpdate();
     }
 
-    const adminSession = resolveAdminSession(adminToken);
-
-    // Track user identity & room
-    const fallbackUser = `Guest-${socket.id.slice(0, 4)}`;
-    const requestedUsername = adminSession?.username ?? username;
-    socket.username = normaliseUsername(requestedUsername, fallbackUser);
-    socket.isAdmin = Boolean(adminSession);
-    const canonicalUser = canonicalUsername(socket.username);
+    const canonicalUser = socket.canonicalUsername;
     const bannedSet = roomBans.get(roomName);
     if (bannedSet && bannedSet.has(canonicalUser)) {
       logSecurityEvent('banned_user_join_attempt', {
