@@ -18,6 +18,7 @@ const User = require('./src/models/user');
 const { createAccountService } = require('./src/auth/account-service');
 const { readLegacyAdminCredentials } = require('./src/auth/legacy-admin-credentials');
 const { createSessionStore } = require('./src/auth/session-store');
+const { requireModerator, requireOwner } = require('./src/auth/authorization');
 const soundboardStore = require('./src/utils/soundboard');
 
 const nodeFetchModulePromise = import('node-fetch');
@@ -382,63 +383,6 @@ const registerAdminAuthFailure = (attemptKey) => {
 
 const clearAdminAuthFailures = (attemptKey) => {
   adminAuthFailures.delete(attemptKey);
-};
-
-const adminSessionsByToken = new Map();
-const adminSessionsByUser = new Map();
-
-const purgeAdminSession = (token) => {
-  const entry = adminSessionsByToken.get(token);
-  if (!entry) return;
-  adminSessionsByToken.delete(token);
-  adminSessionsByUser.delete(entry.canonicalUsername);
-};
-
-const issueAdminSession = (username) => {
-  const canonical = normaliseAdminUsername(username);
-  if (!canonical) return null;
-
-  const existingToken = adminSessionsByUser.get(canonical);
-  if (existingToken) {
-    purgeAdminSession(existingToken);
-  }
-
-  const token = crypto.randomUUID();
-  const expiresAt = Date.now() + ADMIN_SESSION_TTL_MS;
-  const entry = { token, username, canonicalUsername: canonical, expiresAt };
-  adminSessionsByToken.set(token, entry);
-  adminSessionsByUser.set(canonical, token);
-  return entry;
-};
-
-const resolveAdminSession = (token) => {
-  if (!token) return null;
-  const entry = adminSessionsByToken.get(token);
-  if (!entry) return null;
-  if (entry.expiresAt <= Date.now()) {
-    purgeAdminSession(token);
-    return null;
-  }
-  return entry;
-};
-
-const revokeAdminSessionForUser = (username) => {
-  const canonical = normaliseAdminUsername(username);
-  if (!canonical) return;
-  const token = adminSessionsByUser.get(canonical);
-  if (token) purgeAdminSession(token);
-};
-
-const resolveAdminCredential = (username, password) => {
-  if (typeof password !== 'string' || !password.trim()) return null;
-  const key = normaliseAdminUsername(username);
-  if (!key) return null;
-  const entry = adminCredentials.get(key);
-  if (!entry) return null;
-
-  if (entry.kind === 'scrypt' && verifyScryptPassword(password.trim(), entry.credential)) return entry;
-  if (entry.kind === 'plaintext' && entry.credential === password.trim()) return entry;
-  return null;
 };
 
 // ---------------- MongoDB ----------------
@@ -2017,7 +1961,7 @@ const registerSocketInRoom = (socket, room) => {
   presence.set(socket.id, {
     id: socket.id,
     username: socket.username,
-    isAdmin: socket.isAdmin,
+    isAdmin: Boolean(requireModerator(socket)),
   });
   emitRoomUsers(targetRoom);
 };
@@ -2030,7 +1974,7 @@ const refreshSocketPresence = (socket) => {
   presence.set(socket.id, {
     id: socket.id,
     username: socket.username,
-    isAdmin: socket.isAdmin,
+    isAdmin: Boolean(requireModerator(socket)),
   });
   emitRoomUsers(room);
 };
@@ -2395,7 +2339,8 @@ function canSendTyping(socketId) {
 }
 
 function requireAdmin(socket){
-  if (!socket.isAdmin) {
+  const principal = requireModerator(socket);
+  if (!principal) {
     socket.emit('toast', { type: 'warn', text: '🚫 Admin only command.' });
     return false;
   }
@@ -2418,7 +2363,6 @@ io.use((socket, next) => {
 
 io.on('connection', socket => {
   console.log('[Socket] Connected', socket.id);
-  socket.isAdmin = false;
   socket.emit('room list', getPublicRoomsSnapshot());
 
   socket.on('account login', async (payload = {}, ack) => {
@@ -2522,6 +2466,28 @@ io.on('connection', socket => {
     if (typeof ack === 'function') ack({ ok: true });
   });
 
+  socket.on('account manage user', async (payload = {}, ack) => {
+    try {
+      const actor = requireOwner(socket);
+      if (!actor) {
+        if (typeof ack === 'function') ack({ ok: false, error: 'Owner role required.' });
+        return;
+      }
+
+      const username = typeof payload.username === 'string' ? payload.username.trim() : '';
+      const password = typeof payload.password === 'string' ? payload.password : '';
+      const role = typeof payload.role === 'string' ? payload.role.trim().toLowerCase() : 'user';
+      const account = await accountService.createManagedUser(actor, { username, password, role });
+      accountSessions.revokeUser(account.canonicalUsername);
+      if (typeof ack === 'function') ack({ ok: true, account });
+    } catch (err) {
+      console.error('[Auth v2] Managed user creation failed:', err?.message || err);
+      if (typeof ack === 'function') {
+        ack({ ok: false, error: err?.message || 'Unable to create account.' });
+      }
+    }
+  });
+
   socket.on('join room', async ({ room, username, password }) => {
     const roomName = normaliseRoomName(room);
     if (!roomName) {
@@ -2573,7 +2539,7 @@ io.on('connection', socket => {
     socket.canonicalUsername = effectivePrincipal.canonicalUsername;
     socket.identityKind = effectivePrincipal.kind;
     socket.role = effectivePrincipal.role;
-    socket.isAdmin = false;
+    socket.principal = effectivePrincipal;
 
     const previousRoom = socket.currentRoom;
     if (previousRoom && previousRoom !== roomName) {
@@ -2723,7 +2689,7 @@ io.on('connection', socket => {
     if (!roomName || roomName !== socket.currentRoom) return;
     const active = activeExternalWatchParties.get(roomName);
     if (!active) return;
-    if (!socket.isAdmin && canonicalUsername(active.createdBy) !== canonicalUsername(socket.username)) {
+    if (!requireModerator(socket) && canonicalUsername(active.createdBy) !== canonicalUsername(socket.username)) {
       socket.emit('watch-party:error', { room: roomName, message: 'Only the host or an admin can clear this watch party.' });
       return;
     }
@@ -2818,62 +2784,6 @@ io.on('connection', socket => {
     io.to(roomName).emit('call:ended', { room: roomName, callId: active.callId, endedBy: socket.username, endedAt: Date.now() });
   });
 
-
-  // ----- Admin Auth (post-join) -----
-  socket.on('admin auth', ({ room, username, adminPassword }) => {
-    try {
-      const candidateUser = username || socket.username;
-      const attemptKey = getAdminAuthAttemptKey(socket, candidateUser);
-      const authState = getAdminAuthState(attemptKey);
-      const now = Date.now();
-
-      if (authState.lockUntil && authState.lockUntil > now) {
-        socket.emit('toast', { type: 'warn', text: 'Too many admin login attempts. Please wait before trying again.' });
-        socket.emit('admin status', { isAdmin: false });
-        return;
-      }
-
-      const retryDelayMs = computeAdminAuthRetryDelayMs(authState);
-      if (authState.lastFailedAt && now - authState.lastFailedAt < retryDelayMs) {
-        socket.emit('toast', { type: 'warn', text: 'Please wait a moment before trying admin login again.' });
-        socket.emit('admin status', { isAdmin: false });
-        return;
-      }
-
-      const resolvedAdmin = resolveAdminCredential(candidateUser, adminPassword);
-      if (resolvedAdmin) {
-        clearAdminAuthFailures(attemptKey);
-        socket.isAdmin = true;
-        socket.username = resolvedAdmin.username;
-        const session = issueAdminSession(resolvedAdmin.username);
-        socket.emit('admin status', {
-          isAdmin: true,
-          token: session?.token || null,
-          expiresAt: session?.expiresAt || null,
-        });
-        console.log('[Admin] Authenticated', resolvedAdmin.username);
-        logSecurityEvent('admin_auth_success', {
-          username: resolvedAdmin.username,
-          key: attemptKey,
-          ip: getSocketRemoteAddress(socket),
-        }, 'info');
-      } else {
-        const failedState = registerAdminAuthFailure(attemptKey);
-        if (failedState.lockUntil && failedState.lockUntil > Date.now()) {
-          console.warn('[Admin] Login temporarily locked', {
-            key: attemptKey,
-            until: new Date(failedState.lockUntil).toISOString(),
-          });
-        } else {
-          console.warn('[Admin] Login failed', { key: attemptKey, failureCount: failedState.count });
-        }
-        socket.isAdmin = false;
-        revokeAdminSessionForUser(candidateUser);
-        socket.emit('admin status', { isAdmin: false });
-      }
-      refreshSocketPresence(socket);
-    } catch(e){ console.log('[admin auth error]', e); }
-  });
 
   // ----- Chat message -----
   socket.on('chat message', async (msgDataRaw = {}) => {
@@ -3014,7 +2924,7 @@ io.on('connection', socket => {
       const username = socket.username || '';
       const isOwner = msg.user === username;
 
-      if (!socket.isAdmin && !isOwner) {
+      if (!requireModerator(socket) && !isOwner) {
         socket.emit('toast', { type: 'warn', text: 'You can only delete your own messages.' });
         return;
       }
@@ -3072,7 +2982,7 @@ io.on('connection', socket => {
 
       const username = socket.username || '';
       const isOwner = msg.pinnedBy && msg.pinnedBy === username;
-      if (!socket.isAdmin && !isOwner) {
+      if (!requireModerator(socket) && !isOwner) {
         socket.emit('toast', { type: 'warn', text: 'Only admins can remove this pin.' });
         return;
       }
@@ -3267,7 +3177,7 @@ io.on('connection', socket => {
 
     const isTargetAdmin = Boolean(targetInfo.isAdmin);
 
-    if (!socket.isAdmin) {
+    if (!requireModerator(socket)) {
       socket.emit('toast', { type: 'warn', text: 'Only admins can perform that action.' });
       return;
     }
@@ -3306,7 +3216,7 @@ io.on('connection', socket => {
     };
 
     if (action === 'mute') {
-      const maxSeconds = socket.isAdmin ? 86400 : 3600;
+      const maxSeconds = 86400;
       const requested = Number(duration) || 60;
       const seconds = Math.max(30, Math.min(requested, maxSeconds));
       const until = setUserMute(targetRoom, canonicalTarget, seconds * 1000);
@@ -3335,7 +3245,7 @@ io.on('connection', socket => {
     }
 
     if (action === 'block') {
-      if (!socket.isAdmin) {
+      if (!requireModerator(socket)) {
         socket.emit('toast', { type: 'warn', text: 'Only admins can block users.' });
         return;
       }
@@ -3353,7 +3263,7 @@ io.on('connection', socket => {
     }
 
     if (action === 'unblock') {
-      if (!socket.isAdmin) {
+      if (!requireModerator(socket)) {
         socket.emit('toast', { type: 'warn', text: 'Only admins can unblock users.' });
         return;
       }
@@ -3371,7 +3281,7 @@ io.on('connection', socket => {
     }
 
     if (action === 'ban') {
-      if (!socket.isAdmin) {
+      if (!requireModerator(socket)) {
         socket.emit('toast', { type: 'warn', text: 'Only admins can ban users.' });
         return;
       }
