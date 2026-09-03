@@ -11,8 +11,9 @@ ui-test-artifacts/
 !.env.example
 !*.env.example
 
-public/soundboards/*
-!public/soundboards/.gitkeep
+# Self-hosted runtime media mounts may be directories or symlinks.
+public/soundboards
+public/uploads
 
 # Capacitor / Android Studio build artifacts
 android/.gradle/
