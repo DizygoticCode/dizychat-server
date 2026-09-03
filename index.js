@@ -14,6 +14,9 @@ const multer = require('multer');
 const sanitizeHtml = require('sanitize-html');
 const crypto = require('crypto');
 const Message = require('./src/models/message');
+const User = require('./src/models/user');
+const { createAccountService } = require('./src/auth/account-service');
+const { readLegacyAdminCredentials } = require('./src/auth/legacy-admin-credentials');
 const soundboardStore = require('./src/utils/soundboard');
 
 const nodeFetchModulePromise = import('node-fetch');
@@ -317,7 +320,8 @@ const buildAdminCredentials = () => {
   return entries;
 };
 
-const adminCredentials = buildAdminCredentials();
+const adminCredentials = readLegacyAdminCredentials(process.env);
+const accountService = createAccountService({ UserModel: User, legacyCredentials: adminCredentials });
 const plaintextAdminCredentialCount = [...adminCredentials.values()].filter((item) => item.kind === 'plaintext').length;
 if (plaintextAdminCredentialCount > 0) {
   console.warn(`[Admin] ${plaintextAdminCredentialCount} plaintext admin credential(s) detected. Migrate to ADMIN_PASSWORD_HASH / ADMIN_CREDENTIALS_HASHED.`);
@@ -459,9 +463,18 @@ const connectMongoWithRetry = async () => {
   mongoConnectInFlight = true;
   try {
     await mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true });
+    await accountService.bootstrapProtectedAccounts();
     console.log("[Mongo] Connected");
+    console.log("[Auth v2] Protected accounts bootstrapped");
   } catch (err) {
-    console.error("[Mongo] Initial connect failed, retrying:", err?.message || err);
+    if (mongoose.connection.readyState === 1) {
+      try {
+        await mongoose.disconnect();
+      } catch (disconnectError) {
+        console.error("[Mongo] Disconnect after bootstrap failure failed:", disconnectError?.message || disconnectError);
+      }
+    }
+    console.error("[Mongo] Initial connect/Auth v2 bootstrap failed, retrying:", err?.message || err);
     scheduleMongoReconnect();
   } finally {
     mongoConnectInFlight = false;
