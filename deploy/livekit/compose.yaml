@@ -1,0 +1,14 @@
+services:
+  livekit:
+    image: livekit/livekit-server:v1.13.5
+    command: ["--config", "/etc/livekit/livekit.yaml"]
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./livekit.yaml:/etc/livekit/livekit.yaml:ro
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    security_opt:
+      - no-new-privileges:true
