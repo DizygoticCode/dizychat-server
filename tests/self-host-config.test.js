@@ -8,6 +8,17 @@ const serverPath = path.join(__dirname, '..', 'index.js');
 const readmePath = path.join(__dirname, '..', 'README.md');
 const gitignorePath = path.join(__dirname, '..', '.gitignore');
 const soundboardKeepPath = path.join(__dirname, '..', 'public', 'soundboards', '.gitkeep');
+const generatedAndroidChatPath = path.join(
+  __dirname,
+  '..',
+  'android',
+  'app',
+  'src',
+  'main',
+  'assets',
+  'public',
+  'chat.js'
+);
 const source = fs.readFileSync(configPath, 'utf8');
 const securityRunbookSource = fs.readFileSync(securityRunbookPath, 'utf8');
 const serverSource = fs.readFileSync(serverPath, 'utf8');
@@ -42,6 +53,11 @@ assert.equal(
   fs.existsSync(soundboardKeepPath),
   false,
   'runtime soundboard path must not contain a tracked placeholder that conflicts with the production symlink'
+);
+assert.equal(
+  fs.existsSync(generatedAndroidChatPath),
+  false,
+  'Capacitor-generated Android web assets must not be committed as a stale fork of public/'
 );
 
 console.log('self-host config contract passed');
