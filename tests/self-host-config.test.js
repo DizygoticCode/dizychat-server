@@ -3,9 +3,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const configPath = path.join(__dirname, '..', 'public', 'app-config.js');
+const securityRunbookPath = path.join(__dirname, '..', 'docs', 'security-runbook.md');
 const source = fs.readFileSync(configPath, 'utf8');
+const securityRunbookSource = fs.readFileSync(securityRunbookPath, 'utf8');
 
 assert.doesNotMatch(source, /onrender\.com/i, 'browser config must not reference Render');
+assert.doesNotMatch(securityRunbookSource, /\bRender\b/i, 'security runbook must describe self-hosted edge controls');
 assert.match(source, /socketUrl:\s*""/, 'web clients should use the current origin');
 assert.match(
   source,
