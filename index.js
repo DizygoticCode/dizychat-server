@@ -17,6 +17,7 @@ const Message = require('./src/models/message');
 const User = require('./src/models/user');
 const { createAccountService } = require('./src/auth/account-service');
 const { readLegacyAdminCredentials } = require('./src/auth/legacy-admin-credentials');
+const { createSessionStore } = require('./src/auth/session-store');
 const soundboardStore = require('./src/utils/soundboard');
 
 const nodeFetchModulePromise = import('node-fetch');
@@ -322,6 +323,7 @@ const buildAdminCredentials = () => {
 
 const adminCredentials = readLegacyAdminCredentials(process.env);
 const accountService = createAccountService({ UserModel: User, legacyCredentials: adminCredentials });
+const accountSessions = createSessionStore({ ttlMs: ADMIN_SESSION_TTL_MS });
 const plaintextAdminCredentialCount = [...adminCredentials.values()].filter((item) => item.kind === 'plaintext').length;
 if (plaintextAdminCredentialCount > 0) {
   console.warn(`[Admin] ${plaintextAdminCredentialCount} plaintext admin credential(s) detected. Migrate to ADMIN_PASSWORD_HASH / ADMIN_CREDENTIALS_HASHED.`);
@@ -2400,10 +2402,125 @@ function requireAdmin(socket){
   return true;
 }
 
+io.use((socket, next) => {
+  const sessionToken = typeof socket.handshake.auth?.sessionToken === 'string'
+    ? socket.handshake.auth.sessionToken.trim()
+    : '';
+  const session = accountSessions.resolve(sessionToken);
+  socket.principal = null;
+  socket.accountSessionToken = '';
+  if (session) {
+    socket.principal = session.principal;
+    socket.accountSessionToken = session.token;
+  }
+  next();
+});
+
 io.on('connection', socket => {
   console.log('[Socket] Connected', socket.id);
   socket.isAdmin = false;
   socket.emit('room list', getPublicRoomsSnapshot());
+
+  socket.on('account login', async (payload = {}, ack) => {
+    try {
+      const username = typeof payload.username === 'string' ? payload.username.trim() : '';
+      const password = typeof payload.password === 'string' ? payload.password : '';
+      const attemptKey = getAdminAuthAttemptKey(socket, username);
+      const authState = getAdminAuthState(attemptKey);
+      const now = Date.now();
+
+      if (authState.lockUntil > now) {
+        if (typeof ack === 'function') {
+          ack({ ok: false, error: 'Too many authentication attempts.', retryAfterMs: authState.lockUntil - now });
+        }
+        return;
+      }
+
+      const retryDelayMs = computeAdminAuthRetryDelayMs(authState);
+      if (authState.lastFailedAt && authState.lastFailedAt + retryDelayMs > now) {
+        if (typeof ack === 'function') {
+          ack({ ok: false, error: 'Authentication retry delayed.', retryAfterMs: (authState.lastFailedAt + retryDelayMs) - now });
+        }
+        return;
+      }
+
+      const account = await accountService.authenticate(username, password);
+      if (!account) {
+        const failedState = registerAdminAuthFailure(attemptKey);
+        const failedAt = Date.now();
+        const retryAfterMs = failedState.lockUntil > failedAt
+          ? failedState.lockUntil - failedAt
+          : computeAdminAuthRetryDelayMs(failedState);
+        if (typeof ack === 'function') {
+          ack({ ok: false, error: 'Invalid username or password.', retryAfterMs });
+        }
+        return;
+      }
+
+      clearAdminAuthFailures(attemptKey);
+      if (socket.accountSessionToken) {
+        accountSessions.revoke(socket.accountSessionToken);
+      }
+
+      const principal = {
+        kind: 'account',
+        username: account.username,
+        canonicalUsername: account.canonicalUsername,
+        role: account.role,
+        userId: account.userId,
+      };
+      const session = accountSessions.issue(principal);
+      socket.principal = session.principal;
+      socket.accountSessionToken = session.token;
+
+      if (typeof ack === 'function') {
+        ack({
+          ok: true,
+          session: {
+            token: session.token,
+            issuedAt: session.issuedAt,
+            expiresAt: session.expiresAt,
+            identity: { ...session.principal },
+          },
+        });
+      }
+    } catch (err) {
+      console.error('[Auth v2] Account login failed:', err?.message || err);
+      if (typeof ack === 'function') ack({ ok: false, error: 'Authentication failed.' });
+    }
+  });
+
+  socket.on('account session', (payload = {}, ack) => {
+    const session = accountSessions.resolve(socket.accountSessionToken);
+    if (!session) {
+      socket.accountSessionToken = '';
+      socket.principal = null;
+      if (typeof ack === 'function') ack({ ok: true, session: null });
+      return;
+    }
+
+    socket.principal = session.principal;
+    if (typeof ack === 'function') {
+      ack({
+        ok: true,
+        session: {
+          token: session.token,
+          issuedAt: session.issuedAt,
+          expiresAt: session.expiresAt,
+          identity: { ...session.principal },
+        },
+      });
+    }
+  });
+
+  socket.on('account logout', (payload = {}, ack) => {
+    if (socket.accountSessionToken) {
+      accountSessions.revoke(socket.accountSessionToken);
+    }
+    socket.accountSessionToken = '';
+    socket.principal = null;
+    if (typeof ack === 'function') ack({ ok: true });
+  });
 
   socket.on('join room', async ({ room, username, password, adminToken }) => {
     const roomName = normaliseRoomName(room);
