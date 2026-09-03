@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "test": "node tests/self-host-config.test.js"
+    "test": "node --test tests/*.test.js"
   },
   "engines": {
     "node": ">=22.0.0"
