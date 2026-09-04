@@ -1,0 +1,19 @@
+name: Android Slice 1 RED
+
+on:
+  push:
+    branches:
+      - feat/android-slice1-core
+    paths:
+      - .github/workflows/android-slice1-red.yml
+
+jobs:
+  durable-session-red:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run durable mobile session contract
+        run: node --test tests/mobile-device-session.test.js
