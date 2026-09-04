@@ -37,10 +37,7 @@
 
     if (backend) window.dizychatConfig.socketUrl = backend;
 
-    const socketClientUrl = backend
-      ? `${backend}/socket.io/socket.io.js`
-      : '/socket.io/socket.io.js';
-    await loadScript(socketClientUrl);
+    await loadScript('/vendor/socket.io.min.js');
     await loadScript('/chat.js');
   } catch (error) {
     console.error('[DizyChat] bootstrap failed', error);
