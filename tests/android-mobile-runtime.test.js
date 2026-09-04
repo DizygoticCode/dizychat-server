@@ -64,7 +64,55 @@ test('external-link and Android back decisions preserve DizyChat-owned navigatio
   assert.equal(runtime.shouldOpenExternally('https://example.org/x', 'https://dizychat.com'), true);
   assert.equal(runtime.shouldOpenExternally('https://dizychat.com/uploads/a.jpg', 'https://dizychat.com'), false);
   assert.equal(runtime.shouldOpenExternally('/uploads/a.jpg', 'https://dizychat.com'), false);
+  assert.equal(runtime.shouldOpenExternally('mailto:test@example.org', 'https://dizychat.com'), false);
   assert.equal(runtime.decideBackAction({ transientOpen: true, inChat: true }), 'close-transient');
   assert.equal(runtime.decideBackAction({ transientOpen: false, inChat: true }), 'leave-chat');
   assert.equal(runtime.decideBackAction({ transientOpen: false, inChat: false }), 'exit-app');
+});
+
+test('native delegated anchor handling opens only external HTTP links through MobileShell', async () => {
+  const listeners = new Map();
+  const opened = [];
+  const win = {
+    Capacitor: {
+      isNativePlatform: () => true,
+      Plugins: {
+        MobileShell: {
+          async openExternal(payload) { opened.push(payload); },
+        },
+      },
+    },
+    document: {
+      addEventListener(type, listener) { listeners.set(type, listener); },
+    },
+  };
+
+  runtime.installExternalLinkHandling(win, 'https://dizychat.com');
+  const click = listeners.get('click');
+  assert.equal(typeof click, 'function');
+
+  let prevented = false;
+  click({
+    defaultPrevented: false,
+    preventDefault() { prevented = true; },
+    target: { closest: () => ({ href: 'https://example.org/page' }) },
+  });
+  await Promise.resolve();
+  assert.equal(prevented, true);
+  assert.deepEqual(opened, [{ url: 'https://example.org/page' }]);
+
+  prevented = false;
+  click({
+    defaultPrevented: false,
+    preventDefault() { prevented = true; },
+    target: { closest: () => ({ href: 'https://dizychat.com/uploads/file.jpg' }) },
+  });
+  assert.equal(prevented, false);
+
+  click({
+    defaultPrevented: false,
+    preventDefault() { throw new Error('non-http link must not be intercepted'); },
+    target: { closest: () => ({ href: 'mailto:test@example.org' }) },
+  });
+  assert.equal(opened.length, 1);
 });
