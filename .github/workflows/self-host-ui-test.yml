@@ -94,6 +94,11 @@ jobs:
           DEPLOY_URL: http://127.0.0.1:10000
         run: node tests/ui-test.cjs
 
+      - name: Run mobile shell regression
+        env:
+          DEPLOY_URL: http://127.0.0.1:10000
+        run: node tests/mobile-shell-ui-test.cjs
+
       - name: Upload UI artifacts
         if: always()
         uses: actions/upload-artifact@v4
