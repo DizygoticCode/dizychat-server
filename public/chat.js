@@ -6297,6 +6297,43 @@ if (emojiPicker) {
   })();
 }
 
+window.dizychatMobile = {
+  handleBack() {
+    if (replyState.targetId) {
+      clearReplyTarget();
+      return true;
+    }
+
+    if (appState.activeMenu || (userContextMenu && !userContextMenu.hasAttribute("hidden"))) {
+      if (appState.activeMenu) {
+        closeActiveMenu();
+      } else {
+        userContextMenu.classList.remove("open");
+        userContextMenu.setAttribute("hidden", "");
+        userContextMenu.setAttribute("aria-hidden", "true");
+      }
+      return true;
+    }
+
+    if (mobileSidebarQuery?.matches && userSidebar?.classList.contains("is-expanded")) {
+      setMobileSidebarExpanded(false);
+      return true;
+    }
+
+    if (emojiPickerController?.isVisible?.()) {
+      emojiPickerController.hide();
+      return true;
+    }
+
+    if (isViewingChat) {
+      leaveBtn?.click();
+      return true;
+    }
+
+    return false;
+  },
+};
+
 // ------------------- Sending Messages -------------------
 if (form) {
   form.addEventListener("submit", (e) => {
