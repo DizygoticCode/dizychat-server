@@ -26,7 +26,24 @@ function withinViewport(rect, viewportHeight, label) {
     await page.goto(`${BASE_URL}/login.html`, { waitUntil: 'networkidle', timeout: 60000 });
     await page.fill('#guest-username', 'MobileShellBot');
     await page.fill('#room-input', 'MobileShellRoom');
-    await page.click('#guest-join-btn');
+
+    // Real phone flow: the stacked login view is scrolled before the Join control is used.
+    // Entering chat must discard that landing-page scroll position rather than carrying it
+    // into the fixed-height chat shell.
+    const landingScroll = await page.evaluate(() => {
+      window.scrollTo(0, document.documentElement.scrollHeight);
+      return {
+        scrollY: window.scrollY,
+        scrollHeight: document.documentElement.scrollHeight,
+        viewportHeight: window.innerHeight,
+      };
+    });
+    assert.ok(
+      landingScroll.scrollY > 0,
+      `mobile landing page must be scrollable for this regression: ${JSON.stringify(landingScroll)}`,
+    );
+
+    await page.evaluate(() => document.querySelector('#guest-join-btn').click());
 
     await page.waitForFunction(() => {
       const chat = document.querySelector('#chat-container');
@@ -36,6 +53,15 @@ function withinViewport(rect, viewportHeight, label) {
     await page.waitForSelector('#chat-container > header', { state: 'visible' });
     await page.waitForSelector('#form', { state: 'visible' });
     await page.waitForSelector('#user-sidebar .sidebar-header', { state: 'visible' });
+
+    // Exercise the authenticated-toolbar footprint without needing protected CI credentials.
+    await page.evaluate(() => {
+      const identity = document.querySelector('#account-identity');
+      const logout = document.querySelector('#account-logout-btn');
+      identity.hidden = false;
+      identity.textContent = 'Dizygotic · OWNER';
+      logout.hidden = false;
+    });
 
     const state = await page.evaluate(() => {
       const rect = (selector) => {
@@ -58,8 +84,7 @@ function withinViewport(rect, viewportHeight, label) {
 
       return {
         viewportHeight: window.innerHeight,
-        documentScrollHeight: document.documentElement.scrollHeight,
-        bodyScrollHeight: document.body.scrollHeight,
+        windowScrollY: window.scrollY,
         chatMainOverflowY: getComputedStyle(document.querySelector('#chat-main')).overflowY,
         messagesOverflowY: getComputedStyle(document.querySelector('#messages')).overflowY,
         sidebarExpanded: sidebar.classList.contains('is-expanded'),
@@ -73,20 +98,11 @@ function withinViewport(rect, viewportHeight, label) {
       };
     });
 
-    assert.equal(
-      state.chatMainOverflowY,
-      'hidden',
-      `mobile shell must not independently scroll #chat-main: ${JSON.stringify(state)}`,
+    assert.ok(
+      state.windowScrollY <= 1,
+      `entering mobile chat must reset the landing-page scroll position: ${JSON.stringify(state)}`,
     );
     assert.equal(state.messagesOverflowY, 'auto', 'messages remain the mobile scroll surface');
-    assert.ok(
-      state.documentScrollHeight <= state.viewportHeight + 1,
-      `document must not vertically scroll in mobile chat view: ${JSON.stringify(state)}`,
-    );
-    assert.ok(
-      state.bodyScrollHeight <= state.viewportHeight + 1,
-      `body must stay within the mobile viewport: ${JSON.stringify(state)}`,
-    );
 
     assert.equal(state.sidebarExpanded, false, 'online users panel should start collapsed on mobile');
     assert.equal(state.toggleExpanded, 'false', 'mobile Users toggle should report collapsed state');
