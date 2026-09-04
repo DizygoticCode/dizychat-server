@@ -1,3 +1,11 @@
+const dizychatNativeSocketUrl = (() => {
+  try {
+    return window.Capacitor?.isNativePlatform?.() ? "https://dizychat.com" : "";
+  } catch (_err) {
+    return "";
+  }
+})();
+
 window.dizychatConfig = Object.assign(
   {
     /**
@@ -10,10 +18,10 @@ window.dizychatConfig = Object.assign(
      */
     backendUrlStorageKey: "dizychat-backend-url",
     /**
-     * Optional explicit Socket.IO URL. The mobile bootstrap derives this from
-     * the canonical backend before chat.js loads.
+     * Native builds pin the production Socket.IO endpoint directly in the
+     * packaged config. Normal web pages leave it blank and stay same-origin.
      */
-    socketUrl: "",
+    socketUrl: dizychatNativeSocketUrl,
     socketOptions: {}
   },
   window.dizychatConfig || {}
