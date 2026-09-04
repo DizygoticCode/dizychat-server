@@ -24,5 +24,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Run Android Slice 1 boundary contracts
+      - name: Verify Android bootstrap, runtime and CORS contracts
         run: node --test tests/android-mobile-runtime.test.js tests/android-native-cors.test.js tests/android-bootstrap-contract.test.js
