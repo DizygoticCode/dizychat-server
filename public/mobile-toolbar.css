@@ -3,6 +3,44 @@
   display: contents;
 }
 
+/*
+ * Mobile chat is one viewport-sized app shell.
+ * The landing page may scroll, but once chat is active the shell itself stays
+ * pinned to Chrome's visible dynamic viewport. Only the messages pane scrolls;
+ * the composer and collapsed online-users strip remain in their existing order.
+ */
+@media (max-width: 768px) {
+  body.view-chat #chat-container {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    max-width: 100vw;
+    min-height: 100dvh;
+    height: 100dvh;
+  }
+
+  #chat-main {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  #chat-content {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  #messages {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+
+  #user-sidebar:not(.is-expanded) #user-list,
+  #user-sidebar:not(.is-expanded) #user-list-empty {
+    display: none !important;
+  }
+}
+
 /* Narrow portrait toolbar containment for phones such as the Huawei P30. */
 @media (max-width: 600px) {
   #chat-container > header {
@@ -65,6 +103,10 @@
     gap: 6px;
     min-width: 0;
     max-width: 100%;
+  }
+
+  .account-session-controls[hidden] {
+    display: none !important;
   }
 
   .account-identity {
