@@ -5,6 +5,7 @@
   if (typeof module === 'object' && module.exports) module.exports = runtime;
   if (root && typeof root === 'object') root.dizychatMobileRuntime = runtime;
 })(typeof window !== 'undefined' ? window : globalThis, () => {
+  const FETCH_ROUTER_MARKER = Symbol.for('dizychat.mobile.fetch-router');
   const trimTrailingSlash = (value) => String(value || '').trim().replace(/\/+$/, '');
 
   const isNativeRuntime = (win = {}) => {
@@ -83,6 +84,23 @@
     return `${origin}${target}`;
   };
 
+  const installBackendFetchRouting = (win = {}, backendOrigin) => {
+    const origin = normaliseHttpOrigin(backendOrigin);
+    if (!origin || typeof win.fetch !== 'function') return win.fetch;
+    if (win.fetch[FETCH_ROUTER_MARKER]) return win.fetch;
+
+    const originalFetch = win.fetch.bind(win);
+    const routedFetch = (input, init) => {
+      const routedInput = typeof input === 'string'
+        ? resolveBackendUrl(input, origin)
+        : input;
+      return originalFetch(routedInput, init);
+    };
+    Object.defineProperty(routedFetch, FETCH_ROUTER_MARKER, { value: true });
+    win.fetch = routedFetch;
+    return routedFetch;
+  };
+
   const shouldOpenExternally = (value, backendOrigin) => {
     if (typeof value !== 'string') return false;
     const target = value.trim();
@@ -108,6 +126,7 @@
     resolveBackendOrigin,
     shouldRouteBackendRequest,
     resolveBackendUrl,
+    installBackendFetchRouting,
     shouldOpenExternally,
     decideBackAction,
   });
