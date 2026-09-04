@@ -41,3 +41,20 @@ test('mobile account controls keep identity compact and sign-out touch safe', ()
   assert.match(mobileSource, /\.account-identity\s*\{[\s\S]*overflow:\s*hidden;[\s\S]*text-overflow:\s*ellipsis;[\s\S]*white-space:\s*nowrap;[\s\S]*\}/);
   assert.match(mobileSource, /#account-logout-btn\s*\{[\s\S]*min-height:\s*44px;[\s\S]*\}/);
 });
+
+test('mobile leave action is an icon control and six toolbar actions fit one row', () => {
+  const mobileStart = cssSource.lastIndexOf('@media (max-width: 600px)');
+  assert.notEqual(mobileStart, -1, 'expected a 600px mobile toolbar breakpoint');
+  const mobileSource = cssSource.slice(mobileStart);
+
+  assert.match(
+    loginSource,
+    /<button id="leave-btn"[^>]*>[\s\S]*<span class="icon"[^>]*>🚪<\/span>[\s\S]*<span class="label">Leave<\/span>[\s\S]*<\/button>/,
+  );
+  assert.match(
+    mobileSource,
+    /#chat-container header \.header-right\s*\{[\s\S]*grid-template-columns:\s*repeat\(6,\s*minmax\(0,\s*1fr\)\);[\s\S]*\}/,
+  );
+  assert.match(mobileSource, /#leave-btn \.label\s*\{[\s\S]*display:\s*none;[\s\S]*\}/);
+  assert.doesNotMatch(mobileSource, /#leave-btn\s*\{[\s\S]*grid-column:\s*span\s+2;[\s\S]*\}/);
+});
