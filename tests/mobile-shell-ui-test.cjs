@@ -51,13 +51,23 @@ function withinViewport(rect, viewportHeight, label) {
         };
       };
 
+      const sidebar = document.querySelector('#user-sidebar');
+      const userList = document.querySelector('#user-list');
+      const userListEmpty = document.querySelector('#user-list-empty');
+      const toggle = document.querySelector('#user-sidebar-toggle');
+
       return {
         viewportHeight: window.innerHeight,
         documentScrollHeight: document.documentElement.scrollHeight,
         bodyScrollHeight: document.body.scrollHeight,
         chatMainOverflowY: getComputedStyle(document.querySelector('#chat-main')).overflowY,
         messagesOverflowY: getComputedStyle(document.querySelector('#messages')).overflowY,
+        sidebarExpanded: sidebar.classList.contains('is-expanded'),
+        toggleExpanded: toggle.getAttribute('aria-expanded'),
+        userListDisplay: getComputedStyle(userList).display,
+        userListEmptyDisplay: getComputedStyle(userListEmpty).display,
         header: rect('#chat-container > header'),
+        messages: rect('#messages'),
         composer: rect('#form'),
         userStrip: rect('#user-sidebar .sidebar-header'),
       };
@@ -78,9 +88,23 @@ function withinViewport(rect, viewportHeight, label) {
       `body must stay within the mobile viewport: ${JSON.stringify(state)}`,
     );
 
+    assert.equal(state.sidebarExpanded, false, 'online users panel should start collapsed on mobile');
+    assert.equal(state.toggleExpanded, 'false', 'mobile Users toggle should report collapsed state');
+    assert.equal(state.userListDisplay, 'none', 'collapsed mobile users panel should hide the user list');
+    assert.equal(state.userListEmptyDisplay, 'none', 'collapsed mobile users panel should hide its empty state');
+
     withinViewport(state.header, state.viewportHeight, 'top toolbar');
     withinViewport(state.composer, state.viewportHeight, 'message composer');
     withinViewport(state.userStrip, state.viewportHeight, 'online users strip');
+
+    assert.ok(
+      state.messages.bottom <= state.composer.top + 1,
+      `messages must end above the composer: ${JSON.stringify(state)}`,
+    );
+    assert.ok(
+      state.composer.bottom <= state.userStrip.top + 1,
+      `collapsed online users strip must remain below the composer: ${JSON.stringify(state)}`,
+    );
   } finally {
     await context.close();
     await browser.close();
