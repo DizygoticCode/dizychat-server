@@ -7,6 +7,7 @@ const assert = require('node:assert/strict');
 
 const root = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
+const exists = (file) => fs.existsSync(path.join(root, file));
 
 test('SecureSession plugin encrypts tokens with AndroidKeyStore AES-GCM', () => {
   const source = read('android/app/src/main/java/com/chat/dizychat/SecureSessionPlugin.java');
@@ -94,4 +95,55 @@ test('Android manifest disables backup and keeps storage permissions narrow', ()
   assert.doesNotMatch(manifest, /READ_EXTERNAL_STORAGE/);
   assert.doesNotMatch(manifest, /WRITE_EXTERNAL_STORAGE/);
   assert.doesNotMatch(manifest, /MANAGE_EXTERNAL_STORAGE/);
+});
+
+test('Android Slice 1 CI reproducibly builds and uploads an unsigned debug APK', () => {
+  const workflowPath = '.github/workflows/android-slice1-ci.yml';
+  assert.equal(exists(workflowPath), true, 'final Android Slice 1 CI workflow must exist');
+  const workflow = read(workflowPath);
+
+  assert.match(workflow, /runs-on:\s*ubuntu-latest/);
+  assert.match(workflow, /actions\/setup-node@v4/);
+  assert.match(workflow, /node-version:\s*["']?22["']?/);
+  assert.match(workflow, /cache:\s*npm/);
+  assert.match(workflow, /actions\/setup-java@v4/);
+  assert.match(workflow, /distribution:\s*["']?temurin["']?/);
+  assert.match(workflow, /java-version:\s*["']?21["']?/);
+  assert.match(workflow, /cache:\s*gradle/);
+  assert.match(workflow, /npm ci/);
+  assert.match(workflow, /npm test/);
+  assert.match(workflow, /npx cap sync android/);
+  assert.match(workflow, /\.\/gradlew assembleDebug --no-daemon/);
+  assert.match(workflow, /actions\/upload-artifact@v4/);
+  assert.match(workflow, /name:\s*dizychat-android-debug-apk/);
+  assert.match(workflow, /android\/app\/build\/outputs\/apk\/debug\/app-debug\.apk/);
+  assert.doesNotMatch(workflow, /DIZYCHAT_KEYSTORE_PASSWORD|DIZYCHAT_KEY_PASSWORD/, 'debug CI must not require release signing secrets');
+});
+
+test('private APK runbook keeps release signing material outside Git and defines the device gate', () => {
+  const runbookPath = 'docs/android-private-apk.md';
+  assert.equal(exists(runbookPath), true, 'private APK runbook must exist');
+  const runbook = read(runbookPath);
+
+  assert.match(runbook, /\$HOME\/\.dizychat\/dizychat-release\.jks/);
+  assert.match(runbook, /keytool -genkeypair/);
+  assert.match(runbook, /-keysize 3072/);
+  assert.match(runbook, /DIZYCHAT_KEYSTORE_PATH/);
+  assert.match(runbook, /DIZYCHAT_KEY_ALIAS/);
+  assert.match(runbook, /DIZYCHAT_KEYSTORE_PASSWORD/);
+  assert.match(runbook, /DIZYCHAT_KEY_PASSWORD/);
+  assert.match(runbook, /assembleRelease --no-daemon/);
+  assert.match(runbook, /adb install -r android\/app\/build\/outputs\/apk\/release\/app-release\.apk/);
+  assert.match(runbook, /outside Git/i);
+  assert.match(runbook, /real-device acceptance/i);
+});
+
+test('README identifies the private sideloaded Android app and defers notifications to Slice 2', () => {
+  const readme = read('README.md');
+  assert.match(readme, /docs\/android-private-apk\.md/);
+  assert.match(readme, /sideload/i);
+  assert.match(readme, /https:\/\/dizychat\.com/);
+  assert.match(readme, /Slice 2/i);
+  assert.match(readme, /push/i);
+  assert.match(readme, /inline/i);
 });
