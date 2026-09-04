@@ -8,12 +8,12 @@ on:
       - .github/workflows/android-slice1-red.yml
 
 jobs:
-  durable-session-focused:
+  android-slice1-focused:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Run durable mobile session contract
-        run: node --test tests/mobile-device-session.test.js
+      - name: Run durable mobile session contracts
+        run: node --test tests/mobile-device-session.test.js tests/mobile-device-session-wiring.test.js
