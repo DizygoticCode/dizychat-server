@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const configPath = path.join(__dirname, '..', 'public', 'app-config.js');
 const securityRunbookPath = path.join(__dirname, '..', 'docs', 'security-runbook.md');
@@ -33,7 +34,13 @@ assert.doesNotMatch(
   /Media uploads with antivirus scanning|Streams uploads to OPSWAT MetaDefender Cloud; rejects infected files|Accepts an allowlisted set of common/i,
   'README must not claim upload antivirus or file-type enforcement while those runtime gates are disabled'
 );
-assert.match(source, /socketUrl:\s*""/, 'web clients should use the current origin');
+const webConfigContext = vm.createContext({ window: { dizychatConfig: {} } });
+vm.runInContext(source, webConfigContext);
+assert.equal(
+  webConfigContext.window.dizychatConfig.socketUrl,
+  '',
+  'web clients should use the current origin'
+);
 assert.match(
   source,
   /defaultNativeBackendUrl:\s*"https:\/\/dizychat\.com"/,
