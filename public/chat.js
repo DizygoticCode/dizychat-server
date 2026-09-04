@@ -50,24 +50,13 @@ const resolveSocketConfig = () => {
 };
 
 const { url: socketUrl, options: baseSocketOptions } = resolveSocketConfig();
-const DIZYCHAT_ACCOUNT_SESSION_KEY = "dizychat-account-session-v2";
+const accountAuth = window.dizychatAuthV2;
 
-const readAccountSessionToken = () => {
-  try {
-    return String(sessionStorage.getItem(DIZYCHAT_ACCOUNT_SESSION_KEY) || "").trim();
-  } catch {
-    return "";
-  }
-};
+const readAccountSessionToken = () =>
+  String(accountAuth?.readToken?.() || "").trim();
 
 const storeAccountSessionToken = (token) => {
-  try {
-    const value = String(token || "").trim();
-    if (value) sessionStorage.setItem(DIZYCHAT_ACCOUNT_SESSION_KEY, value);
-    else sessionStorage.removeItem(DIZYCHAT_ACCOUNT_SESSION_KEY);
-  } catch {
-    /* ignore tab-scoped storage failures */
-  }
+  accountAuth?.writeToken?.(token);
 };
 
 const buildSocketOptions = (options = {}) => {
@@ -150,17 +139,28 @@ function applyAccountSession(session) {
   accountState.identity = session?.identity && typeof session.identity === "object" ? session.identity : null;
   accountState.expiresAt = Number(session?.expiresAt || 0);
   storeAccountSessionToken(token);
+  if (token && typeof accountAuth?.persistToken === "function") {
+    void accountAuth.persistToken(token).catch((error) => {
+      console.warn("[Auth] secure session persistence failed", error);
+      showToast("Signed in, but this device could not save the login securely.", "warn");
+    });
+  }
   socket.auth = socket.auth && typeof socket.auth === "object" ? { ...socket.auth } : {};
   if (token) socket.auth.sessionToken = token;
   else delete socket.auth.sessionToken;
   syncAccountUi();
 }
 
-function clearAccountSession() {
+function clearAccountSession({ persistent = false } = {}) {
   accountState.sessionToken = "";
   accountState.identity = null;
   accountState.expiresAt = 0;
   storeAccountSessionToken("");
+  if (persistent && typeof accountAuth?.clearPersistentToken === "function") {
+    void accountAuth.clearPersistentToken().catch((error) => {
+      console.warn("[Auth] secure session clear failed", error);
+    });
+  }
   socket.auth = socket.auth && typeof socket.auth === "object" ? { ...socket.auth } : {};
   delete socket.auth.sessionToken;
   syncAccountUi();
@@ -3712,7 +3712,7 @@ socket.on("connect", () => {
 
   socket.emit("account session", {}, (ack = {}) => {
     if (ack?.ok && ack?.session) applyAccountSession(ack.session);
-    else clearAccountSession();
+    else clearAccountSession({ persistent: true });
 
     if (window.currentRoom && window.currentUser) {
       const username = accountState.identity?.username || window.currentUser;
@@ -5378,7 +5378,11 @@ function emitRegisteredJoinRequest() {
   }
 
   if (accountLoginStatus) accountLoginStatus.textContent = "Signing in…";
-  socket.emit("account login", { username, password }, (ack = {}) => {
+  socket.emit("account login", {
+    username,
+    password,
+    sessionKind: accountAuth?.isNativeSessionRuntime?.() ? "mobile" : "browser",
+  }, (ack = {}) => {
     if (!ack?.ok || !ack?.session?.identity) {
       if (accountLoginStatus) accountLoginStatus.textContent = ack?.error || "Sign in failed.";
       showToast(ack?.error || "Sign in failed.", "error");
@@ -5408,7 +5412,7 @@ function emitJoinRequest() {
 
   if (accountState.identity) {
     socket.emit("account logout", {}, () => {
-      clearAccountSession();
+      clearAccountSession({ persistent: true });
       joinAsGuest();
     });
     return;
@@ -5534,7 +5538,7 @@ if (accountLogoutBtn) {
   accountLogoutBtn.addEventListener("click", () => {
     const finish = () => {
       if (window.currentRoom) socket.emit("leave room", { room: window.currentRoom });
-      clearAccountSession();
+      clearAccountSession({ persistent: true });
       clearReplyTarget();
       showLanding({ focusUsername: false });
       accountUsernameInput?.focus();
