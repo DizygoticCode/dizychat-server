@@ -1,4 +1,4 @@
-name: Android Slice 1 RED
+name: Android Slice 1 Focused
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
       - .github/workflows/android-slice1-red.yml
 
 jobs:
-  durable-session-red:
+  durable-session-focused:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
