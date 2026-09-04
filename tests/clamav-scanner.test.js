@@ -63,3 +63,15 @@ test('ClamAV exit code 2 fails closed as a scanner error', async () => {
     (error) => error.code === 'CLAMAV_ERROR',
   );
 });
+
+test('timed-out ClamAV processes fail closed with an explicit timeout verdict', async () => {
+  const timeout = new Error('Command timed out');
+  timeout.killed = true;
+  timeout.signal = 'SIGTERM';
+  const { scan } = runScan({ error: timeout });
+
+  await assert.rejects(
+    scan('/tmp/file.txt'),
+    (error) => error.code === 'CLAMAV_TIMEOUT',
+  );
+});
