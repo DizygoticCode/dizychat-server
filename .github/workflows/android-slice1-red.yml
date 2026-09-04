@@ -18,6 +18,8 @@ on:
       - public/chat.js
       - public/login.html
       - public/index.html
+      - android/app/build.gradle
+      - android/app/src/main/AndroidManifest.xml
       - android/app/src/main/java/com/chat/dizychat/SecureSessionPlugin.java
       - android/app/src/main/java/com/chat/dizychat/MobileShellPlugin.java
       - android/app/src/main/java/com/chat/dizychat/MainActivity.java
