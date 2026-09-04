@@ -7,6 +7,15 @@
     content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
   />
   <title>DizyChat — Host unforgettable rooms</title>
+  <script>
+    try {
+      if (window.Capacitor?.isNativePlatform?.()) {
+        window.location.replace("/login.html");
+      }
+    } catch (_err) {
+      /* Normal web landing stays unchanged. */
+    }
+  </script>
   <link rel="icon" href="/logo.svg" type="image/svg+xml" />
   <style>
     :root {
