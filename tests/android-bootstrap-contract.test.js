@@ -4,9 +4,15 @@ const fs = require('fs');
 const path = require('path');
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
+const evaluateAppConfig = (win) => {
+  const context = vm.createContext({ window: win });
+  vm.runInContext(read('public/app-config.js'), context);
+  return context.window.dizychatConfig;
+};
 
 test('app config exposes one canonical native backend and debug override', () => {
   const source = read('public/app-config.js');
@@ -14,6 +20,17 @@ test('app config exposes one canonical native backend and debug override', () =>
   assert.match(source, /backendUrlStorageKey:\s*["']dizychat-backend-url["']/);
   assert.doesNotMatch(source, /defaultNativeSocketUrl/);
   assert.doesNotMatch(source, /socketUrlStorageKey/);
+});
+
+test('app config pins the production Socket.IO endpoint only for packaged native runtime', () => {
+  const nativeConfig = evaluateAppConfig({
+    Capacitor: { isNativePlatform: () => true },
+    dizychatConfig: {},
+  });
+  const webConfig = evaluateAppConfig({ dizychatConfig: {} });
+
+  assert.equal(nativeConfig.socketUrl, 'https://dizychat.com');
+  assert.equal(webConfig.socketUrl, '');
 });
 
 test('login page bootstraps packaged runtime before chat instead of loading localhost Socket.IO directly', () => {
