@@ -58,3 +58,40 @@ test('chat exposes the mobile back hook with transient-first and room-leave beha
   assert.match(source, /leaveBtn\?\.click\(\)/);
   assert.match(source, /return false/);
 });
+
+test('Android packaging contains no server secrets and release signing is environment-only', () => {
+  const gradle = read('android/app/build.gradle');
+  const forbidden = [
+    'ADMIN_CREDENTIALS',
+    'METADEFENDER_API_KEY',
+    'MONGO_URI',
+    'GIPHY_SDK_KEY',
+    'RENDER_API_URL',
+  ];
+
+  for (const name of forbidden) {
+    assert.doesNotMatch(gradle, new RegExp(`buildConfigField[^\\n]*${name}`), `${name} must not be compiled into the APK`);
+  }
+  assert.doesNotMatch(gradle, /localProperties\.getProperty/, 'Android packaging must not load server runtime secrets from local.properties');
+
+  for (const name of [
+    'DIZYCHAT_KEYSTORE_PATH',
+    'DIZYCHAT_KEY_ALIAS',
+    'DIZYCHAT_KEYSTORE_PASSWORD',
+    'DIZYCHAT_KEY_PASSWORD',
+  ]) {
+    assert.match(gradle, new RegExp(`System\\.getenv\\(["']${name}["']\\)`), `${name} must come from the process environment`);
+  }
+  assert.match(gradle, /signingConfigs\s*\{/);
+  assert.match(gradle, /hasReleaseSigning/);
+  assert.match(gradle, /signingConfig\s+signingConfigs\.release/);
+});
+
+test('Android manifest disables backup and keeps storage permissions narrow', () => {
+  const manifest = read('android/app/src/main/AndroidManifest.xml');
+  assert.match(manifest, /android:allowBackup="false"/);
+  assert.match(manifest, /android\.permission\.INTERNET/);
+  assert.doesNotMatch(manifest, /READ_EXTERNAL_STORAGE/);
+  assert.doesNotMatch(manifest, /WRITE_EXTERNAL_STORAGE/);
+  assert.doesNotMatch(manifest, /MANAGE_EXTERNAL_STORAGE/);
+});
