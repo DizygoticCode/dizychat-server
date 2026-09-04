@@ -65,7 +65,7 @@
     padding-left: 0;
     margin-left: 0;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     align-items: center;
     gap: 6px;
     min-width: 0;
@@ -92,12 +92,14 @@
   }
 
   #chat-container .header-right #watch-party-btn .label,
-  #chat-container .header-right #copy-join-link .label {
+  #chat-container .header-right #copy-join-link .label,
+  #leave-btn .label {
     display: none;
   }
 
   .account-session-controls {
     grid-column: 1 / -1;
+    grid-row: 3;
     display: flex;
     align-items: center;
     gap: 6px;
@@ -125,6 +127,7 @@
   }
 
   #leave-btn {
-    grid-column: span 2;
+    grid-column: 6;
+    grid-row: 2;
   }
 }
