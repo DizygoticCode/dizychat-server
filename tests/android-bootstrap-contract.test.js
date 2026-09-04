@@ -31,13 +31,16 @@ test('login page bootstraps packaged runtime before chat instead of loading loca
   assert.doesNotMatch(source, /src="\/chat\.js"/);
 });
 
-test('mobile bootstrap restores session, loads bundled Socket.IO, installs fetch routing, then loads chat', () => {
+test('mobile bootstrap uses bundled Socket.IO only on native while normal web keeps same-origin Socket.IO', () => {
   const source = read('public/mobile-bootstrap.js');
   assert.match(source, /restoreNativeSession\(\)/);
   assert.match(source, /resolveBackendOrigin\(window,\s*window\.dizychatConfig\)/);
   assert.match(source, /installBackendFetchRouting\(window,\s*backend\)/);
-  assert.match(source, /loadScript\(["']\/vendor\/socket\.io\.min\.js["']\)/);
+  assert.match(source, /isNativeRuntime\(window\)/);
+  assert.match(source, /["']\/vendor\/socket\.io\.min\.js["']/);
+  assert.match(source, /["']\/socket\.io\/socket\.io\.js["']/);
   assert.doesNotMatch(source, /\$\{backend\}\/socket\.io\/socket\.io\.js/);
+  assert.match(source, /loadScript\(socketClientUrl\)/);
   assert.match(source, /loadScript\(["']\/chat\.js["']\)/);
   assert.match(source, /dizychat-bootstrap-error/);
 });
