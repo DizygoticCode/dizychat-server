@@ -30,5 +30,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Verify Android Slice 1 focused contracts
+      - name: Verify Android secure session and prior Slice 1 contracts
         run: node --test tests/android-mobile-runtime.test.js tests/android-native-cors.test.js tests/android-bootstrap-contract.test.js tests/android-secure-session.test.js tests/android-native-contract.test.js
