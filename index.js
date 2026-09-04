@@ -22,6 +22,7 @@ const { createSessionStore } = require('./src/auth/session-store');
 const { requireModerator, requireOwner } = require('./src/auth/authorization');
 const { createRoomPasswordService } = require('./src/rooms/room-password-service');
 const soundboardStore = require('./src/utils/soundboard');
+const { scanFileWithClamAv } = require('./src/uploads/clamav-scanner');
 
 const nodeFetchModulePromise = import('node-fetch');
 const fetch = (...args) =>
@@ -493,6 +494,16 @@ app.get('/version', (req, res) => {
 
 // ---------------- File Uploads ----------------
 const fsPromises = fs.promises;
+const UPLOAD_QUARANTINE_DIR = path.resolve(
+  process.env.UPLOAD_QUARANTINE_DIR || '/var/lib/dizychat/upload-quarantine'
+);
+const PUBLIC_ROOT = path.resolve(__dirname, 'public');
+if (
+  UPLOAD_QUARANTINE_DIR === PUBLIC_ROOT
+  || UPLOAD_QUARANTINE_DIR.startsWith(`${PUBLIC_ROOT}${path.sep}`)
+) {
+  throw new Error('UPLOAD_QUARANTINE_DIR must not be inside the public web root');
+}
 const TEMPORARY_UPLOAD_EXTENSION = '.upload';
 const MAX_STORED_UPLOAD_EXTENSION_LENGTH = 64;
 
@@ -1020,7 +1031,11 @@ const removeUploadedFileByUrl = async (fileUrl) => {
 };
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
+  destination: (_req, _file, cb) => {
+    fs.mkdir(UPLOAD_QUARANTINE_DIR, { recursive: true, mode: 0o700 }, (error) => {
+      cb(error, UPLOAD_QUARANTINE_DIR);
+    });
+  },
   filename: (req, file, cb) => {
     const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, file.fieldname + '-' + unique + getSafeStoredUploadExtension(file));
@@ -1107,17 +1122,47 @@ const uploadSingleMiddleware = (req, res, next) => {
   });
 };
 
-app.post('/upload', validateUploadOrigin, uploadSingleMiddleware, (req, res) => {
+app.post('/upload', validateUploadOrigin, uploadSingleMiddleware, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-  // Temporarily accept uploads without MIME, file-signature, or antivirus gating so
-  // mobile camera/library files can be tested before upload security is re-added.
-  res.json({
-    url: `/uploads/${req.file.filename}`,
-    name: req.file.originalname,
-    type: req.file.mimetype,
-    size: req.file.size
-  });
+  const quarantinePath = req.file.path;
+  const finalPath = path.join(uploadDir, req.file.filename);
+
+  try {
+    await scanFileWithClamAv(quarantinePath);
+    await fsPromises.rename(quarantinePath, finalPath);
+
+    return res.json({
+      url: `/uploads/${req.file.filename}`,
+      name: req.file.originalname,
+      type: req.file.mimetype,
+      size: req.file.size
+    });
+  } catch (err) {
+    try {
+      await fsPromises.unlink(quarantinePath);
+    } catch (cleanupError) {
+      if (cleanupError?.code !== 'ENOENT') {
+        console.error('[Upload] Failed to remove quarantined file:', cleanupError);
+      }
+    }
+
+    if (err?.code === 'CLAMAV_INFECTED') {
+      logSecurityEvent('upload_malware_rejected', {
+        filename: path.basename(String(req.file.originalname || '')),
+        threat: err.threat || 'detected',
+      });
+      return res.status(422).json({ error: 'Upload rejected by antivirus scan.' });
+    }
+
+    logSecurityEvent('upload_scan_failed', {
+      code: err?.code || 'CLAMAV_ERROR',
+      message: err?.message || 'ClamAV scan failed',
+    });
+    return res.status(503).json({
+      error: 'Upload antivirus scan unavailable. Try again later.',
+    });
+  }
 });
 
 // ---------------- Link Preview ----------------
