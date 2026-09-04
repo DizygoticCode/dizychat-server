@@ -6,6 +6,10 @@ on:
       - feat/android-slice1-core
     paths:
       - .github/workflows/android-slice1-red.yml
+      - tests/android-mobile-runtime.test.js
+      - tests/android-native-cors.test.js
+      - public/mobile-runtime.js
+      - index.js
 
 jobs:
   android-slice1-focused:
