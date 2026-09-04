@@ -19,6 +19,7 @@ on:
       - public/login.html
       - public/index.html
       - android/app/src/main/java/com/chat/dizychat/SecureSessionPlugin.java
+      - android/app/src/main/java/com/chat/dizychat/MobileShellPlugin.java
       - android/app/src/main/java/com/chat/dizychat/MainActivity.java
       - index.js
 
@@ -30,5 +31,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Verify Android secure session and prior Slice 1 contracts
+      - name: Verify Android Slice 1 focused contracts
         run: node --test tests/android-mobile-runtime.test.js tests/android-native-cors.test.js tests/android-bootstrap-contract.test.js tests/android-secure-session.test.js tests/android-native-contract.test.js
