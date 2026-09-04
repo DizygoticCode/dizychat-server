@@ -10,6 +10,7 @@ on:
       - 'public/**'
       - 'src/**'
       - 'tests/**'
+      - 'scripts/prepare-android-assets.js'
       - 'index.js'
       - 'package.json'
       - 'package-lock.json'
@@ -47,6 +48,9 @@ jobs:
 
       - name: Run deterministic tests
         run: npm test
+
+      - name: Prepare packaged Android assets
+        run: npm run android:prepare
 
       - name: Sync Capacitor Android project
         run: npx cap sync android
