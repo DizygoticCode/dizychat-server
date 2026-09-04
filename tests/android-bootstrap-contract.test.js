@@ -31,14 +31,31 @@ test('login page bootstraps packaged runtime before chat instead of loading loca
   assert.doesNotMatch(source, /src="\/chat\.js"/);
 });
 
-test('mobile bootstrap restores session, loads backend Socket.IO, installs fetch routing, then loads chat', () => {
+test('mobile bootstrap restores session, loads bundled Socket.IO, installs fetch routing, then loads chat', () => {
   const source = read('public/mobile-bootstrap.js');
   assert.match(source, /restoreNativeSession\(\)/);
   assert.match(source, /resolveBackendOrigin\(window,\s*window\.dizychatConfig\)/);
   assert.match(source, /installBackendFetchRouting\(window,\s*backend\)/);
-  assert.match(source, /backend\s*\?\s*`\$\{backend\}\/socket\.io\/socket\.io\.js`\s*:\s*["']\/socket\.io\/socket\.io\.js["']/);
+  assert.match(source, /loadScript\(["']\/vendor\/socket\.io\.min\.js["']\)/);
+  assert.doesNotMatch(source, /\$\{backend\}\/socket\.io\/socket\.io\.js/);
   assert.match(source, /loadScript\(["']\/chat\.js["']\)/);
   assert.match(source, /dizychat-bootstrap-error/);
+});
+
+test('Android build prepares the bundled Socket.IO browser client before Capacitor sync', () => {
+  const scriptPath = path.join(root, 'scripts/prepare-android-assets.js');
+  assert.equal(fs.existsSync(scriptPath), true, 'Android asset preparation script must exist');
+
+  const prepareSource = fs.readFileSync(scriptPath, 'utf8');
+  const workflow = read('.github/workflows/android-slice1-ci.yml');
+  const pkg = JSON.parse(read('package.json'));
+
+  assert.equal(pkg.scripts?.['android:prepare'], 'node scripts/prepare-android-assets.js');
+  assert.match(prepareSource, /socket\.io/);
+  assert.match(prepareSource, /client-dist/);
+  assert.match(prepareSource, /socket\.io\.min\.js/);
+  assert.match(prepareSource, /public[\\/]vendor/);
+  assert.match(workflow, /npm run android:prepare[\s\S]*npx cap sync android/);
 });
 
 test('native runtime exposes an idempotent fetch router that keeps bundled assets local', () => {
