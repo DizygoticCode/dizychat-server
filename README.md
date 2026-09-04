@@ -11,7 +11,7 @@ DizyChat is a Socket.IO and Express-powered real-time chat backend designed for 
 
 ### Media uploads
 - Accepts uploads via `/upload`, stores assets under `public/uploads`, and advertises the configured size limit in logs.
-- MIME, file-signature, and antivirus enforcement are currently disabled while mobile camera/library upload compatibility is being verified; uploaded files are not passing through those security gates for now.
+- Upload MIME/file-signature rejection remains intentionally permissive for mobile compatibility, while every completed upload is quarantined and must receive a clean local ClamAV verdict before it becomes publicly accessible.
 - Supports configurable size caps (including "unlimited") through `MAX_UPLOAD_SIZE_MB`.
 
 ### Rich content previews
@@ -67,7 +67,7 @@ tests/                # Automated tests (if/when added)
 
 - **Node.js 22+** (matching the `engines` field).
 - **MongoDB** instance accessible via connection string.
-- Upload antivirus/type-signature enforcement is temporarily disabled while mobile upload compatibility is being verified.
+- **ClamAV daemon and `clamdscan`** are required for uploads; scanning is local and fails closed if the scanner is unavailable.
 
 ## Installation
 
@@ -98,6 +98,9 @@ Local `.env` files and host runtime environment files are deliberately excluded 
 | `ADMIN_AUTH_LOCK_MS` | (Optional) Temporary lockout duration in milliseconds after too many failed failures; defaults to `900000` (15 minutes). |
 | `MESSAGE_HISTORY_CHUNK_SIZE` | Page size (25-500) for history fetches; defaults to 150. |
 | `MAX_UPLOAD_SIZE_MB` | File upload cap; accepts values like `50`, `50mb`, or `2gb`. Use `unlimited` to disable the limit. |
+| `UPLOAD_QUARANTINE_DIR` | Private pre-scan upload directory; defaults to `/var/lib/dizychat/upload-quarantine`. It must not be inside the web-served `public/` tree. |
+| `CLAMAV_SCAN_COMMAND` | Local ClamAV client command; defaults to `clamdscan`. |
+| `CLAMAV_SCAN_TIMEOUT_MS` | Per-file ClamAV timeout in milliseconds; defaults to `120000` and is bounded between 5000 and 600000. |
 | `ENABLE_VOICE_CALLS` | (Optional) Set to `true`/`false` to force LiveKit call availability. The legacy name is still used for compatibility; when enabled, calls support microphone audio and optional camera video. If unset, calls enable automatically when all LiveKit credentials are present. |
 | `LIVEKIT_URL` | Required when LiveKit calls are enabled. Browser-reachable LiveKit WebSocket URL; for self-hosting use the trusted TLS endpoint you configured (for example `wss://<your-livekit-host>`). |
 | `LIVEKIT_API_KEY` | Required when LiveKit calls are enabled. LiveKit API key used by the backend to issue room-scoped access tokens. |
@@ -128,6 +131,21 @@ Launch the server with Node:
 ```bash
 npm start
 ```
+
+### ClamAV upload scanning
+
+DizyChat keeps the existing `/uploads/...` URL contract but no longer writes an incoming file directly into the public upload store. Multer writes the complete file to `UPLOAD_QUARANTINE_DIR`, `clamdscan --fdpass --no-summary` asks the local ClamAV daemon for the verdict, and only a clean file is atomically renamed into `public/uploads`. Infected files and scanner errors/timeouts are deleted from quarantine and rejected. MIME and file-signature allowlists are deliberately not used as an acceptance gate, preserving Android/HEIC/WebM/3GP and other mobile upload compatibility.
+
+On Ubuntu/Debian self-hosts:
+```bash
+sudo apt update
+sudo apt install -y clamav clamav-daemon
+sudo systemctl enable --now clamav-freshclam clamav-daemon
+sudo install -d -o dizy -g dizy -m 0700 /var/lib/dizychat/upload-quarantine
+clamdscan --fdpass --no-summary /etc/hosts
+```
+
+The last command should report `/etc/hosts: OK`. Keep quarantine outside every web-served or symlink-exposed directory. The current DizyChat self-host may continue using `public/uploads -> /var/soundboards/uploads`; existing files and URLs do not need to move for ClamAV.
 
 The server will log the active port, build/version information, and upload limit during boot.
 
