@@ -1,0 +1,34 @@
+name: Apply Android Bootstrap HTML
+
+on:
+  push:
+    branches:
+      - feat/android-slice1-core
+    paths:
+      - .github/workflows/apply-android-bootstrap-html.yml
+      - scripts/ci/apply-android-bootstrap-html.py
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply exact packaged bootstrap HTML patch
+        run: python3 scripts/ci/apply-android-bootstrap-html.py
+      - name: Commit patch when needed
+        shell: bash
+        run: |
+          if git diff --quiet -- public/login.html public/index.html; then
+            echo "No patch required"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/login.html public/index.html
+          git commit -m "feat: bootstrap packaged Android entry points"
+          git push origin HEAD:feat/android-slice1-core
