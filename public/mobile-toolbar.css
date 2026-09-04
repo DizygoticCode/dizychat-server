@@ -44,15 +44,30 @@
 /* Narrow portrait toolbar containment for phones such as the Huawei P30. */
 @media (max-width: 600px) {
   #chat-container > header {
+    --toolbar-padding-y: 6px;
+    --toolbar-padding-x: 8px;
+    --toolbar-logo-size: 30px;
+    --toolbar-control-height: 34px;
+    --toolbar-button-padding-y: 2px;
+    --toolbar-button-padding-x: 6px;
+    --toolbar-button-font-size: 0.85em;
+    --toolbar-icon-button-size: 32px;
+    --toolbar-search-gap: 4px;
+    --toolbar-search-padding-y: 2px;
+    --toolbar-search-padding-x: 4px;
+    --toolbar-search-margin-left: 0px;
+    --toolbar-search-font-size: 0.8em;
+    --room-name-font-size: 0.95em;
     align-items: stretch;
     flex-direction: column;
     flex-wrap: nowrap;
-    gap: 8px;
+    gap: 5px;
   }
 
   #chat-container header .header-left {
     width: 100%;
     max-width: 100%;
+    gap: 6px;
   }
 
   #chat-container header .header-left #room-name {
@@ -67,7 +82,7 @@
     display: grid;
     grid-template-columns: repeat(6, minmax(0, 1fr));
     align-items: center;
-    gap: 6px;
+    gap: 4px;
     min-width: 0;
   }
 

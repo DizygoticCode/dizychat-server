@@ -58,3 +58,22 @@ test('mobile leave action is an icon control and six toolbar actions fit one row
   assert.match(mobileSource, /#leave-btn \.label\s*\{[\s\S]*display:\s*none;[\s\S]*\}/);
   assert.doesNotMatch(mobileSource, /#leave-btn\s*\{[\s\S]*grid-column:\s*span\s+2;[\s\S]*\}/);
 });
+
+test('mobile header uses deliberately compact geometry without changing desktop defaults', () => {
+  const mobileStart = cssSource.lastIndexOf('@media (max-width: 600px)');
+  assert.notEqual(mobileStart, -1, 'expected a 600px mobile toolbar breakpoint');
+  const mobileSource = cssSource.slice(mobileStart);
+
+  assert.match(
+    mobileSource,
+    /#chat-container > header\s*\{[\s\S]*--toolbar-padding-y:\s*6px;[\s\S]*--toolbar-padding-x:\s*8px;[\s\S]*--toolbar-logo-size:\s*30px;[\s\S]*--toolbar-control-height:\s*34px;[\s\S]*--toolbar-button-padding-y:\s*2px;[\s\S]*--toolbar-button-padding-x:\s*6px;[\s\S]*--room-name-font-size:\s*0\.95em;[\s\S]*gap:\s*5px;[\s\S]*\}/,
+  );
+  assert.match(
+    mobileSource,
+    /#chat-container header \.header-left\s*\{[\s\S]*gap:\s*6px;[\s\S]*\}/,
+  );
+  assert.match(
+    mobileSource,
+    /#chat-container header \.header-right\s*\{[\s\S]*gap:\s*4px;[\s\S]*\}/,
+  );
+});
