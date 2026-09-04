@@ -7,27 +7,13 @@ on:
     paths:
       - .github/workflows/android-slice1-red.yml
 
-permissions:
-  contents: write
-
 jobs:
   android-slice1-focused:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: feat/android-slice1-core
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Apply durable mobile auth wiring
-        run: python3 scripts/ci/apply-android-slice1-auth-patch.py
-      - name: Run durable mobile session contracts
-        run: node --test tests/mobile-device-session.test.js tests/mobile-device-session-wiring.test.js
-      - name: Commit durable auth wiring
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add index.js
-          git commit -m "feat: wire durable mobile sessions into auth"
-          git push origin HEAD:feat/android-slice1-core
+      - name: Run Android runtime boundary contracts
+        run: node --test tests/android-mobile-runtime.test.js tests/android-native-cors.test.js
