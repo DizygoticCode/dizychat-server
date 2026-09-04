@@ -65,3 +65,10 @@ test('native runtime exposes an idempotent fetch router that keeps bundled asset
   assert.equal(calls[0][0], 'https://dizychat.com/upload');
   assert.equal(calls[1][0], '/emojis.json');
 });
+
+test('packaged native launch redirects the marketing entry point to the chat login surface', () => {
+  const source = read('public/index.html');
+  assert.match(source, /Capacitor/);
+  assert.match(source, /isNativePlatform/);
+  assert.match(source, /location\.replace\(["']\/login\.html["']\)/);
+});
