@@ -36,7 +36,7 @@ assert.doesNotMatch(
 assert.match(source, /socketUrl:\s*""/, 'web clients should use the current origin');
 assert.match(
   source,
-  /defaultNativeSocketUrl:\s*"https:\/\/dizychat\.com"/,
+  /defaultNativeBackendUrl:\s*"https:\/\/dizychat\.com"/,
   'native clients should default to the self-hosted public origin'
 );
 assert.match(
