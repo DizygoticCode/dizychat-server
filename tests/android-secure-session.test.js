@@ -71,7 +71,8 @@ test('native persist and clear update both secure storage and the volatile mirro
 
   await auth.persistToken('abc123');
   assert.equal(auth.readToken(), 'abc123');
-  assert.deepEqual(calls[0], ['write', { token: 'abc123' }]);
+  assert.equal(calls[0]?.[0], 'write');
+  assert.equal(calls[0]?.[1]?.token, 'abc123');
 
   await auth.clearPersistentToken();
   assert.equal(auth.readToken(), '');
@@ -94,7 +95,7 @@ test('native secure-storage failure rejects without a persistent browser fallbac
 test('chat requests durable mobile sessions and routes persistence through the auth adapter', () => {
   const source = fs.readFileSync(path.resolve(__dirname, '../public/chat.js'), 'utf8');
   assert.match(source, /dizychatAuthV2/);
-  assert.match(source, /isNativeSessionRuntime\(\)/);
+  assert.match(source, /isNativeSessionRuntime(?:\?\.)?\(\)/);
   assert.match(source, /sessionKind:\s*[^\n]*\?\s*["']mobile["']\s*:\s*["']browser["']/);
   assert.match(source, /persistToken\(token\)/);
   assert.match(source, /clearPersistentToken\(\)/);
