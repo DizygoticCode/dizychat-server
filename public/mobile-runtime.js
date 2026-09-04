@@ -3,9 +3,16 @@
 (function initMobileRuntime(root, factory) {
   const runtime = factory();
   if (typeof module === 'object' && module.exports) module.exports = runtime;
-  if (root && typeof root === 'object') root.dizychatMobileRuntime = runtime;
+  if (root && typeof root === 'object') {
+    root.dizychatMobileRuntime = runtime;
+    if (runtime.isNativeRuntime(root)) {
+      const backend = runtime.resolveBackendOrigin(root, root.dizychatConfig || {});
+      runtime.installExternalLinkHandling(root, backend);
+    }
+  }
 })(typeof window !== 'undefined' ? window : globalThis, () => {
   const FETCH_ROUTER_MARKER = Symbol.for('dizychat.mobile.fetch-router');
+  const EXTERNAL_LINK_MARKER = Symbol.for('dizychat.mobile.external-links');
   const trimTrailingSlash = (value) => String(value || '').trim().replace(/\/+$/, '');
 
   const isNativeRuntime = (win = {}) => {
@@ -115,6 +122,50 @@
     }
   };
 
+  const installExternalLinkHandling = (win = {}, backendOrigin) => {
+    if (!isNativeRuntime(win) || typeof win?.document?.addEventListener !== 'function') return false;
+    if (win.document[EXTERNAL_LINK_MARKER]) return true;
+
+    const plugin = win?.Capacitor?.Plugins?.MobileShell;
+    if (!plugin || typeof plugin.openExternal !== 'function') return false;
+
+    const backend = normaliseHttpOrigin(backendOrigin);
+    const appOrigin = normaliseHttpOrigin(win?.location?.origin);
+    const listener = (event = {}) => {
+      if (event.defaultPrevented) return;
+      if (typeof event.button === 'number' && event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+      const anchor = event.target?.closest?.('a[href]');
+      if (!anchor) return;
+
+      const rawHref = typeof anchor.getAttribute === 'function'
+        ? String(anchor.getAttribute('href') || '').trim()
+        : '';
+      if (rawHref && !/^[a-z][a-z0-9+.-]*:/i.test(rawHref) && !rawHref.startsWith('//')) return;
+
+      const href = String(anchor.href || rawHref || '').trim();
+      if (!shouldOpenExternally(href, backend)) return;
+
+      if (appOrigin) {
+        try {
+          if (new URL(href).origin === appOrigin) return;
+        } catch (_err) {
+          return;
+        }
+      }
+
+      event.preventDefault?.();
+      Promise.resolve(plugin.openExternal({ url: href })).catch((error) => {
+        win.console?.warn?.('[DizyChat] external link handoff failed', error);
+      });
+    };
+
+    win.document.addEventListener('click', listener);
+    Object.defineProperty(win.document, EXTERNAL_LINK_MARKER, { value: listener });
+    return true;
+  };
+
   const decideBackAction = ({ transientOpen = false, inChat = false } = {}) => {
     if (transientOpen) return 'close-transient';
     if (inChat) return 'leave-chat';
@@ -128,6 +179,7 @@
     resolveBackendUrl,
     installBackendFetchRouting,
     shouldOpenExternally,
+    installExternalLinkHandling,
     decideBackAction,
   });
 });
