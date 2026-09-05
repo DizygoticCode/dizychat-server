@@ -1,0 +1,66 @@
+name: Apply native upload CORS patch
+
+on:
+  push:
+    branches:
+      - fix/native-upload-cors
+    paths:
+      - '.github/workflows/apply-native-upload-cors-patch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/native-upload-cors
+          fetch-depth: 0
+
+      - name: Apply exact server patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('index.js')
+          source = path.read_text()
+
+          marker = "const TRUSTED_NATIVE_ORIGINS = new Set(["
+          if marker not in source:
+              anchor = "const fetch = (...args) =>\n  nodeFetchModulePromise.then(({ default: fetch }) => fetch(...args));\n\n"
+              insert = """const TRUSTED_NATIVE_ORIGINS = new Set([\n  'https://localhost',\n  'http://localhost',\n  'capacitor://localhost',\n]);\n\nconst isTrustedNativeHttpOrigin = (req) => {\n  const origin = String(req?.headers?.origin || '').trim().toLowerCase();\n  return TRUSTED_NATIVE_ORIGINS.has(origin) ? origin : '';\n};\n\n"""
+              if anchor not in source:
+                  raise SystemExit('fetch anchor not found')
+              source = source.replace(anchor, anchor + insert, 1)
+
+          cors_marker = "res.setHeader('Access-Control-Allow-Origin', origin);"
+          if cors_marker not in source:
+              anchor = "app.disable('x-powered-by');\n"
+              insert = """app.use((req, res, next) => {\n  const origin = isTrustedNativeHttpOrigin(req);\n  if (!origin) return next();\n\n  res.setHeader('Access-Control-Allow-Origin', origin);\n  res.setHeader('Vary', 'Origin');\n  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');\n  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');\n\n  if (req.method === 'OPTIONS') return res.sendStatus(204);\n  return next();\n});\n\n"""
+              if anchor not in source:
+                  raise SystemExit('app.disable anchor not found')
+              source = source.replace(anchor, anchor + insert, 1)
+
+          path.write_text(source)
+          PY
+
+      - name: Verify deterministic tests
+        run: |
+          npm ci
+          npm test
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          if git diff --quiet -- index.js; then
+            echo 'No index.js change required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.js
+          git commit -m 'fix: allow trusted native upload preflight'
+          git push origin HEAD:fix/native-upload-cors
