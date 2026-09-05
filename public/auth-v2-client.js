@@ -2,6 +2,12 @@
   'use strict';
 
   const SESSION_KEY = 'dizychat-account-session-v2';
+  let secureOperations = Promise.resolve();
+  const enqueueSecureOperation = (operation) => {
+    const result = secureOperations.then(operation);
+    secureOperations = result.catch(() => {});
+    return result;
+  };
 
   const readToken = () => {
     try {
@@ -42,7 +48,7 @@
     if (typeof plugin?.readToken !== 'function') {
       throw new Error('SecureSession plugin unavailable');
     }
-    const result = await plugin.readToken();
+    const result = await enqueueSecureOperation(() => plugin.readToken());
     const token = String(result?.token || '').trim();
     writeToken(token);
     return token;
@@ -58,14 +64,14 @@
       if (typeof plugin?.clearToken !== 'function') {
         throw new Error('SecureSession plugin unavailable');
       }
-      await plugin.clearToken();
+      await enqueueSecureOperation(() => plugin.clearToken());
       return '';
     }
 
     if (typeof plugin?.writeToken !== 'function') {
       throw new Error('SecureSession plugin unavailable');
     }
-    await plugin.writeToken({ token: value });
+    await enqueueSecureOperation(() => plugin.writeToken({ token: value }));
     return value;
   };
 
@@ -76,7 +82,7 @@
     if (typeof plugin?.clearToken !== 'function') {
       throw new Error('SecureSession plugin unavailable');
     }
-    await plugin.clearToken();
+    await enqueueSecureOperation(() => plugin.clearToken());
   };
 
   const roleCanModerate = (role) => role === 'owner' || role === 'admin';

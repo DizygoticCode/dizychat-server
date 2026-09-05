@@ -100,3 +100,33 @@ test('chat requests durable mobile sessions and routes persistence through the a
   assert.match(source, /persistToken\(token\)/);
   assert.match(source, /clearPersistentToken\(\)/);
 });
+
+test('explicit native clear waits behind an in-flight secure write so reopening cannot restore it', async () => {
+  let releaseWrite;
+  let stored = '';
+  const plugin = {
+    async readToken() { return { token: stored }; },
+    async writeToken({ token }) {
+      await new Promise((resolve) => { releaseWrite = resolve; });
+      stored = token;
+    },
+    async clearToken() { stored = ''; },
+  };
+  const { auth } = loadAuth({ native: true, plugin });
+  const writing = auth.persistToken('delayed-token');
+  await new Promise((resolve) => setImmediate(resolve));
+  const clearing = auth.clearPersistentToken();
+  releaseWrite();
+  await Promise.all([writing, clearing]);
+  const reopened = loadAuth({ native: true, plugin }).auth;
+  assert.equal(await reopened.restoreNativeSession(), '');
+});
+
+test('browser token survives only its existing tab and never restores into a fresh tab', async () => {
+  const first = loadAuth();
+  await first.auth.persistToken('tab-token');
+  assert.equal(await first.auth.restoreNativeSession(), 'tab-token');
+  assert.equal(await loadAuth().auth.restoreNativeSession(), '');
+  await first.auth.clearPersistentToken();
+  assert.equal(first.auth.readToken(), '');
+});

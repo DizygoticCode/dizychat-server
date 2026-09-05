@@ -99,6 +99,12 @@ jobs:
           DEPLOY_URL: http://127.0.0.1:10000
         run: node tests/mobile-shell-ui-test.cjs
 
+      - name: Run registered account navigation regression
+        env:
+          NODE_ENV: test
+          DEPLOY_URL: http://127.0.0.1:10000
+        run: node tests/account-navigation-ui-test.cjs
+
       - name: Upload UI artifacts
         if: always()
         uses: actions/upload-artifact@v4
