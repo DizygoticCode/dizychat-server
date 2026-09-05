@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Register each Android installation with DizyChat/FCM, request notification permission after the first successful room join, persist per-device identity, bind room join/leave to the server subscription authority, and maintain a reliable short-lived `foreground + screen interactive` suppression lease.
+**Goal:** Register each Android installation with DizyChat/FCM, request notification permission after the first successful room join, persist per-device identity, bind room join/leave to the server subscription authority, and maintain the short-lived `foreground + screen interactive` suppression lease required by PR A.
 
-**Architecture:** Keep push orchestration in a focused browser module loaded by the native bootstrap, use the existing Capacitor PushNotifications plugin for permission/token registration, and add one narrow native `DeviceState` plugin for Android lifecycle/screen interactivity. The browser module authenticates all server calls with the already-restored mobile session token; the server remains authoritative and the native layer never stores a second auth credential.
+**Architecture:** Keep push orchestration in `public/mobile-push.js`, loaded only by the native bootstrap. Use the already-installed Capacitor PushNotifications plugin for permission/token registration. Add one narrow native `DeviceState` plugin for lifecycle plus `PowerManager.isInteractive()`. All server mutations use the mobile session already restored by `SecureSession`; there is no second auth credential. The current mobile fetch router already sends `/api/*` to the configured backend, so PR B must reuse it rather than hard-code another backend URL.
 
 **Tech Stack:** Capacitor 7.4.4, `@capacitor/push-notifications` 7.0.3, Android Java, PowerManager/BroadcastReceiver, existing SecureSession plugin, Node deterministic tests, Gradle/Android SDK.
 
@@ -12,17 +12,17 @@
 
 ## Global Constraints
 
-- Start PR B from the exact merged/green head of PR A, not directly from the old Slice 1 base.
-- The stable device ID identifies one app installation; it is not an authentication token.
-- Every server mutation still uses the durable mobile session restored by `SecureSession`.
+- Start PR B from the exact merged/green head of PR A.
+- Stable device ID identifies an app installation; it is not authentication.
+- Every server mutation uses the durable mobile session restored by `SecureSession`.
 - Request Android notification permission only after a successful first room join.
-- Declining permission must leave chat/auth/room joining fully functional.
-- Browser sessions must never register an Android push device or alter Android suppression leases.
+- Denied permission must leave chat/auth/room joining fully functional.
+- Browser sessions never register an Android push device or alter Android suppression leases.
 - Suppression is true only for `app foreground AND screen interactive`.
-- Screen off/locked must clear suppression immediately when possible; a short lease expiry is the fail-safe if the WebView is suspended before the clear reaches the server.
-- Use a 15-second suppression lease refreshed every 5 seconds while foreground+interactive; server PR A still enforces its maximum cap.
-- Explicit room Leave removes the device subscription; transient disconnect/background/swipe-away does not.
-- FCM client configuration is not a Firebase service credential, but the project keeps `android/app/google-services.json` out of Git and supplies it at build/test time.
+- Screen off/locked clears suppression immediately when the WebView can send the state update; 15-second lease expiry is the fail-safe if Android suspends the WebView first.
+- Lease TTL is 15 seconds; heartbeat is every 5 seconds while foreground+interactive.
+- Explicit room Leave removes the device subscription; disconnect/background/swipe-away does not.
+- `android/app/google-services.json` is Android Firebase client configuration, not a service-account credential; keep it out of Git and materialize it only for push-capable builds.
 - Use TDD and focused commits.
 
 ---
@@ -31,23 +31,23 @@
 
 **Create**
 
-- `public/mobile-push.js` — native-only push registration, stable device ID, permission timing, FCM token registration/rotation, server registration, suppression-lease heartbeat, and push event forwarding hooks.
-- `android/app/src/main/java/com/chat/dizychat/DeviceStatePlugin.java` — native lifecycle + `PowerManager.isInteractive()` + screen-on/off listener.
-- `scripts/prepare-firebase-android-config.js` — optional build-time materialization of `google-services.json` from a local/CI base64 environment value.
+- `public/mobile-push.js` — native-only device ID, push permission/token registration, authenticated push API calls, device-state lease heartbeat, and room lifecycle hooks.
+- `android/app/src/main/java/com/chat/dizychat/DeviceStatePlugin.java` — `PowerManager.isInteractive()` plus activity/screen state events.
+- `scripts/prepare-firebase-android-config.js` — strict build-time materializer for Android `google-services.json`.
 - `tests/android-push-runtime.test.js`
 - `tests/android-device-state-contract.test.js`
+- `tests/android-push-room-hooks.test.js`
 - `tests/android-push-config.test.js`
 
 **Modify**
 
-- `public/mobile-bootstrap.js` — load/initialize `mobile-push.js` after secure-session restore and backend routing, before `chat.js`.
-- `public/mobile-runtime.js` — add only small native helper(s) needed for authenticated backend calls if they are genuinely shared; do not move push business logic into this general runtime.
-- `public/chat.js` — call narrow `window.dizychatMobilePush` hooks at successful room join, explicit room leave, logout, and read/view boundaries; browser behaviour remains no-op.
+- `public/mobile-bootstrap.js` — load/initialize `mobile-push.js` after secure-session restore/backend fetch routing and before `chat.js`.
+- `public/chat.js` — add narrow native hooks to existing accepted join, explicit Leave, and logout boundaries; browser path remains unchanged.
 - `android/app/src/main/java/com/chat/dizychat/MainActivity.java` — register `DeviceStatePlugin`.
-- `android/app/src/main/AndroidManifest.xml` — add `POST_NOTIFICATIONS` and screen-state receiver requirements only if the plugin implementation needs explicit manifest declarations.
-- `.gitignore` — ignore `android/app/google-services.json` if not already ignored.
-- `.github/workflows/android-slice1-ci.yml` — include `scripts/prepare-firebase-android-config.js` in path trigger and preserve a no-Firebase-config debug-build path.
-- `docs/android-private-apk.md` — add Android Firebase client-config setup and explain that service-account credentials remain server-only.
+- `android/app/src/main/AndroidManifest.xml` — add `POST_NOTIFICATIONS` only; screen broadcasts are registered dynamically by the plugin.
+- `.gitignore` — ignore `android/app/google-services.json`.
+- `.github/workflows/android-slice1-ci.yml` — run optional Firebase client-config preparation and include its script in path triggers.
+- `docs/android-private-apk.md` — document Firebase Android client-config setup and the separation from server service credentials.
 
 ---
 
@@ -58,54 +58,55 @@
 - Test: `tests/android-push-runtime.test.js`
 
 **Interfaces:**
-- `window.dizychatMobilePush.getDeviceId() -> string`
-- `window.dizychatMobilePush.authenticatedPost(path, body) -> Promise<Response>`
-- Device ID storage key: `dizychat-android-device-id-v1` in Capacitor WebView localStorage.
+- `getDeviceId() -> string`
+- `authenticatedPost(path, body) -> Promise<Response>`
+- Device ID key: `dizychat-android-device-id-v1` in native WebView localStorage.
 
 - [ ] **Step 1: Write RED tests**
 
 ```js
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { createMobilePushRuntime } = require('../public/mobile-push');
 
-const createWindow = () => {
+const makeNativeWindow = () => {
   const store = new Map();
   return {
     crypto: { randomUUID: () => '11111111-2222-4333-8444-555555555555' },
-    localStorage: { getItem: (k) => store.get(k) || null, setItem: (k, v) => store.set(k, String(v)) },
-    dizychatAuthV2: { readToken: () => 'dcm1.secret' },
+    localStorage: {
+      getItem: (key) => store.get(key) || null,
+      setItem: (key, value) => store.set(key, String(value)),
+    },
+    dizychatAuthV2: { readToken: () => 'dcm1.test-token' },
     Capacitor: { isNativePlatform: () => true, Plugins: {} },
-    fetch: async (url, init) => ({ url, init, ok: true, json: async () => ({}) }),
+    fetch: async (url, init) => ({ url, init, ok: true }),
   };
 };
 
 test('stable device id is generated once and reused', () => {
-  const win = createWindow();
-  const push = createMobilePushRuntime(win);
+  const push = createMobilePushRuntime(makeNativeWindow());
   assert.equal(push.getDeviceId(), '11111111-2222-4333-8444-555555555555');
   assert.equal(push.getDeviceId(), '11111111-2222-4333-8444-555555555555');
 });
 
-test('authenticatedPost uses current restored mobile session token', async () => {
-  const win = createWindow();
-  const push = createMobilePushRuntime(win);
+test('authenticatedPost uses the current restored mobile token', async () => {
+  const push = createMobilePushRuntime(makeNativeWindow());
   const response = await push.authenticatedPost('/api/mobile/push/register', { deviceId: push.getDeviceId() });
-  assert.equal(response.init.headers.Authorization, 'Bearer dcm1.secret');
+  assert.equal(response.init.headers.Authorization, 'Bearer dcm1.test-token');
 });
 ```
 
-Also test that the module returns inert/no-op behaviour when `Capacitor.isNativePlatform()` is false.
+Add a browser-mode test: `Capacitor.isNativePlatform() === false` returns empty device ID and `initialize()` is a no-op.
 
 - [ ] **Step 2: Run RED**
 
 ```bash
 node --test tests/android-push-runtime.test.js
 ```
-Expected: FAIL.
 
-- [ ] **Step 3: Implement module wrapper and stable ID**
+- [ ] **Step 3: Implement module wrapper and helpers**
 
-Use the same UMD/CommonJS-friendly shape as `mobile-runtime.js` so Node tests can import the factory:
+Use a CommonJS-testable wrapper:
 
 ```js
 (function initMobilePush(root, factory) {
@@ -114,7 +115,10 @@ Use the same UMD/CommonJS-friendly shape as `mobile-runtime.js` so Node tests ca
   if (root && typeof root === 'object') root.dizychatMobilePush = runtime;
 })(typeof window !== 'undefined' ? window : globalThis, (win = {}) => {
   const DEVICE_ID_KEY = 'dizychat-android-device-id-v1';
-  const isNative = () => Boolean(win.Capacitor?.isNativePlatform?.());
+  const isNative = () => {
+    try { return Boolean(win.Capacitor?.isNativePlatform?.()); } catch (_err) { return false; }
+  };
+
   const getDeviceId = () => {
     if (!isNative()) return '';
     let id = String(win.localStorage?.getItem?.(DEVICE_ID_KEY) || '').trim();
@@ -124,25 +128,27 @@ Use the same UMD/CommonJS-friendly shape as `mobile-runtime.js` so Node tests ca
     win.localStorage.setItem(DEVICE_ID_KEY, id);
     return id;
   };
+
   const authenticatedPost = (path, body) => {
     const token = String(win.dizychatAuthV2?.readToken?.() || '').trim();
     if (!token) throw new Error('Mobile session is unavailable');
-    return win.fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+    return win.fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
   };
-  return { getDeviceId, authenticatedPost };
+
+  return { isNative, getDeviceId, authenticatedPost };
 });
 ```
 
-- [ ] **Step 4: Run GREEN**
+Do not add a backend URL here; existing native fetch routing already handles `/api/*`.
+
+- [ ] **Step 4: Run GREEN and commit**
 
 ```bash
 node --test tests/android-push-runtime.test.js
-```
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
 git add public/mobile-push.js tests/android-push-runtime.test.js
 git commit -m "feat: add Android push runtime identity"
 ```
@@ -158,45 +164,52 @@ git commit -m "feat: add Android push runtime identity"
 - Test: `tests/android-bootstrap-contract.test.js`
 
 **Interfaces:**
-- `initialize()` installs listeners but does **not** request permission immediately.
-- `onFirstRoomJoined(room)` requests permission if not previously resolved, then calls `PushNotifications.register()` when granted.
-- `registration` event posts `{ deviceId, fcmToken, deviceLabel }` to `/api/mobile/push/register`.
-- Permission decision storage key: `dizychat-android-notification-permission-asked-v1`.
+- `initialize()` installs listeners; it does not request permission.
+- `onRoomJoined(room)` requests permission on the first successful join and registers with FCM when granted.
+- `registration` posts `{ deviceId, fcmToken, deviceLabel }` to `/api/mobile/push/register`.
 
 - [ ] **Step 1: Add RED permission-timing tests**
 
 ```js
-test('initialize does not prompt for notification permission', async () => {
+test('initialize installs listeners without prompting', async () => {
   let requests = 0;
-  const PushNotifications = { addListener: async () => ({}), checkPermissions: async () => ({ receive: 'prompt' }), requestPermissions: async () => { requests += 1; return { receive: 'granted' }; }, register: async () => {} };
+  const PushNotifications = {
+    addListener: async () => ({ remove: async () => {} }),
+    checkPermissions: async () => ({ receive: 'prompt' }),
+    requestPermissions: async () => { requests += 1; return { receive: 'granted' }; },
+    register: async () => {},
+  };
   const push = createMobilePushRuntime(makeNativeWindow({ PushNotifications }));
   await push.initialize();
   assert.equal(requests, 0);
 });
 
-test('first successful room join requests permission then registers', async () => {
-  let requests = 0, registers = 0;
-  const PushNotifications = { addListener: async () => ({}), checkPermissions: async () => ({ receive: 'prompt' }), requestPermissions: async () => { requests += 1; return { receive: 'granted' }; }, register: async () => { registers += 1; } };
+test('successful first room join prompts then registers', async () => {
+  let requests = 0;
+  let registrations = 0;
+  const PushNotifications = {
+    addListener: async () => ({ remove: async () => {} }),
+    checkPermissions: async () => ({ receive: 'prompt' }),
+    requestPermissions: async () => { requests += 1; return { receive: 'granted' }; },
+    register: async () => { registrations += 1; },
+  };
   const push = createMobilePushRuntime(makeNativeWindow({ PushNotifications }));
   await push.initialize();
-  await push.onFirstRoomJoined('ShittyChat');
+  await push.onRoomJoined('ShittyChat');
   assert.equal(requests, 1);
-  assert.equal(registers, 1);
+  assert.equal(registrations, 1);
 });
 ```
 
-Add a denial test asserting no `register()` call and no thrown fatal error.
+Add denied-permission test: no `register()` call, no thrown fatal error, ordinary room join result unchanged.
 
 - [ ] **Step 2: Run RED**
 
 ```bash
 node --test tests/android-push-runtime.test.js tests/android-bootstrap-contract.test.js
 ```
-Expected: FAIL.
 
-- [ ] **Step 3: Implement listeners and permission flow**
-
-Listener setup:
+- [ ] **Step 3: Implement listener/permission flow**
 
 ```js
 await PushNotifications.addListener('registration', ({ value } = {}) => {
@@ -208,11 +221,7 @@ await PushNotifications.addListener('registration', ({ value } = {}) => {
     deviceLabel: 'Android',
   }).catch((error) => win.console?.warn?.('[DizyChat] push registration failed', error));
 });
-```
 
-Permission flow:
-
-```js
 const ensurePermissionAfterJoin = async () => {
   const current = await PushNotifications.checkPermissions();
   let state = current?.receive;
@@ -225,11 +234,11 @@ const ensurePermissionAfterJoin = async () => {
 };
 ```
 
-Do not call it from `initialize()`.
+Track whether this installation has already attempted the permission prompt so repeated room joins do not hammer the user. If Android reports `denied`, do not ask again automatically.
 
-- [ ] **Step 4: Load push runtime before chat.js in bootstrap**
+- [ ] **Step 4: Load native push runtime before `chat.js`**
 
-After backend routing/native media permissions and before socket/chat load:
+In `public/mobile-bootstrap.js`, after secure-session restore and backend routing:
 
 ```js
 if (runtime.isNativeRuntime(window)) {
@@ -238,20 +247,14 @@ if (runtime.isNativeRuntime(window)) {
 }
 ```
 
-Update bootstrap tests to assert `mobile-push.js` appears before `/chat.js` only in native mode.
+Then continue current Socket.IO and `/chat.js` load order.
 
-- [ ] **Step 5: Run GREEN**
+- [ ] **Step 5: Run GREEN and commit**
 
 ```bash
 node --test tests/android-push-runtime.test.js tests/android-bootstrap-contract.test.js
-```
-Expected: PASS.
-
-- [ ] **Step 6: Commit**
-
-```bash
 git add public/mobile-push.js public/mobile-bootstrap.js tests/android-push-runtime.test.js tests/android-bootstrap-contract.test.js
-git commit -m "feat: register Android push after first room join"
+git commit -m "feat: register Android push after room join"
 ```
 
 ---
@@ -264,16 +267,20 @@ git commit -m "feat: register Android push after first room join"
 - Test: `tests/android-device-state-contract.test.js`
 
 **Interfaces:**
-- Capacitor plugin name: `DeviceState`.
-- Method: `getState()` returns `{ foreground: boolean, interactive: boolean }`.
-- Listener: `stateChange` with same payload, emitted on activity resume/pause and `ACTION_SCREEN_ON`/`ACTION_SCREEN_OFF`/`ACTION_USER_PRESENT` changes.
+- Plugin name `DeviceState`.
+- `getState()` returns `{ foreground, interactive }`.
+- retained listener `stateChange` emits on activity resume/pause and screen on/off/user-present.
 
-- [ ] **Step 1: Write RED native-contract test**
+Capacitor `Plugin` exposes protected lifecycle hooks `handleOnResume()`, `handleOnPause()`, and `handleOnDestroy()`; use those hooks and call `super` before/after local handling consistently.
+
+- [ ] **Step 1: Write RED source-contract tests**
 
 ```js
-test('DeviceState plugin reports PowerManager interactivity and screen broadcasts', () => {
+test('DeviceState plugin uses Capacitor lifecycle and PowerManager interactivity', () => {
   const source = fs.readFileSync('android/app/src/main/java/com/chat/dizychat/DeviceStatePlugin.java', 'utf8');
   assert.match(source, /@CapacitorPlugin\(name = "DeviceState"\)/);
+  assert.match(source, /handleOnResume\(\)/);
+  assert.match(source, /handleOnPause\(\)/);
   assert.match(source, /PowerManager\.isInteractive\(\)/);
   assert.match(source, /Intent\.ACTION_SCREEN_OFF/);
   assert.match(source, /Intent\.ACTION_SCREEN_ON/);
@@ -291,52 +298,54 @@ test('MainActivity registers DeviceStatePlugin', () => {
 ```bash
 node --test tests/android-device-state-contract.test.js
 ```
-Expected: FAIL because file does not exist.
 
-- [ ] **Step 3: Implement the plugin**
-
-Core state method:
+- [ ] **Step 3: Implement plugin**
 
 ```java
-private JSObject currentState() {
-    PowerManager power = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
-    JSObject result = new JSObject();
-    result.put("foreground", foreground);
-    result.put("interactive", power != null && power.isInteractive());
-    return result;
+@CapacitorPlugin(name = "DeviceState")
+public class DeviceStatePlugin extends Plugin {
+    private boolean foreground = false;
+    private BroadcastReceiver screenReceiver;
+
+    private JSObject currentState() {
+        PowerManager power = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+        JSObject result = new JSObject();
+        result.put("foreground", foreground);
+        result.put("interactive", power != null && power.isInteractive());
+        return result;
+    }
+
+    @PluginMethod
+    public void getState(PluginCall call) {
+        call.resolve(currentState());
+    }
+
+    private void emitState() {
+        notifyListeners("stateChange", currentState(), true);
+    }
 }
-
-@PluginMethod
-public void getState(PluginCall call) {
-    call.resolve(currentState());
-}
 ```
 
-Register a `BroadcastReceiver` in `load()` for screen on/off/user present and unregister it in `handleOnDestroy()`. Update `foreground` in `handleOnResume()` / `handleOnPause()` and call:
+In `load()`, register one dynamic receiver for `ACTION_SCREEN_ON`, `ACTION_SCREEN_OFF`, `ACTION_USER_PRESENT`; its `onReceive` calls `emitState()`. Override:
 
 ```java
-notifyListeners("stateChange", currentState(), true);
+@Override protected void handleOnResume() { super.handleOnResume(); foreground = true; emitState(); }
+@Override protected void handleOnPause() { foreground = false; emitState(); super.handleOnPause(); }
+@Override protected void handleOnDestroy() { if (screenReceiver != null) getContext().unregisterReceiver(screenReceiver); screenReceiver = null; super.handleOnDestroy(); }
 ```
 
-Use `true` for retained delivery so a brief screen-state transition is not silently lost while the WebView is suspended.
+Guard receiver unregistration against already-unregistered runtime exceptions.
 
-- [ ] **Step 4: Register plugin in `MainActivity`**
+- [ ] **Step 4: Register plugin and compile**
 
-```java
-registerPlugin(DeviceStatePlugin.class);
-```
-
-Keep existing SecureSession/MobileShell/NativePermissions registration unchanged.
-
-- [ ] **Step 5: Run tests and Java compile**
+Add `registerPlugin(DeviceStatePlugin.class);` to `MainActivity.onCreate()` with existing plugins unchanged.
 
 ```bash
 node --test tests/android-device-state-contract.test.js
 cd android && ./gradlew compileDebugJavaWithJavac --no-daemon
 ```
-Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add android/app/src/main/java/com/chat/dizychat/DeviceStatePlugin.java android/app/src/main/java/com/chat/dizychat/MainActivity.java tests/android-device-state-contract.test.js
@@ -352,131 +361,120 @@ git commit -m "feat: expose Android screen and foreground state"
 - Test: `tests/android-push-runtime.test.js`
 
 **Interfaces:**
-- Lease TTL: 15,000 ms.
-- Heartbeat interval: 5,000 ms.
-- `syncDeviceState(state)` posts `interactive: true` only when `foreground && interactive`; every other state posts `interactive: false`.
-- `startPresenceTracking()` attaches `DeviceState.stateChange`, performs an initial `getState()`, and manages heartbeat.
+- `LEASE_TTL_MS = 15000`
+- `HEARTBEAT_MS = 5000`
+- Foreground+interactive => renew lease.
+- Foreground+screen-off, background, or any non-interactive state => clear lease.
 
-- [ ] **Step 1: Write RED state-machine tests with fake timers**
+- [ ] **Step 1: Write RED state-machine tests**
+
+Use injected fake timers/interval functions and capture authenticated POST bodies. Prove:
 
 ```js
-test('foreground plus interactive renews lease', async () => {
-  const posts = [];
-  const push = createMobilePushRuntime(makeNativeWindow({ deviceState: { getState: async () => ({ foreground: true, interactive: true }), addListener: async () => ({}) }, posts }));
-  await push.startPresenceTracking();
-  assert.deepEqual(posts[0].body, { deviceId: push.getDeviceId(), interactive: true, ttlMs: 15000 });
-});
+await push.syncDeviceState({ foreground: true, interactive: true });
+assert.deepEqual(posts.at(-1), { deviceId: push.getDeviceId(), interactive: true, ttlMs: 15000 });
 
-test('screen off clears lease even while activity was foreground', async () => {
-  await push.syncDeviceState({ foreground: true, interactive: false });
-  assert.equal(posts.at(-1).body.interactive, false);
-});
+await push.syncDeviceState({ foreground: true, interactive: false });
+assert.deepEqual(posts.at(-1), { deviceId: push.getDeviceId(), interactive: false, ttlMs: 15000 });
 ```
 
-Add tests for background+interactive => clear, duplicate clear coalescing, and heartbeat only while both true.
+Also prove background+interactive clears, heartbeat exists only while both values are true, and a transition back to interactive restarts one heartbeat rather than stacking intervals.
 
 - [ ] **Step 2: Run RED**
 
 ```bash
 node --test tests/android-push-runtime.test.js
 ```
-Expected: FAIL.
 
-- [ ] **Step 3: Implement state synchronization and heartbeat**
+- [ ] **Step 3: Implement state/heartbeat**
 
 ```js
 const LEASE_TTL_MS = 15_000;
 const HEARTBEAT_MS = 5_000;
-let heartbeat = null;
-let lastSuppressed = null;
+let heartbeatId = null;
 
-const postPresence = (suppressed) => authenticatedPost('/api/mobile/push/presence', {
+const postPresence = (interactive) => authenticatedPost('/api/mobile/push/presence', {
   deviceId: getDeviceId(),
-  interactive: suppressed,
+  interactive,
   ttlMs: LEASE_TTL_MS,
 });
 
+const stopHeartbeat = () => {
+  if (heartbeatId !== null) win.clearInterval(heartbeatId);
+  heartbeatId = null;
+};
+
 const syncDeviceState = async ({ foreground = false, interactive = false } = {}) => {
-  const suppressed = Boolean(foreground && interactive);
-  if (!suppressed) {
-    if (heartbeat) win.clearInterval(heartbeat);
-    heartbeat = null;
-    lastSuppressed = false;
+  const suppress = Boolean(foreground && interactive);
+  if (!suppress) {
+    stopHeartbeat();
     await postPresence(false);
     return;
   }
   await postPresence(true);
-  lastSuppressed = true;
-  if (!heartbeat) heartbeat = win.setInterval(() => { void postPresence(true); }, HEARTBEAT_MS);
+  if (heartbeatId === null) heartbeatId = win.setInterval(() => { void postPresence(true); }, HEARTBEAT_MS);
 };
 ```
 
-If an immediate screen-off clear cannot leave the suspended WebView, the 15-second server lease expiry is the fail-safe. Do not increase the TTL to hide flaky state updates.
+`startPresenceTracking()` calls `DeviceState.getState()`, applies it, and subscribes to `stateChange`.
 
-- [ ] **Step 4: Run GREEN**
+- [ ] **Step 4: Run GREEN and commit**
 
 ```bash
 node --test tests/android-push-runtime.test.js
-```
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
 git add public/mobile-push.js tests/android-push-runtime.test.js
 git commit -m "feat: sync Android push suppression lease"
 ```
 
 ---
 
-### Task 5: Bind Push Device Context to Successful Join, Leave, and Logout
+### Task 5: Bind Device Context to Existing Join, Leave, and Logout Boundaries
 
 **Files:**
 - Modify: `public/chat.js`
 - Modify: `public/mobile-push.js`
-- Test: `tests/android-push-runtime.test.js`
-- Test: extend `tests/account-navigation-ui-test.cjs` only if it already covers join/leave hooks; otherwise create `tests/android-push-room-hooks.test.js`.
+- Test: `tests/android-push-room-hooks.test.js`
+- Test: existing `tests/account-navigation-ui-test.cjs`
 
 **Interfaces:**
-- `getSocketContext() -> { deviceId }` for native only.
-- Successful native join includes `deviceId` in the existing join payload or sends one authenticated `mobile push context` event immediately before the existing join event.
-- `onRoomJoined(room)` triggers first-join permission flow but does not independently authorize subscription; server PR A subscribes only after accepted join.
-- `onRoomLeft(room)` notifies the existing server leave path with device context.
-- `onLogout()` clears lease locally and calls `/api/mobile/push/presence` with `interactive:false`; server revocation remains authoritative.
+- Native join payload adds `deviceId`; browser join payload remains unchanged.
+- `onRoomJoined(room)` is called only after existing `join room success`.
+- Explicit native Leave sends `{ room, deviceId }`; browser Leave keeps its legacy shape if required by current tests.
+- Logout calls `mobile-push.onLogout()` only for local lease cleanup; PR A server logout/revocation remains authority.
 
-- [ ] **Step 1: Write RED hook tests**
+- [ ] **Step 1: Write RED room-hook tests**
+
+Create a test seam/helper around join/leave payload construction and prove:
 
 ```js
-test('native join payload includes stable device id', () => {
-  const payload = buildJoinPayloadForTest({ nativeDeviceId: 'dev-1', room: 'ShittyChat' });
-  assert.equal(payload.deviceId, 'dev-1');
+assert.deepEqual(buildJoinPayload({ room: 'ShittyChat', username: 'Rob', password: 'x', deviceId: 'dev1' }), {
+  room: 'ShittyChat', username: 'Rob', password: 'x', deviceId: 'dev1',
 });
-
-test('browser join payload remains unchanged', () => {
-  const payload = buildJoinPayloadForTest({ nativeDeviceId: '', room: 'ShittyChat' });
-  assert.equal(Object.hasOwn(payload, 'deviceId'), false);
-});
+assert.equal(Object.hasOwn(buildJoinPayload({ room: 'ShittyChat', username: 'Rob', password: 'x', deviceId: '' }), 'deviceId'), false);
 ```
 
-Add a test that explicit Leave includes/removes the native device context but socket disconnect does not call `onRoomLeft()`.
+Simulate `join room success` and assert `onRoomJoined()` fires once. Simulate socket disconnect and assert `onRoomLeft()` does not fire. Simulate explicit Leave and assert native device ID is included.
 
 - [ ] **Step 2: Run RED**
 
 ```bash
-node --test tests/android-push-room-hooks.test.js tests/android-push-runtime.test.js
+node --test tests/android-push-room-hooks.test.js
+node tests/account-navigation-ui-test.cjs
 ```
-Expected: FAIL.
 
-- [ ] **Step 3: Add narrow hooks at existing successful boundaries**
+The `.cjs` UI script is not auto-discovered by `npm test`; run it explicitly as shown.
 
-At the existing join submission payload construction:
+- [ ] **Step 3: Add narrow hooks in current `chat.js`**
+
+At the existing join payload construction:
 
 ```js
 const deviceId = window.dizychatMobilePush?.getDeviceId?.() || '';
 if (deviceId) payload.deviceId = deviceId;
+socket.emit('join room', payload);
 ```
 
-Only after the existing server join success is received:
+At the existing `join room success` listener:
 
 ```js
 void window.dizychatMobilePush?.onRoomJoined?.(window.currentRoom);
@@ -486,50 +484,47 @@ At explicit Leave:
 
 ```js
 const deviceId = window.dizychatMobilePush?.getDeviceId?.() || '';
-socket.emit('leave room', { room: window.currentRoom, deviceId });
+if (deviceId) socket.emit('leave room', { room: window.currentRoom, deviceId });
+else socket.emit('leave room', { room: window.currentRoom });
 ```
 
-Preserve the existing browser event shape if the current server uses a scalar room name: branch only for native and teach the server handler to accept both legacy scalar and new object form, rather than breaking browser clients.
+Do not call Leave hooks from disconnect/reconnect handling.
 
-- [ ] **Step 4: Wire logout cleanup without changing auth semantics**
-
-Before/alongside existing durable-token clear:
+At existing account logout initiation/completion:
 
 ```js
 void window.dizychatMobilePush?.onLogout?.();
 ```
 
-`onLogout()` must not be the authority that revokes the session; the existing logout path remains responsible for that.
+`onLogout()` stops heartbeat and best-effort posts `interactive:false`; it never revokes the auth token itself.
 
-- [ ] **Step 5: Run GREEN and browser regressions**
+- [ ] **Step 4: Run GREEN and full browser regressions**
 
 ```bash
-node --test tests/android-push-room-hooks.test.js tests/account-navigation-ui-test.cjs tests/android-push-runtime.test.js
+node --test tests/android-push-room-hooks.test.js tests/android-push-runtime.test.js
+node tests/account-navigation-ui-test.cjs
 npm test
 ```
-Expected: PASS and normal browser join/leave/auth behaviour unchanged.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add public/chat.js public/mobile-push.js tests/android-push-room-hooks.test.js tests/android-push-runtime.test.js
-git commit -m "feat: bind push subscriptions to Android room lifecycle"
+git commit -m "feat: bind Android push to room lifecycle"
 ```
 
 ---
 
-### Task 6: Add Android Notification Permission Manifest Contract
+### Task 6: Declare Android Notification Permission
 
 **Files:**
 - Modify: `android/app/src/main/AndroidManifest.xml`
 - Test: `tests/android-device-state-contract.test.js`
 
-**Interfaces:** Android 13+ notification permission is `android.permission.POST_NOTIFICATIONS`; runtime request remains through Capacitor PushNotifications.
-
 - [ ] **Step 1: Add RED manifest assertion**
 
 ```js
-test('Android manifest declares POST_NOTIFICATIONS', () => {
+test('manifest declares POST_NOTIFICATIONS', () => {
   const manifest = fs.readFileSync('android/app/src/main/AndroidManifest.xml', 'utf8');
   assert.match(manifest, /android\.permission\.POST_NOTIFICATIONS/);
 });
@@ -540,23 +535,21 @@ test('Android manifest declares POST_NOTIFICATIONS', () => {
 ```bash
 node --test tests/android-device-state-contract.test.js
 ```
-Expected: FAIL.
 
-- [ ] **Step 3: Add permission**
+- [ ] **Step 3: Add exactly one permission**
 
 ```xml
 <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 ```
 
-Do not add unrelated storage, background-location, microphone, or camera permissions.
+Do not add storage/location/background permissions.
 
-- [ ] **Step 4: Run GREEN and manifest merge check**
+- [ ] **Step 4: Run GREEN and manifest merge**
 
 ```bash
 node --test tests/android-device-state-contract.test.js
 cd android && ./gradlew processDebugMainManifest --no-daemon
 ```
-Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -573,48 +566,40 @@ git commit -m "feat: declare Android notification permission"
 - Create: `scripts/prepare-firebase-android-config.js`
 - Create: `tests/android-push-config.test.js`
 - Modify: `.gitignore`
-- Modify: `docs/android-private-apk.md`
 - Modify: `.github/workflows/android-slice1-ci.yml`
+- Modify: `docs/android-private-apk.md`
 
-**Interfaces:**
-- Environment input: `DIZYCHAT_FIREBASE_ANDROID_CONFIG_B64` containing base64 of the Android client `google-services.json`.
-- Output: `android/app/google-services.json` with mode `0600` where supported.
-- Without the env value, script removes no existing local file and exits success with a clear “push config not materialized” message.
-- Firebase service-account JSON is **not** accepted by this script.
+**Interface:** `DIZYCHAT_FIREBASE_ANDROID_CONFIG_B64` -> untracked `android/app/google-services.json`.
 
-- [ ] **Step 1: Write RED script tests**
+- [ ] **Step 1: Write RED tests**
 
-```js
-test('materializes valid Android google-services JSON from base64', async () => {
-  const config = { project_info: { project_id: 'dizychat-test' }, client: [{ client_info: { android_client_info: { package_name: 'com.chat.dizychat' } } }] };
-  const result = runPrepare({ DIZYCHAT_FIREBASE_ANDROID_CONFIG_B64: Buffer.from(JSON.stringify(config)).toString('base64') });
-  assert.equal(result.status, 0);
-  assert.equal(JSON.parse(fs.readFileSync(output, 'utf8')).client[0].client_info.android_client_info.package_name, 'com.chat.dizychat');
-});
-
-test('rejects config for another package name', () => {
-  // package_name=com.other.app => non-zero and no output file
-});
-```
+Test a valid config containing a client whose `package_name` is `com.chat.dizychat`; assert output JSON matches. Test wrong package name, malformed base64/JSON, and a service-account-shaped object containing `private_key`; all must fail without writing output.
 
 - [ ] **Step 2: Run RED**
 
 ```bash
 node --test tests/android-push-config.test.js
 ```
-Expected: FAIL.
 
-- [ ] **Step 3: Implement strict config materialization**
-
-Parse decoded JSON and require at least one client with:
+- [ ] **Step 3: Implement strict materializer**
 
 ```js
-client?.client_info?.android_client_info?.package_name === 'com.chat.dizychat'
+const encoded = String(process.env.DIZYCHAT_FIREBASE_ANDROID_CONFIG_B64 || '').trim();
+if (!encoded) {
+  console.log('[Android Push] Firebase Android client config not materialized.');
+  process.exit(0);
+}
+const decoded = Buffer.from(encoded, 'base64').toString('utf8');
+const config = JSON.parse(decoded);
+if (Object.hasOwn(config, 'private_key')) throw new Error('Service-account credentials are not Android client config');
+const matchesPackage = Array.isArray(config.client) && config.client.some((client) =>
+  client?.client_info?.android_client_info?.package_name === 'com.chat.dizychat'
+);
+if (!matchesPackage) throw new Error('Firebase Android config does not target com.chat.dizychat');
+fs.writeFileSync(outputPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
 ```
 
-Write exactly to `android/app/google-services.json`. Reject malformed base64/JSON and service-account-shaped objects containing `private_key`.
-
-- [ ] **Step 4: Ignore generated client config**
+- [ ] **Step 4: Ignore generated config**
 
 Add:
 
@@ -622,9 +607,9 @@ Add:
 android/app/google-services.json
 ```
 
-- [ ] **Step 5: Keep ordinary PR CI buildable without Firebase config**
+- [ ] **Step 5: Wire optional CI materialization**
 
-Add a step before `npx cap sync android`:
+Before Capacitor sync:
 
 ```yaml
 - name: Prepare optional Firebase Android client config
@@ -633,38 +618,37 @@ Add a step before `npx cap sync android`:
   run: node scripts/prepare-firebase-android-config.js
 ```
 
-If the secret is absent, the existing Gradle optional-google-services behaviour still allows deterministic debug build. For real-device push acceptance, the secret or equivalent trusted local config **must** be present; record this distinction in docs.
+Add `scripts/prepare-firebase-android-config.js` to workflow path triggers. Absence of the secret must still allow the existing debug build; real push acceptance requires a trusted config.
 
-- [ ] **Step 6: Run GREEN**
+- [ ] **Step 6: Document client/server Firebase separation**
+
+`docs/android-private-apk.md` must state:
+- `google-services.json` is Android client project metadata and stays untracked;
+- Firebase service-account private key remains server-only and is never accepted by the Android config script;
+- push-capable acceptance APK requires a valid config for package `com.chat.dizychat`.
+
+- [ ] **Step 7: Run GREEN and commit**
 
 ```bash
 node --test tests/android-push-config.test.js
 npm test
-```
-Expected: PASS.
-
-- [ ] **Step 7: Commit**
-
-```bash
 git add scripts/prepare-firebase-android-config.js tests/android-push-config.test.js .gitignore .github/workflows/android-slice1-ci.yml docs/android-private-apk.md
 git commit -m "build: add Android Firebase client config boundary"
 ```
 
 ---
 
-### Task 8: Exact-Head PR B Gate and Device-State Proof
+### Task 8: Exact-Head PR B Gate and Real Device-State Proof
 
-**Files:** no feature edits unless a failing gate proves a defect.
-
-- [ ] **Step 1: Run deterministic suite**
+- [ ] **Step 1: Full deterministic gate**
 
 ```bash
 npm ci
 npm test
+node tests/account-navigation-ui-test.cjs
 ```
-Expected: PASS.
 
-- [ ] **Step 2: Build without Firebase client config to preserve generic CI**
+- [ ] **Step 2: Generic debug build without Firebase client config**
 
 ```bash
 rm -f android/app/google-services.json
@@ -672,39 +656,36 @@ npm run android:prepare
 npx cap sync android
 cd android && ./gradlew assembleDebug --no-daemon
 ```
-Expected: PASS, with push registration unavailable at runtime but ordinary app working.
 
-- [ ] **Step 3: Build a push-capable acceptance APK with trusted client config**
+Expected: build passes; push registration is unavailable at runtime without client config.
 
-On the trusted operator machine (or CI with configured secret):
+- [ ] **Step 3: Push-capable acceptance build**
+
+On trusted operator machine/CI, materialize the real Android Firebase config then rebuild:
 
 ```bash
-export DIZYCHAT_FIREBASE_ANDROID_CONFIG_B64="$(base64 -w0 /secure/path/google-services.json)"
 node scripts/prepare-firebase-android-config.js
 npx cap sync android
 cd android && ./gradlew assembleDebug --no-daemon
 ```
 
-On Windows PowerShell, use `[Convert]::ToBase64String([IO.File]::ReadAllBytes('C:\secure\google-services.json'))` instead of `base64 -w0`.
+- [ ] **Step 4: Real-device state acceptance**
 
-- [ ] **Step 4: Real-device state acceptance before PR B merge**
+Prove in order:
 
-With server push transport still disabled if PR C notification rendering is not ready, use server logs/test endpoint to verify state registration:
+1. Launch/login does not prompt for notifications.
+2. First successful room join prompts.
+3. Grant => exactly one current FCM device registration for this `deviceId`.
+4. Foreground + screen on => 15s suppression lease stays fresh via 5s heartbeat.
+5. Lock/screen off while still in the room => native state becomes `interactive:false`; server lease clears immediately when request is delivered, otherwise it expires no later than 15s after the last heartbeat.
+6. After lease clear/expiry, the device is push eligible while screen remains off.
+7. Unlock/foreground => heartbeat resumes.
+8. Background app => lease clears.
+9. Reopen/app process restart => same stable `deviceId` is reused.
+10. Explicit Leave => only that device's room subscription is removed.
+11. Browser login/activity does not alter Android subscription or lease.
 
-```text
-1. Sign into Android account.
-2. Join first room: permission prompt appears here, not at launch/login.
-3. Grant permission: FCM registration creates/updates exactly one device record.
-4. Keep app foreground + screen on: suppression lease remains fresh.
-5. Lock screen while still in room: state changes to non-interactive and lease clears, or expires within 15 seconds if WebView delivery races suspension.
-6. Unlock/return: lease resumes.
-7. Background app: lease clears.
-8. Reopen: same stable deviceId is reused.
-9. Leave room: only this device's room subscription disappears.
-10. Browser login/activity does not alter the Android device lease/subscription.
-```
-
-- [ ] **Step 5: Confirm exact head and clean diff**
+- [ ] **Step 5: Exact-head evidence**
 
 ```bash
 git rev-parse HEAD
@@ -712,11 +693,7 @@ git status --short
 git diff --stat origin/main...HEAD
 ```
 
-Expected: clean tree; no `google-services.json` tracked.
-
-- [ ] **Step 6: Push/open draft PR with exact SHA and wait for CI**
-
-Use connected GitHub operations. If any commit changes the head after CI starts, require the new exact head to pass again.
+Verify `android/app/google-services.json` is untracked/ignored. Push/open draft PR via connected GitHub and require CI on this exact SHA; any later commit requires the gate again.
 
 ---
 
@@ -724,15 +701,14 @@ Use connected GitHub operations. If any commit changes the head after CI starts,
 
 PR B is complete only when exact-head CI plus real-device proof establishes:
 
-- permission is prompted after first successful room join;
+- permission prompt occurs after first successful room join, not launch/login;
 - denied permission does not break chat;
 - granted permission registers/rotates FCM token against the current mobile session;
 - stable device ID survives process restart/app update;
-- native screen state uses `PowerManager.isInteractive()` and lifecycle state;
+- native state uses Capacitor lifecycle hooks plus `PowerManager.isInteractive()`;
 - foreground+interactive lease refreshes every 5 seconds with 15-second fail-safe expiry;
-- screen off, background, or stale state clears/loses suppression;
-- room join/Leave changes only that Android device subscription;
-- disconnect/background does not unsubscribe;
+- screen off/background removes suppression immediately when possible and always by lease expiry;
+- join/Leave changes only that Android device subscription; disconnect/background does not unsubscribe;
 - browser behaviour is unchanged;
-- Firebase client config is build-time material, not committed service credentials;
+- Firebase Android client config is untracked build material, not server authority;
 - full deterministic tests and Android debug build pass on exact final head.
