@@ -26,6 +26,7 @@ const nativeWindow = (requestPermissions, getUserMedia) => ({
 test('Android package declares camera and microphone permissions through the native permission plugin', () => {
   const manifest = read('android/app/src/main/AndroidManifest.xml');
   assert.match(manifest, /android\.permission\.RECORD_AUDIO/);
+  assert.match(manifest, /android\.permission\.MODIFY_AUDIO_SETTINGS/);
   assert.match(manifest, /android\.permission\.CAMERA/);
 
   const pluginPath = 'android/app/src/main/java/com/chat/dizychat/NativePermissionsPlugin.java';
