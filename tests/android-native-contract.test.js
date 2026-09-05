@@ -17,8 +17,10 @@ test('SecureSession plugin encrypts tokens with AndroidKeyStore AES-GCM', () => 
   assert.match(source, /KeyProperties\.BLOCK_MODE_GCM/);
   assert.match(source, /KeyProperties\.ENCRYPTION_PADDING_NONE/);
   assert.match(source, /AES\/GCM\/NoPadding/);
-  assert.match(source, /SecureRandom/);
-  assert.match(source, /new byte\[12\]/);
+  assert.match(source, /cipher\.init\(Cipher\.ENCRYPT_MODE,\s*getOrCreateKey\(\)\);/);
+  assert.match(source, /byte\[\]\s+iv\s*=\s*cipher\.getIV\(\);/);
+  assert.doesNotMatch(source, /SecureRandom/, 'AndroidKeyStore must generate the AES-GCM encryption IV');
+  assert.doesNotMatch(source, /new byte\[12\]/, 'caller-generated GCM IVs are rejected unless CALLER_NONCE is enabled');
   assert.match(source, /MODE_PRIVATE/);
   assert.match(source, /Base64/);
   assert.match(source, /ciphertext/);
