@@ -14,7 +14,6 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
-import java.security.SecureRandom;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
@@ -87,10 +86,9 @@ public class SecureSessionPlugin extends Plugin {
         }
 
         try {
-            byte[] iv = new byte[12];
-            new SecureRandom().nextBytes(iv);
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
-            cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey(), new GCMParameterSpec(128, iv));
+            cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey());
+            byte[] iv = cipher.getIV();
             byte[] ciphertext = cipher.doFinal(token.trim().getBytes(StandardCharsets.UTF_8));
 
             boolean stored = preferences().edit()
