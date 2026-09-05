@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(SecureSessionPlugin.class);
         registerPlugin(MobileShellPlugin.class);
+        registerPlugin(NativePermissionsPlugin.class);
         super.onCreate(savedInstanceState);
     }
 

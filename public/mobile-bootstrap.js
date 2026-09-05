@@ -34,6 +34,7 @@
 
     const backend = runtime.resolveBackendOrigin(window, window.dizychatConfig);
     runtime.installBackendFetchRouting(window, backend);
+    runtime.installNativeMediaPermissions(window);
 
     if (backend) window.dizychatConfig.socketUrl = backend;
 

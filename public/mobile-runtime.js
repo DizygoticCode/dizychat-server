@@ -13,6 +13,7 @@
 })(typeof window !== 'undefined' ? window : globalThis, () => {
   const FETCH_ROUTER_MARKER = Symbol.for('dizychat.mobile.fetch-router');
   const EXTERNAL_LINK_MARKER = Symbol.for('dizychat.mobile.external-links');
+  const MEDIA_PERMISSION_MARKER = Symbol.for('dizychat.mobile.media-permissions');
   const trimTrailingSlash = (value) => String(value || '').trim().replace(/\/+$/, '');
 
   const isNativeRuntime = (win = {}) => {
@@ -108,6 +109,58 @@
     return routedFetch;
   };
 
+  const requestedMediaPermissions = (constraints = {}) => {
+    if (!constraints || typeof constraints !== 'object') return [];
+    const permissions = [];
+    if (constraints.audio) permissions.push('microphone');
+    if (constraints.video) permissions.push('camera');
+    return permissions;
+  };
+
+  const mediaPermissionError = (permissions, message = '') => {
+    const labels = permissions.length ? permissions.join(' and ') : 'media';
+    const error = new Error(message || `Android ${labels} permission was denied.`);
+    error.name = 'NotAllowedError';
+    return error;
+  };
+
+  const installNativeMediaPermissions = (win = {}) => {
+    if (!isNativeRuntime(win)) return false;
+
+    const mediaDevices = win?.navigator?.mediaDevices;
+    if (!mediaDevices || typeof mediaDevices.getUserMedia !== 'function') return false;
+    if (mediaDevices.getUserMedia[MEDIA_PERMISSION_MARKER]) return true;
+
+    const originalGetUserMedia = mediaDevices.getUserMedia.bind(mediaDevices);
+    const routedGetUserMedia = async (constraints) => {
+      const permissions = requestedMediaPermissions(constraints);
+      if (permissions.length) {
+        const plugin = win?.Capacitor?.Plugins?.NativePermissions;
+        if (!plugin || typeof plugin.requestPermissions !== 'function') {
+          throw mediaPermissionError(permissions, 'Android media permission bridge is unavailable.');
+        }
+
+        let states;
+        try {
+          states = await plugin.requestPermissions({ permissions });
+        } catch (error) {
+          const denied = mediaPermissionError(permissions);
+          denied.cause = error;
+          throw denied;
+        }
+
+        const denied = permissions.filter((alias) => String(states?.[alias] || '').toLowerCase() !== 'granted');
+        if (denied.length) throw mediaPermissionError(denied);
+      }
+
+      return originalGetUserMedia(constraints);
+    };
+
+    Object.defineProperty(routedGetUserMedia, MEDIA_PERMISSION_MARKER, { value: true });
+    mediaDevices.getUserMedia = routedGetUserMedia;
+    return true;
+  };
+
   const shouldOpenExternally = (value, backendOrigin) => {
     if (typeof value !== 'string') return false;
     const target = value.trim();
@@ -178,6 +231,7 @@
     shouldRouteBackendRequest,
     resolveBackendUrl,
     installBackendFetchRouting,
+    installNativeMediaPermissions,
     shouldOpenExternally,
     installExternalLinkHandling,
     decideBackAction,
