@@ -49,7 +49,7 @@ test('mobile leave action is an icon control and six toolbar actions fit one row
 
   assert.match(
     loginSource,
-    /<button id="leave-btn"[^>]*>[\s\S]*<span class="icon"[^>]*>🚪<\/span>[\s\S]*<span class="label">Leave<\/span>[\s\S]*<\/button>/,
+    /<button id="leave-btn"[^>]*>[\s\S]*<span class="icon"[^>]*>🚪<\/span>[\s\S]*<span class="label">Leave room<\/span>[\s\S]*<\/button>/,
   );
   assert.match(
     mobileSource,

@@ -10,7 +10,6 @@
   <link rel="icon" href="/logo.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/chat.css" />
   <link rel="stylesheet" href="/mobile-toolbar.css" />
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 
 <body class="dark">
@@ -38,8 +37,9 @@
             <p>Use your protected DizyChat identity.</p>
             <input id="account-username" placeholder="Account username" autocomplete="username" />
             <input id="account-password" type="password" placeholder="Account password" autocomplete="current-password" />
-            <button id="registered-join-btn" type="button">Sign in & join</button>
+            <button id="registered-join-btn" type="button">Sign in to account</button>
             <p id="account-login-status" class="auth-entry-status" aria-live="polite"></p>
+            <button id="lobby-account-logout-btn" type="button" hidden>Sign out of registered account</button>
           </section>
 
           <section id="guest-login" class="auth-entry-card" aria-labelledby="guest-login-title">
@@ -127,9 +127,9 @@
           <span id="account-identity" class="account-identity" hidden></span>
           <button id="account-logout-btn" type="button" title="Sign out of registered account" hidden>Sign out</button>
         </div>
-        <button id="leave-btn" title="Exit Chat" aria-label="Leave chat">
+        <button id="leave-btn" title="Leave room" aria-label="Leave room">
           <span class="icon" aria-hidden="true">🚪</span>
-          <span class="label">Leave</span>
+          <span class="label">Leave room</span>
         </button>
       </div>
     </header>
@@ -266,10 +266,10 @@
   <!-- ===========================
        Scripts
        =========================== -->
-  <script src="/socket.io/socket.io.js"></script>
   <script src="/app-config.js"></script>
   <script src="/auth-v2-client.js"></script>
-  <script src="/chat.js"></script>
+  <script src="/mobile-runtime.js"></script>
+  <script src="/mobile-bootstrap.js"></script>
 
   <script>
     !function (r, u, m, b, l, e) {

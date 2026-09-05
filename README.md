@@ -53,6 +53,14 @@ DizyChat is a Socket.IO and Express-powered real-time chat backend designed for 
 - **Searchable meme soundboard** – a composer button opens a searchable clip library powered by `/soundboard-clips`, driven by JSON catalogs under `data/soundboards` (kept fresh via `scripts/download-101-soundboard.js`).
 - **Sound notification toggle** – chat toolbar switch enables lightweight audio alerts for new messages, persisting each visitor’s preference in local storage so the cues stick between sessions.
 
+## Private Android app
+
+DizyChat Android Slice 1 is a **private, sideload-only APK** for selected testers. The bundled Capacitor client connects to the self-hosted production backend at `https://dizychat.com`; possession of the APK does not bypass normal DizyChat account authorization. Release signing keys and passwords remain outside Git.
+
+See [`docs/android-private-apk.md`](docs/android-private-apk.md) for the reproducible CI artifact, private release-signing build, ADB install steps, and the 14-point real-device acceptance gate.
+
+**Slice 2** will add push notifications, notification routing, inline notification Reply, and Mark as read after the durable Slice 1 device-session baseline is proven.
+
 ## Project structure
 
 ```

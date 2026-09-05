@@ -4552,6 +4552,16 @@ body:not(.dark) .header-right button#watch-party-btn {
   cursor: pointer;
 }
 .auth-entry-status { min-height: 1.2em; }
+.auth-v2-landing [hidden] { display: none !important; }
+.auth-entry-grid:has(#guest-login[hidden]) {
+  grid-template-columns: 1fr;
+  max-width: 420px;
+}
+#lobby-account-logout-btn {
+  background: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
 .account-identity { font-size: 0.8rem; color: var(--text-muted); white-space: nowrap; }
 
 @media (max-width: 720px) {

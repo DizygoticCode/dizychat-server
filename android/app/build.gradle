@@ -1,20 +1,20 @@
 apply plugin: 'com.android.application'
 
-// Create a Properties object
-def localProperties = new Properties()
-// Create a File object for local.properties
-def localPropertiesFile = rootProject.file('local.properties')
-
-// Load the properties file if it exists
-if (localPropertiesFile.exists()) {
-    localPropertiesFile.withReader('UTF-8') { reader ->
-        localProperties.load(reader)
-    }
-}
+def releaseKeystorePath = System.getenv('DIZYCHAT_KEYSTORE_PATH')?.trim()
+def releaseKeyAlias = System.getenv('DIZYCHAT_KEY_ALIAS')?.trim()
+def releaseKeystorePassword = System.getenv('DIZYCHAT_KEYSTORE_PASSWORD')
+def releaseKeyPassword = System.getenv('DIZYCHAT_KEY_PASSWORD')
+def hasReleaseSigning = [
+    releaseKeystorePath,
+    releaseKeyAlias,
+    releaseKeystorePassword,
+    releaseKeyPassword,
+].every { value -> value != null && !value.toString().isEmpty() }
 
 android {
     namespace "com.chat.dizychat"
     compileSdk rootProject.ext.compileSdkVersion
+
     defaultConfig {
         applicationId "com.chat.dizychat"
         minSdkVersion rootProject.ext.minSdkVersion
@@ -27,24 +27,27 @@ android {
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
-
-        // Read the variables from local.properties
-        buildConfigField "String", "ADMIN_CREDENTIALS", "\"${localProperties.getProperty('ADMIN_CREDENTIALS', '')}\""
-        buildConfigField "String", "METADEFENDER_API_KEY", "\"${localProperties.getProperty('METADEFENDER_API_KEY', '')}\""
-        buildConfigField "String", "MONGO_URI", "\"${localProperties.getProperty('MONGO_URI', '')}\""
-        buildConfigField "String", "NODE_VERSION", "\"${localProperties.getProperty('NODE_VERSION', '')}\""
-        buildConfigField "String", "PORT", "\"${localProperties.getProperty('PORT', '')}\""
-        buildConfigField "String", "GIPHY_SDK_KEY", "\"${localProperties.getProperty('GIPHY_SDK_KEY', '')}\""
-        buildConfigField "String", "RENDER_API_URL", "\"${localProperties.getProperty('RENDER_API_URL', '')}\""
     }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(releaseKeystorePath)
+                storePassword releaseKeystorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
         }
-    }
-    buildFeatures {
-        buildConfig true
     }
 }
 

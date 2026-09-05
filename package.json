@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "test": "node tests/run-deterministic-tests.js"
+    "test": "node tests/run-deterministic-tests.js",
+    "android:prepare": "node scripts/prepare-android-assets.js"
   },
   "engines": {
     "node": ">=22.0.0"

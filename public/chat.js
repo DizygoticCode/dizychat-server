@@ -50,24 +50,13 @@ const resolveSocketConfig = () => {
 };
 
 const { url: socketUrl, options: baseSocketOptions } = resolveSocketConfig();
-const DIZYCHAT_ACCOUNT_SESSION_KEY = "dizychat-account-session-v2";
+const accountAuth = window.dizychatAuthV2;
 
-const readAccountSessionToken = () => {
-  try {
-    return String(sessionStorage.getItem(DIZYCHAT_ACCOUNT_SESSION_KEY) || "").trim();
-  } catch {
-    return "";
-  }
-};
+const readAccountSessionToken = () =>
+  String(accountAuth?.readToken?.() || "").trim();
 
 const storeAccountSessionToken = (token) => {
-  try {
-    const value = String(token || "").trim();
-    if (value) sessionStorage.setItem(DIZYCHAT_ACCOUNT_SESSION_KEY, value);
-    else sessionStorage.removeItem(DIZYCHAT_ACCOUNT_SESSION_KEY);
-  } catch {
-    /* ignore tab-scoped storage failures */
-  }
+  accountAuth?.writeToken?.(token);
 };
 
 const buildSocketOptions = (options = {}) => {
@@ -115,7 +104,30 @@ const accountState = {
   sessionToken: readAccountSessionToken(),
   identity: null,
   expiresAt: 0,
+  busy: false,
+  revision: 0,
+  requestTimer: null,
 };
+
+function beginAccountAction() {
+  const revision = ++accountState.revision;
+  accountState.busy = true;
+  accountState.requestTimer = setTimeout(() => {
+    if (revision !== accountState.revision) return;
+    finishAccountAction(revision);
+    accountState.revision += 1;
+    showToast("Account request timed out. Reconnect and try again.", "warn");
+  }, 15000);
+  syncAccountUi();
+  return revision;
+}
+
+function finishAccountAction(revision) {
+  if (revision !== accountState.revision) return;
+  clearTimeout(accountState.requestTimer);
+  accountState.busy = false;
+  syncAccountUi();
+}
 
 function accountRoleCanModerate() {
   const role = accountState.identity?.role;
@@ -131,6 +143,17 @@ function syncAccountUi() {
       : "";
   }
   if (accountLogoutBtn) accountLogoutBtn.hidden = !identity;
+  if (lobbyAccountLogoutBtn) lobbyAccountLogoutBtn.hidden = !identity;
+  if (guestLogin) guestLogin.hidden = Boolean(identity);
+  if (accountUsernameInput) accountUsernameInput.hidden = Boolean(identity);
+  if (accountPasswordInput) accountPasswordInput.hidden = Boolean(identity);
+  if (registeredJoinBtn) {
+    registeredJoinBtn.textContent = identity ? "Join room" : "Sign in to account";
+    registeredJoinBtn.disabled = accountState.busy;
+  }
+  for (const button of [accountLogoutBtn, lobbyAccountLogoutBtn]) {
+    if (button) button.disabled = accountState.busy;
+  }
   if (accountLoginStatus) {
     accountLoginStatus.textContent = identity
       ? `Signed in as ${identity.username} (${identity.role || "user"})`
@@ -150,13 +173,24 @@ function applyAccountSession(session) {
   accountState.identity = session?.identity && typeof session.identity === "object" ? session.identity : null;
   accountState.expiresAt = Number(session?.expiresAt || 0);
   storeAccountSessionToken(token);
+  if (token && typeof accountAuth?.persistToken === "function") {
+    void accountAuth.persistToken(token).catch((error) => {
+      console.warn("[Auth] secure session persistence failed", error);
+      showToast("Signed in, but this device could not save the login securely.", "warn");
+    });
+  }
   socket.auth = socket.auth && typeof socket.auth === "object" ? { ...socket.auth } : {};
   if (token) socket.auth.sessionToken = token;
   else delete socket.auth.sessionToken;
   syncAccountUi();
 }
 
-function clearAccountSession() {
+async function clearAccountSession({ persistent = false } = {}) {
+  const revision = accountState.revision;
+  if (persistent && typeof accountAuth?.clearPersistentToken === "function") {
+    await accountAuth.clearPersistentToken();
+  }
+  if (revision !== accountState.revision) return false;
   accountState.sessionToken = "";
   accountState.identity = null;
   accountState.expiresAt = 0;
@@ -164,6 +198,7 @@ function clearAccountSession() {
   socket.auth = socket.auth && typeof socket.auth === "object" ? { ...socket.auth } : {};
   delete socket.auth.sessionToken;
   syncAccountUi();
+  return true;
 }
 
 const replyState = {
@@ -203,6 +238,8 @@ const roomInput = document.getElementById("room-input");
 const passwordInput = document.getElementById("room-password");
 const accountLoginStatus = document.getElementById("account-login-status");
 const accountLogoutBtn = document.getElementById("account-logout-btn");
+const lobbyAccountLogoutBtn = document.getElementById("lobby-account-logout-btn");
+const guestLogin = document.getElementById("guest-login");
 const accountIdentity = document.getElementById("account-identity");
 const joinBtn = guestJoinBtn;
 const usernameInput = guestUsernameInput;
@@ -3710,9 +3747,23 @@ socket.on("connect", () => {
   renderPublicRooms([], { state: "loading" });
   socket.emit("request rooms");
 
-  socket.emit("account session", {}, (ack = {}) => {
-    if (ack?.ok && ack?.session) applyAccountSession(ack.session);
-    else clearAccountSession();
+  const revision = accountState.revision;
+  socket.emit("account session", {}, async (ack = {}) => {
+    if (revision !== accountState.revision || accountState.busy) return;
+    if (!ack.ok) {
+      showToast("Account session temporarily unavailable. Reconnect to try again.", "warn");
+      return;
+    }
+    if (ack.session) applyAccountSession(ack.session);
+    else {
+      try {
+        if (!await clearAccountSession({ persistent: true })) return;
+      } catch (error) {
+        console.warn("[Auth] secure session clear failed", error);
+        showToast("Unable to clear the saved login. Please try signing out again.", "error");
+        return;
+      }
+    }
 
     if (window.currentRoom && window.currentUser) {
       const username = accountState.identity?.username || window.currentUser;
@@ -3725,6 +3776,8 @@ socket.on("connect", () => {
   });
 });
 socket.on("disconnect", () => {
+  finishAccountAction(accountState.revision);
+  accountState.revision += 1;
   showToast("Disconnected — attempting to reconnect…", "warn");
   renderPublicRooms([], { state: "error" });
   hideSearchResults();
@@ -3829,7 +3882,8 @@ function showLanding({ focusUsername = true } = {}) {
   if (roomInput) roomInput.value = lastRoomName || "";
   if (passwordInput) passwordInput.value = lastRoomPassword || "";
   if (usernameInput) usernameInput.value = "";
-  if (focusUsername) usernameInput?.focus();
+  syncAccountUi();
+  if (focusUsername) (accountState.identity ? roomInput : usernameInput)?.focus();
 
   updateQueryParams(lastRoomName);
 
@@ -5356,16 +5410,9 @@ function joinCurrentRoomAsAccount(room, password) {
 }
 
 function emitRegisteredJoinRequest() {
-  const room = roomInput?.value.trim();
-  const roomPassword = passwordInput?.value || "";
-  if (!room) {
-    showToast("Enter a room name.", "warn");
-    roomInput?.focus();
-    return;
-  }
-
+  if (accountState.busy) return;
   if (accountState.identity) {
-    joinCurrentRoomAsAccount(room, roomPassword);
+    emitJoinRequest();
     return;
   }
 
@@ -5377,8 +5424,19 @@ function emitRegisteredJoinRequest() {
     return;
   }
 
+  if (!socket.connected) {
+    showToast("Reconnect before signing in.", "warn");
+    return;
+  }
+  const revision = beginAccountAction();
   if (accountLoginStatus) accountLoginStatus.textContent = "Signing in…";
-  socket.emit("account login", { username, password }, (ack = {}) => {
+  socket.emit("account login", {
+    username,
+    password,
+    sessionKind: accountAuth?.isNativeSessionRuntime?.() ? "mobile" : "browser",
+  }, (ack = {}) => {
+    if (revision !== accountState.revision) return;
+    finishAccountAction(revision);
     if (!ack?.ok || !ack?.session?.identity) {
       if (accountLoginStatus) accountLoginStatus.textContent = ack?.error || "Sign in failed.";
       showToast(ack?.error || "Sign in failed.", "error");
@@ -5386,14 +5444,25 @@ function emitRegisteredJoinRequest() {
     }
     applyAccountSession(ack.session);
     if (accountPasswordInput) accountPasswordInput.value = "";
-    joinCurrentRoomAsAccount(room, roomPassword);
+    roomInput?.focus();
   });
 }
 
 function emitJoinRequest() {
+  if (accountState.busy) return;
   const username = usernameInput?.value.trim();
   const room = roomInput?.value.trim();
   const password = passwordInput?.value || "";
+
+  if (accountState.identity) {
+    if (!room) {
+      showToast("Enter a room name.", "warn");
+      roomInput?.focus();
+      return;
+    }
+    joinCurrentRoomAsAccount(room, password);
+    return;
+  }
 
   if (!username || !room) {
     showToast("Enter a guest username and room name.", "warn");
@@ -5401,20 +5470,8 @@ function emitJoinRequest() {
     return;
   }
 
-  const joinAsGuest = () => {
-    completeRoomJoin(username, room, password);
-    socket.emit("join room", { room, username, password });
-  };
-
-  if (accountState.identity) {
-    socket.emit("account logout", {}, () => {
-      clearAccountSession();
-      joinAsGuest();
-    });
-    return;
-  }
-
-  joinAsGuest();
+  completeRoomJoin(username, room, password);
+  socket.emit("join room", { room, username, password });
 }
 
 function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
@@ -5476,7 +5533,7 @@ function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
     item.classList.add("clickable");
     item.title = "Join this room";
     const attemptJoin = () => {
-      if (!usernameInput?.value.trim()) {
+      if (!accountState.identity && !usernameInput?.value.trim()) {
         showToast("Enter your username first", "error");
         usernameInput?.focus();
         return;
@@ -5512,7 +5569,11 @@ if (registeredJoinBtn) {
     inputEl.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
-        emitJoinRequest();
+        if (inputEl === accountUsernameInput || inputEl === accountPasswordInput) {
+          emitRegisteredJoinRequest();
+        } else {
+          emitJoinRequest();
+        }
       }
     });
   });
@@ -5530,18 +5591,34 @@ if (leaveBtn) {
   });
 }
 
-if (accountLogoutBtn) {
-  accountLogoutBtn.addEventListener("click", () => {
-    const finish = () => {
+function signOutAccount() {
+  if (accountState.busy) return;
+  if (!socket.connected) {
+    showToast("Reconnect before signing out so the server can revoke this session.", "warn");
+    return;
+  }
+  const revision = beginAccountAction();
+  socket.emit("account logout", {}, async (ack = {}) => {
+    if (revision !== accountState.revision) return;
+    clearTimeout(accountState.requestTimer);
+    try {
+      if (!ack.ok) throw new Error("The server could not sign you out. Please try again.");
+      if (!await clearAccountSession({ persistent: true })) return;
       if (window.currentRoom) socket.emit("leave room", { room: window.currentRoom });
-      clearAccountSession();
       clearReplyTarget();
       showLanding({ focusUsername: false });
       accountUsernameInput?.focus();
       showToast("Signed out", "info");
-    };
-    socket.emit("account logout", {}, finish);
+    } catch (error) {
+      console.warn("[Auth] account sign out failed", error);
+      showToast(error?.message || "Unable to clear the saved login. Please try again.", "error");
+    } finally {
+      finishAccountAction(revision);
+    }
   });
+}
+for (const button of [accountLogoutBtn, lobbyAccountLogoutBtn]) {
+  button?.addEventListener("click", signOutAccount);
 }
 if (copyJoinLinkBtn) {
   copyJoinLinkBtn.addEventListener("click", async () => {
@@ -6292,6 +6369,43 @@ if (emojiPicker) {
     };
   })();
 }
+
+window.dizychatMobile = {
+  handleBack() {
+    if (replyState.targetId) {
+      clearReplyTarget();
+      return true;
+    }
+
+    if (appState.activeMenu || (userContextMenu && !userContextMenu.hasAttribute("hidden"))) {
+      if (appState.activeMenu) {
+        closeActiveMenu();
+      } else {
+        userContextMenu.classList.remove("open");
+        userContextMenu.setAttribute("hidden", "");
+        userContextMenu.setAttribute("aria-hidden", "true");
+      }
+      return true;
+    }
+
+    if (mobileSidebarQuery?.matches && userSidebar?.classList.contains("is-expanded")) {
+      setMobileSidebarExpanded(false);
+      return true;
+    }
+
+    if (emojiPickerController?.isVisible?.()) {
+      emojiPickerController.hide();
+      return true;
+    }
+
+    if (isViewingChat) {
+      leaveBtn?.click();
+      return true;
+    }
+
+    return false;
+  },
+};
 
 // ------------------- Sending Messages -------------------
 if (form) {

@@ -1,26 +1,28 @@
+const dizychatNativeSocketUrl = (() => {
+  try {
+    return window.Capacitor?.isNativePlatform?.() ? "https://dizychat.com" : "";
+  } catch (_err) {
+    return "";
+  }
+})();
+
 window.dizychatConfig = Object.assign(
   {
     /**
-     * Optional base URL for the Socket.IO connection.
-     * Leave empty for the web app so Socket.IO uses the current origin.
+     * Canonical production backend used by the packaged mobile app.
+     * Normal web pages keep using their current origin.
      */
-    socketUrl: "",
+    defaultNativeBackendUrl: "https://dizychat.com",
     /**
-     * Public URL used automatically when the app is loaded from a
-     * non-HTTP origin (e.g. capacitor://localhost).
+     * Hidden developer-only override for packaged builds.
      */
-    defaultNativeSocketUrl: "https://dizychat.com",
+    backendUrlStorageKey: "dizychat-backend-url",
     /**
-     * Additional options that are passed to io(...).
-     * Example: { transports: ["websocket"] }
+     * Native builds pin the production Socket.IO endpoint directly in the
+     * packaged config. Normal web pages leave it blank and stay same-origin.
      */
-    socketOptions: {},
-    /**
-     * LocalStorage key used to dynamically override the socket URL at runtime.
-     * Useful for debug builds when you want to switch servers without
-     * rebuilding the native wrapper.
-     */
-    socketUrlStorageKey: "dizychat-socket-url"
+    socketUrl: dizychatNativeSocketUrl,
+    socketOptions: {}
   },
   window.dizychatConfig || {}
 );
