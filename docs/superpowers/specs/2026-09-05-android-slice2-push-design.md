@@ -39,6 +39,14 @@ Rejected alternatives:
 
 FCM receives only the payload required to deliver a notification. It never decides who is eligible to receive one.
 
+## FCM server implementation boundary
+
+Use the Firebase Admin SDK on the self-hosted DizyChat server for FCM HTTP v1 delivery rather than hand-rolling Google OAuth/service-account signing.
+
+Use a dedicated Firebase service account restricted to the minimum project role needed for FCM sending. Its credential file remains outside the repository and outside the APK, readable only by the DizyChat service account on the host. The server receives the credential location through secret deployment configuration such as `GOOGLE_APPLICATION_CREDENTIALS` or an equivalent DizyChat-specific path variable.
+
+Do not commit a service-account JSON file, embed it in JavaScript, add it to the Android assets, or expose it to GitHub Actions unless a later CI design explicitly requires a separate test credential. Normal deterministic CI must use a fake push transport and require no live Firebase secret.
+
 ## Notification eligibility
 
 When a normal room message has been accepted and stored, DizyChat evaluates Android devices independently.
@@ -99,7 +107,9 @@ The server remains authoritative for validating that a subscription corresponds 
 
 Create a separate account+room read-cursor record.
 
-The cursor stores the latest message read by that account in that room, using an ordering contract that cannot move backwards. The implementation should use the message timestamp plus stable message identifier, or another deterministic monotonic room-message ordering already available in the repository.
+The cursor stores the latest message read by that account in that room. Ordering is the tuple `(message.timestamp, message._id)` in ascending order. Cursor advancement is compare-and-set/monotonic: an older or equal tuple can never move the cursor backwards or create a second advancement.
+
+The cursor stores both the target message identifier and its timestamp so the ordering decision is deterministic and does not depend on client clocks.
 
 The cursor is account-wide rather than device-local.
 
@@ -111,7 +121,7 @@ It advances when the account actually reads messages through any supported clien
 
 Merely having the browser open does not advance the cursor.
 
-When the cursor advances, live sessions for that account should receive a read-state update. Android devices belonging to that account must clear or update any room notification that no longer represents unread messages.
+When the cursor advances, live sessions for that account receive a read-state update. Android devices belonging to that account clear or update any room notification that no longer represents unread messages.
 
 This means:
 
@@ -131,7 +141,7 @@ The Android client refreshes this lease only while both conditions remain true.
 
 The lease is cleared immediately when either condition becomes false where lifecycle delivery permits. If the app disappears without clearing it, natural lease expiry restores push eligibility.
 
-Screen interactivity must come from native Android state, e.g. `PowerManager.isInteractive()`, combined with activity/application lifecycle state. JavaScript/WebView visibility alone is insufficient.
+Screen interactivity must come from native Android state using `PowerManager.isInteractive()` combined with activity/application lifecycle state. JavaScript/WebView visibility alone is insufficient.
 
 Required behaviour:
 
@@ -143,19 +153,21 @@ Required behaviour:
 
 Each Android device has its own lease. Activity on a browser or another Android device must not suppress this device.
 
+The implementation plan must choose an explicit lease duration and heartbeat interval with the constraint that lease duration exceeds at least two heartbeat intervals, so one missed heartbeat does not immediately create duplicate notifications while process death still recovers promptly.
+
 ## Notification permission
 
 On Android versions requiring runtime notification permission, request it after the user successfully joins their first room, not immediately on app launch or login.
 
 The prompt should therefore have clear context: notifications are for rooms the user joins.
 
-Declining permission must not break chat, authentication, room membership, or Socket.IO delivery. Device registration may remain inactive for system notifications until permission is later granted.
+Declining permission must not break chat, authentication, room membership, or Socket.IO delivery. Device registration remains inactive for system notifications until permission is later granted.
 
-## Notification content
+## Notification content and grouping
 
 Use one Android notification per room, updated as newer unread messages arrive.
 
-The displayed content should include:
+The displayed content includes:
 
 - sender;
 - room;
@@ -170,7 +182,9 @@ For attachment-only messages use a human-readable description such as:
 
 Do not expose raw upload URLs when a human label is sufficient.
 
-Multiple unread messages in the same room update the existing room notification rather than producing one notification per message. Android may present recent messages in a messaging-style stack inside that room notification.
+Use Android's messaging-style notification presentation for the recent unread messages represented by that room notification. If the device/OS cannot retain the full recent stack, correctness falls back to showing the latest unread sender/preview while preserving the same stable room notification identity.
+
+Multiple unread messages in the same room update the existing room notification rather than producing one notification per message.
 
 The notification's current action target is the latest unread message represented by that notification.
 
@@ -249,35 +263,37 @@ If authorization fails, the server does not mutate read state.
 Implement FCM behind a small server-side push transport interface so recipient-selection policy and FCM mechanics remain independently testable.
 
 The policy layer decides recipients and constructs an approved notification intent.
-The transport layer performs direct token delivery.
+The transport layer performs direct token delivery through Firebase Admin SDK.
 
-FCM service credentials remain outside Git and outside the APK, supplied to the self-hosted DizyChat server through its secret environment/configuration.
-
-The server should be able to run with push transport disabled/unconfigured without breaking chat.
+The server must run normally with push transport disabled/unconfigured.
 
 Message persistence and Socket.IO publication must never wait for or depend on successful FCM delivery.
 
-Push sending should be best-effort/asynchronous after the message has been accepted. FCM failure may be logged and retried according to bounded implementation policy, but must not cause a chat message to fail or be duplicated.
+Push sending is best-effort/asynchronous after the message has been accepted. FCM failure may be logged and retried according to a bounded retry policy chosen in the implementation plan, but must not cause a chat message to fail or be duplicated.
 
 ## Read-state clearing of existing notifications
 
-The server cannot directly erase an already displayed Android notification without communicating with that Android installation, so cross-client read synchronization requires a device-side clear/update signal.
+The account+room read cursor is authoritative.
 
-The implementation may use an FCM data/control message or an existing live socket when connected, but the semantic contract is fixed:
+Whenever it advances, the server sends an idempotent FCM data/control message to every active Android push registration for that account telling the device to reconcile that room through the new cursor. A connected Socket.IO session may mirror the same event for lower latency, but correctness must not depend on the socket being alive.
+
+The device compares the control message's cursor against the latest message represented by its stable room notification and clears or updates only that room notification as appropriate.
+
+Startup/reconnect reconciliation also fetches or receives the current server read cursor and removes stale notifications whose represented latest message is already at or behind it.
+
+Contracts:
 
 - account read cursor is authoritative;
-- devices clear/update only the relevant room notification;
-- clearing a notification must not roll back or fabricate read state;
-- delivery of a clear signal is idempotent;
-- reconnect/startup reconciliation must remove stale notifications whose represented message is already at or behind the server read cursor.
-
-This avoids leaving stale unread notifications after the same account reads the room elsewhere.
+- control messages are idempotent;
+- out-of-order older control messages cannot roll back state;
+- clearing one room does not clear unrelated rooms;
+- clearing a notification never fabricates or advances read state on its own.
 
 ## Stable per-room notification identity
 
-Each Android installation must derive or persist a stable notification identifier for the account+room combination so later unread messages replace/update the same room notification.
+Each Android installation derives a stable notification identifier from its stable device/account namespace plus room identifier, using a deterministic collision-resistant mapping suitable for Android integer notification IDs. The implementation plan must define the exact mapping and collision handling.
 
-The identity must avoid collisions between different rooms and must remain stable across app process restarts.
+The identity remains stable across app process restarts.
 
 Clearing one room notification must not clear unrelated rooms.
 
@@ -320,7 +336,8 @@ Add:
 - account+room read-cursor model/service;
 - foreground/screen-interactive suppression lease contract;
 - recipient-selection policy;
-- FCM transport interface with a deterministic fake/test transport;
+- Firebase Admin backed FCM transport behind an interface;
+- deterministic fake/test transport;
 - configuration boundary for server-side FCM credentials;
 - deterministic tests for policy and state transitions.
 
@@ -346,12 +363,13 @@ Required proof includes the exact screen-off rule.
 Add:
 
 - one updating notification per room;
-- messaging-style recent unread presentation where practical;
+- Android messaging-style recent unread presentation with latest-preview fallback;
 - safe text/attachment previews;
 - tap routing to exact room/message;
 - inline Reply through authenticated normal DizyChat reply semantics;
 - Mark as read through account+room read cursor;
-- cross-device/browser-read notification clearing/reconciliation;
+- FCM read-control messages plus startup/reconnect notification reconciliation;
+- cross-device/browser-read notification clearing;
 - permanent invalid-token retirement;
 - full end-to-end regression coverage.
 
@@ -381,8 +399,10 @@ At minimum, deterministic tests must prove:
 20. push payload contains no authentication/server/signing secrets;
 21. attachment-only previews use safe human labels rather than raw URLs;
 22. multiple unread messages in one room retain one stable notification identity;
-23. read-state reconciliation removes a stale room notification after restart/reconnect;
-24. disabled/unconfigured push transport leaves ordinary DizyChat message flow unchanged.
+23. out-of-order read-control messages cannot roll read state backwards;
+24. read-state reconciliation removes a stale room notification after restart/reconnect;
+25. disabled/unconfigured push transport leaves ordinary DizyChat message flow unchanged;
+26. deterministic CI requires no live Firebase credential.
 
 ## Exact-head CI gate
 
