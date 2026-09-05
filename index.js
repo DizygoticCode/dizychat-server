@@ -28,6 +28,17 @@ const nodeFetchModulePromise = import('node-fetch');
 const fetch = (...args) =>
   nodeFetchModulePromise.then(({ default: fetch }) => fetch(...args));
 
+const TRUSTED_NATIVE_ORIGINS = new Set([
+  'https://localhost',
+  'http://localhost',
+  'capacitor://localhost',
+]);
+
+const isTrustedNativeHttpOrigin = (req) => {
+  const origin = String(req?.headers?.origin || '').trim().toLowerCase();
+  return TRUSTED_NATIVE_ORIGINS.has(origin) ? origin : '';
+};
+
 const parseSocketCorsOrigins = () => {
   const raw =
     process.env.SOCKET_IO_CORS_ORIGINS ||
@@ -463,6 +474,19 @@ const uploadDir = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 app.disable('x-powered-by');
+app.use((req, res, next) => {
+  const origin = isTrustedNativeHttpOrigin(req);
+  if (!origin) return next();
+
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  return next();
+});
+
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
