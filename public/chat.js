@@ -3658,6 +3658,10 @@ if (searchFilter) {
 })();
 
 // ------------------- Media Lightbox -------------------
+function resolveMediaSource(src) {
+  return window.dizychatMobileRuntime?.resolveMediaUrl(src, window) ?? src;
+}
+
 const MediaLightbox = (() => {
   const overlay = document.createElement("div");
   overlay.id = "media-lightbox";
@@ -3706,19 +3710,19 @@ const MediaLightbox = (() => {
 
     if (type === "image") {
       node = document.createElement("img");
-      node.src = src;
+      node.src = resolveMediaSource(src);
       node.alt = caption || "Image preview";
       node.loading = "lazy";
     } else if (type === "video") {
       node = document.createElement("video");
-      node.src = src;
+      node.src = resolveMediaSource(src);
       node.controls = true;
       node.playsInline = true;
       node.autoplay = true;
       node.setAttribute("controlsList", "nodownload");
     } else if (type === "audio") {
       node = document.createElement("audio");
-      node.src = src;
+      node.src = resolveMediaSource(src);
       node.controls = true;
     }
 
@@ -6495,7 +6499,7 @@ function createInlinePreview(link, type, labelText) {
 
   if (type === "image") {
     const img = document.createElement("img");
-    img.src = link;
+    img.src = resolveMediaSource(link);
     img.alt = labelText || "Embedded image";
     img.loading = "lazy";
     mediaWrap.appendChild(img);
@@ -6505,7 +6509,7 @@ function createInlinePreview(link, type, labelText) {
     });
   } else if (type === "video") {
     const video = document.createElement("video");
-    video.src = link;
+    video.src = resolveMediaSource(link);
     video.controls = true;
     video.playsInline = true;
     video.setAttribute("playsinline", "");
@@ -6519,7 +6523,7 @@ function createInlinePreview(link, type, labelText) {
     mediaWrap.appendChild(video);
   } else if (type === "audio") {
     const audio = document.createElement("audio");
-    audio.src = link;
+    audio.src = resolveMediaSource(link);
     audio.controls = true;
     audio.preload = "metadata";
     mediaWrap.appendChild(audio);
