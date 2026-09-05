@@ -4,7 +4,7 @@
 
 **Goal:** Build the self-hosted server authority for Android push registration, per-device room subscriptions, account-wide read cursors, foreground/screen-on suppression leases, recipient selection, and an FCM transport boundary without changing Android notification UI yet.
 
-**Architecture:** Keep DizyChat authoritative. Extend the existing durable mobile session with a safe server-side session ID, persist push-device/subscription/read state in dedicated Mongo models, decide recipients in a pure policy/service layer, and invoke FCM only through an injected transport after a chat message is already accepted. The sender's authenticated canonical identity is passed separately from the persisted display message so own-account suppression is exact for registered users while guest messages can still notify subscribed accounts.
+**Architecture:** DizyChat remains authoritative. Extend the existing durable mobile session with a safe server-side session ID, persist push-device/subscription/read state in dedicated Mongo models, validate that every candidate still belongs to a non-revoked mobile session and active account, decide eligibility in a pure policy layer, and invoke FCM only after a chat message is already accepted. Pass the authenticated sender canonical username separately from the persisted display message so own-account suppression is exact for registered users and never guessed from guest display names.
 
 **Tech Stack:** Node.js 22, Express 4.21.2, Socket.IO 4.8.1, Mongoose 7.8.7, Node test runner, Firebase Admin SDK 14.3.0.
 
@@ -12,17 +12,17 @@
 
 ## Global Constraints
 
-- Base implementation work from exact green `main` head `1bb08b03ba52015fe4862a812785b4143f270c30` plus the approved design/spec commit only; refresh from current `main` before implementation if `main` has moved.
-- FCM is transport only. DizyChat remains authoritative for identity, room membership, subscriptions, read state, notification eligibility, reply authorization, and message storage.
-- Never store or send raw mobile-session tokens in push models, FCM payloads, logs, or notification data.
-- Chat persistence and Socket.IO publication must not depend on FCM success.
-- Push disabled/unconfigured must be a supported normal server state.
-- Browser activity alone never suppresses an Android push.
-- Suppression is per device and only valid while a short-lived `foreground + screen interactive` lease is fresh.
-- Read state is account+room, monotonic, and separate from the existing global `Message.status` field.
+- Start from exact green `main`; design base was `1bb08b03ba52015fe4862a812785b4143f270c30`, but refresh if `main` has moved before implementation.
+- FCM is transport only. DizyChat owns identity, session validity, room membership, subscriptions, read state, eligibility, reply authorization, and message storage.
+- Raw mobile tokens never enter push models, FCM payloads, logs, or notification data.
+- Push disabled/unconfigured is a supported server state.
+- Chat persistence/Socket.IO publication never waits on or fails because of FCM.
+- Browser presence never suppresses Android push.
+- Suppression is per device and valid only while a short-lived `foreground + screen interactive` lease is fresh.
+- Read state is account+room, monotonic, and separate from global `Message.status`.
 - One account may have multiple Android devices with independent room subscriptions.
-- Use TDD and make a focused commit after each task.
-- Do not hand-edit `package-lock.json`; update it only through `npm install firebase-admin@14.3.0 --save-exact`.
+- Use TDD and focused commits.
+- Do not hand-edit `package-lock.json`; update it through `npm install firebase-admin@14.3.0 --save-exact` only.
 
 ---
 
@@ -30,52 +30,51 @@
 
 **Create**
 
-- `src/models/push-device.js` — one Android installation bound to one durable mobile session and current FCM token.
-- `src/models/push-room-subscription.js` — persistent per-device room subscription.
-- `src/models/room-read-cursor.js` — monotonic account+room read cursor.
-- `src/push/push-device-service.js` — register/rotate/retire devices, subscribe/unsubscribe rooms, query active subscriptions, update suppression leases, and disable revoked sessions.
-- `src/push/read-state-service.js` — monotonic read-cursor advance/query operations.
-- `src/push/notification-policy.js` — pure recipient eligibility and safe preview construction.
-- `src/push/push-coordinator.js` — orchestrate post-persist message push without coupling chat persistence to FCM.
-- `src/push/fcm-config.js` — parse enable/project/credential configuration.
-- `src/push/transports/fcm-transport.js` — Firebase Admin direct-token transport.
-- `src/push/transports/null-transport.js` — disabled/no-op transport.
+- `src/models/push-device.js`
+- `src/models/push-room-subscription.js`
+- `src/models/room-read-cursor.js`
+- `src/push/push-device-service.js`
+- `src/push/read-state-service.js`
+- `src/push/notification-policy.js`
+- `src/push/push-coordinator.js`
+- `src/push/fcm-config.js`
+- `src/push/transports/fcm-transport.js`
+- `src/push/transports/null-transport.js`
 - `tests/push/mobile-session-id.test.js`
 - `tests/push/push-device-service.test.js`
 - `tests/push/read-state-service.test.js`
 - `tests/push/notification-policy.test.js`
-- `tests/push/fcm-transport.test.js`
 - `tests/push/push-coordinator.test.js`
+- `tests/push/fcm-transport.test.js`
 - `tests/push/push-http-contract.test.js`
 - `tests/push/message-push-integration.test.js`
 
 **Modify**
 
-- `src/auth/mobile-session-service.js` — return stable server-side mobile-session ID from issue/resolve while preserving existing token semantics.
-- `index.js` — preserve mobile-session metadata on sockets, wire models/services, authenticated HTTP contracts, successful room join/explicit Leave subscription hooks, read-state endpoint, logout/revocation disablement, and post-persist push dispatch.
-- `package.json` / `package-lock.json` — add exact `firebase-admin@14.3.0` dependency.
-- `docs/android-private-apk.md` — document server-side FCM configuration names and credential boundary.
+- `src/auth/mobile-session-service.js`
+- `index.js`
+- `package.json`
+- `package-lock.json` via npm
+- `docs/android-private-apk.md`
 
 ---
 
-### Task 1: Expose a Safe Mobile Session Identifier
+### Task 1: Expose a Safe Server-Side Mobile Session ID
 
 **Files:**
 - Modify: `src/auth/mobile-session-service.js`
 - Test: `tests/push/mobile-session-id.test.js`
 
-**Interfaces:**
-- Consumes: existing `MobileSessionModel.create/findOne` and current mobile token format.
-- Produces: `issue(...).sessionId: string` and `resolve(token).sessionId: string`; no token hash is exposed.
+**Contract:** `issue()` and `resolve()` return `sessionId` equal to persisted `MobileSession._id`; no token hash is exposed and existing token/principal semantics remain unchanged.
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Write RED tests**
 
 ```js
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createMobileSessionService } = require('../../src/auth/mobile-session-service');
 
-test('issue returns the persisted mobile session id without exposing tokenHash', async () => {
+test('issue returns persisted session id without tokenHash', async () => {
   const MobileSessionModel = {
     create: async () => ({ _id: '507f1f77bcf86cd799439011' }),
     findOne: async () => null,
@@ -84,14 +83,12 @@ test('issue returns the persisted mobile session id without exposing tokenHash',
   };
   const UserModel = { findOne: async () => null };
   const service = createMobileSessionService({ MobileSessionModel, UserModel, tokenFactory: () => 'abc' });
-  const result = await service.issue({
-    kind: 'account', userId: 'u1', username: 'Rob', canonicalUsername: 'rob', role: 'user',
-  });
+  const result = await service.issue({ kind: 'account', userId: 'u1', username: 'Rob', canonicalUsername: 'rob', role: 'user' });
   assert.equal(result.sessionId, '507f1f77bcf86cd799439011');
   assert.equal(Object.hasOwn(result, 'tokenHash'), false);
 });
 
-test('resolve returns persisted mobile session id', async () => {
+test('resolve returns persisted session id', async () => {
   const stored = { _id: '507f1f77bcf86cd799439012', canonicalUsername: 'rob', revokedAt: null };
   const MobileSessionModel = {
     create: async () => stored,
@@ -99,14 +96,11 @@ test('resolve returns persisted mobile session id', async () => {
     updateOne: async () => ({ modifiedCount: 0 }),
     updateMany: async () => ({ modifiedCount: 0 }),
   };
-  const UserModel = {
-    findOne: async () => ({ _id: 'u1', username: 'Rob', canonicalUsername: 'rob', role: 'user', state: 'active' }),
-  };
+  const UserModel = { findOne: async () => ({ _id: 'u1', username: 'Rob', canonicalUsername: 'rob', role: 'user', state: 'active' }) };
   const service = createMobileSessionService({ MobileSessionModel, UserModel });
   const result = await service.resolve('dcm1.test');
   assert.equal(result.sessionId, '507f1f77bcf86cd799439012');
   assert.equal(result.kind, 'mobile');
-  assert.equal(result.principal.canonicalUsername, 'rob');
 });
 ```
 
@@ -116,11 +110,9 @@ test('resolve returns persisted mobile session id', async () => {
 node --test tests/push/mobile-session-id.test.js
 ```
 
-Expected: FAIL because `sessionId` is not returned today.
+- [ ] **Step 3: Implement**
 
-- [ ] **Step 3: Implement the exact return contract**
-
-In `issue()` capture the created document and return explicit existing principal fields:
+Capture created row in `issue()`:
 
 ```js
 const stored = await MobileSessionModel.create({
@@ -133,7 +125,7 @@ const stored = await MobileSessionModel.create({
 
 return {
   token,
-  sessionId: stored?._id ? String(stored._id) : '',
+  sessionId: String(stored._id),
   kind: 'mobile',
   principal: {
     kind: 'account',
@@ -145,38 +137,20 @@ return {
 };
 ```
 
-In `resolve()` return:
+Return `sessionId: String(stored._id)` from `resolve()` alongside existing `token`, `kind`, `principal`.
 
-```js
-return {
-  token,
-  sessionId: stored?._id ? String(stored._id) : '',
-  kind: 'mobile',
-  principal,
-};
-```
-
-Do not expose `tokenHash`.
-
-- [ ] **Step 4: Run focused and existing auth tests**
+- [ ] **Step 4: Run GREEN/full auth regression and commit**
 
 ```bash
 node --test tests/push/mobile-session-id.test.js
 npm test
-```
-
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
 git add src/auth/mobile-session-service.js tests/push/mobile-session-id.test.js
 git commit -m "refactor: expose safe mobile session id"
 ```
 
 ---
 
-### Task 2: Add Push Device and Room Subscription Persistence
+### Task 2: Persist Push Devices and Per-Device Room Subscriptions
 
 **Files:**
 - Create: `src/models/push-device.js`
@@ -184,71 +158,49 @@ git commit -m "refactor: expose safe mobile session id"
 - Create: `src/push/push-device-service.js`
 - Test: `tests/push/push-device-service.test.js`
 
-**Interfaces:**
-- Consumes: `{ sessionId, principal }` from mobile-session resolution.
-- Produces:
-  - `registerDevice({ sessionId, canonicalUsername, deviceId, fcmToken, deviceLabel })`
-  - `subscribeRoom({ sessionId, canonicalUsername, deviceId, room })`
-  - `unsubscribeRoom({ sessionId, deviceId, room })`
-  - `findActiveSubscription({ sessionId, deviceId, room })`
-  - `renewSuppressionLease({ sessionId, deviceId, ttlMs })`
-  - `clearSuppressionLease({ sessionId, deviceId })`
-  - `retireToken(fcmToken, reason)`
-  - `disableSession(sessionId, reason)`
-  - `disableUser(canonicalUsername, reason)`
-  - `listRoomDevices(room) -> Array<{ device, subscription }>`
+**Service dependencies:** `PushDeviceModel`, `SubscriptionModel`, `MobileSessionModel`, `UserModel`, `now`.
 
-- [ ] **Step 1: Write failing service tests with in-memory model doubles**
+**Methods:**
+- `registerDevice({ sessionId, canonicalUsername, deviceId, fcmToken, deviceLabel })`
+- `findRegisteredDevice({ sessionId, deviceId })`
+- `subscribeRoom({ sessionId, canonicalUsername, deviceId, room })`
+- `unsubscribeRoom({ sessionId, deviceId, room })`
+- `findActiveSubscription({ sessionId, deviceId, room })`
+- `renewSuppressionLease({ sessionId, deviceId, ttlMs })`
+- `clearSuppressionLease({ sessionId, deviceId })`
+- `retireToken(fcmToken, reason)`
+- `disableSession(sessionId, reason)`
+- `disableUser(canonicalUsername, reason)`
+- `listRoomDevices(room) -> [{ device, subscription }]`
+
+- [ ] **Step 1: Write RED tests**
+
+Tests must prove:
 
 ```js
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { createPushDeviceService } = require('../../src/push/push-device-service');
-
-test('registerDevice binds device to the authenticated mobile session', async () => {
-  const calls = [];
-  const PushDeviceModel = {
-    updateMany: async () => ({ modifiedCount: 0 }),
-    findOneAndUpdate: async (filter, update, options) => {
-      calls.push({ filter, update, options });
-      return { sessionId: 's1', deviceId: 'dev1', fcmToken: 'new-token', canonicalUsername: 'rob' };
-    },
-  };
-  const SubscriptionModel = {
-    updateOne: async () => ({}), deleteOne: async () => ({}), deleteMany: async () => ({}), findOne: async () => null,
-  };
-  const service = createPushDeviceService({ PushDeviceModel, SubscriptionModel, now: () => new Date('2026-09-05T20:00:00Z') });
-  const device = await service.registerDevice({ sessionId: 's1', canonicalUsername: 'rob', deviceId: 'dev1', fcmToken: 'new-token', deviceLabel: 'Pixel' });
-  assert.equal(device.deviceId, 'dev1');
-  assert.equal(calls[0].filter.sessionId, 's1');
-  assert.equal(calls[0].filter.deviceId, 'dev1');
+const device = await service.registerDevice({
+  sessionId: '507f1f77bcf86cd799439011', canonicalUsername: 'rob',
+  deviceId: 'dev1', fcmToken: 'token1', deviceLabel: 'Pixel',
 });
+assert.equal(device.deviceId, 'dev1');
 
-test('findActiveSubscription cannot cross session/device boundaries', async () => {
-  const SubscriptionModel = {
-    findOne: async (filter) => filter.sessionId === 's1' && filter.deviceId === 'dev1' && filter.room === 'ShittyChat'
-      ? { ...filter, canonicalUsername: 'rob' }
-      : null,
-  };
-  const PushDeviceModel = { findOne: async () => ({ sessionId: 's1', deviceId: 'dev1', disabledAt: null }) };
-  const service = createPushDeviceService({ PushDeviceModel, SubscriptionModel });
-  assert.ok(await service.findActiveSubscription({ sessionId: 's1', deviceId: 'dev1', room: 'ShittyChat' }));
-  assert.equal(await service.findActiveSubscription({ sessionId: 's2', deviceId: 'dev1', room: 'ShittyChat' }), null);
-});
-
-test('disableSession disables only that session and deletes its subscriptions', async () => {
-  const updates = [];
-  const deletes = [];
-  const PushDeviceModel = { updateMany: async (filter, update) => { updates.push({ filter, update }); return { modifiedCount: 1 }; } };
-  const SubscriptionModel = { deleteMany: async (filter) => { deletes.push(filter); return { deletedCount: 1 }; } };
-  const service = createPushDeviceService({ PushDeviceModel, SubscriptionModel, now: () => new Date('2026-09-05T20:00:00Z') });
-  await service.disableSession('s1', 'logout');
-  assert.deepEqual(updates[0].filter, { sessionId: 's1', disabledAt: null });
-  assert.deepEqual(deletes[0], { sessionId: 's1' });
-});
+assert.ok(await service.findActiveSubscription({
+  sessionId: '507f1f77bcf86cd799439011', deviceId: 'dev1', room: 'ShittyChat',
+}));
+assert.equal(await service.findActiveSubscription({
+  sessionId: '507f1f77bcf86cd799439099', deviceId: 'dev1', room: 'ShittyChat',
+}), null);
 ```
 
-Add one table test proving two device IDs for `rob` can have different room subscriptions and one unsubscribe does not remove the other.
+Add explicit cases:
+- registering against nonexistent/revoked mobile session fails;
+- registering when account is not active fails;
+- token rotation from one device to another does not violate unique index;
+- two devices on same account retain independent room subscriptions;
+- disableSession removes only that session's subscriptions;
+- disableUser disables all that account's device rows/subscriptions;
+- `listRoomDevices` excludes a device if the push row is enabled but its `MobileSession.revokedAt` has since changed;
+- `listRoomDevices` excludes an account whose `User.state !== 'active'` even if push/session rows were not yet cleaned up.
 
 - [ ] **Step 2: Run RED**
 
@@ -256,9 +208,7 @@ Add one table test proving two device IDs for `rob` can have different room subs
 node --test tests/push/push-device-service.test.js
 ```
 
-Expected: FAIL because models/service do not exist.
-
-- [ ] **Step 3: Create the Mongoose models**
+- [ ] **Step 3: Create models**
 
 `src/models/push-device.js`:
 
@@ -266,8 +216,8 @@ Expected: FAIL because models/service do not exist.
 'use strict';
 const mongoose = require('mongoose');
 
-const pushDeviceSchema = new mongoose.Schema({
-  sessionId: { type: String, required: true, index: true, trim: true },
+const schema = new mongoose.Schema({
+  sessionId: { type: String, required: true, index: true, trim: true, match: /^[a-f0-9]{24}$/i },
   canonicalUsername: { type: String, required: true, index: true, trim: true, lowercase: true },
   deviceId: { type: String, required: true, trim: true, maxlength: 128 },
   fcmToken: { type: String, required: true, trim: true },
@@ -279,10 +229,15 @@ const pushDeviceSchema = new mongoose.Schema({
   disabledReason: { type: String, default: '', maxlength: 120 },
 }, { timestamps: true });
 
-pushDeviceSchema.index({ sessionId: 1, deviceId: 1 }, { unique: true });
-pushDeviceSchema.index({ fcmToken: 1 }, { unique: true });
-module.exports = mongoose.models.PushDevice || mongoose.model('PushDevice', pushDeviceSchema);
+schema.index({ sessionId: 1, deviceId: 1 }, { unique: true });
+schema.index(
+  { fcmToken: 1 },
+  { unique: true, partialFilterExpression: { disabledAt: null } }
+);
+module.exports = mongoose.models.PushDevice || mongoose.model('PushDevice', schema);
 ```
+
+The partial unique token index is required: a retired row may retain its historical token, while only one **active** device may own that token.
 
 `src/models/push-room-subscription.js`:
 
@@ -290,7 +245,7 @@ module.exports = mongoose.models.PushDevice || mongoose.model('PushDevice', push
 'use strict';
 const mongoose = require('mongoose');
 const schema = new mongoose.Schema({
-  sessionId: { type: String, required: true, index: true, trim: true },
+  sessionId: { type: String, required: true, index: true, trim: true, match: /^[a-f0-9]{24}$/i },
   deviceId: { type: String, required: true, index: true, trim: true, maxlength: 128 },
   canonicalUsername: { type: String, required: true, index: true, trim: true, lowercase: true },
   room: { type: String, required: true, index: true, trim: true, maxlength: 80 },
@@ -299,116 +254,78 @@ schema.index({ sessionId: 1, deviceId: 1, room: 1 }, { unique: true });
 module.exports = mongoose.models.PushRoomSubscription || mongoose.model('PushRoomSubscription', schema);
 ```
 
-- [ ] **Step 4: Implement the concrete service methods**
-
-Use these helpers:
+- [ ] **Step 4: Implement session/account validation helpers**
 
 ```js
-const requireString = (value, label, max) => {
-  const result = String(value || '').trim();
-  if (!result || result.length > max) throw new TypeError(`${label} is invalid`);
-  return result;
-};
-const asDate = (value) => value instanceof Date ? new Date(value.getTime()) : new Date(value);
-```
-
-`registerDevice()` retires any *other* record holding the incoming token, then upserts the authenticated session/device:
-
-```js
-await PushDeviceModel.updateMany(
-  { fcmToken, $or: [{ sessionId: { $ne: sessionId } }, { deviceId: { $ne: deviceId } }], disabledAt: null },
-  { $set: { disabledAt: current, disabledReason: 'token-rotated' } }
-);
-return PushDeviceModel.findOneAndUpdate(
-  { sessionId, deviceId },
-  { $set: { canonicalUsername, fcmToken, deviceLabel, platform: 'android', tokenRegisteredAt: current, disabledAt: null, disabledReason: '' } },
-  { upsert: true, new: true, setDefaultsOnInsert: true }
-);
-```
-
-`subscribeRoom()` first proves the active device exists for the same `sessionId/deviceId`, then upserts:
-
-```js
-const device = await PushDeviceModel.findOne({ sessionId, deviceId, disabledAt: null });
-if (!device) throw Object.assign(new Error('Push device is not registered'), { code: 'PUSH_DEVICE_NOT_FOUND' });
-return SubscriptionModel.updateOne(
-  { sessionId, deviceId, room },
-  { $set: { canonicalUsername } },
-  { upsert: true }
-);
-```
-
-`unsubscribeRoom()`:
-
-```js
-return SubscriptionModel.deleteOne({ sessionId, deviceId, room });
-```
-
-`findActiveSubscription()`:
-
-```js
-const subscription = await SubscriptionModel.findOne({ sessionId, deviceId, room });
-if (!subscription) return null;
-const device = await PushDeviceModel.findOne({ sessionId, deviceId, disabledAt: null });
-return device ? subscription : null;
-```
-
-`renewSuppressionLease()` and `clearSuppressionLease()`:
-
-```js
-const expiresAt = new Date(current.getTime() + ttlMs);
-await PushDeviceModel.updateOne({ sessionId, deviceId, disabledAt: null }, { $set: { suppressionLeaseExpiresAt: expiresAt } });
-await PushDeviceModel.updateOne({ sessionId, deviceId, disabledAt: null }, { $set: { suppressionLeaseExpiresAt: null } });
-```
-
-`retireToken()`:
-
-```js
-await PushDeviceModel.updateMany(
-  { fcmToken, disabledAt: null },
-  { $set: { disabledAt: current, disabledReason: reason, suppressionLeaseExpiresAt: null } }
-);
-```
-
-`disableSession()` and `disableUser()` must both disable device rows and delete their subscriptions with the same scope:
-
-```js
-await PushDeviceModel.updateMany({ sessionId, disabledAt: null }, { $set: { disabledAt: current, disabledReason: reason, suppressionLeaseExpiresAt: null } });
-await SubscriptionModel.deleteMany({ sessionId });
-
-await PushDeviceModel.updateMany({ canonicalUsername, disabledAt: null }, { $set: { disabledAt: current, disabledReason: reason, suppressionLeaseExpiresAt: null } });
-await SubscriptionModel.deleteMany({ canonicalUsername });
-```
-
-`listRoomDevices(room)` returns paired active rows, not raw subscriptions:
-
-```js
-const subscriptions = await SubscriptionModel.find({ room });
-const results = [];
-for (const subscription of subscriptions) {
-  const device = await PushDeviceModel.findOne({
-    sessionId: subscription.sessionId,
-    deviceId: subscription.deviceId,
-    disabledAt: null,
+const assertActiveSessionAccount = async ({ sessionId, canonicalUsername }) => {
+  const session = await MobileSessionModel.findOne({
+    _id: sessionId,
+    canonicalUsername,
+    revokedAt: null,
   });
-  if (device) results.push({ device, subscription });
-}
-return results;
+  if (!session) throw coded('MOBILE_SESSION_INVALID');
+  const user = await UserModel.findOne({ canonicalUsername, state: 'active' });
+  if (!user) throw coded('ACCOUNT_INACTIVE');
+  return { session, user };
+};
+
+const isStillActive = async (device) => {
+  const session = await MobileSessionModel.findOne({
+    _id: device.sessionId,
+    canonicalUsername: device.canonicalUsername,
+    revokedAt: null,
+  });
+  if (!session) return false;
+  return Boolean(await UserModel.findOne({
+    canonicalUsername: device.canonicalUsername,
+    state: 'active',
+  }));
+};
 ```
 
-Implement with a batched `$or` query if convenient, but preserve this exact output/eligibility contract.
+- [ ] **Step 5: Implement concrete mutations/queries**
 
-- [ ] **Step 5: Run GREEN**
+`registerDevice()` validates session/account, retires any *other active* row holding incoming token, then upserts `{ sessionId, deviceId }` with current token and `disabledAt:null`.
+
+`findRegisteredDevice()`:
+
+```js
+const device = await PushDeviceModel.findOne({ sessionId, deviceId, disabledAt: null });
+if (!device) return null;
+return await isStillActive(device) ? device : null;
+```
+
+`subscribeRoom()` must call `findRegisteredDevice()` first and require that returned row's canonical username equals the requested canonical username before subscription upsert.
+
+`unsubscribeRoom()` deletes exactly `{ sessionId, deviceId, room }`.
+
+`findActiveSubscription()` loads subscription, then calls `findRegisteredDevice()`; return null when either side is missing/inactive.
+
+Lease mutation:
+
+```js
+await PushDeviceModel.updateOne(
+  { sessionId, deviceId, disabledAt: null },
+  { $set: { suppressionLeaseExpiresAt: new Date(now().getTime() + ttlMs) } }
+);
+await PushDeviceModel.updateOne(
+  { sessionId, deviceId, disabledAt: null },
+  { $set: { suppressionLeaseExpiresAt: null } }
+);
+```
+
+`retireToken()` sets `disabledAt`, `disabledReason`, clears lease on active rows with that token.
+
+`disableSession()` disables rows matching session and deletes subscriptions `{ sessionId }`.
+
+`disableUser()` disables rows matching canonical username and deletes subscriptions `{ canonicalUsername }`.
+
+`listRoomDevices(room)` loads room subscriptions, finds same-session/device active push rows, then **re-validates mobile session + account state** with `isStillActive()` before returning `{ device, subscription }`.
+
+- [ ] **Step 6: Run GREEN and commit**
 
 ```bash
 node --test tests/push/push-device-service.test.js
-```
-
-Expected: PASS.
-
-- [ ] **Step 6: Commit**
-
-```bash
 git add src/models/push-device.js src/models/push-room-subscription.js src/push/push-device-service.js tests/push/push-device-service.test.js
 git commit -m "feat: add push device subscriptions"
 ```
@@ -422,44 +339,29 @@ git commit -m "feat: add push device subscriptions"
 - Create: `src/push/read-state-service.js`
 - Test: `tests/push/read-state-service.test.js`
 
-**Interfaces:**
-- `getCursor({ canonicalUsername, room }) -> null | { messageId, timestamp }`
-- `advanceCursor({ canonicalUsername, room, messageId, timestamp }) -> { advanced, cursor }`
-- `isUnread({ canonicalUsername, room, messageId, timestamp }) -> boolean`
-- Message IDs must match `/^[a-f0-9]{24}$/i` because the current Message `_id` is Mongo ObjectId.
-- Ordering: timestamp first, then lowercase 24-character ObjectId string lexicographically when timestamps are equal.
+**Contract:** ObjectId-shaped message IDs only; cursor compares timestamp first then lowercase 24-char ObjectId string; cursor never moves backward under concurrent calls.
 
-- [ ] **Step 1: Write RED monotonic-order tests**
+- [ ] **Step 1: Write RED tests**
 
 ```js
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { createReadStateService } = require('../../src/push/read-state-service');
-
-test('advanceCursor rejects malformed message ids', async () => {
-  const service = createReadStateService({ RoomReadCursorModel: makeCursorModel(null) });
+test('malformed message id is rejected', async () => {
   await assert.rejects(
-    () => service.advanceCursor({ canonicalUsername: 'rob', room: 'ShittyChat', messageId: 'not-an-objectid', timestamp: '2026-09-05T20:00:00Z' }),
+    () => service.advanceCursor({ canonicalUsername: 'rob', room: 'ShittyChat', messageId: 'bad', timestamp: '2026-09-05T20:00:00Z' }),
     /messageId/i
   );
 });
 
-test('advanceCursor cannot move backwards by timestamp', async () => {
+test('older timestamp cannot move cursor backwards', async () => {
   const current = { messageId: 'ffffffffffffffffffffffff', messageTimestamp: new Date('2026-09-05T20:00:05Z') };
-  const service = createReadStateService({ RoomReadCursorModel: makeCursorModel(current) });
-  const result = await service.advanceCursor({ canonicalUsername: 'rob', room: 'ShittyChat', messageId: '000000000000000000000001', timestamp: '2026-09-05T20:00:04Z' });
+  const result = await makeService(current).advanceCursor({
+    canonicalUsername: 'rob', room: 'ShittyChat',
+    messageId: '000000000000000000000001', timestamp: '2026-09-05T20:00:04Z',
+  });
   assert.equal(result.advanced, false);
-  assert.equal(result.cursor.messageId, current.messageId);
-});
-
-test('equal timestamp advances only to greater ObjectId string', async () => {
-  const service = createReadStateService({ RoomReadCursorModel: makeCursorModel({ messageId: '000000000000000000000001', messageTimestamp: new Date('2026-09-05T20:00:05Z') }) });
-  const result = await service.advanceCursor({ canonicalUsername: 'rob', room: 'ShittyChat', messageId: '000000000000000000000002', timestamp: '2026-09-05T20:00:05Z' });
-  assert.equal(result.advanced, true);
 });
 ```
 
-The file defines deterministic `makeCursorModel()` methods for `findOne` and compare-and-swap `findOneAndUpdate`; no live Mongo is required.
+Add equal-timestamp tie-break test and simulated CAS race test where another writer advances further before update.
 
 - [ ] **Step 2: Run RED**
 
@@ -467,11 +369,7 @@ The file defines deterministic `makeCursorModel()` methods for `findOne` and com
 node --test tests/push/read-state-service.test.js
 ```
 
-Expected: FAIL.
-
-- [ ] **Step 3: Create model and service**
-
-Model:
+- [ ] **Step 3: Create model**
 
 ```js
 const schema = new mongoose.Schema({
@@ -483,7 +381,7 @@ const schema = new mongoose.Schema({
 schema.index({ canonicalUsername: 1, room: 1 }, { unique: true });
 ```
 
-Ordering helper:
+- [ ] **Step 4: Implement compare + CAS service**
 
 ```js
 const compareCursor = (a, b) => {
@@ -494,51 +392,38 @@ const compareCursor = (a, b) => {
 };
 ```
 
-Use compare-then-CAS semantics: read current, return without mutation when candidate is not greater, otherwise `findOneAndUpdate` with a filter that still matches the observed `messageId/messageTimestamp` (or an upsert when no row exists). If a concurrent writer wins, reload and retry once. Never use an unconditional `$set` that can race the cursor backwards.
+Flow: validate inputs; read current; return unchanged when candidate <= current; otherwise `findOneAndUpdate` with a filter matching the observed `messageId/messageTimestamp`, or an upsert for absent row. If CAS loses, reload and retry once. Never unconditional `$set` over a newer cursor.
 
-- [ ] **Step 4: Run GREEN**
+- [ ] **Step 5: Run GREEN and commit**
 
 ```bash
 node --test tests/push/read-state-service.test.js
-```
-
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
 git add src/models/room-read-cursor.js src/push/read-state-service.js tests/push/read-state-service.test.js
 git commit -m "feat: add room read cursors"
 ```
 
 ---
 
-### Task 4: Implement Pure Notification Eligibility and Safe Preview Policy
+### Task 4: Implement Pure Eligibility + Safe Preview Policy
 
 **Files:**
 - Create: `src/push/notification-policy.js`
 - Test: `tests/push/notification-policy.test.js`
 
-**Interfaces:**
-- `isDevicePushEligible({ device, subscription, senderCanonicalUsername, readCursor, message, now })`
-- `buildSafePreview(message)`
-- `buildPushIntent({ device, message })`
+**Contract:** policy receives already session/account-valid device candidates; it evaluates subscription, own-account sender, lease freshness, read cursor, and safe preview only.
 
-- [ ] **Step 1: Write table-driven RED tests**
+- [ ] **Step 1: Write RED table tests**
 
-```js
-const baseDevice = {
-  canonicalUsername: 'rob', fcmToken: 'token', disabledAt: null, suppressionLeaseExpiresAt: null,
-};
-const message = { _id: '507f1f77bcf86cd799439011', room: 'ShittyChat', user: 'Nick', text: 'hello', timestamp: new Date('2026-09-05T20:00:00Z') };
-
-assert.equal(isDevicePushEligible({ device: baseDevice, subscription: { room: 'ShittyChat' }, senderCanonicalUsername: 'nick', readCursor: null, message, now: new Date('2026-09-05T20:00:01Z') }), true);
-assert.equal(isDevicePushEligible({ device: baseDevice, subscription: { room: 'ShittyChat' }, senderCanonicalUsername: 'rob', readCursor: null, message, now: new Date('2026-09-05T20:00:01Z') }), false);
-assert.equal(isDevicePushEligible({ device: { ...baseDevice, suppressionLeaseExpiresAt: new Date('2026-09-05T20:00:10Z') }, subscription: { room: 'ShittyChat' }, senderCanonicalUsername: 'nick', readCursor: null, message, now: new Date('2026-09-05T20:00:01Z') }), false);
-assert.equal(isDevicePushEligible({ device: { ...baseDevice, suppressionLeaseExpiresAt: new Date('2026-09-05T19:59:59Z') }, subscription: { room: 'ShittyChat' }, senderCanonicalUsername: 'nick', readCursor: null, message, now: new Date('2026-09-05T20:00:01Z') }), true);
-```
-
-Add tests proving browser presence is not an input, a cleared/expired lease (screen off/background) is eligible, read messages are ineligible, two devices are evaluated independently, and attachment-only previews return exactly `sent an image`, `sent a voice message`, `sent a video`, or `sent a file` without including `fileUrl`.
+Prove:
+- subscribed background device => eligible;
+- sender canonical == target account canonical => ineligible;
+- sender canonical empty (guest) does **not** trigger own-account suppression;
+- fresh lease => ineligible;
+- stale/cleared lease => eligible;
+- disabled/no-token/no-subscription => ineligible;
+- message at/before read cursor => ineligible;
+- browser presence is not an input;
+- image/audio/video/file attachment-only labels are safe human strings and never raw URL.
 
 - [ ] **Step 2: Run RED**
 
@@ -546,103 +431,66 @@ Add tests proving browser presence is not an input, a cleared/expired lease (scr
 node --test tests/push/notification-policy.test.js
 ```
 
-Expected: FAIL.
-
-- [ ] **Step 3: Implement pure policy**
+- [ ] **Step 3: Implement**
 
 ```js
-const isLeaseFresh = (device, now) => {
-  const expiry = device?.suppressionLeaseExpiresAt ? new Date(device.suppressionLeaseExpiresAt).getTime() : 0;
-  return Number.isFinite(expiry) && expiry > new Date(now).getTime();
-};
-
-const isDevicePushEligible = ({ device, subscription, senderCanonicalUsername = '', readCursor, message, now = new Date() }) => {
+const isDevicePushEligible = ({
+  device, subscription, senderCanonicalUsername = '', readCursor, message, now = new Date(),
+}) => {
   if (!device || device.disabledAt || !device.fcmToken || !subscription) return false;
-  const targetUser = String(device.canonicalUsername || '').trim().toLowerCase();
+  const target = String(device.canonicalUsername || '').trim().toLowerCase();
   const sender = String(senderCanonicalUsername || '').trim().toLowerCase();
-  if (sender && targetUser && sender === targetUser) return false;
-  if (isLeaseFresh(device, now)) return false;
+  if (sender && target && sender === target) return false;
+  const lease = device.suppressionLeaseExpiresAt ? new Date(device.suppressionLeaseExpiresAt).getTime() : 0;
+  if (Number.isFinite(lease) && lease > new Date(now).getTime()) return false;
   if (readCursor && compareMessageToCursor(message, readCursor) <= 0) return false;
   return true;
 };
 ```
 
-Guest messages deliberately pass `senderCanonicalUsername: ''`; the persisted guest display `message.user` must never be guessed into account identity for own-message suppression.
+`buildPushIntent({ device, message })` returns only room, messageId, sender display, safe preview, account+room opaque notification key, timestamp. It does not return `device`, `fcmToken`, canonical username, auth data, or password.
 
-`buildPushIntent()` includes only `room`, `messageId`, `sender`, `preview`, `notificationKey`, `timestamp`; it never copies a session token, FCM token, canonical username, room password, or service credential into the payload intent.
-
-- [ ] **Step 4: Run GREEN**
+- [ ] **Step 4: Run GREEN and commit**
 
 ```bash
 node --test tests/push/notification-policy.test.js
-```
-
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
 git add src/push/notification-policy.js tests/push/notification-policy.test.js
 git commit -m "feat: define push eligibility policy"
 ```
 
 ---
 
-### Task 5: Add an Injected Push Coordinator with Explicit Sender Identity
+### Task 5: Add Push Coordinator with Explicit Authenticated Sender Identity
 
 **Files:**
 - Create: `src/push/push-coordinator.js`
 - Test: `tests/push/push-coordinator.test.js`
 
-**Interfaces:**
-- Consumes: `pushDeviceService.listRoomDevices(room)`, `readStateService.getCursor(...)`, `transport.send(intent, token)`.
-- Produces:
-  - `onMessageStored(message, { senderCanonicalUsername = '' } = {}) -> Promise<{ attempted, sent, failed }>`
-  - `sendRoomClear({ canonicalUsername, room, throughMessageId })` reserved for PR C control-message wiring.
+**Interface:**
+`onMessageStored(message, { senderCanonicalUsername = '' } = {}) -> { attempted, sent, failed }`.
 
-- [ ] **Step 1: Write RED tests with a fake transport**
+- [ ] **Step 1: Write RED tests**
 
 ```js
-test('authenticated sender identity suppresses only same-account device', async () => {
-  const delivered = [];
-  const coordinator = createPushCoordinator({
-    pushDeviceService: fakeDevices([
-      { canonicalUsername: 'rob', deviceId: 'r1', fcmToken: 'rob-token' },
-      { canonicalUsername: 'nick', deviceId: 'n1', fcmToken: 'nick-token' },
-    ]),
-    readStateService: { getCursor: async () => null },
-    transport: { send: async (_intent, token) => delivered.push(token) },
-    now: () => new Date('2026-09-05T20:00:00Z'),
+test('same-account registered sender is excluded using explicit canonical identity', async () => {
+  const sent = [];
+  const coordinator = makeCoordinator({
+    devices: [device('rob', 'rob-token'), device('nick', 'nick-token')],
+    send: async (_intent, token) => sent.push(token),
   });
   await coordinator.onMessageStored(message, { senderCanonicalUsername: 'rob' });
-  assert.deepEqual(delivered, ['nick-token']);
+  assert.deepEqual(sent, ['nick-token']);
 });
 
-test('guest sender has no account canonical identity and may notify subscribed accounts', async () => {
-  const delivered = [];
-  const coordinator = createPushCoordinator({
-    pushDeviceService: fakeDevices([{ canonicalUsername: 'rob', deviceId: 'r1', fcmToken: 'rob-token' }]),
-    readStateService: { getCursor: async () => null },
-    transport: { send: async (_intent, token) => delivered.push(token) },
-  });
+test('guest display name is not guessed into account identity', async () => {
+  const sent = [];
+  const coordinator = makeCoordinator({ devices: [device('rob', 'rob-token')], send: async (_intent, token) => sent.push(token) });
   await coordinator.onMessageStored({ ...message, user: 'Guest-abcd' }, { senderCanonicalUsername: '' });
-  assert.deepEqual(delivered, ['rob-token']);
-});
-
-test('permanent token failure retires only that token', async () => {
-  const retired = [];
-  const transport = { send: async () => { const error = new Error('gone'); error.code = 'messaging/registration-token-not-registered'; error.permanent = true; throw error; } };
-  const coordinator = createPushCoordinator({
-    pushDeviceService: { ...fakeDevices([{ canonicalUsername: 'nick', deviceId: 'n1', fcmToken: 'bad-token' }]), retireToken: async (token, reason) => retired.push({ token, reason }) },
-    readStateService: { getCursor: async () => null }, transport,
-  });
-  const result = await coordinator.onMessageStored(message, { senderCanonicalUsername: 'rob' });
-  assert.equal(result.failed, 1);
-  assert.equal(retired[0].token, 'bad-token');
+  assert.deepEqual(sent, ['rob-token']);
 });
 ```
 
-Add a test where one account has two devices and only the fresh-lease device is suppressed.
+Add tests for independent two-device lease state, permanent invalid-token retirement, temporary failure preserving registration, and no FCM token logging.
 
 - [ ] **Step 2: Run RED**
 
@@ -650,114 +498,48 @@ Add a test where one account has two devices and only the fresh-lease device is 
 node --test tests/push/push-coordinator.test.js
 ```
 
-Expected: FAIL.
+- [ ] **Step 3: Implement**
 
-- [ ] **Step 3: Implement coordinator without identity guessing**
+For each `listRoomDevices(message.room)` candidate, load account read cursor, run pure eligibility with explicit sender canonical, send intent to token. On `error.permanent === true`, retire only that token. Log error code/permanent flag, never token.
 
-```js
-const createPushCoordinator = ({ pushDeviceService, readStateService, transport, now = () => new Date(), logger = console }) => {
-  const onMessageStored = async (message, { senderCanonicalUsername = '' } = {}) => {
-    const candidates = await pushDeviceService.listRoomDevices(message.room);
-    let attempted = 0;
-    let sent = 0;
-    let failed = 0;
-    await Promise.all(candidates.map(async ({ device, subscription }) => {
-      const readCursor = await readStateService.getCursor({ canonicalUsername: device.canonicalUsername, room: message.room });
-      if (!isDevicePushEligible({ device, subscription, senderCanonicalUsername, readCursor, message, now: now() })) return;
-      attempted += 1;
-      try {
-        await transport.send(buildPushIntent({ device, message }), device.fcmToken);
-        sent += 1;
-      } catch (error) {
-        failed += 1;
-        if (error?.permanent) await pushDeviceService.retireToken(device.fcmToken, error.code || 'permanent-fcm-error');
-        logger.warn?.('[Push] delivery failed', { code: error?.code || 'unknown', permanent: Boolean(error?.permanent) });
-      }
-    }));
-    return { attempted, sent, failed };
-  };
+Provide `sendRoomClear()` as a no-op interface returning zero counts in PR A; PR C replaces it with real control delivery.
 
-  const sendRoomClear = async () => ({ attempted: 0, sent: 0, failed: 0 });
-  return { onMessageStored, sendRoomClear };
-};
-```
-
-Do not log FCM tokens.
-
-- [ ] **Step 4: Run GREEN**
+- [ ] **Step 4: Run GREEN and commit**
 
 ```bash
 node --test tests/push/push-coordinator.test.js
-```
-
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
 git add src/push/push-coordinator.js tests/push/push-coordinator.test.js
 git commit -m "feat: add push coordinator"
 ```
 
 ---
 
-### Task 6: Add FCM Transport and Disabled Configuration Boundary
+### Task 6: Add Firebase Admin Transport + Disabled Boundary
 
 **Files:**
 - Create: `src/push/fcm-config.js`
 - Create: `src/push/transports/fcm-transport.js`
 - Create: `src/push/transports/null-transport.js`
-- Modify: `package.json`
-- Modify: `package-lock.json` through npm only
-- Test: `tests/push/fcm-transport.test.js`
+- Modify: `package.json`, npm-managed `package-lock.json`
 - Modify: `docs/android-private-apk.md`
+- Test: `tests/push/fcm-transport.test.js`
 
-**Interfaces:**
-- `readFcmConfig(env) -> { enabled, projectId }`
-- `createFcmTransport({ config, messagingFactory }) -> { send(intent, token), sendControl(data, token) }`
-- `createNullTransport() -> same interface, resolves without network`
-
-- [ ] **Step 1: Install the exact server dependency**
+- [ ] **Step 1: Install exact dependency**
 
 ```bash
 npm install firebase-admin@14.3.0 --save-exact
 ```
 
-Expected: dependency changes are npm-managed in `package.json` and `package-lock.json` only.
-
 - [ ] **Step 2: Write RED tests**
 
-```js
-test('FCM transport maps invalid-token error as permanent', async () => {
-  const messaging = { send: async () => { const error = new Error('gone'); error.code = 'messaging/registration-token-not-registered'; throw error; } };
-  const transport = createFcmTransport({ config: { enabled: true, projectId: 'dizychat' }, messagingFactory: () => messaging });
-  await assert.rejects(
-    () => transport.send({ room: 'ShittyChat', messageId: '507f1f77bcf86cd799439011', sender: 'Nick', preview: 'yo', notificationKey: 'room-key', timestamp: '2026-09-05T20:00:00Z' }, 'token'),
-    (error) => error.permanent === true
-  );
-});
+Prove:
+- config disabled => null transport/no network;
+- permanent codes such as `messaging/registration-token-not-registered` are mapped to `error.permanent = true`;
+- temporary errors are non-permanent;
+- serialized payload contains no auth/server/signing secrets;
+- transport accepts injected `messagingFactory` so tests never contact Firebase.
 
-test('push payload cannot contain auth or service credentials', async () => {
-  let captured;
-  const messaging = { send: async (payload) => { captured = payload; return 'ok'; } };
-  const transport = createFcmTransport({ config: { enabled: true, projectId: 'dizychat' }, messagingFactory: () => messaging });
-  await transport.send({ room: 'ShittyChat', messageId: '507f1f77bcf86cd799439011', sender: 'Nick', preview: 'yo', notificationKey: 'room-key', timestamp: '2026-09-05T20:00:00Z' }, 'token');
-  const serialized = JSON.stringify(captured);
-  for (const forbidden of ['sessionToken', 'private_key', 'roomPassword', 'canonicalUsername']) assert.equal(serialized.includes(forbidden), false);
-});
-```
-
-- [ ] **Step 3: Run RED**
-
-```bash
-node --test tests/push/fcm-transport.test.js
-```
-
-Expected: FAIL.
-
-- [ ] **Step 4: Implement configuration and transport**
-
-Configuration:
+- [ ] **Step 3: Implement config**
 
 ```js
 const readFcmConfig = (env = process.env) => ({
@@ -766,26 +548,17 @@ const readFcmConfig = (env = process.env) => ({
 });
 ```
 
-Production credential contract:
+Server credential contract:
 
 ```text
 DIZYCHAT_FCM_ENABLED=true
-DIZYCHAT_FIREBASE_PROJECT_ID=<firebase project id>
+DIZYCHAT_FIREBASE_PROJECT_ID=<project id>
 GOOGLE_APPLICATION_CREDENTIALS=/etc/dizychat/firebase-service-account.json
 ```
 
-Initialize Firebase Admin through application-default credentials:
+Production transport uses `firebase-admin/app` `applicationDefault()/initializeApp()` and `firebase-admin/messaging` `getMessaging()`. Null transport implements same `send()`/`sendControl()` methods and resolves without network.
 
-```js
-const { applicationDefault, initializeApp, getApps } = require('firebase-admin/app');
-const { getMessaging } = require('firebase-admin/messaging');
-const app = getApps()[0] || initializeApp({ credential: applicationDefault(), projectId: config.projectId });
-const messaging = getMessaging(app);
-```
-
-The credential JSON stays on the self-hosted server with restrictive permissions and is never copied into the repo or APK.
-
-- [ ] **Step 5: Run GREEN and lockfile reproducibility**
+- [ ] **Step 4: Run GREEN + lockfile integrity**
 
 ```bash
 node --test tests/push/fcm-transport.test.js
@@ -793,17 +566,9 @@ npm test
 npm ci --ignore-scripts
 ```
 
-Expected: PASS.
+- [ ] **Step 5: Document server-only credential boundary and commit**
 
-- [ ] **Step 6: Document the external credential boundary**
-
-Append to `docs/android-private-apk.md`:
-
-```text
-Firebase service-account credentials exist only on the self-hosted DizyChat server. They are never committed, placed in Android public assets, or packaged in the APK. The server reads DIZYCHAT_FCM_ENABLED, DIZYCHAT_FIREBASE_PROJECT_ID, and GOOGLE_APPLICATION_CREDENTIALS.
-```
-
-- [ ] **Step 7: Commit**
+`docs/android-private-apk.md` must state service-account credentials exist only on self-hosted server and are never committed/packaged in APK.
 
 ```bash
 git add package.json package-lock.json src/push/fcm-config.js src/push/transports/fcm-transport.js src/push/transports/null-transport.js tests/push/fcm-transport.test.js docs/android-private-apk.md
@@ -812,45 +577,34 @@ git commit -m "feat: add server FCM transport"
 
 ---
 
-### Task 7: Wire Mobile Session Metadata, Push HTTP Contracts, Room Subscription Hooks, and Revocation
+### Task 7: Wire Socket Mobile Metadata, HTTP Contracts, Room Hooks, and Revocation
 
 **Files:**
 - Modify: `index.js`
 - Test: `tests/push/push-http-contract.test.js`
 
-**Interfaces:**
-- Socket fields after auth:
-  - `socket.principal`
-  - `socket.accountSessionToken`
-  - `socket.mobileSessionId` — non-empty only for valid mobile session.
-  - `socket.mobileDeviceId` — set from validated native join payload when that device belongs to the authenticated mobile session.
-- `POST /api/mobile/push/register` — mobile session only; body `{ deviceId, fcmToken, deviceLabel }`.
-- `POST /api/mobile/push/presence` — mobile session only; body `{ deviceId, interactive, ttlMs }`.
-- `POST /api/read-state/mark` — authenticated account; body `{ room, messageId }`.
-- `GET /api/read-state?room=<room>` — authenticated account.
+**HTTP contracts:**
+- `POST /api/mobile/push/register` mobile only `{ deviceId, fcmToken, deviceLabel }`
+- `POST /api/mobile/push/presence` mobile only `{ deviceId, interactive, ttlMs }`
+- `POST /api/read-state/mark` authenticated account `{ room, messageId }`
+- `GET /api/read-state?room=<room>` authenticated account
 
-- [ ] **Step 1: Write RED socket/auth/HTTP tests**
+- [ ] **Step 1: Write RED HTTP/socket tests**
 
-Tests must prove:
-
-```js
-assert.equal((await post('/api/mobile/push/register', {}, null)).status, 401);
-assert.equal((await post('/api/mobile/push/register', { deviceId: 'd1', fcmToken: 't1' }, browserToken)).status, 403);
-assert.equal((await post('/api/mobile/push/register', { deviceId: 'd1', fcmToken: 't1' }, mobileToken)).status, 200);
-assert.equal((await post('/api/mobile/push/presence', { deviceId: 'd1', interactive: false }, mobileToken)).status, 200);
-```
-
-Also prove:
-- mobile handshake/account-session refresh preserves `mobileSessionId`;
-- browser handshake leaves `mobileSessionId === ''`;
-- native accepted join stores `socket.mobileDeviceId` and subscribes exactly once;
+Prove:
+- no bearer => 401 register;
+- browser bearer => 403 register/presence;
+- mobile bearer => 200;
+- mobile handshake/login/session refresh preserves server-side `mobileSessionId` without exposing it in ack;
+- browser socket has empty `mobileSessionId`;
+- presence TTL is server-capped;
+- message ID/room mismatch is rejected;
 - rejected room password never subscribes;
-- explicit Leave unsubscribes only that `sessionId/deviceId/room`;
+- successful native join subscribes only registered same-session device;
+- explicit Leave unsubscribes only same-session/device/room;
 - disconnect does not unsubscribe;
-- logout disables that mobile session's push rows/subscriptions;
-- user-wide mobile-session revocation disables that user's push rows/subscriptions;
-- `/api/read-state/mark` rejects a message not belonging to the requested room;
-- presence `ttlMs` is capped by the server.
+- logout disables session push state;
+- account-wide mobile revoke disables all that account's push state.
 
 - [ ] **Step 2: Run RED**
 
@@ -858,83 +612,53 @@ Also prove:
 node --test tests/push/push-http-contract.test.js
 ```
 
-Expected: FAIL.
+- [ ] **Step 3: Preserve session metadata on sockets**
 
-- [ ] **Step 3: Preserve mobile session metadata in the existing socket auth seams**
-
-In `io.use` initialize and set:
+Initialize:
 
 ```js
 socket.principal = null;
 socket.accountSessionToken = '';
 socket.mobileSessionId = '';
-const session = await resolveAccountSessionToken(sessionToken);
-if (session) {
-  socket.principal = session.principal;
-  socket.accountSessionToken = session.token;
-  socket.mobileSessionId = session.kind === 'mobile' ? String(session.sessionId || '') : '';
-}
+socket.mobileDeviceId = '';
 ```
 
-In successful `account login` and `account session` handlers repeat the same assignment from the newly issued/resolved session. When session resolution fails or logout completes, clear `socket.mobileSessionId` and `socket.mobileDeviceId` as well as principal/token.
-
-Do not include `sessionId` in the client-facing auth ack.
-
-- [ ] **Step 4: Add HTTP auth helpers**
+Whenever `resolveAccountSessionToken()` succeeds during handshake/account login/account session refresh:
 
 ```js
-const readBearerToken = (req) => {
-  const raw = String(req.headers.authorization || '').trim();
-  return raw.toLowerCase().startsWith('bearer ') ? raw.slice(7).trim() : '';
-};
-
-const requireHttpAccount = async (req, res) => {
-  const session = await resolveAccountSessionToken(readBearerToken(req));
-  if (!session?.principal) {
-    res.status(401).json({ error: 'Authentication required' });
-    return null;
-  }
-  return session;
-};
-
-const requireHttpMobileAccount = async (req, res) => {
-  const session = await requireHttpAccount(req, res);
-  if (!session) return null;
-  if (session.kind !== 'mobile' || !session.sessionId) {
-    res.status(403).json({ error: 'Android mobile session required' });
-    return null;
-  }
-  return session;
-};
+socket.principal = session.principal;
+socket.accountSessionToken = session.token;
+socket.mobileSessionId = session.kind === 'mobile' ? String(session.sessionId || '') : '';
 ```
 
-- [ ] **Step 5: Add register/presence/read endpoints**
+Clear mobile fields on failed session/logout. Do not add `sessionId` to auth ack JSON.
 
-Presence cap:
+- [ ] **Step 4: Add HTTP auth helpers and endpoints**
+
+Read bearer token; `requireHttpAccount()` resolves browser or mobile account. `requireHttpMobileAccount()` additionally requires `session.kind === 'mobile' && session.sessionId`.
+
+Presence TTL:
 
 ```js
 const PRESENCE_LEASE_MAX_MS = 90_000;
-const requested = Number(req.body?.ttlMs || 45_000);
-const ttlMs = Math.min(Math.max(Number.isFinite(requested) ? requested : 45_000, 5_000), PRESENCE_LEASE_MAX_MS);
+const raw = Number(req.body?.ttlMs ?? 45_000);
+const ttlMs = Math.min(Math.max(Number.isFinite(raw) ? raw : 45_000, 5_000), PRESENCE_LEASE_MAX_MS);
 ```
 
-For read mark, validate `messageId` as ObjectId, load `Message.findById(messageId)`, require `msg.room === room`, then call `advanceCursor()` with the persisted message timestamp. Never trust a client-supplied timestamp.
+Read mark validates 24-char ObjectId, loads persisted Message, verifies room, and passes persisted timestamp to read service. Never trust client timestamp.
 
-- [ ] **Step 6: Extend current `join room`/`leave room` payloads without breaking browsers**
+- [ ] **Step 5: Bind subscription only after accepted join**
 
-Change join handler signature from destructuring to payload normalization:
+Change current handler signature to `socket.on('join room', async (payload = {}) => { ... })` and read `deviceId` without disturbing existing browser fields.
 
-```js
-socket.on('join room', async (payload = {}) => {
-  const { room, username, password } = payload;
-  const deviceId = typeof payload.deviceId === 'string' ? payload.deviceId.trim().slice(0, 128) : '';
-```
-
-Run the entire existing password/account/ban admission flow unchanged. Only after admission succeeds and the socket has joined the room:
+Run all existing password/account/ban admission checks first. After socket successfully joins:
 
 ```js
 if (socket.mobileSessionId && deviceId && socket.principal?.kind === 'account') {
-  const device = await pushDeviceService.findRegisteredDevice({ sessionId: socket.mobileSessionId, deviceId });
+  const device = await pushDeviceService.findRegisteredDevice({
+    sessionId: socket.mobileSessionId,
+    deviceId,
+  });
   if (device) {
     socket.mobileDeviceId = deviceId;
     await pushDeviceService.subscribeRoom({
@@ -947,99 +671,53 @@ if (socket.mobileSessionId && deviceId && socket.principal?.kind === 'account') 
 }
 ```
 
-Add `findRegisteredDevice({ sessionId, deviceId })` to `push-device-service.js` in Task 2 if the join hook needs this explicit proof; it queries `{ sessionId, deviceId, disabledAt: null }` and returns the row or null.
+No standalone client subscription claim is trusted.
 
-Normalize current Leave handler so legacy browser `{ room }` and native `{ room, deviceId }` both work:
+- [ ] **Step 6: Explicit Leave only**
 
-```js
-socket.on('leave room', async (payload = {}) => {
-  const room = typeof payload === 'string' ? payload : payload.room;
-  const deviceId = typeof payload === 'object' && payload ? String(payload.deviceId || '').trim() : '';
-  const target = normaliseRoomName(room) || socket.currentRoom;
-  if (!target) return;
-  if (socket.mobileSessionId && deviceId && deviceId === socket.mobileDeviceId) {
-    await pushDeviceService.unsubscribeRoom({ sessionId: socket.mobileSessionId, deviceId, room: target });
-  }
-  removeSocketFromRoom(socket, target);
-  emitRoomListUpdate();
-});
-```
+Normalize current Leave object and, when native device ID matches `socket.mobileDeviceId`, unsubscribe exact session/device/room before current `removeSocketFromRoom`. Do not unsubscribe in disconnect handler.
 
-Do not unsubscribe in `disconnect`.
+- [ ] **Step 7: Couple revocation to push disablement**
 
-- [ ] **Step 7: Disable push state on real mobile-session revocation paths**
+For mobile token logout/revoke, resolve current mobile session first, revoke it, then `pushDeviceService.disableSession(sessionId, reason)`. For account-wide `mobileAccountSessions.revokeUser(canonicalUsername)`, also call `pushDeviceService.disableUser(canonicalUsername, 'account-revoked')`.
 
-Wrap token revocation so the mobile session ID is known before revoking, then disable its push state after successful revoke:
+Defense in depth remains in `listRoomDevices()`: even if cleanup fails or account state changes outside this path, revoked/inactive sessions are filtered before push.
 
-```js
-const revokeMobileSessionAndPush = async (token, reason = 'revoked') => {
-  const resolved = await mobileAccountSessions.resolve(token);
-  const revoked = await mobileAccountSessions.revoke(token);
-  if (revoked && resolved?.sessionId) await pushDeviceService.disableSession(resolved.sessionId, reason);
-  return revoked;
-};
-```
-
-Use it from `revokeAccountSessionToken()` for mobile tokens and the existing `account logout` flow. Wherever account-wide mobile sessions are revoked (managed-user disable/state change/revoke-user path), call both:
-
-```js
-await mobileAccountSessions.revokeUser(canonicalUsername);
-await pushDeviceService.disableUser(canonicalUsername, 'account-revoked');
-```
-
-The tests must prove browser-session revocation does not accidentally disable unrelated Android sessions.
-
-- [ ] **Step 8: Run GREEN**
+- [ ] **Step 8: Run GREEN/full suite and commit**
 
 ```bash
 node --test tests/push/push-http-contract.test.js tests/push/push-device-service.test.js tests/push/read-state-service.test.js
 npm test
-```
-
-Expected: PASS.
-
-- [ ] **Step 9: Commit**
-
-```bash
-git add index.js src/push/push-device-service.js tests/push/push-http-contract.test.js tests/push/push-device-service.test.js
+git add index.js tests/push/push-http-contract.test.js
 git commit -m "feat: expose authenticated push state contracts"
 ```
 
 ---
 
-### Task 8: Dispatch Push Only After Message Persistence with Exact Sender Identity
+### Task 8: Dispatch Push After Persistence with Explicit Sender Canonical Identity
 
 **Files:**
 - Modify: `index.js`
 - Test: `tests/push/message-push-integration.test.js`
 
-**Interfaces:**
-- Existing `chat message` storage/publication remains authoritative.
-- Call: `pushCoordinator.onMessageStored(storedMessage, { senderCanonicalUsername })` after persistence/publication.
-- Registered sender uses `socket.principal.canonicalUsername`; guest sender passes `''`.
+- [ ] **Step 1: Write RED tests**
 
-- [ ] **Step 1: Write RED integration tests**
+Prove:
+- coordinator rejection cannot undo accepted/published message;
+- registered sender passes `socket.principal.canonicalUsername`;
+- guest passes empty sender canonical;
+- coordinator called exactly once per accepted stored message.
 
 ```js
-test('FCM rejection cannot reject or duplicate accepted chat message', async () => {
-  const pushCoordinator = { onMessageStored: async () => { throw new Error('FCM down'); } };
-  const result = await exerciseChatMessagePath({ pushCoordinator, principal: { kind: 'account', canonicalUsername: 'rob', username: 'Rob' }, text: 'hello' });
-  assert.equal(result.persistedCount, 1);
-  assert.equal(result.socketPublishedCount, 1);
-});
-
-test('registered sender canonical identity is passed explicitly', async () => {
+test('registered sender canonical is passed explicitly', async () => {
   const calls = [];
   const pushCoordinator = { onMessageStored: async (message, meta) => calls.push({ message, meta }) };
-  await exerciseChatMessagePath({ pushCoordinator, principal: { kind: 'account', canonicalUsername: 'rob', username: 'Rob' }, text: 'hello' });
+  await exerciseChatMessagePath({
+    pushCoordinator,
+    principal: { kind: 'account', username: 'Rob', canonicalUsername: 'rob' },
+    text: 'hello',
+  });
   assert.equal(calls[0].meta.senderCanonicalUsername, 'rob');
-});
-
-test('guest sender passes empty canonical account identity', async () => {
-  const calls = [];
-  const pushCoordinator = { onMessageStored: async (message, meta) => calls.push({ message, meta }) };
-  await exerciseChatMessagePath({ pushCoordinator, principal: { kind: 'guest', canonicalUsername: 'guest-abcd', username: 'Guest-abcd' }, text: 'hello' });
-  assert.equal(calls[0].meta.senderCanonicalUsername, '');
 });
 ```
 
@@ -1049,37 +727,30 @@ test('guest sender passes empty canonical account identity', async () => {
 node --test tests/push/message-push-integration.test.js
 ```
 
-Expected: FAIL until the message path has an injectable/coordinator seam.
+- [ ] **Step 3: Wire fire-and-forget post-persist dispatch**
 
-- [ ] **Step 3: Wire fire-and-forget dispatch after accepted message storage/publication**
-
-At the existing successful `chat message` boundary, after `await newMsg.save()` and normal Socket.IO publication/delivery-status work:
+After current `await newMsg.save()` and normal room publication/delivery-status path:
 
 ```js
-const storedMessage = toPlainMessage(newMsg);
 const senderCanonicalUsername = socket.principal?.kind === 'account'
   ? String(socket.principal.canonicalUsername || '')
   : '';
 
-void pushCoordinator.onMessageStored(storedMessage, { senderCanonicalUsername }).catch((error) => {
+void pushCoordinator.onMessageStored(
+  newMsg.toJSON ? newMsg.toJSON() : newMsg,
+  { senderCanonicalUsername }
+).catch((error) => {
   console.warn('[Push] post-message dispatch failed', { code: error?.code || 'unexpected' });
 });
 ```
 
-Do not derive account identity from `newMsg.user`. Do not `await` FCM before accepting/publishing the chat message.
+Never derive account identity from `newMsg.user`. Do not await FCM before message acceptance.
 
-- [ ] **Step 4: Run GREEN and full deterministic suite**
+- [ ] **Step 4: Run GREEN/full suite and commit**
 
 ```bash
 node --test tests/push/message-push-integration.test.js tests/push/push-coordinator.test.js
 npm test
-```
-
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
 git add index.js tests/push/message-push-integration.test.js
 git commit -m "feat: dispatch push after stored messages"
 ```
@@ -1088,68 +759,59 @@ git commit -m "feat: dispatch push after stored messages"
 
 ### Task 9: Exact-Head PR A Gate
 
-**Files:** No feature changes unless a failing gate proves a defect.
-
-- [ ] **Step 1: Verify dependency tree and deterministic tests**
+- [ ] **Step 1: Deterministic/dependency gate**
 
 ```bash
 npm ci
 npm test
 ```
 
-Expected: PASS.
-
-- [ ] **Step 2: Verify Android packaging remains valid with push unconfigured**
+- [ ] **Step 2: Android regression build with push unconfigured**
 
 ```bash
 npm run android:prepare
 npx cap sync android
-cd android
-./gradlew assembleDebug --no-daemon
+cd android && ./gradlew assembleDebug --no-daemon
 ```
 
-Expected: debug APK builds successfully without server Firebase credentials. PR B handles Android Firebase client configuration.
+Expected: existing debug APK still builds; PR B adds Android client Firebase config.
 
-- [ ] **Step 3: Secret/payload scan**
+- [ ] **Step 3: Secret scan**
 
 ```bash
 git grep -nE 'BEGIN PRIVATE KEY|private_key_id|dcm1\.[A-Za-z0-9_-]{8,}|mongodb(\+srv)?://[^[:space:]]+:[^[:space:]]+@' -- ':!docs/superpowers/**'
 ```
 
-Expected: no committed credential material or hard-coded mobile token. Environment variable names are allowed; credential values are not.
+Expected: no committed credential material/hard-coded mobile token.
 
-- [ ] **Step 4: Confirm exact head and diff scope**
+- [ ] **Step 4: Exact head/diff**
 
 ```bash
 git rev-parse HEAD
-git diff --stat origin/main...HEAD
 git status --short
+git diff --stat origin/main...HEAD
 ```
 
-Expected: clean working tree; diff contains only PR A server foundation, tests, npm-managed dependency update, and docs.
+- [ ] **Step 5: Draft PR via connected GitHub**
 
-- [ ] **Step 5: Push/open draft PR and require CI on exact final SHA**
-
-Use the connected GitHub app for PR operations. Record the exact head SHA in the PR body. If any later commit moves the head, require the new exact head to pass the full gate again before merge consideration.
+Record exact head SHA and require deterministic/Android CI on that SHA. Any later commit invalidates earlier green evidence and requires the gate again.
 
 ---
 
 ## PR A Acceptance Boundary
 
-PR A is complete only when the exact final head proves all of the following:
+PR A is complete only when exact final-head evidence proves:
 
-- mobile session IDs are available server-side without leaking token hashes;
-- sockets preserve whether an authenticated session is mobile and its safe session ID;
-- push devices are session-bound and token rotation is deterministic;
-- active subscription lookups are scoped to the same session/device/room;
-- room subscriptions are created only after successful room admission;
-- explicit Leave removes only that device subscription; disconnect/background does not;
-- logout/mobile-session revocation disables that session's push state; account-wide revoke disables that account's mobile push state;
-- read cursors are account+room, ObjectId-valid, and monotonic;
-- fresh foreground+interactive lease suppresses only that device; stale/cleared lease remains eligible;
-- registered own-account messages are excluded using explicit authenticated canonical identity; guest display names are never guessed into account identity;
-- FCM credentials are external to Git/APK;
-- permanent token failures retire only the bad registration;
-- temporary transport failures preserve state;
-- chat storage/publication works identically with FCM disabled or failing;
-- `npm test`, Capacitor sync, and Android debug build pass on the exact final head.
+- safe mobile session ID exists server-side without token-hash exposure;
+- every push candidate is backed by active PushDevice + non-revoked MobileSession + active User;
+- token rotation is compatible with retired historical rows via active-only unique token index;
+- subscriptions are same-session/same-device and created only after successful room admission;
+- explicit Leave unsubscribes; disconnect/background does not;
+- logout/revocation disables push state and recipient filtering independently defends against stale cleanup;
+- read cursor is account+room, ObjectId-valid, monotonic under races;
+- foreground lease suppresses only target device; stale/cleared lease is eligible;
+- own-account suppression uses explicit authenticated sender canonical; guest display names are never guessed into account identity;
+- FCM credentials stay outside Git/APK;
+- permanent bad token retires only that registration; temporary transport failure preserves state;
+- push disabled/failing never breaks/duplicates chat persistence or Socket.IO;
+- `npm test`, Capacitor sync, and Android debug build pass on exact final head.
