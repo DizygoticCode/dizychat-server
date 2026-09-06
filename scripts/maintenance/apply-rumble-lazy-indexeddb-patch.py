@@ -15,7 +15,7 @@ def replace_once(text, old, new, label):
 
 
 def regex_once(text, pattern, replacement, label, flags=re.S):
-    updated, count = re.subn(pattern, replacement, text, count=1, flags=flags)
+    updated, count = re.subn(pattern, lambda _match: replacement, text, count=1, flags=flags)
     if count != 1:
         raise SystemExit(f"{label}: expected exactly one regex match, found {count}")
     return updated
@@ -288,7 +288,7 @@ indexed = INDEXEDDB_TEST.read_text(encoding="utf-8")
 indexed = regex_once(
     indexed,
     r'test\("legacy localStorage transcript migrates before the old key is removed", \(\) => \{.*?\n\}\);',
-    '''test("legacy localStorage transcript migrates during lightweight storage readiness before the old key is removed", () => {
+    r'''test("legacy localStorage transcript migrates during lightweight storage readiness before the old key is removed", () => {
   const prepare = between("async function prepareChatTranscriptStorage()", "async function initializeChatTranscriptStorage()");
   const hydrate = between("async function initializeChatTranscriptStorage()", "let chatLogSaveTimer = null;");
   assert.match(prepare, /legacyChatLog/);
@@ -304,7 +304,7 @@ indexed = regex_once(
 indexed = regex_once(
     indexed,
     r'test\("boot waits for transcript storage and the panel reports IndexedDB status", \(\) => \{.*?\n\}\);',
-    '''test("boot prepares IndexedDB sequence state without hydrating history and panel opens hydration", () => {
+    r'''test("boot prepares IndexedDB sequence state without hydrating history and panel opens hydration", () => {
   assert.match(source, /id="chatStorageStatus"/);
   assert.match(source, /chatStorageSummaryText\(\)/);
   const boot = between("async function boot()", "if (document.readyState");
