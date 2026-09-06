@@ -69,6 +69,7 @@ const buildPushIntent = ({ device, message } = {}) => {
     ? message.timestamp.toISOString()
     : new Date(message?.timestamp).toISOString();
   return {
+    type: 'message',
     room: String(message?.room || ''),
     messageId: String(message?._id || message?.id || ''),
     sender: String(message?.user || ''),
@@ -78,10 +79,23 @@ const buildPushIntent = ({ device, message } = {}) => {
   };
 };
 
+const buildReadControlIntent = ({ device, room, cursor } = {}) => ({
+  type: 'read-control',
+  room: String(room || '').trim(),
+  messageId: String(cursor?.messageId || '').trim().toLowerCase(),
+  sender: '',
+  preview: '',
+  notificationKey: buildNotificationKey(device?.canonicalUsername, room),
+  timestamp: cursor?.messageTimestamp instanceof Date
+    ? cursor.messageTimestamp.toISOString()
+    : new Date(cursor?.messageTimestamp).toISOString(),
+});
+
 module.exports = {
   MAX_PREVIEW_LENGTH,
   buildNotificationKey,
   buildPushIntent,
+  buildReadControlIntent,
   buildSafePreview,
   isDevicePushEligible,
 };
