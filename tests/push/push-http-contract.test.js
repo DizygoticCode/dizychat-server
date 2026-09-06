@@ -22,6 +22,7 @@ test('server constructs persistent push and read-state authorities', () => {
   requirePattern(/createPushDeviceService\s*\(/, 'push device service must be constructed');
   requirePattern(/createReadStateService\s*\(/, 'read state service must be constructed');
   requirePattern(/createPushCoordinator\s*\(/, 'push coordinator must be constructed');
+  requirePattern(/createReadStateCoordinator\s*\(/, 'read-state coordinator must be constructed');
 });
 
 test('push registration and presence require mobile bearer sessions with explicit 401 and 403 boundaries', () => {
@@ -38,12 +39,25 @@ test('presence TTL is bounded server-side', () => {
   requirePattern(/Math\.min\([\s\S]*Math\.max\([\s\S]*5_000[\s\S]*PRESENCE_LEASE_MAX_MS/, 'presence TTL must be clamped');
 });
 
-test('read-state endpoints authenticate accounts and derive timestamp from the persisted message', () => {
+test('read-state endpoints authenticate accounts and route through the authoritative coordinator', () => {
   requirePattern(/app\.post\(['"]\/api\/read-state\/mark['"]/, 'read mark route must exist');
   requirePattern(/app\.get\(['"]\/api\/read-state['"]/, 'read cursor route must exist');
   requirePattern(/Message\.findById\(messageId\)/, 'read mark must load the persisted message');
   requirePattern(/messageTimestamp|timestamp:\s*(message|persistedMessage|msg)\.timestamp/, 'persisted message timestamp must feed read cursor');
   requirePattern(/MESSAGE_ROOM_MISMATCH/, 'room mismatch must be explicitly rejected');
+  requirePattern(/app\.post\(['"]\/api\/read-state\/mark['"][\s\S]*readStateCoordinator\.advance/, 'read mark must advance through the coordinator');
+  requirePattern(/app\.get\(['"]\/api\/read-state['"][\s\S]*readStateCoordinator\.getCursor/, 'read cursor GET must read through the coordinator');
+});
+
+test('authenticated socket reads advance account cursor independently of legacy global receipt state', () => {
+  const messageRead = handlerSlice('message read', 'edit message');
+  assert.match(messageRead, /socket\.principal\?\.kind\s*===\s*['"]account['"]/, 'only registered account principals may advance account read state');
+  assert.match(messageRead, /readStateCoordinator\.advance/, 'socket read must advance authoritative account cursor');
+  const coordinatorAdvance = messageRead.indexOf('readStateCoordinator.advance');
+  const legacyStatusGuard = messageRead.indexOf("msg.status === 'read'");
+  assert.ok(coordinatorAdvance >= 0, 'coordinator advance must exist');
+  assert.ok(legacyStatusGuard < 0 || coordinatorAdvance < legacyStatusGuard,
+    'legacy global Message.status must not short-circuit another account cursor advancement');
 });
 
 test('socket session metadata keeps mobileSessionId server-side and never adds it to auth ack', () => {
