@@ -9,23 +9,27 @@ const root = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const exists = (file) => fs.existsSync(path.join(root, file));
 
-test('SecureSession plugin encrypts tokens with AndroidKeyStore AES-GCM', () => {
-  const source = read('android/app/src/main/java/com/chat/dizychat/SecureSessionPlugin.java');
-  assert.match(source, /@CapacitorPlugin\(name\s*=\s*"SecureSession"\)/);
-  assert.match(source, /AndroidKeyStore/);
-  assert.match(source, /KeyProperties\.KEY_ALGORITHM_AES/);
-  assert.match(source, /KeyProperties\.BLOCK_MODE_GCM/);
-  assert.match(source, /KeyProperties\.ENCRYPTION_PADDING_NONE/);
-  assert.match(source, /AES\/GCM\/NoPadding/);
-  assert.match(source, /cipher\.init\(Cipher\.ENCRYPT_MODE,\s*getOrCreateKey\(\)\);/);
-  assert.match(source, /byte\[\]\s+iv\s*=\s*cipher\.getIV\(\);/);
-  assert.doesNotMatch(source, /SecureRandom/, 'AndroidKeyStore must generate the AES-GCM encryption IV');
-  assert.doesNotMatch(source, /new byte\[12\]/, 'caller-generated GCM IVs are rejected unless CALLER_NONCE is enabled');
-  assert.match(source, /MODE_PRIVATE/);
-  assert.match(source, /Base64/);
-  assert.match(source, /ciphertext/);
-  assert.match(source, /iv/);
-  assert.doesNotMatch(source, /putString\([^\n]*token/i, 'plain token must never be stored in SharedPreferences');
+test('SecureSession plugin delegates to AndroidKeyStore AES-GCM storage', () => {
+  const plugin = read('android/app/src/main/java/com/chat/dizychat/SecureSessionPlugin.java');
+  const store = read('android/app/src/main/java/com/chat/dizychat/SecureSessionStore.java');
+  assert.match(plugin, /@CapacitorPlugin\(name\s*=\s*"SecureSession"\)/);
+  assert.match(plugin, /SecureSessionStore\.readToken\(getContext\(\)\)/);
+  assert.match(plugin, /SecureSessionStore\.writeToken\(getContext\(\),/);
+  assert.match(plugin, /SecureSessionStore\.clearToken\(getContext\(\)\)/);
+  assert.match(store, /AndroidKeyStore/);
+  assert.match(store, /KeyProperties\.KEY_ALGORITHM_AES/);
+  assert.match(store, /KeyProperties\.BLOCK_MODE_GCM/);
+  assert.match(store, /KeyProperties\.ENCRYPTION_PADDING_NONE/);
+  assert.match(store, /AES\/GCM\/NoPadding/);
+  assert.match(store, /cipher\.init\(Cipher\.ENCRYPT_MODE,\s*getOrCreateKey\(\)\);/);
+  assert.match(store, /byte\[\]\s+iv\s*=\s*cipher\.getIV\(\);/);
+  assert.doesNotMatch(store, /SecureRandom/, 'AndroidKeyStore must generate the AES-GCM encryption IV');
+  assert.doesNotMatch(store, /new byte\[12\]/, 'caller-generated GCM IVs are rejected unless CALLER_NONCE is enabled');
+  assert.match(store, /MODE_PRIVATE/);
+  assert.match(store, /Base64/);
+  assert.match(store, /ciphertext/);
+  assert.match(store, /iv/);
+  assert.doesNotMatch(store, /putString\([^\n]*token/i, 'plain token must never be stored in SharedPreferences');
 });
 
 test('MobileShell plugin accepts only HTTP(S) and hands links to ACTION_VIEW', () => {
