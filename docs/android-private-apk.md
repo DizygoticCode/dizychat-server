@@ -4,11 +4,22 @@ DizyChat Android Slice 1 is a private, sideload-only Capacitor application. It b
 
 The APK does not contain server credentials, MongoDB credentials, API keys, or signing passwords. Release signing material stays outside Git. Possession of the APK does not grant access: the DizyChat server remains the account and authorization authority.
 
-## CI debug APK
+## CI Android APKs
 
-The repository workflow `.github/workflows/android-slice1-ci.yml` runs the deterministic test suite, synchronizes Capacitor, builds an unsigned/debug Android package, and uploads it as the `dizychat-android-debug-apk` Actions artifact.
+The repository workflow `.github/workflows/android-slice1-ci.yml` runs the deterministic test suite, synchronizes Capacitor, builds the existing debug package, and also builds a release package signed with the permanent DizyChat release identity.
 
-The CI build intentionally requires no production signing secrets. It is suitable for reproducible build validation and first-device testing.
+Firebase configuration is reconstructed from `DIZYCHAT_GOOGLE_SERVICES_JSON_B64`. Release signing requires all four signing secrets and fails closed if any is missing:
+
+```text
+DIZYCHAT_RELEASE_KEYSTORE_B64
+DIZYCHAT_KEY_ALIAS
+DIZYCHAT_KEYSTORE_PASSWORD
+DIZYCHAT_KEY_PASSWORD
+```
+
+The workflow reconstructs `google-services.json` and `dizychat-release.jks` only on the ephemeral GitHub Actions runner. The signing keystore and passwords are not committed to Git. Gradle produces the release APK directly as `dizychat-v1.apk`; the workflow verifies that exact APK with Android `apksigner` before uploading it as the `dizychat-android-release-apk` Actions artifact. Producing this artifact does not publish the application to Google Play.
+
+The existing `dizychat-android-debug-apk` artifact remains available for reproducible debug/build diagnostics; the debug build step does not receive the release signing passwords.
 
 ## Create a private release signing key
 
@@ -21,7 +32,9 @@ keytool -genkeypair -v -keystore "$HOME/.dizychat/dizychat-release.jks" -alias d
 
 `keytool` prompts for the keystore/key passwords. Do not put those passwords in this document, source control, shell history, issue comments, build logs, or the APK. Supply them interactively or through the operator's secret store.
 
-## Build a signed release APK
+For CI, keep the original keystore backed up outside Git and store only its Base64 representation plus the alias/password values as encrypted GitHub Actions repository secrets. Losing the permanent private key would prevent future APKs signed with a different key from updating an installed release in place.
+
+## Build a signed release APK locally
 
 Export only the signing boundary expected by `android/app/build.gradle`:
 
@@ -34,12 +47,12 @@ npx cap sync android
 (cd android && ./gradlew assembleRelease --no-daemon)
 ```
 
-Before distributing a build, confirm all four variables are present in the local build environment. The release keystore and both passwords remain outside Git and GitHub Actions.
+Before distributing a local build, confirm all four variables are present in the build environment. The original release keystore and its passwords remain outside Git.
 
 Expected signed APK:
 
 ```text
-android/app/build/outputs/apk/release/app-release.apk
+android/app/build/outputs/apk/release/dizychat-v1.apk
 ```
 
 ## Install or update a tester device
@@ -47,10 +60,12 @@ android/app/build/outputs/apk/release/app-release.apk
 Enable Android's permission to install apps from the chosen sideload source, or use ADB from a trusted development machine:
 
 ```bash
-adb install -r android/app/build/outputs/apk/release/app-release.apk
+adb install -r android/app/build/outputs/apk/release/dizychat-v1.apk
 ```
 
-For a first test using the CI artifact, download `dizychat-android-debug-apk`, extract `app-debug.apk`, and install that debug package instead. Do not treat a successful build or install as Slice 1 acceptance by itself.
+A device currently running a debug-signed `com.chat.dizychat` APK cannot normally update directly to the permanent release-signed APK because Android requires matching signing identities. For that one-time transition, uninstall the debug build, install the signed release APK, then sign in again. Future releases signed with the same permanent DizyChat key can update the release installation normally.
+
+For CI testing, download `dizychat-android-release-apk` and extract `dizychat-v1.apk`. Do not treat a successful build or install as device acceptance by itself.
 
 ## Session and backend expectations
 

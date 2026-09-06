@@ -123,7 +123,10 @@ test('Android Slice 1 CI reproducibly runs JVM tests, builds, and uploads an uns
   assert.match(workflow, /actions\/upload-artifact@v4/);
   assert.match(workflow, /name:\s*dizychat-android-debug-apk/);
   assert.match(workflow, /android\/app\/build\/outputs\/apk\/debug\/app-debug\.apk/);
-  assert.doesNotMatch(workflow, /DIZYCHAT_KEYSTORE_PASSWORD|DIZYCHAT_KEY_PASSWORD/, 'debug CI must not require release signing secrets');
+
+  const debugBuildStep = workflow.match(/- name: Run Android JVM tests and build unsigned debug APK[\s\S]*?(?=\n      - name:)/)?.[0] || '';
+  assert.notEqual(debugBuildStep, '', 'debug build step must remain present');
+  assert.doesNotMatch(debugBuildStep, /DIZYCHAT_KEYSTORE_PASSWORD|DIZYCHAT_KEY_PASSWORD/, 'debug build step must not receive release signing secrets');
 });
 
 test('private APK runbook keeps release signing material outside Git and defines the device gate', () => {
@@ -139,7 +142,7 @@ test('private APK runbook keeps release signing material outside Git and defines
   assert.match(runbook, /DIZYCHAT_KEYSTORE_PASSWORD/);
   assert.match(runbook, /DIZYCHAT_KEY_PASSWORD/);
   assert.match(runbook, /assembleRelease --no-daemon/);
-  assert.match(runbook, /adb install -r android\/app\/build\/outputs\/apk\/release\/app-release\.apk/);
+  assert.match(runbook, /adb install -r android\/app\/build\/outputs\/apk\/release\/dizychat-v1\.apk/);
   assert.match(runbook, /outside Git/i);
   assert.match(runbook, /real-device acceptance/i);
 });
