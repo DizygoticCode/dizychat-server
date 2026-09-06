@@ -142,7 +142,7 @@ test('private APK runbook keeps release signing material outside Git and defines
   assert.match(runbook, /DIZYCHAT_KEYSTORE_PASSWORD/);
   assert.match(runbook, /DIZYCHAT_KEY_PASSWORD/);
   assert.match(runbook, /assembleRelease --no-daemon/);
-  assert.match(runbook, /adb install -r android\/app\/build\/outputs\/apk\/release\/app-release\.apk/);
+  assert.match(runbook, /adb install -r android\/app\/build\/outputs\/apk\/release\/dizychat-v1\.apk/);
   assert.match(runbook, /outside Git/i);
   assert.match(runbook, /real-device acceptance/i);
 });
