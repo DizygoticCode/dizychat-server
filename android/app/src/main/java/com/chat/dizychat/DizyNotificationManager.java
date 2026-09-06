@@ -48,7 +48,7 @@ final class DizyNotificationManager {
         }
     }
 
-    static void applyReadControl(
+    static boolean applyReadControl(
             Context context,
             String room,
             String messageId,
@@ -65,13 +65,17 @@ final class DizyNotificationManager {
             );
             if (result.status == DizyNotificationStateStore.ReconcileStatus.CLEARED) {
                 cancel(context, result.notificationId);
-            } else if (result.status == DizyNotificationStateStore.ReconcileStatus.UPDATED
+                return true;
+            }
+            if (result.status == DizyNotificationStateStore.ReconcileStatus.UPDATED
                     && result.state != null
                     && canNotify(context)) {
                 renderState(context, result.state, false);
             }
+            return false;
         } catch (RuntimeException ignored) {
             // A malformed or out-of-order control must never clear unread state by guessing.
+            return false;
         }
     }
 
