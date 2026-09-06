@@ -62,7 +62,7 @@ const createMobileSessionService = ({
       ? metadata.deviceLabel.trim().slice(0, 120)
       : 'Android';
 
-    await MobileSessionModel.create({
+    const stored = await MobileSessionModel.create({
       tokenHash: hashMobileToken(token),
       canonicalUsername,
       userId: String(principal.userId || ''),
@@ -73,6 +73,7 @@ const createMobileSessionService = ({
     return {
       token,
       kind: 'mobile',
+      sessionId: stored?._id ? String(stored._id) : '',
       principal: {
         kind: 'account',
         userId: String(principal.userId || ''),
@@ -105,7 +106,12 @@ const createMobileSessionService = ({
     const principal = principalFromAccount(account);
     if (!principal.canonicalUsername || !principal.username) return null;
 
-    return { token, kind: 'mobile', principal };
+    return {
+      token,
+      kind: 'mobile',
+      sessionId: stored?._id ? String(stored._id) : '',
+      principal,
+    };
   };
 
   const revoke = async (token) => {
