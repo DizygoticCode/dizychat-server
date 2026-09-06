@@ -108,6 +108,7 @@ test('Android Slice 1 CI reproducibly runs JVM tests, builds, and uploads an uns
   assert.equal(exists(workflowPath), true, 'final Android Slice 1 CI workflow must exist');
   const workflow = read(workflowPath);
 
+  assert.match(workflow, /push:\s*\n\s*branches:[\s\S]*?\n\s*-\s*main\s*\n\s*pull_request:/, 'Android CI must run on pushes to main');
   assert.match(workflow, /runs-on:\s*ubuntu-latest/);
   assert.match(workflow, /actions\/setup-node@v4/);
   assert.match(workflow, /node-version:\s*["']?22["']?/);
