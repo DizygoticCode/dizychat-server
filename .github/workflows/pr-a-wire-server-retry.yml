@@ -39,7 +39,7 @@ jobs:
           blocks = []
           i = 0
           while i < len(lines):
-              if "python - <<'PY'" not in lines[i]:
+              if "<<'PY'" not in lines[i]:
                   i += 1
                   continue
               i += 1
