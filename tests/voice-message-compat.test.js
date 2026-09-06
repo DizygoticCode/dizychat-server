@@ -1,19 +1,27 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const root = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
-const exists = (file) => fs.existsSync(path.join(root, file));
-
 const helperPath = 'src/uploads/voice-message-normalizer.js';
+const normalizer = require(path.join(root, helperPath));
 
-const loadNormalizer = () => {
-  assert.equal(exists(helperPath), true, 'voice-message normalizer must exist');
-  return require(path.join(root, helperPath));
+const withTempDirs = async (fn) => {
+  const base = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'dizychat-voice-'));
+  const quarantine = path.join(base, 'quarantine');
+  const uploads = path.join(base, 'uploads');
+  await fs.promises.mkdir(quarantine);
+  await fs.promises.mkdir(uploads);
+  try {
+    await fn({ quarantine, uploads });
+  } finally {
+    await fs.promises.rm(base, { recursive: true, force: true });
+  }
 };
 
 test('voice recorder prefers old-iPhone-compatible MP4/AAC before WebM or Ogg', () => {
@@ -29,11 +37,11 @@ test('voice recorder prefers old-iPhone-compatible MP4/AAC before WebM or Ogg', 
 
 test('recorded voice uploads are explicitly marked without changing ordinary attachment uploads', () => {
   const source = read('public/chat.js');
-  const uploadSlice = source.match(/const uploadFileAndSend = async \(fileOrBlob, options = \{\}\) => \{[\s\S]{0,2600}?\n\};/)?.[0] || '';
+  const uploadSlice = source.match(/const uploadFileAndSend = async \(fileOrBlob, options = \{\}\) => \{[\s\S]{0,2800}?\n\};/)?.[0] || '';
   assert.match(uploadSlice, /voiceMessage/);
   assert.match(uploadSlice, /formData\.append\(["']voiceMessage["'],\s*["']1["']\)/);
 
-  const voiceSlice = source.match(/\/\/ ------------------- Voice Messages[\s\S]{0,12000}?\/\/ ------------------- Live Calls/)?.[0] || '';
+  const voiceSlice = source.match(/\/\/ ------------------- Voice Messages[\s\S]{0,14000}?\/\/ ------------------- Live Calls/)?.[0] || '';
   assert.match(voiceSlice, /uploadFileAndSend\(blob,[\s\S]{0,500}?voiceMessage:\s*true/);
 
   const attachmentSlice = source.match(/const uploadDroppedFiles = async[\s\S]{0,1200}?\n  \};/)?.[0] || '';
@@ -42,11 +50,7 @@ test('recorded voice uploads are explicitly marked without changing ordinary att
 });
 
 test('legacy WebM and Ogg voice MIME types normalize to AAC in an M4A container', () => {
-  const {
-    shouldNormalizeVoiceMime,
-    buildCompatibleVoiceFilename,
-    buildFfmpegArgs,
-  } = loadNormalizer();
+  const { shouldNormalizeVoiceMime, buildCompatibleVoiceFilename, buildFfmpegArgs } = normalizer;
 
   assert.equal(shouldNormalizeVoiceMime('audio/webm;codecs=opus'), true);
   assert.equal(shouldNormalizeVoiceMime('audio/webm'), true);
@@ -59,8 +63,7 @@ test('legacy WebM and Ogg voice MIME types normalize to AAC in an M4A container'
   assert.equal(buildCompatibleVoiceFilename('voice-123.webm'), 'voice-123.m4a');
   assert.equal(buildCompatibleVoiceFilename('voice-123.ogg'), 'voice-123.m4a');
 
-  const args = buildFfmpegArgs('/tmp/source.webm', '/uploads/voice-123.m4a');
-  assert.deepEqual(args, [
+  assert.deepEqual(buildFfmpegArgs('/tmp/source.webm', '/uploads/voice-123.m4a'), [
     '-hide_banner',
     '-loglevel', 'error',
     '-y',
@@ -73,10 +76,64 @@ test('legacy WebM and Ogg voice MIME types normalize to AAC in an M4A container'
   ]);
 });
 
-test('upload route normalizes only marked incompatible voice clips after antivirus scanning', () => {
+test('WebM voice conversion publishes M4A/audio-mp4 and removes the incompatible source', async () => {
+  await withTempDirs(async ({ quarantine, uploads }) => {
+    const sourcePath = path.join(quarantine, 'file-123.webm');
+    await fs.promises.writeFile(sourcePath, 'webm-source');
+
+    const result = await normalizer.normalizeVoiceMessageUpload({
+      sourcePath,
+      storedFilename: 'file-123.webm',
+      originalName: 'voice-2026-09-06.webm',
+      mimeType: 'audio/webm;codecs=opus',
+      uploadDir: uploads,
+      runFfmpegImpl: async (args) => {
+        assert.equal(args.at(-1), path.join(uploads, 'file-123.m4a'));
+        await fs.promises.writeFile(args.at(-1), 'aac-output');
+      },
+    });
+
+    assert.deepEqual(result, {
+      filename: 'file-123.m4a',
+      originalName: 'voice-2026-09-06.m4a',
+      mimeType: 'audio/mp4',
+      size: Buffer.byteLength('aac-output'),
+    });
+    await assert.rejects(fs.promises.stat(sourcePath), { code: 'ENOENT' });
+    assert.equal(await fs.promises.readFile(path.join(uploads, 'file-123.m4a'), 'utf8'), 'aac-output');
+  });
+});
+
+test('already-compatible voice audio is promoted unchanged and never invokes FFmpeg', async () => {
+  await withTempDirs(async ({ quarantine, uploads }) => {
+    const sourcePath = path.join(quarantine, 'file-456.m4a');
+    await fs.promises.writeFile(sourcePath, 'compatible-audio');
+
+    const result = await normalizer.normalizeVoiceMessageUpload({
+      sourcePath,
+      storedFilename: 'file-456.m4a',
+      originalName: 'voice-2026-09-06.m4a',
+      mimeType: 'audio/mp4',
+      uploadDir: uploads,
+      runFfmpegImpl: async () => {
+        throw new Error('FFmpeg must not run for compatible voice audio');
+      },
+    });
+
+    assert.deepEqual(result, {
+      filename: 'file-456.m4a',
+      originalName: 'voice-2026-09-06.m4a',
+      mimeType: 'audio/mp4',
+      size: Buffer.byteLength('compatible-audio'),
+    });
+    assert.equal(await fs.promises.readFile(path.join(uploads, 'file-456.m4a'), 'utf8'), 'compatible-audio');
+  });
+});
+
+test('upload route normalizes only marked voice clips after antivirus scanning', () => {
   const source = read('index.js');
   assert.match(source, /voice-message-normalizer/);
-  const route = source.match(/app\.post\(['"]\/upload['"][\s\S]{0,5000}?\n\}\);/)?.[0] || '';
+  const route = source.match(/app\.post\(['"]\/upload['"][\s\S]{0,6000}?\n\}\);/)?.[0] || '';
   assert.match(route, /scanFileWithClamAv\(quarantinePath\)/);
   assert.match(route, /voiceMessage/);
   assert.match(route, /normalizeVoiceMessageUpload/);
@@ -84,9 +141,9 @@ test('upload route normalizes only marked incompatible voice clips after antivir
     route.indexOf('scanFileWithClamAv(quarantinePath)') < route.indexOf('normalizeVoiceMessageUpload'),
     'antivirus scan must complete before FFmpeg processes a voice upload'
   );
-  assert.match(route, /audio\/mp4/);
+  assert.match(route, /await fsPromises\.rename\(quarantinePath, finalPath\)/, 'ordinary uploads must keep the existing promotion path');
 
-  const helper = exists(helperPath) ? read(helperPath) : '';
+  const helper = read(helperPath);
   assert.match(helper, /spawn\(/);
   assert.doesNotMatch(helper, /shell\s*:\s*true/);
   assert.match(helper, /FFMPEG_PATH/);
