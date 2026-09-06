@@ -34,6 +34,7 @@ const { requireModerator, requireOwner } = require('./src/auth/authorization');
 const { createRoomPasswordService } = require('./src/rooms/room-password-service');
 const soundboardStore = require('./src/utils/soundboard');
 const { scanFileWithClamAv } = require('./src/uploads/clamav-scanner');
+const { normalizeVoiceMessageUpload } = require('./src/uploads/voice-message-normalizer');
 
 const nodeFetchModulePromise = import('node-fetch');
 const fetch = (...args) =>
@@ -1409,6 +1410,24 @@ app.post('/upload', validateUploadOrigin, uploadSingleMiddleware, async (req, re
 
   try {
     await scanFileWithClamAv(quarantinePath);
+
+    const voiceMessage = String(req.body?.voiceMessage || '').trim() === '1';
+    if (voiceMessage) {
+      const publishedVoice = await normalizeVoiceMessageUpload({
+        sourcePath: quarantinePath,
+        storedFilename: req.file.filename,
+        originalName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        uploadDir,
+      });
+      return res.json({
+        url: `/uploads/${publishedVoice.filename}`,
+        name: publishedVoice.originalName,
+        type: publishedVoice.mimeType,
+        size: publishedVoice.size,
+      });
+    }
+
     await fsPromises.rename(quarantinePath, finalPath);
 
     return res.json({
