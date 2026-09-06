@@ -53,10 +53,12 @@ const createPushDeviceService = ({
 
     const session = await MobileSessionModel.findOne({
       _id: normalizedSessionId,
-      canonicalUsername: canonical,
       revokedAt: null,
     });
     if (!session) throw serviceError('MOBILE_SESSION_INVALID');
+    if (canonicalizeUsername(session.canonicalUsername) !== canonical) {
+      throw serviceError('DEVICE_ACCOUNT_MISMATCH');
+    }
 
     const account = await UserModel.findOne({ canonicalUsername: canonical, state: 'active' });
     if (!account) throw serviceError('ACCOUNT_INACTIVE');
