@@ -11,7 +11,9 @@ const joinEnd = indexSource.indexOf("socket.on('leave room'", joinStart);
 const joinSource = indexSource.slice(joinStart, joinEnd > joinStart ? joinEnd : undefined);
 
 test('join room no longer accepts or references legacy admin sessions', () => {
-  assert.match(joinSource, /socket\.on\('join room', async \(\{ room, username, password \}\) => \{/);
+  assert.match(joinSource, /socket\.on\('join room', async \(/);
+  assert.match(joinSource, /const \{ room, username, password \} = payload;/);
+  assert.doesNotMatch(joinSource, /\badminToken\b/);
   assert.doesNotMatch(joinSource, /resolveAdminSession\(adminToken\)/);
   assert.doesNotMatch(joinSource, /adminSession/);
 });
