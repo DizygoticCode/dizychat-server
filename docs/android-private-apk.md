@@ -17,7 +17,7 @@ DIZYCHAT_KEYSTORE_PASSWORD
 DIZYCHAT_KEY_PASSWORD
 ```
 
-The workflow reconstructs `google-services.json` and `dizychat-release.jks` only on the ephemeral GitHub Actions runner. The signing keystore and passwords are not committed to Git. The release APK is verified with Android `apksigner` before it is uploaded as the `dizychat-android-release-apk` Actions artifact. Producing this artifact does not publish the application to Google Play.
+The workflow reconstructs `google-services.json` and `dizychat-release.jks` only on the ephemeral GitHub Actions runner. The signing keystore and passwords are not committed to Git. Gradle produces its normal `app-release.apk`; CI renames that signed output to `dizychat-v1.apk`, verifies that exact file with Android `apksigner`, and uploads it inside the `dizychat-android-release-apk` Actions artifact. Producing this artifact does not publish the application to Google Play.
 
 The existing `dizychat-android-debug-apk` artifact remains available for reproducible debug/build diagnostics; the debug build step does not receive the release signing passwords.
 
@@ -49,7 +49,7 @@ npx cap sync android
 
 Before distributing a local build, confirm all four variables are present in the build environment. The original release keystore and its passwords remain outside Git.
 
-Expected signed APK:
+Expected signed APK from a direct local Gradle build:
 
 ```text
 android/app/build/outputs/apk/release/app-release.apk
@@ -65,7 +65,7 @@ adb install -r android/app/build/outputs/apk/release/app-release.apk
 
 A device currently running a debug-signed `com.chat.dizychat` APK cannot normally update directly to the permanent release-signed APK because Android requires matching signing identities. For that one-time transition, uninstall the debug build, install the signed release APK, then sign in again. Future releases signed with the same permanent DizyChat key can update the release installation normally.
 
-For CI testing, download `dizychat-android-release-apk` and extract `app-release.apk`. Do not treat a successful build or install as device acceptance by itself.
+For CI testing, download `dizychat-android-release-apk` and extract `dizychat-v1.apk`. Do not treat a successful build or install as device acceptance by itself.
 
 ## Session and backend expectations
 
