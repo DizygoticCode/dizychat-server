@@ -24,6 +24,7 @@ const { createAccountService } = require('./src/auth/account-service');
 const { createPushDeviceService } = require('./src/push/push-device-service');
 const { createReadStateService } = require('./src/push/read-state-service');
 const { createPushCoordinator } = require('./src/push/push-coordinator');
+const { createReadStateCoordinator } = require('./src/push/read-state-coordinator');
 const { createChatMessageService } = require('./src/messages/chat-message-service');
 const { createConfiguredPushTransport } = require('./src/push/fcm-config');
 const { readLegacyAdminCredentials } = require('./src/auth/legacy-admin-credentials');
@@ -373,6 +374,11 @@ const pushCoordinator = createPushCoordinator({
   pushDeviceService,
   readStateService,
   transport: pushTransport,
+});
+const readStateCoordinator = createReadStateCoordinator({
+  readStateService,
+  pushCoordinator,
+  logger: console,
 });
 const chatMessageService = createChatMessageService({ io, pushCoordinator });
 const resolveAccountSessionToken = async (token) => {
@@ -730,7 +736,7 @@ app.post('/api/read-state/mark', pushApiJson, requireHttpAccount, async (req, re
       return res.status(409).json({ ok: false, code: 'MESSAGE_ROOM_MISMATCH' });
     }
     const messageTimestamp = persistedMessage.timestamp;
-    const result = await readStateService.advanceCursor({
+    const result = await readStateCoordinator.advance({
       canonicalUsername: req.accountPrincipal.canonicalUsername,
       room,
       messageId: String(persistedMessage._id),
@@ -747,7 +753,7 @@ app.get('/api/read-state', requireHttpAccount, async (req, res) => {
   const room = normaliseRoomName(req.query?.room);
   if (!room) return res.status(400).json({ ok: false, code: 'READ_STATE_INVALID' });
   try {
-    const cursor = await readStateService.getCursor({
+    const cursor = await readStateCoordinator.getCursor({
       canonicalUsername: req.accountPrincipal.canonicalUsername,
       room,
     });
@@ -3234,6 +3240,20 @@ io.on('connection', socket => {
       if (!msg) return;
       if (msg.room !== targetRoom) return;
       if (msg.deleted) return;
+      if (socket.principal?.kind === 'account') {
+        try {
+          await readStateCoordinator.advance({
+            canonicalUsername: socket.principal.canonicalUsername,
+            room: targetRoom,
+            messageId: String(msg._id),
+            messageTimestamp: msg.timestamp,
+          });
+        } catch (error) {
+          console.warn('[Push] socket read cursor advance failed', {
+            code: String(error?.code || 'unexpected'),
+          });
+        }
+      }
       const reader = socket.username || '';
       if (msg.user === reader) return;
       if (msg.status === 'read') return;
