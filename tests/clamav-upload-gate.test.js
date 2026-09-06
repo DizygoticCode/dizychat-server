@@ -4,8 +4,9 @@ const path = require('node:path');
 
 const repoRoot = path.join(__dirname, '..');
 const serverPath = path.join(repoRoot, 'index.js');
+const serverCorePath = path.join(repoRoot, 'server-core.js');
 const scannerPath = path.join(repoRoot, 'src', 'uploads', 'clamav-scanner.js');
-const serverSource = fs.readFileSync(serverPath, 'utf8');
+const serverSource = `${fs.readFileSync(serverPath, 'utf8')}\n${fs.readFileSync(serverCorePath, 'utf8')}`;
 
 assert.equal(
   fs.existsSync(scannerPath),

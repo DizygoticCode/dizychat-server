@@ -5,7 +5,9 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 
-const indexSource = fs.readFileSync(path.resolve(__dirname, '../../index.js'), 'utf8');
+const bootstrapSource = fs.readFileSync(path.resolve(__dirname, '../../index.js'), 'utf8');
+const coreSource = fs.readFileSync(path.resolve(__dirname, '../../server-core.js'), 'utf8');
+const indexSource = `${bootstrapSource}\n${coreSource}`;
 
 test('server imports role authorization and removes legacy admin-session/password authority', () => {
   assert.match(indexSource, /const \{ requireModerator, requireOwner \} = require\('\.\/src\/auth\/authorization'\);/);

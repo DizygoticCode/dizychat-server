@@ -20,6 +20,20 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
+  recoveryEmail: {
+    type: String,
+    default: '',
+    trim: true,
+    lowercase: true,
+  },
+  passwordResetTokenHash: {
+    type: String,
+    default: '',
+  },
+  passwordResetExpiresAt: {
+    type: Date,
+    default: null,
+  },
   role: {
     type: String,
     enum: ['owner', 'admin', 'user'],
@@ -34,7 +48,7 @@ const userSchema = new mongoose.Schema({
   },
   credentialSource: {
     type: String,
-    enum: ['legacy-plaintext', 'legacy-scrypt', 'managed', 'unclaimed'],
+    enum: ['legacy-plaintext', 'legacy-scrypt', 'managed', 'self-registered', 'unclaimed'],
     default: 'unclaimed',
     required: true,
   },

@@ -1,3 +1,5 @@
+'use strict';
+
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { hashPassword, isScryptHash } = require('../../src/auth/passwords');
@@ -37,6 +39,13 @@ const makeService = (legacyEntries = []) => {
   return createAccountService({
     UserModel: FakeUserModel,
     legacyCredentials: new Map(legacyEntries),
+  });
+};
+
+const rejectsWithCode = async (promise, code) => {
+  await assert.rejects(promise, (error) => {
+    assert.equal(error?.code, code);
+    return true;
   });
 };
 
@@ -159,5 +168,78 @@ test('owner can create managed users; non-owner cannot and protected owner ident
   await assert.rejects(
     service.createManagedUser(owner, { username: 'Dizygotic', password: 'replacement' }),
     /protected/i
+  );
+});
+
+test('public registration creates an active user, normalizes optional recovery email, keeps it private, and authenticates', async () => {
+  const service = makeService();
+  const account = await service.registerPublicUser({
+    username: '  NewPerson  ',
+    password: 'correct-horse',
+    recoveryEmail: '  New.Person@Example.COM  ',
+  });
+
+  const stored = await FakeUserModel.findOne({ canonicalUsername: 'newperson' });
+  assert.equal(stored.username, 'NewPerson');
+  assert.equal(stored.role, 'user');
+  assert.equal(stored.state, 'active');
+  assert.equal(stored.credentialSource, 'self-registered');
+  assert.equal(stored.recoveryEmail, 'new.person@example.com');
+  assert.equal(isScryptHash(stored.passwordHash), true);
+  assert.equal(stored.passwordHash.includes('correct-horse'), false);
+  assert.equal(account.recoveryEmail, undefined);
+  assert.equal(account.passwordHash, undefined);
+  assert.equal(account.passwordResetTokenHash, undefined);
+  assert.equal((await service.authenticate('NEWPERSON', 'correct-horse')).username, 'NewPerson');
+});
+
+test('public registration permits no recovery email and stores an empty private value', async () => {
+  const service = makeService();
+  await service.registerPublicUser({ username: 'NoEmail', password: 'password' });
+  const stored = await FakeUserModel.findOne({ canonicalUsername: 'noemail' });
+  assert.equal(stored.recoveryEmail, '');
+});
+
+test('public registration rejects duplicate and protected usernames with stable codes', async () => {
+  const service = makeService();
+  await service.bootstrapProtectedAccounts();
+  await service.registerPublicUser({ username: 'TakenName', password: 'password' });
+
+  await rejectsWithCode(
+    service.registerPublicUser({ username: ' takenname ', password: 'another-password' }),
+    'ACCOUNT_USERNAME_TAKEN'
+  );
+  await rejectsWithCode(
+    service.registerPublicUser({ username: 'DIZYGOTIC', password: 'another-password' }),
+    'ACCOUNT_USERNAME_PROTECTED'
+  );
+  await rejectsWithCode(
+    service.registerPublicUser({ username: 'psybin', password: 'another-password' }),
+    'ACCOUNT_USERNAME_PROTECTED'
+  );
+});
+
+test('public registration enforces 8 to 256 character passwords', async () => {
+  const service = makeService();
+  await rejectsWithCode(
+    service.registerPublicUser({ username: 'TooShort', password: '1234567' }),
+    'ACCOUNT_PASSWORD_INVALID'
+  );
+  await rejectsWithCode(
+    service.registerPublicUser({ username: 'TooLong', password: 'x'.repeat(257) }),
+    'ACCOUNT_PASSWORD_INVALID'
+  );
+
+  await service.registerPublicUser({ username: 'ExactlyEight', password: '12345678' });
+  await service.registerPublicUser({ username: 'ExactlyMax', password: 'x'.repeat(256) });
+  assert.equal(await service.isRegisteredUsername('ExactlyEight'), true);
+  assert.equal(await service.isRegisteredUsername('ExactlyMax'), true);
+});
+
+test('public registration rejects malformed recovery email without making email mandatory', async () => {
+  const service = makeService();
+  await rejectsWithCode(
+    service.registerPublicUser({ username: 'BadEmail', password: 'password', recoveryEmail: 'not-an-email' }),
+    'ACCOUNT_RECOVERY_EMAIL_INVALID'
   );
 });

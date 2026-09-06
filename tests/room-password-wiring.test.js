@@ -5,7 +5,13 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const source = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8');
+const bootstrapSource = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8');
+const coreSource = fs.readFileSync(path.join(__dirname, '..', 'server-core.js'), 'utf8');
+const source = `${bootstrapSource}\n${coreSource}`;
+
+test('server bootstrap delegates to the preserved server core', () => {
+  assert.match(bootstrapSource, /require\(['"]\.\/server-core['"]\)/);
+});
 
 test('server wires room joins through persistent password authority', () => {
   assert.match(source, /createRoomPasswordService/);

@@ -133,7 +133,7 @@ test('already-compatible voice audio is promoted unchanged and never invokes FFm
 });
 
 test('upload route normalizes only marked voice clips after antivirus scanning', () => {
-  const source = read('index.js');
+  const source = `${read('index.js')}\n${read('server-core.js')}`;
   assert.match(source, /voice-message-normalizer/);
   const route = source.match(/app\.post\(['"]\/upload['"][\s\S]{0,6000}?\n\}\);/)?.[0] || '';
   assert.match(route, /scanFileWithClamAv\(quarantinePath\)/);

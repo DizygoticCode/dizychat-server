@@ -15,6 +15,35 @@ const ROLE_RANK = Object.freeze({
   [ROLES.OWNER]: 3,
 });
 
+const PUBLIC_PASSWORD_MIN_LENGTH = 8;
+const PUBLIC_PASSWORD_MAX_LENGTH = 256;
+const MAX_RECOVERY_EMAIL_LENGTH = 320;
+const RECOVERY_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const createAccountError = (code, message) => {
+  const error = new Error(message || code);
+  error.code = code;
+  return error;
+};
+
+const validatePublicPassword = (password) =>
+  typeof password === 'string'
+  && password.length >= PUBLIC_PASSWORD_MIN_LENGTH
+  && password.length <= PUBLIC_PASSWORD_MAX_LENGTH;
+
+const normalizeRecoveryEmail = (value) => {
+  if (value == null) return '';
+  if (typeof value !== 'string') {
+    throw createAccountError('ACCOUNT_RECOVERY_EMAIL_INVALID', 'recovery email is invalid');
+  }
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return '';
+  if (normalized.length > MAX_RECOVERY_EMAIL_LENGTH || !RECOVERY_EMAIL_PATTERN.test(normalized)) {
+    throw createAccountError('ACCOUNT_RECOVERY_EMAIL_INVALID', 'recovery email is invalid');
+  }
+  return normalized;
+};
+
 const sanitizeAccount = (account) => {
   if (!account) return null;
   return {
@@ -125,6 +154,44 @@ const createAccountService = ({ UserModel, legacyCredentials = new Map() } = {})
     return Boolean(await findByCanonical(canonicalUsername));
   };
 
+  const registerPublicUser = async (input = {}) => {
+    const username = typeof input.username === 'string' ? input.username.trim() : '';
+    const canonicalUsername = canonicalizeUsername(username);
+    if (!username || !canonicalUsername) {
+      throw createAccountError('ACCOUNT_USERNAME_REQUIRED', 'username is required');
+    }
+    if (getProtectedAccount(canonicalUsername)) {
+      throw createAccountError('ACCOUNT_USERNAME_PROTECTED', 'protected account cannot self-register');
+    }
+    if (!validatePublicPassword(input.password)) {
+      throw createAccountError('ACCOUNT_PASSWORD_INVALID', 'password must be between 8 and 256 characters');
+    }
+    const recoveryEmail = normalizeRecoveryEmail(input.recoveryEmail);
+    if (await findByCanonical(canonicalUsername)) {
+      throw createAccountError('ACCOUNT_USERNAME_TAKEN', 'username is already registered');
+    }
+
+    try {
+      const account = await UserModel.create({
+        username,
+        canonicalUsername,
+        passwordHash: hashPassword(input.password),
+        recoveryEmail,
+        passwordResetTokenHash: '',
+        passwordResetExpiresAt: null,
+        role: ROLES.USER,
+        state: ACCOUNT_STATES.ACTIVE,
+        credentialSource: 'self-registered',
+      });
+      return sanitizeAccount(account);
+    } catch (error) {
+      if (error?.code === 11000 || error?.code === 'E11000') {
+        throw createAccountError('ACCOUNT_USERNAME_TAKEN', 'username is already registered');
+      }
+      throw error;
+    }
+  };
+
   const createManagedUser = async (actor, input = {}) => {
     if (!actor || actor.role !== ROLES.OWNER) {
       throw new Error('owner role required to manage accounts');
@@ -175,11 +242,16 @@ const createAccountService = ({ UserModel, legacyCredentials = new Map() } = {})
     bootstrapProtectedAccounts,
     createManagedUser,
     isRegisteredUsername,
+    registerPublicUser,
     sanitizeAccount,
   };
 };
 
 module.exports = {
+  PUBLIC_PASSWORD_MAX_LENGTH,
+  PUBLIC_PASSWORD_MIN_LENGTH,
   createAccountService,
+  normalizeRecoveryEmail,
   sanitizeAccount,
+  validatePublicPassword,
 };
