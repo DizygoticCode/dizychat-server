@@ -24,6 +24,7 @@ const { createAccountService } = require('./src/auth/account-service');
 const { createPushDeviceService } = require('./src/push/push-device-service');
 const { createReadStateService } = require('./src/push/read-state-service');
 const { createPushCoordinator } = require('./src/push/push-coordinator');
+const { createChatMessageService } = require('./src/messages/chat-message-service');
 const { createConfiguredPushTransport } = require('./src/push/fcm-config');
 const { readLegacyAdminCredentials } = require('./src/auth/legacy-admin-credentials');
 const { createSessionStore } = require('./src/auth/session-store');
@@ -373,6 +374,7 @@ const pushCoordinator = createPushCoordinator({
   readStateService,
   transport: pushTransport,
 });
+const chatMessageService = createChatMessageService({ io, pushCoordinator });
 const resolveAccountSessionToken = async (token) => {
   if (typeof token !== 'string' || !token) return null;
   const browserSession = accountSessions.resolve(token);
@@ -658,6 +660,57 @@ app.post('/api/mobile/push/presence', pushApiJson, requireHttpMobileAccount, asy
   } catch (error) {
     console.warn('[Push] device presence update failed', { code: String(error?.code || 'unexpected') });
     return sendPushStateError(res, error);
+  }
+});
+
+app.post('/api/mobile/push/reply', pushApiJson, requireHttpMobileAccount, async (req, res) => {
+  const room = normaliseRoomName(req.body?.room);
+  const text = String(req.body?.text || '').trim();
+  const replyToMessageId = String(req.body?.replyToMessageId || '').trim();
+  const deviceId = String(req.body?.deviceId || '').trim();
+  if (!room || !text || text.length > 1000 || !deviceId) {
+    return res.status(400).json({ ok: false, code: 'MOBILE_REPLY_INVALID' });
+  }
+  if (replyToMessageId && !PUSH_OBJECT_ID_PATTERN.test(replyToMessageId)) {
+    return res.status(400).json({ ok: false, code: 'MOBILE_REPLY_TARGET_INVALID' });
+  }
+
+  try {
+    const subscription = await pushDeviceService.findActiveSubscription({
+      sessionId: req.accountSession.sessionId,
+      deviceId,
+      room,
+    });
+    if (!subscription) {
+      return res.status(403).json({ ok: false, code: 'ROOM_SUBSCRIPTION_REQUIRED' });
+    }
+
+    const username = String(req.accountPrincipal.username || '').trim();
+    if (!username) return res.status(403).json({ ok: false, code: 'ACCOUNT_IDENTITY_REQUIRED' });
+    if (isUserBlocked(room, username)) {
+      return res.status(403).json({ ok: false, code: 'ROOM_BLOCKED' });
+    }
+    const muteUntil = getMuteExpiry(room, username);
+    if (muteUntil) {
+      return res.status(403).json({ ok: false, code: 'ROOM_MUTED', until: muteUntil });
+    }
+    if (!canSendMessage(`mobile:${req.accountSession.sessionId}`)) {
+      return res.status(429).json({ ok: false, code: 'MESSAGE_RATE_LIMITED' });
+    }
+
+    const persistedMessage = await chatMessageService.persistChatMessage({
+      room,
+      username,
+      senderCanonicalUsername: req.accountPrincipal.canonicalUsername,
+      message: {
+        text,
+        replyTo: replyToMessageId || undefined,
+      },
+    });
+    return res.status(201).json({ ok: true, messageId: String(persistedMessage._id) });
+  } catch (error) {
+    console.warn('[Push] mobile notification reply failed', { code: String(error?.code || 'unexpected') });
+    return res.status(500).json({ ok: false, code: 'MOBILE_REPLY_UNAVAILABLE' });
   }
 });
 
@@ -3158,89 +3211,19 @@ io.on('connection', socket => {
 
     if (!canSendMessage(socket.id)) return;
 
-    const msgData = { ...msgDataRaw, room: roomName, user: socket.username };
+    const senderCanonicalUsername = socket.principal?.kind === 'account'
+      ? String(socket.principal.canonicalUsername || '')
+      : '';
     try {
-      if (msgData.text?.length > 1000) msgData.text = msgData.text.substring(0,1000);
-      if (msgData.text) msgData.text = sanitizeHtml(msgData.text, { allowedTags: [], allowedAttributes: {} });
-
-      if (msgData.fileUrl) {
-        const fileUrl = String(msgData.fileUrl).trim();
-        if (/^(https?:\/\/|\/)/i.test(fileUrl)) {
-          msgData.fileUrl = fileUrl;
-        } else {
-          delete msgData.fileUrl;
-        }
-      }
-      if (msgData.fileType) {
-        msgData.fileType = String(msgData.fileType).trim().slice(0, 100);
-      }
-      if (msgData.fileName) {
-        msgData.fileName = sanitizeHtml(String(msgData.fileName), { allowedTags: [], allowedAttributes: {} }).slice(0, 120);
-      }
-
-      let replyToDocId = null;
-      let replySnapshot = null;
-      if (msgData.replyTo) {
-        const replyId = String(msgData.replyTo).trim();
-        if (mongoose.Types.ObjectId.isValid(replyId)) {
-          try {
-            const repliedMessage = await Message.findById(replyId).lean();
-            if (repliedMessage && repliedMessage.room === roomName) {
-              replyToDocId = repliedMessage._id;
-              const safeText = sanitizeHtml(String(repliedMessage.text || ""), { allowedTags: [], allowedAttributes: {} });
-              const safeName = sanitizeHtml(String(repliedMessage.fileName || ""), { allowedTags: [], allowedAttributes: {} });
-              replySnapshot = {
-                id: String(repliedMessage._id),
-                user: repliedMessage.user || "Anon",
-                text: safeText.slice(0, 240),
-                fileUrl: repliedMessage.fileUrl || "",
-                fileType: repliedMessage.fileType || "",
-                fileName: safeName.slice(0, 120),
-                deleted: Boolean(repliedMessage.deleted),
-              };
-            }
-          } catch (err) {
-            console.warn('[Message] Failed to load reply target', err);
-          }
-        }
-      }
-
-      if (!replyToDocId) {
-        msgData.replyTo = undefined;
-        msgData.replyToSnapshot = undefined;
-      } else {
-        msgData.replyTo = replyToDocId;
-        msgData.replyToSnapshot = replySnapshot;
-      }
-
-      const newMsg = new Message({
-        ...msgData,
-        timestamp: msgData.timestamp ? new Date(msgData.timestamp) : new Date(),
-        reactions: msgData.reactions || [],
-        pinned: msgData.pinned || false,
-        starredBy: msgData.starredBy || []
+      await chatMessageService.persistChatMessage({
+        room: roomName,
+        username: socket.username,
+        senderCanonicalUsername,
+        message: msgDataRaw,
       });
-      await newMsg.save();
-      io.to(roomName).emit('chat message', newMsg);
-      try {
-        if (newMsg.status !== 'delivered') {
-          await Message.findByIdAndUpdate(newMsg._id, { status: 'delivered' });
-          newMsg.status = 'delivered';
-        }
-      } catch (err) {
-        console.error('[Message] Failed to update delivery status:', err);
-      }
-      io.to(roomName).emit('message status', { id: newMsg._id, status: 'delivered' });
-      const senderCanonicalUsername = socket.principal?.kind === 'account'
-        ? String(socket.principal.canonicalUsername || '')
-        : '';
-      void pushCoordinator.onMessageStored(
-        newMsg.toJSON ? newMsg.toJSON() : newMsg,
-        { senderCanonicalUsername }
-      ).catch((error) => {
-        console.warn('[Push] post-message dispatch failed', { code: String(error?.code || 'unexpected') });
-      });
-    } catch(err){ console.error("[Message] Error:", err); }
+    } catch (err) {
+      console.error('[Message] Error:', err);
+    }
   });
 
   socket.on('message read', async ({ room, id }) => {
