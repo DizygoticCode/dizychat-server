@@ -49,3 +49,11 @@ test('existing rebuild control doubles as the explicit IndexedDB load/rebuild ac
   assert.match(source, /id="rebuildCuratedBurnsBtn">Load \/ Rebuild IndexedDB transcript<\/button>/);
   assert.equal((source.match(/id="rebuildCuratedBurnsBtn"/g) || []).length, 1, 'reuse the existing rebuild button instead of adding a duplicate load control');
 });
+
+test('transcript hydration keeps messages captured while older IndexedDB chunks are loading', () => {
+  const hydrate = functionBody('initializeChatTranscriptStorage');
+  const storedRead = hydrate.indexOf('const storedRecords = await readAllChatRecords(db);');
+  const sessionSnapshot = hydrate.indexOf('const sessionRecords = chatLog.slice();');
+  assert.ok(storedRead >= 0, 'hydration must read stored transcript records');
+  assert.ok(sessionSnapshot > storedRead, 'snapshot live session records after the chunked history read so concurrent messages are preserved');
+});
