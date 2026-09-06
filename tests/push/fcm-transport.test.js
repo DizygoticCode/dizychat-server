@@ -6,12 +6,23 @@ const { readFcmConfig, createConfiguredPushTransport } = require('../../src/push
 const { createFcmTransport } = require('../../src/push/transports/fcm-transport');
 
 const intent = {
+  type: 'message',
   room: 'ShittyChat',
   messageId: '507f1f77bcf86cd799439099',
   sender: 'Rob',
   preview: 'hello',
   notificationKey: '0123456789abcdef01234567',
   timestamp: '2026-09-05T20:00:10.000Z',
+};
+
+const readIntent = {
+  type: 'read-control',
+  room: 'General Chat',
+  messageId: '507f1f77bcf86cd799439099',
+  sender: '',
+  preview: '',
+  notificationKey: '0123456789abcdef01234567',
+  timestamp: '2026-09-06T12:00:00.000Z',
 };
 
 test('disabled config returns null transport without creating Firebase messaging', async () => {
@@ -25,7 +36,7 @@ test('disabled config returns null transport without creating Firebase messaging
   assert.equal(created, 0);
 });
 
-test('enabled transport serializes only allowlisted data and token envelope', async () => {
+test('enabled transport serializes only allowlisted message data and token envelope', async () => {
   const payloads = [];
   const transport = createFcmTransport({
     projectId: 'dizychat-test',
@@ -34,11 +45,36 @@ test('enabled transport serializes only allowlisted data and token envelope', as
   await transport.send({ ...intent, authToken: 'NOPE', password: 'NOPE2', serverSecret: 'NOPE3' }, 'fcm-token');
   assert.equal(payloads.length, 1);
   assert.equal(payloads[0].token, 'fcm-token');
-  assert.deepEqual(Object.keys(payloads[0].data).sort(), ['messageId', 'notificationKey', 'preview', 'room', 'sender', 'timestamp'].sort());
+  assert.deepEqual(Object.keys(payloads[0].data).sort(), ['messageId', 'notificationKey', 'preview', 'room', 'sender', 'timestamp', 'type'].sort());
+  assert.equal(payloads[0].data.type, 'message');
   const serialized = JSON.stringify(payloads[0]);
   assert.equal(serialized.includes('NOPE'), false);
   assert.equal(serialized.includes('password'), false);
   assert.equal(serialized.includes('serverSecret'), false);
+});
+
+test('read-control transport is data-only, explicitly typed, and strips credentials', async () => {
+  const payloads = [];
+  const transport = createFcmTransport({
+    projectId: 'dizychat-test',
+    messagingFactory: () => ({ send: async (payload) => { payloads.push(payload); return 'ok'; } }),
+  });
+  await transport.send({ ...readIntent, authToken: 'NOPE', roomPassword: 'NOPE2' }, 'phone-a');
+  assert.deepEqual(payloads[0], {
+    token: 'phone-a',
+    data: {
+      type: 'read-control',
+      room: 'General Chat',
+      messageId: '507f1f77bcf86cd799439099',
+      sender: '',
+      preview: '',
+      notificationKey: '0123456789abcdef01234567',
+      timestamp: '2026-09-06T12:00:00.000Z',
+    },
+  });
+  const serialized = JSON.stringify(payloads[0]);
+  assert.equal(serialized.includes('NOPE'), false);
+  assert.equal(serialized.includes('roomPassword'), false);
 });
 
 test('registration-token-not-registered is classified permanent', async () => {
