@@ -1,0 +1,63 @@
+name: Apply Rumble Hydration Race Fix
+
+on:
+  push:
+    branches:
+      - fix/rumble-userscript-dizychat-lazy-db
+    paths:
+      - '.github/workflows/apply-rumble-hydration-race-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/rumble-userscript-dizychat-lazy-db
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Move live-session snapshot after chunked history read
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js')
+          s = p.read_text(encoding='utf-8')
+          old = '''            const sessionRecords = chatLog.slice();
+            chatStorageHydrating = true;
+            chatStorageHydrationCount = 0;
+            updateChatStorageStatus();
+            try {
+                const storedRecords = await readAllChatRecords(db);
+                const bySequence = new Map();
+'''
+          new = '''            chatStorageHydrating = true;
+            chatStorageHydrationCount = 0;
+            updateChatStorageStatus();
+            try {
+                const storedRecords = await readAllChatRecords(db);
+                const sessionRecords = chatLog.slice();
+                const bySequence = new Map();
+'''
+          if s.count(old) != 1:
+              raise SystemExit(f'expected one hydration merge seam, found {s.count(old)}')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          PY
+      - name: Syntax check userscript
+        run: node --check scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+      - name: Run userscript regression tests
+        run: node --test scripts/tests/*.test.mjs
+      - name: Check diff whitespace
+        run: git diff --check
+      - name: Commit verified race fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+          git diff --cached --quiet && { echo 'No race fix to commit'; exit 1; }
+          git commit -m 'fix: preserve live messages during transcript hydration'
+          git push origin HEAD:fix/rumble-userscript-dizychat-lazy-db
