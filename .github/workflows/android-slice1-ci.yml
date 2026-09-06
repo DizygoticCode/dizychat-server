@@ -149,11 +149,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          APK="android/app/build/outputs/apk/release/app-release.apk"
-          if [[ ! -f "$APK" ]]; then
+          SOURCE_APK="android/app/build/outputs/apk/release/app-release.apk"
+          if [[ ! -f "$SOURCE_APK" ]]; then
             echo "::error::Signed release APK was not produced."
             exit 1
           fi
+
+          mv android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/dizychat-v1.apk
+          APK="android/app/build/outputs/apk/release/dizychat-v1.apk"
 
           APKSIGNER="$(find "${ANDROID_HOME:?}/build-tools" -maxdepth 2 -type f -name apksigner -print | sort -V | tail -n 1)"
           if [[ -z "$APKSIGNER" ]]; then
@@ -175,6 +178,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dizychat-android-release-apk
-          path: android/app/build/outputs/apk/release/app-release.apk
+          path: android/app/build/outputs/apk/release/dizychat-v1.apk
           if-no-files-found: error
           retention-days: 7
