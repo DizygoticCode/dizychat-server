@@ -23,8 +23,10 @@ test('Android CI fail-closes and uploads a verified signed release APK', () => {
   assert.match(workflow, /base64 --decode > android\/app\/dizychat-release\.jks/);
   assert.match(workflow, /DIZYCHAT_KEYSTORE_PATH:\s*\$\{\{ github\.workspace \}\}\/android\/app\/dizychat-release\.jks/);
   assert.match(workflow, /assembleRelease/);
+  assert.match(workflow, /mv android\/app\/build\/outputs\/apk\/release\/app-release\.apk android\/app\/build\/outputs\/apk\/release\/dizychat-v1\.apk/);
+  assert.match(workflow, /APK="android\/app\/build\/outputs\/apk\/release\/dizychat-v1\.apk"/);
   assert.match(workflow, /APKSIGNER=/);
   assert.match(workflow, /verify --verbose --print-certs/);
   assert.match(workflow, /name:\s*dizychat-android-release-apk/);
-  assert.match(workflow, /path:\s*android\/app\/build\/outputs\/apk\/release\/app-release\.apk/);
+  assert.match(workflow, /path:\s*android\/app\/build\/outputs\/apk\/release\/dizychat-v1\.apk/);
 });
