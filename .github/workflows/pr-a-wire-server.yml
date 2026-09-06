@@ -1,0 +1,311 @@
+name: PR A server wiring
+
+on:
+  push:
+    branches:
+      - feat/android-slice2-pr-a
+    paths:
+      - .github/workflows/pr-a-wire-server.yml
+
+permissions:
+  contents: write
+
+jobs:
+  wire-server:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v4
+        with:
+          ref: feat/android-slice2-pr-a
+          fetch-depth: 0
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Configure commit identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Install exact locked dependencies
+        run: npm ci
+
+      - name: Apply Task 7 authenticated push contracts
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('index.js')
+          source = path.read_text()
+
+          def replace_once(old, new, label):
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one anchor, found {count}')
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              "const Room = require('./src/models/room');\nconst { createAccountService } = require('./src/auth/account-service');",
+              "const Room = require('./src/models/room');\nconst PushDevice = require('./src/models/push-device');\nconst PushRoomSubscription = require('./src/models/push-room-subscription');\nconst RoomReadCursor = require('./src/models/room-read-cursor');\nconst { createAccountService } = require('./src/auth/account-service');\nconst { createPushDeviceService } = require('./src/push/push-device-service');\nconst { createReadStateService } = require('./src/push/read-state-service');\nconst { createPushCoordinator } = require('./src/push/push-coordinator');\nconst { createConfiguredPushTransport } = require('./src/push/fcm-config');",
+              'push imports',
+          )
+
+          replace_once(
+              "const mobileAccountSessions = createMobileSessionService({\n  MobileSessionModel: MobileSession,\n  UserModel: User,\n});\nconst resolveAccountSessionToken = async (token) => {",
+              "const mobileAccountSessions = createMobileSessionService({\n  MobileSessionModel: MobileSession,\n  UserModel: User,\n});\nconst pushDeviceService = createPushDeviceService({\n  PushDeviceModel: PushDevice,\n  SubscriptionModel: PushRoomSubscription,\n  MobileSessionModel: MobileSession,\n  UserModel: User,\n});\nconst readStateService = createReadStateService({ RoomReadCursorModel: RoomReadCursor });\nconst pushTransport = createConfiguredPushTransport();\nconst pushCoordinator = createPushCoordinator({\n  pushDeviceService,\n  readStateService,\n  transport: pushTransport,\n});\nconst resolveAccountSessionToken = async (token) => {",
+              'push authority construction',
+          )
+
+          http_contracts = r'''const pushApiJson = express.json({ limit: '32kb' });
+          const PRESENCE_LEASE_MAX_MS = 90_000;
+          const PUSH_OBJECT_ID_PATTERN = /^[a-f0-9]{24}$/i;
+
+          const readAccountSessionTokenFromRequest = (req) => {
+            const authorization = String(req.headers.authorization || '');
+            if (!/^Bearer\s+/i.test(authorization)) return '';
+            return authorization.replace(/^Bearer\s+/i, '').trim();
+          };
+
+          const requireHttpAccount = async (req, res, next) => {
+            const token = readAccountSessionTokenFromRequest(req);
+            if (!token) return res.status(401).json({ ok: false, code: 'AUTH_REQUIRED' });
+            try {
+              const session = await resolveAccountSessionToken(token);
+              if (!session?.principal) {
+                return res.status(401).json({ ok: false, code: 'AUTH_REQUIRED' });
+              }
+              req.accountSession = session;
+              req.accountSessionToken = token;
+              req.accountPrincipal = session.principal;
+              return next();
+            } catch (error) {
+              console.warn('[Push] account HTTP auth unavailable', { code: String(error?.code || 'unexpected') });
+              return res.status(503).json({ ok: false, code: 'AUTH_UNAVAILABLE' });
+            }
+          };
+
+          const requireHttpMobileAccount = async (req, res, next) => {
+            const token = readAccountSessionTokenFromRequest(req);
+            if (!token) return res.status(401).json({ ok: false, code: 'AUTH_REQUIRED' });
+            try {
+              const session = await resolveAccountSessionToken(token);
+              if (!session?.principal) {
+                return res.status(401).json({ ok: false, code: 'AUTH_REQUIRED' });
+              }
+              if (session.kind !== 'mobile' || !session.sessionId) {
+                return res.status(403).json({ ok: false, code: 'MOBILE_SESSION_REQUIRED' });
+              }
+              req.accountSession = session;
+              req.accountSessionToken = token;
+              req.accountPrincipal = session.principal;
+              return next();
+            } catch (error) {
+              console.warn('[Push] mobile HTTP auth unavailable', { code: String(error?.code || 'unexpected') });
+              return res.status(503).json({ ok: false, code: 'AUTH_UNAVAILABLE' });
+            }
+          };
+
+          const sendPushStateError = (res, error) => {
+            const code = String(error?.code || 'PUSH_STATE_INVALID');
+            const conflictCodes = new Set([
+              'DEVICE_NOT_REGISTERED',
+              'DEVICE_ACCOUNT_MISMATCH',
+              'MOBILE_SESSION_INVALID',
+              'ACCOUNT_INACTIVE',
+            ]);
+            return res.status(conflictCodes.has(code) ? 409 : 400).json({ ok: false, code });
+          };
+
+          const readCursorJson = (cursor) => cursor ? {
+            room: String(cursor.room || ''),
+            messageId: String(cursor.messageId || ''),
+            messageTimestamp: cursor.messageTimestamp,
+          } : null;
+
+          app.post('/api/mobile/push/register', pushApiJson, requireHttpMobileAccount, async (req, res) => {
+            try {
+              await pushDeviceService.registerDevice({
+                sessionId: req.accountSession.sessionId,
+                canonicalUsername: req.accountPrincipal.canonicalUsername,
+                deviceId: req.body?.deviceId,
+                fcmToken: req.body?.fcmToken,
+                deviceLabel: req.body?.deviceLabel,
+              });
+              return res.json({ ok: true });
+            } catch (error) {
+              console.warn('[Push] device registration failed', { code: String(error?.code || 'unexpected') });
+              return sendPushStateError(res, error);
+            }
+          });
+
+          app.post('/api/mobile/push/presence', pushApiJson, requireHttpMobileAccount, async (req, res) => {
+            const deviceId = String(req.body?.deviceId || '').trim();
+            try {
+              if (req.body?.interactive === true) {
+                const raw = Number(req.body?.ttlMs ?? 45_000);
+                const ttlMs = Math.min(Math.max(Number.isFinite(raw) ? raw : 45_000, 5_000), PRESENCE_LEASE_MAX_MS);
+                const expiresAt = await pushDeviceService.renewSuppressionLease({
+                  sessionId: req.accountSession.sessionId,
+                  deviceId,
+                  ttlMs,
+                });
+                return res.json({ ok: true, interactive: true, expiresAt });
+              }
+
+              await pushDeviceService.clearSuppressionLease({
+                sessionId: req.accountSession.sessionId,
+                deviceId,
+              });
+              return res.json({ ok: true, interactive: false });
+            } catch (error) {
+              console.warn('[Push] device presence update failed', { code: String(error?.code || 'unexpected') });
+              return sendPushStateError(res, error);
+            }
+          });
+
+          app.post('/api/read-state/mark', pushApiJson, requireHttpAccount, async (req, res) => {
+            const room = normaliseRoomName(req.body?.room);
+            const messageId = String(req.body?.messageId || '').trim();
+            if (!room || !PUSH_OBJECT_ID_PATTERN.test(messageId)) {
+              return res.status(400).json({ ok: false, code: 'READ_STATE_INVALID' });
+            }
+
+            try {
+              const persistedMessage = await Message.findById(messageId);
+              if (!persistedMessage) {
+                return res.status(404).json({ ok: false, code: 'MESSAGE_NOT_FOUND' });
+              }
+              if (String(persistedMessage.room || '') !== room) {
+                return res.status(409).json({ ok: false, code: 'MESSAGE_ROOM_MISMATCH' });
+              }
+              const messageTimestamp = persistedMessage.timestamp;
+              const result = await readStateService.advanceCursor({
+                canonicalUsername: req.accountPrincipal.canonicalUsername,
+                room,
+                messageId: String(persistedMessage._id),
+                messageTimestamp,
+              });
+              return res.json({ ok: true, advanced: result.advanced, cursor: readCursorJson(result.cursor) });
+            } catch (error) {
+              console.warn('[Push] read cursor advance failed', { code: String(error?.code || 'unexpected') });
+              return res.status(500).json({ ok: false, code: 'READ_STATE_UNAVAILABLE' });
+            }
+          });
+
+          app.get('/api/read-state', requireHttpAccount, async (req, res) => {
+            const room = normaliseRoomName(req.query?.room);
+            if (!room) return res.status(400).json({ ok: false, code: 'READ_STATE_INVALID' });
+            try {
+              const cursor = await readStateService.getCursor({
+                canonicalUsername: req.accountPrincipal.canonicalUsername,
+                room,
+              });
+              return res.json({ ok: true, cursor: readCursorJson(cursor) });
+            } catch (error) {
+              console.warn('[Push] read cursor lookup failed', { code: String(error?.code || 'unexpected') });
+              return res.status(500).json({ ok: false, code: 'READ_STATE_UNAVAILABLE' });
+            }
+          });
+
+          '''
+          replace_once(
+              "app.use(express.static(path.join(__dirname, 'public')));\n\n// ---------------- Version endpoint ----------------",
+              "app.use(express.static(path.join(__dirname, 'public')));\n\n" + http_contracts + "// ---------------- Version endpoint ----------------",
+              'HTTP contract insertion',
+          )
+
+          replace_once(
+              "  socket.principal = null;\n  socket.accountSessionToken = '';\n  try {\n    const session = await resolveAccountSessionToken(sessionToken);\n    if (session) {\n      socket.principal = session.principal;\n      socket.accountSessionToken = session.token;\n    }",
+              "  socket.principal = null;\n  socket.accountSessionToken = '';\n  socket.mobileSessionId = '';\n  socket.mobileDeviceId = '';\n  try {\n    const session = await resolveAccountSessionToken(sessionToken);\n    if (session) {\n      socket.principal = session.principal;\n      socket.accountSessionToken = session.token;\n      socket.mobileSessionId = session.kind === 'mobile' ? String(session.sessionId || '') : '';\n    }",
+              'socket handshake metadata',
+          )
+
+          replace_once(
+              "      clearAdminAuthFailures(attemptKey);\n      if (socket.accountSessionToken) {\n        await revokeAccountSessionToken(socket.accountSessionToken);\n      }",
+              "      clearAdminAuthFailures(attemptKey);\n      if (socket.accountSessionToken) {\n        const previousMobileSessionId = socket.mobileSessionId;\n        await revokeAccountSessionToken(socket.accountSessionToken);\n        if (previousMobileSessionId) {\n          await pushDeviceService.disableSession(previousMobileSessionId, 'session-replaced');\n        }\n      }",
+              'login old-session cleanup',
+          )
+
+          replace_once(
+              "      socket.principal = session.principal;\n      socket.accountSessionToken = session.token;\n\n      if (typeof ack === 'function') {",
+              "      socket.principal = session.principal;\n      socket.accountSessionToken = session.token;\n      socket.mobileSessionId = session.kind === 'mobile' ? String(session.sessionId || '') : '';\n      socket.mobileDeviceId = '';\n\n      if (typeof ack === 'function') {",
+              'login mobile metadata',
+          )
+
+          replace_once(
+              "      if (!session) {\n        socket.accountSessionToken = '';\n        socket.principal = null;\n        if (typeof ack === 'function') ack({ ok: true, session: null });\n        return;\n      }\n\n      socket.principal = session.principal;\n      socket.accountSessionToken = session.token;",
+              "      if (!session) {\n        socket.accountSessionToken = '';\n        socket.principal = null;\n        socket.mobileSessionId = '';\n        socket.mobileDeviceId = '';\n        if (typeof ack === 'function') ack({ ok: true, session: null });\n        return;\n      }\n\n      const previousMobileSessionId = socket.mobileSessionId;\n      socket.principal = session.principal;\n      socket.accountSessionToken = session.token;\n      socket.mobileSessionId = session.kind === 'mobile' ? String(session.sessionId || '') : '';\n      if (socket.mobileSessionId !== previousMobileSessionId) socket.mobileDeviceId = '';",
+              'session refresh mobile metadata',
+          )
+
+          replace_once(
+              "  socket.on('account logout', async (payload = {}, ack) => {\n    try {\n      if (socket.accountSessionToken) {\n        await revokeAccountSessionToken(socket.accountSessionToken);\n      }\n      socket.accountSessionToken = '';\n      socket.principal = null;",
+              "  socket.on('account logout', async (payload = {}, ack) => {\n    try {\n      const mobileSessionId = socket.mobileSessionId;\n      if (socket.accountSessionToken) {\n        await revokeAccountSessionToken(socket.accountSessionToken);\n      }\n      if (mobileSessionId) {\n        await pushDeviceService.disableSession(mobileSessionId, 'session-revoked');\n      }\n      socket.accountSessionToken = '';\n      socket.principal = null;\n      socket.mobileSessionId = '';\n      socket.mobileDeviceId = '';",
+              'logout push cleanup',
+          )
+
+          replace_once(
+              "      const account = await accountService.createManagedUser(actor, { username, password, role });\n      accountSessions.revokeUser(account.canonicalUsername);\n      if (typeof ack === 'function') ack({ ok: true, account });",
+              "      const account = await accountService.createManagedUser(actor, { username, password, role });\n      accountSessions.revokeUser(account.canonicalUsername);\n      await mobileAccountSessions.revokeUser(account.canonicalUsername);\n      await pushDeviceService.disableUser(account.canonicalUsername, 'account-revoked');\n      if (typeof ack === 'function') ack({ ok: true, account });",
+              'account-wide mobile revoke',
+          )
+
+          replace_once(
+              "  socket.on('join room', async ({ room, username, password }) => {\n    const roomName = normaliseRoomName(room);",
+              "  socket.on('join room', async (payload = {}) => {\n    const { room, username, password } = payload;\n    const deviceId = typeof payload.deviceId === 'string' ? payload.deviceId.trim() : '';\n    const roomName = normaliseRoomName(room);",
+              'join payload',
+          )
+
+          replace_once(
+              "    socket.join(roomName);\n    registerSocketInRoom(socket, roomName);",
+              "    socket.join(roomName);\n    if (socket.mobileSessionId && deviceId && socket.principal?.kind === 'account') {\n      try {\n        const device = await pushDeviceService.findRegisteredDevice({\n          sessionId: socket.mobileSessionId,\n          deviceId,\n        });\n        if (device) {\n          socket.mobileDeviceId = deviceId;\n          await pushDeviceService.subscribeRoom({\n            sessionId: socket.mobileSessionId,\n            canonicalUsername: socket.principal.canonicalUsername,\n            deviceId,\n            room: roomName,\n          });\n        }\n      } catch (error) {\n        console.warn('[Push] room subscription unavailable', { code: String(error?.code || 'unexpected') });\n      }\n    }\n    registerSocketInRoom(socket, roomName);",
+              'accepted join subscription',
+          )
+
+          replace_once(
+              "  socket.on('leave room', ({ room } = {}) => {\n    const target = normaliseRoomName(room) || socket.currentRoom;\n    if (!target) return;\n    removeSocketFromRoom(socket, target);\n    emitRoomListUpdate();\n  });",
+              "  socket.on('leave room', async ({ room, deviceId } = {}) => {\n    const target = normaliseRoomName(room) || socket.currentRoom;\n    if (!target) return;\n    const normalizedDeviceId = String(deviceId || '').trim();\n    if (socket.mobileSessionId && normalizedDeviceId && normalizedDeviceId === socket.mobileDeviceId) {\n      try {\n        await pushDeviceService.unsubscribeRoom({\n          sessionId: socket.mobileSessionId,\n          deviceId: normalizedDeviceId,\n          room: target,\n        });\n      } catch (error) {\n        console.warn('[Push] room unsubscribe unavailable', { code: String(error?.code || 'unexpected') });\n      }\n    }\n    removeSocketFromRoom(socket, target);\n    emitRoomListUpdate();\n  });",
+              'explicit leave unsubscribe',
+          )
+
+          path.write_text(source)
+          PY
+          node --check index.js
+          node --test tests/push/push-http-contract.test.js tests/push/push-device-service.test.js tests/push/read-state-service.test.js
+          git diff --check
+          git add index.js
+          git commit -m "feat: expose authenticated push state contracts"
+
+      - name: Apply Task 8 post-persist push dispatch
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('index.js')
+          source = path.read_text()
+          old = "      io.to(roomName).emit('message status', { id: newMsg._id, status: 'delivered' });\n    } catch(err){ console.error(\"[Message] Error:\", err); }"
+          new = "      io.to(roomName).emit('message status', { id: newMsg._id, status: 'delivered' });\n      const senderCanonicalUsername = socket.principal?.kind === 'account'\n        ? String(socket.principal.canonicalUsername || '')\n        : '';\n      void pushCoordinator.onMessageStored(\n        newMsg.toJSON ? newMsg.toJSON() : newMsg,\n        { senderCanonicalUsername }\n      ).catch((error) => {\n        console.warn('[Push] post-message dispatch failed', { code: String(error?.code || 'unexpected') });\n      });\n    } catch(err){ console.error(\"[Message] Error:\", err); }"
+          count = source.count(old)
+          if count != 1:
+              raise SystemExit(f'post-persist dispatch anchor: expected one, found {count}')
+          path.write_text(source.replace(old, new, 1))
+          PY
+          node --check index.js
+          node --test tests/push/message-push-integration.test.js tests/push/push-coordinator.test.js
+          npm test
+          git diff --check
+          git add index.js
+          git commit -m "feat: dispatch push after stored messages"
+
+      - name: Remove temporary wiring workflow and push tested commits
+        run: |
+          git rm .github/workflows/pr-a-wire-server.yml
+          git diff --cached --check
+          git commit -m "ci: remove temporary PR A wiring helper"
+          git push origin HEAD:feat/android-slice2-pr-a
