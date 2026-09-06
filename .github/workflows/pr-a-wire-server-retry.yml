@@ -60,11 +60,51 @@ jobs:
               exec(compile(code, f'pr-a-patch-{number}', 'exec'), {'__name__': '__main__'})
           PY
 
+      - name: Repair the two proven full-suite regressions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          service_path = Path('src/push/push-device-service.js')
+          service = service_path.read_text()
+          old_session = """    const session = await MobileSessionModel.findOne({
+                _id: normalizedSessionId,
+                canonicalUsername: canonical,
+                revokedAt: null,
+              });
+              if (!session) throw serviceError('MOBILE_SESSION_INVALID');
+          """
+          new_session = """    const session = await MobileSessionModel.findOne({
+                _id: normalizedSessionId,
+                revokedAt: null,
+              });
+              if (!session) throw serviceError('MOBILE_SESSION_INVALID');
+              if (canonicalizeUsername(session.canonicalUsername) !== canonical) {
+                throw serviceError('DEVICE_ACCOUNT_MISMATCH');
+              }
+          """
+          if old_session not in service:
+              raise SystemExit('push service session/account anchor changed')
+          service_path.write_text(service.replace(old_session, new_session, 1))
+
+          test_path = Path('tests/auth-v2/room-identity.test.js')
+          test = test_path.read_text()
+          old_assert = "  assert.match(joinSource, /socket\\.on\\('join room', async \\(\\{ room, username, password \\}\\) => \\{/);\n"
+          new_assert = (
+              "  assert.match(joinSource, /socket\\.on\\('join room', async \\(/);\n"
+              "  assert.match(joinSource, /const \\{ room, username, password \\} = payload;/);\n"
+              "  assert.doesNotMatch(joinSource, /\\badminToken\\b/);\n"
+          )
+          if old_assert not in test:
+              raise SystemExit('auth-v2 join signature assertion anchor changed')
+          test_path.write_text(test.replace(old_assert, new_assert, 1))
+          PY
+
       - name: Remove throwaway wiring workflows before tests
         run: rm .github/workflows/pr-a-wire-server.yml .github/workflows/pr-a-wire-server-retry.yml
 
       - name: Run focused Task 7 and Task 8 contracts
-        run: node --test tests/push/push-http-contract.test.js tests/push/message-push-integration.test.js
+        run: node --test tests/push/push-http-contract.test.js tests/push/message-push-integration.test.js tests/push/push-device-service.test.js tests/auth-v2/room-identity.test.js
 
       - name: Run full test suite
         run: npm test
@@ -76,7 +116,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add index.js .github/workflows/pr-a-wire-server.yml .github/workflows/pr-a-wire-server-retry.yml
+          git add index.js src/push/push-device-service.js tests/auth-v2/room-identity.test.js .github/workflows/pr-a-wire-server.yml .github/workflows/pr-a-wire-server-retry.yml
           git diff --cached --quiet && exit 0
           git commit -m "feat: wire authenticated push server contracts"
           git push origin HEAD:feat/android-slice2-pr-a
