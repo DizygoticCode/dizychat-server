@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.TimeZone;
@@ -116,9 +117,12 @@ final class DizyNotificationStateStore {
         int notificationId = resolveNotificationId(prefs, key);
         List<Entry> entries = new ArrayList<>();
         if (existing != null && normalizedRoom.equals(existing.room)) entries.addAll(existing.entries);
-        entries.removeIf(entry -> normalizedMessageId.equalsIgnoreCase(entry.messageId));
+        Iterator<Entry> iterator = entries.iterator();
+        while (iterator.hasNext()) {
+            if (normalizedMessageId.equalsIgnoreCase(iterator.next().messageId)) iterator.remove();
+        }
         entries.add(new Entry(normalizedMessageId, sender, preview, normalizedTimestamp));
-        entries.sort(ENTRY_ORDER);
+        Collections.sort(entries, ENTRY_ORDER);
         while (entries.size() > MAX_RECENT_MESSAGES) entries.remove(0);
 
         Entry latest = entries.get(entries.size() - 1);
@@ -181,7 +185,7 @@ final class DizyNotificationStateStore {
             return new ReconcileResult(ReconcileStatus.CLEARED, existing.notificationId, null);
         }
 
-        remaining.sort(ENTRY_ORDER);
+        Collections.sort(remaining, ENTRY_ORDER);
         Entry latest = remaining.get(remaining.size() - 1);
         RoomState next = new RoomState(
                 existing.room,
@@ -219,7 +223,12 @@ final class DizyNotificationStateStore {
             RoomState state = readState(prefs, logicalKey);
             if (state != null) states.add(state);
         }
-        states.sort(Comparator.comparing(state -> state.room));
+        Collections.sort(states, new Comparator<RoomState>() {
+            @Override
+            public int compare(RoomState left, RoomState right) {
+                return left.room.compareTo(right.room);
+            }
+        });
         return states;
     }
 
@@ -275,7 +284,7 @@ final class DizyNotificationStateStore {
                 }
             }
             if (entries.isEmpty()) throw new JSONException("room state has no entries");
-            entries.sort(ENTRY_ORDER);
+            Collections.sort(entries, ENTRY_ORDER);
             while (entries.size() > MAX_RECENT_MESSAGES) entries.remove(0);
             return new RoomState(
                     room,
@@ -350,10 +359,15 @@ final class DizyNotificationStateStore {
         return value == null ? "" : value.trim();
     }
 
-    private static final Comparator<Entry> ENTRY_ORDER = (left, right) -> DizyNotificationCursor.compare(
-            left.timestamp,
-            left.messageId,
-            right.timestamp,
-            right.messageId
-    );
+    private static final Comparator<Entry> ENTRY_ORDER = new Comparator<Entry>() {
+        @Override
+        public int compare(Entry left, Entry right) {
+            return DizyNotificationCursor.compare(
+                    left.timestamp,
+                    left.messageId,
+                    right.timestamp,
+                    right.messageId
+            );
+        }
+    };
 }
