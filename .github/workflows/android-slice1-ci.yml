@@ -149,14 +149,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SOURCE_APK="android/app/build/outputs/apk/release/app-release.apk"
-          if [[ ! -f "$SOURCE_APK" ]]; then
-            echo "::error::Signed release APK was not produced."
+          APK="android/app/build/outputs/apk/release/dizychat-v1.apk"
+          if [[ ! -f "$APK" ]]; then
+            echo "::error::Signed release APK was not produced as dizychat-v1.apk."
             exit 1
           fi
-
-          mv android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/dizychat-v1.apk
-          APK="android/app/build/outputs/apk/release/dizychat-v1.apk"
 
           APKSIGNER="$(find "${ANDROID_HOME:?}/build-tools" -maxdepth 2 -type f -name apksigner -print | sort -V | tail -n 1)"
           if [[ -z "$APKSIGNER" ]]; then
