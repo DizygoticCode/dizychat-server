@@ -35,15 +35,24 @@ test('landing and login pages expose manifest and Apple standalone metadata', ()
   }
 });
 
-test('landing page provides an iPhone-only install guide hook without changing normal navigation', () => {
-  const html = readPublic('index.html');
-  assert.match(html, /id=["']iphone-install-button["'][^>]*hidden/i);
-  assert.match(html, /id=["']iphone-install-guide["'][^>]*hidden/i);
-  assert.match(html, /src=["']\/iphone-install\.js["']/i);
-  assert.match(html, /window\.location\.href='\/login'/);
+test('landing and login pages both provide the idiot-proof iPhone install guide', () => {
+  for (const filename of ['index.html', 'login.html']) {
+    const html = readPublic(filename);
+    assert.match(html, /id=["']iphone-install-button["'][^>]*hidden/i, `${filename} must have a hidden iPhone install button`);
+    assert.match(html, /id=["']iphone-install-guide["'][^>]*hidden/i, `${filename} must have a hidden iPhone install guide`);
+    assert.match(html, /Install on iPhone/i, `${filename} must label the install action clearly`);
+    assert.match(html, /Tap[^<]*Share/i, `${filename} must explain the Safari Share step`);
+    assert.match(html, /Add to Home Screen/i, `${filename} must explain Add to Home Screen`);
+    assert.match(html, /Tap[^<]*Add/i, `${filename} must explain the final Add step`);
+    assert.match(html, /href=["']\/iphone-install\.css["']/i, `${filename} must load the shared install styles`);
+    assert.match(html, /src=["']\/iphone-install\.js["']/i, `${filename} must load the shared install helper`);
+  }
+
+  const landing = readPublic('index.html');
+  assert.match(landing, /window\.location\.href='\/login'/, 'normal landing navigation must remain unchanged');
 });
 
-test('install helper offers guidance only on iOS outside standalone mode', () => {
+test('install helper offers guidance only on iOS outside standalone/native mode', () => {
   const helperPath = path.join(publicDir, 'iphone-install.js');
   assert.equal(fs.existsSync(helperPath), true, 'public/iphone-install.js must exist');
   const { shouldOfferInstall } = require(helperPath);
@@ -64,6 +73,12 @@ test('install helper offers guidance only on iOS outside standalone mode', () =>
     navigator: { ...iphoneSafari.navigator, standalone: true },
   };
   assert.equal(shouldOfferInstall(installed), false);
+
+  const nativeIos = {
+    ...iphoneSafari,
+    Capacitor: { isNativePlatform: () => true },
+  };
+  assert.equal(shouldOfferInstall(nativeIos), false);
 
   const desktopSafari = {
     navigator: {
