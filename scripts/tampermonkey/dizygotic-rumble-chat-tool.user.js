@@ -311,12 +311,12 @@
             const db = await prepareChatTranscriptStorage();
             if (!db || chatStorageMode === "memory") return chatLog;
 
-            const sessionRecords = chatLog.slice();
             chatStorageHydrating = true;
             chatStorageHydrationCount = 0;
             updateChatStorageStatus();
             try {
                 const storedRecords = await readAllChatRecords(db);
+                const sessionRecords = chatLog.slice();
                 const bySequence = new Map();
                 [...storedRecords, ...sessionRecords].forEach((record) => {
                     const seq = Number(record?.seq) || 0;
