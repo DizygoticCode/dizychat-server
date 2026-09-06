@@ -26,25 +26,16 @@ jobs:
           from pathlib import Path
           p = Path('scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js')
           s = p.read_text(encoding='utf-8')
-          old = '''            const sessionRecords = chatLog.slice();
-            chatStorageHydrating = true;
-            chatStorageHydrationCount = 0;
-            updateChatStorageStatus();
-            try {
-                const storedRecords = await readAllChatRecords(db);
-                const bySequence = new Map();
-          '''
-          new = '''            chatStorageHydrating = true;
-            chatStorageHydrationCount = 0;
-            updateChatStorageStatus();
-            try {
-                const storedRecords = await readAllChatRecords(db);
-                const sessionRecords = chatLog.slice();
-                const bySequence = new Map();
-          '''
-          if s.count(old) != 1:
-              raise SystemExit(f'expected one hydration merge seam, found {s.count(old)}')
-          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          snapshot = '            const sessionRecords = chatLog.slice();\n'
+          stored = '                const storedRecords = await readAllChatRecords(db);\n'
+          inserted = stored + '                const sessionRecords = chatLog.slice();\n'
+          if s.count(snapshot) != 1:
+              raise SystemExit(f'expected one pre-read session snapshot, found {s.count(snapshot)}')
+          if s.count(stored) != 1:
+              raise SystemExit(f'expected one stored history read, found {s.count(stored)}')
+          s = s.replace(snapshot, '', 1)
+          s = s.replace(stored, inserted, 1)
+          p.write_text(s, encoding='utf-8')
           PY
       - name: Syntax check userscript
         run: node --check scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
