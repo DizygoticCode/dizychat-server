@@ -1,0 +1,82 @@
+name: PR A server wiring retry
+
+on:
+  push:
+    branches:
+      - feat/android-slice2-pr-a
+    paths:
+      - .github/workflows/pr-a-wire-server-retry.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/android-slice2-pr-a
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Execute verified Task 7 and Task 8 patch blocks
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path('.github/workflows/pr-a-wire-server.yml')
+          lines = workflow.read_text().splitlines()
+          blocks = []
+          i = 0
+          while i < len(lines):
+              if "python - <<'PY'" not in lines[i]:
+                  i += 1
+                  continue
+              i += 1
+              block = []
+              while i < len(lines) and lines[i].strip() != 'PY':
+                  block.append(lines[i])
+                  i += 1
+              if i >= len(lines):
+                  raise SystemExit('unterminated Python patch block')
+              blocks.append(textwrap.dedent('\n'.join(block)))
+              i += 1
+
+          if len(blocks) != 2:
+              raise SystemExit(f'expected exactly 2 Python patch blocks, found {len(blocks)}')
+
+          for number, code in enumerate(blocks, 1):
+              print(f'executing patch block {number}')
+              exec(compile(code, f'pr-a-patch-{number}', 'exec'), {'__name__': '__main__'})
+          PY
+
+      - name: Remove throwaway wiring workflows before tests
+        run: rm .github/workflows/pr-a-wire-server.yml .github/workflows/pr-a-wire-server-retry.yml
+
+      - name: Run focused Task 7 and Task 8 contracts
+        run: node --test tests/push/push-http-contract.test.js tests/push/message-push-integration.test.js
+
+      - name: Run full test suite
+        run: npm test
+
+      - name: Check diff whitespace
+        run: git diff --check
+
+      - name: Commit green server wiring and remove throwaway workflows
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.js .github/workflows/pr-a-wire-server.yml .github/workflows/pr-a-wire-server-retry.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "feat: wire authenticated push server contracts"
+          git push origin HEAD:feat/android-slice2-pr-a
