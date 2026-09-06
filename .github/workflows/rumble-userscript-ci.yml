@@ -16,24 +16,13 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Apply staged v1.12.6 source patch
-        if: github.event_name == 'push' && github.ref_name == 'fix/rumble-dizychat-lazy-indexeddb'
-        run: |
-          if grep -q '^// @version      1\.12\.5$' scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js; then
-            python scripts/maintenance/rumble-v1.12.6.patch
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
-            git commit -m 'fix: lazy-load Rumble transcript storage'
-            git push origin HEAD:fix/rumble-dizychat-lazy-indexeddb
-          fi
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
