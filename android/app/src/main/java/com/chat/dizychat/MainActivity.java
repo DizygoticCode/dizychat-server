@@ -1,5 +1,6 @@
 package com.chat.dizychat;
 
+import android.content.Intent;
 import android.os.Bundle;
 
 import com.getcapacitor.BridgeActivity;
@@ -10,7 +11,16 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(SecureSessionPlugin.class);
         registerPlugin(MobileShellPlugin.class);
         registerPlugin(NativePermissionsPlugin.class);
+        registerPlugin(DizyPushPlugin.class);
+        DizyPushPlugin.handleIntent(this, getIntent());
         super.onCreate(savedInstanceState);
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        DizyPushPlugin.handleIntent(this, intent);
     }
 
     @SuppressWarnings("deprecation")
