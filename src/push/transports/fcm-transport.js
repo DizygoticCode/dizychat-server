@@ -1,6 +1,7 @@
 'use strict';
 
 const ALLOWED_DATA_KEYS = [
+  'type',
   'room',
   'messageId',
   'sender',

@@ -10,17 +10,34 @@ public class DizyFirebaseMessagingService extends FirebaseMessagingService {
     public void onMessageReceived(RemoteMessage remoteMessage) {
         Map<String, String> data = remoteMessage.getData();
         if (data == null || data.isEmpty()) return;
+
+        String type = clean(data.get("type"));
         String room = clean(data.get("room"));
         String messageId = clean(data.get("messageId"));
-        if (room.isEmpty() || messageId.isEmpty()) return;
+        String notificationKey = clean(data.get("notificationKey"));
+        String timestamp = clean(data.get("timestamp"));
+        if (room.isEmpty() || messageId.isEmpty() || notificationKey.isEmpty() || timestamp.isEmpty()) return;
+
+        if ("read-control".equals(type)) {
+            DizyNotificationManager.applyReadControl(
+                    this,
+                    room,
+                    messageId,
+                    notificationKey,
+                    timestamp
+            );
+            return;
+        }
+
+        if (!type.isEmpty() && !"message".equals(type)) return;
         DizyNotificationManager.showMessageNotification(
                 this,
                 room,
                 messageId,
                 clean(data.get("sender")),
                 clean(data.get("preview")),
-                clean(data.get("notificationKey")),
-                clean(data.get("timestamp"))
+                notificationKey,
+                timestamp
         );
     }
 

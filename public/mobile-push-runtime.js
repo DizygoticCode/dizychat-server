@@ -36,6 +36,7 @@
     let presenceTimer = null;
     let joinedRoom = '';
     let pendingRoute = null;
+    let reconcilePromise = null;
 
     const readBearer = () => clean(auth?.readToken?.());
     const endpoint = (path) => `${clean(backendOrigin).replace(/\/+$/, '')}${path}`;
@@ -60,6 +61,21 @@
         return await response.json();
       } catch (_err) {
         return {};
+      }
+    };
+
+    const get = async (path) => {
+      const bearer = readBearer();
+      if (!native || !bearer || typeof fetchImpl !== 'function') return null;
+      const response = await fetchImpl(endpoint(path), {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${bearer}` },
+      });
+      if (!response?.ok) return null;
+      try {
+        return await response.json();
+      } catch (_err) {
+        return null;
       }
     };
 
@@ -90,6 +106,42 @@
         deviceLabel: 'Android',
       });
       return registration;
+    };
+
+    const reconcileNotifications = async () => {
+      if (!native || !readBearer()
+          || typeof plugin?.listNotificationRooms !== 'function'
+          || typeof plugin?.applyReadCursor !== 'function') return;
+      if (reconcilePromise) return reconcilePromise;
+
+      reconcilePromise = (async () => {
+        try {
+          await configure();
+          const listed = await plugin.listNotificationRooms();
+          for (const rawRoom of listed?.rooms || []) {
+            const room = clean(rawRoom);
+            if (!room) continue;
+            try {
+              const state = await get(`/api/read-state?room=${encodeURIComponent(room)}`);
+              const cursor = state?.cursor;
+              const messageId = clean(cursor?.messageId);
+              const messageTimestamp = clean(cursor?.messageTimestamp);
+              if (!messageId || !messageTimestamp) continue;
+              await plugin.applyReadCursor({ room, messageId, messageTimestamp });
+            } catch (error) {
+              win.console?.warn?.('[DizyChat] notification reconciliation failed', { room, error });
+            }
+          }
+        } catch (error) {
+          win.console?.warn?.('[DizyChat] notification room listing failed', error);
+        }
+      })();
+
+      try {
+        await reconcilePromise;
+      } finally {
+        reconcilePromise = null;
+      }
     };
 
     const isInteractive = async () => {
@@ -169,6 +221,7 @@
         }
         await updatePresence();
         startPresenceTimer();
+        await reconcileNotifications();
       } catch (error) {
         win.console?.warn?.('[DizyChat] native push activation failed', error);
       }
@@ -198,6 +251,9 @@
       listenersInstalled = true;
       win.document?.addEventListener?.('visibilitychange', () => {
         void updatePresence().catch((error) => win.console?.warn?.('[DizyChat] visibility presence update failed', error));
+        if (win?.document?.visibilityState === 'visible') {
+          void reconcileNotifications();
+        }
       });
       if (typeof plugin.addListener === 'function') {
         await plugin.addListener('tokenChanged', (event = {}) => {
@@ -221,6 +277,7 @@
       } catch (error) {
         win.console?.warn?.('[DizyChat] launch notification route unavailable', error);
       }
+      await reconcileNotifications();
     };
 
     return Object.freeze({
@@ -229,6 +286,7 @@
       register,
       getDeviceId: () => clean(registration?.deviceId),
       updatePresence,
+      reconcileNotifications,
       onRoomJoined,
       onLogout,
       openRoute,
@@ -263,6 +321,9 @@
       return originalEmit(eventName, ...args);
     };
 
+    socket.on?.('connect', () => {
+      void controller.reconcileNotifications?.();
+    });
     socket.on?.('join room success', () => {
       void controller.onRoomJoined(pendingJoinRoom || win.currentRoom);
     });

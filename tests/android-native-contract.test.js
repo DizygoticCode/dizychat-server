@@ -103,7 +103,7 @@ test('Android manifest disables backup and keeps storage permissions narrow', ()
   assert.doesNotMatch(manifest, /MANAGE_EXTERNAL_STORAGE/);
 });
 
-test('Android Slice 1 CI reproducibly builds and uploads an unsigned debug APK', () => {
+test('Android Slice 1 CI reproducibly runs JVM tests, builds, and uploads an unsigned debug APK', () => {
   const workflowPath = '.github/workflows/android-slice1-ci.yml';
   assert.equal(exists(workflowPath), true, 'final Android Slice 1 CI workflow must exist');
   const workflow = read(workflowPath);
@@ -119,7 +119,7 @@ test('Android Slice 1 CI reproducibly builds and uploads an unsigned debug APK',
   assert.match(workflow, /npm ci/);
   assert.match(workflow, /npm test/);
   assert.match(workflow, /npx cap sync android/);
-  assert.match(workflow, /\.\/gradlew assembleDebug --no-daemon/);
+  assert.match(workflow, /\.\/gradlew testDebugUnitTest assembleDebug --no-daemon/);
   assert.match(workflow, /actions\/upload-artifact@v4/);
   assert.match(workflow, /name:\s*dizychat-android-debug-apk/);
   assert.match(workflow, /android\/app\/build\/outputs\/apk\/debug\/app-debug\.apk/);

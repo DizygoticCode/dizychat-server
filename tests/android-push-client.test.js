@@ -21,6 +21,8 @@ const createNativeHarness = ({ visibilityState = 'visible', screenOn = true } = 
     requestNotificationPermission: async () => { pluginCalls.push(['permission']); return { state: 'granted' }; },
     isScreenOn: async () => ({ on: screenOn }),
     consumeLaunchRoute: async () => ({}),
+    listNotificationRooms: async () => ({ rooms: ['General Chat', 'Other Room'] }),
+    applyReadCursor: async (payload) => { pluginCalls.push(['applyReadCursor', payload]); return { cleared: true }; },
     addListener: async (name, callback) => { listeners.set(name, callback); return { remove() {} }; },
   };
   const documentListeners = new Map();
@@ -39,12 +41,27 @@ const createNativeHarness = ({ visibilityState = 'visible', screenOn = true } = 
     setTimeout,
     setInterval: () => 77,
     clearInterval() {},
-    fetch: async (url, init) => {
-      fetchCalls.push({ url, init, body: JSON.parse(init.body) });
+    fetch: async (url, init = {}) => {
+      const body = init.body ? JSON.parse(init.body) : undefined;
+      fetchCalls.push({ url, init, body });
+      if (init.method === 'GET') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            cursor: {
+              room: url.includes('Other%20Room') ? 'Other Room' : 'General Chat',
+              messageId: '507f1f77bcf86cd799439099',
+              messageTimestamp: '2026-09-06T12:00:00.000Z',
+            },
+          }),
+        };
+      }
       return { ok: true, status: 200, json: async () => ({ ok: true }) };
     },
   };
-  return { win, pluginCalls, listeners, fetchCalls, documentListeners };
+  return { win, plugin, pluginCalls, listeners, fetchCalls, documentListeners };
 };
 
 test('browser mode is inert and never decorates Socket.IO for push', async () => {
@@ -137,14 +154,52 @@ test('device-local suppression lease clears while hidden or screen-off and token
   assert.equal(registrations.at(-1).body.fcmToken, 'fcm-rotated');
 });
 
-test('Android native boundary renders one room notification with tap, Reply, and Mark as read actions', () => {
+test('startup reconciliation fetches account read cursors and applies them natively', async () => {
+  const harness = createNativeHarness();
+  const controller = createPushController(harness.win, {
+    backendOrigin: 'https://backend.example',
+    auth: harness.win.dizychatAuthV2,
+  });
+  await controller.onChatReady();
+  const gets = harness.fetchCalls.filter((call) => call.init.method === 'GET');
+  assert.equal(gets.length, 2);
+  assert.equal(gets.every((call) => call.init.headers.Authorization === 'Bearer mobile-bearer'), true);
+  assert.equal(harness.pluginCalls.filter(([name]) => name === 'applyReadCursor').length, 2);
+});
+
+test('reconciliation without bearer or with failed GET retains native notification state', async () => {
+  const missingBearer = createNativeHarness();
+  missingBearer.win.dizychatAuthV2.readToken = () => '';
+  const noAuthController = createPushController(missingBearer.win, {
+    backendOrigin: 'https://backend.example',
+    auth: missingBearer.win.dizychatAuthV2,
+  });
+  await noAuthController.onChatReady();
+  assert.equal(missingBearer.pluginCalls.some(([name]) => name === 'applyReadCursor'), false);
+
+  const failed = createNativeHarness();
+  failed.win.fetch = async (url, init = {}) => {
+    failed.fetchCalls.push({ url, init });
+    if (init.method === 'GET') return { ok: false, status: 503, json: async () => ({}) };
+    return { ok: true, status: 200, json: async () => ({ ok: true }) };
+  };
+  const failedController = createPushController(failed.win, {
+    backendOrigin: 'https://backend.example',
+    auth: failed.win.dizychatAuthV2,
+  });
+  await failedController.onChatReady();
+  assert.equal(failed.pluginCalls.some(([name]) => name === 'applyReadCursor'), false);
+});
+
+test('Android native boundary renders durable room notification with tap, Reply, and Mark as read actions', () => {
   const pluginPath = 'android/app/src/main/java/com/chat/dizychat/DizyPushPlugin.java';
   const servicePath = 'android/app/src/main/java/com/chat/dizychat/DizyFirebaseMessagingService.java';
   const notificationPath = 'android/app/src/main/java/com/chat/dizychat/DizyNotificationManager.java';
   const receiverPath = 'android/app/src/main/java/com/chat/dizychat/DizyNotificationActionReceiver.java';
   const secureStorePath = 'android/app/src/main/java/com/chat/dizychat/SecureSessionStore.java';
+  const stateStorePath = 'android/app/src/main/java/com/chat/dizychat/DizyNotificationStateStore.java';
 
-  for (const file of [pluginPath, servicePath, notificationPath, receiverPath, secureStorePath]) {
+  for (const file of [pluginPath, servicePath, notificationPath, receiverPath, secureStorePath, stateStorePath]) {
     assert.equal(exists(file), true, `${file} must exist`);
   }
 
@@ -155,19 +210,24 @@ test('Android native boundary renders one room notification with tap, Reply, and
   assert.match(plugin, /requestNotificationPermission/);
   assert.match(plugin, /isScreenOn/);
   assert.match(plugin, /consumeLaunchRoute/);
+  assert.match(plugin, /listNotificationRooms/);
+  assert.match(plugin, /applyReadCursor/);
 
   const notification = read(notificationPath);
   assert.match(notification, /notificationKey/);
+  assert.match(notification, /NotificationCompat\.MessagingStyle/);
+  assert.match(notification, /DizyNotificationStateStore\.recordMessage/);
   assert.match(notification, /RemoteInput/);
   assert.match(notification, /"Reply"/);
   assert.match(notification, /"Mark as read"/);
-  assert.match(notification, /messageId/);
-  assert.match(notification, /notificationId\(identity\)/);
+  assert.match(notification, /latestMessageId/);
+  assert.doesNotMatch(notification, /notificationKey\.hashCode\(\)|identity\.hashCode\(\)/);
 
   const receiver = read(receiverPath);
   assert.match(receiver, /\/api\/read-state\/mark/);
   assert.match(receiver, /\/api\/mobile\/push\/reply/);
   assert.match(receiver, /SecureSessionStore/);
+  assert.match(receiver, /DizyNotificationStateStore/);
   assert.match(receiver, /Authorization/);
   assert.match(receiver, /Bearer/);
   assert.doesNotMatch(receiver, /https:\/\/dizychat\.com/i, 'native actions must use configured backend, not duplicate production URL');

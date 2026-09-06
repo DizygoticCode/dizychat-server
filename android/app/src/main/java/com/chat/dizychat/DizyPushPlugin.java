@@ -7,6 +7,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.PowerManager;
 
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
@@ -20,6 +21,7 @@ import com.google.firebase.messaging.FirebaseMessaging;
 import org.json.JSONObject;
 
 import java.lang.ref.WeakReference;
+import java.util.List;
 
 @CapacitorPlugin(
         name = "DizyPush",
@@ -128,6 +130,43 @@ public class DizyPushPlugin extends Plugin {
         call.resolve(result);
     }
 
+    @PluginMethod
+    public void listNotificationRooms(PluginCall call) {
+        JSArray rooms = new JSArray();
+        List<String> storedRooms = DizyNotificationStateStore.listRooms(getContext());
+        for (String room : storedRooms) rooms.put(room);
+        JSObject result = new JSObject();
+        result.put("rooms", rooms);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void applyReadCursor(PluginCall call) {
+        String room = clean(call.getString("room", ""));
+        String messageId = clean(call.getString("messageId", ""));
+        String messageTimestamp = clean(call.getString("messageTimestamp", ""));
+        if (room.isEmpty() || messageId.isEmpty() || messageTimestamp.isEmpty()) {
+            call.reject("room, messageId and messageTimestamp are required");
+            return;
+        }
+
+        boolean cleared = false;
+        for (DizyNotificationStateStore.RoomState state : DizyNotificationStateStore.listStates(getContext())) {
+            if (!room.equals(state.room)) continue;
+            boolean stateCleared = DizyNotificationManager.applyReadControl(
+                    getContext(),
+                    room,
+                    messageId,
+                    state.notificationKey,
+                    messageTimestamp
+            );
+            cleared = cleared || stateCleared;
+        }
+        JSObject result = new JSObject();
+        result.put("cleared", cleared);
+        call.resolve(result);
+    }
+
     static void notifyTokenChanged(Context context, String token) {
         String cleanToken = token == null ? "" : token.trim();
         if (cleanToken.isEmpty()) return;
@@ -167,5 +206,9 @@ public class DizyPushPlugin extends Plugin {
         } catch (RuntimeException ignored) {
             return "";
         }
+    }
+
+    private static String clean(String value) {
+        return value == null ? "" : value.trim();
     }
 }
