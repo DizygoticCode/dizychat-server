@@ -1,6 +1,5 @@
 package com.chat.dizychat;
 
-import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -53,7 +52,8 @@ public class DizyNotificationActionReceiver extends BroadcastReceiver {
         if (token.isEmpty() || backendOrigin.isEmpty()) return;
 
         boolean success = false;
-        if (ACTION_MARK_READ.equals(intent.getAction())) {
+        boolean markRead = ACTION_MARK_READ.equals(intent.getAction());
+        if (markRead) {
             JSONObject payload = new JSONObject();
             try {
                 payload.put("room", room);
@@ -80,7 +80,8 @@ public class DizyNotificationActionReceiver extends BroadcastReceiver {
             }
         }
 
-        if (success) {
+        if (success && markRead) {
+            DizyNotificationStateStore.clearNotification(context, notificationId);
             DizyNotificationManager.cancel(context, notificationId);
         }
     }
@@ -102,8 +103,8 @@ public class DizyNotificationActionReceiver extends BroadcastReceiver {
             try (OutputStream output = connection.getOutputStream()) {
                 output.write(body);
             }
-            int status = connection.getResponseCode();
-            return status >= 200 && status < 300;
+            int responseCode = connection.getResponseCode();
+            return responseCode >= 200 && responseCode < 300;
         } catch (Exception ignored) {
             return false;
         } finally {
