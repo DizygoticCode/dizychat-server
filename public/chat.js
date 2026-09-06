@@ -7269,7 +7269,7 @@ const createUploadOverlay = () => {
 const uploadFileAndSend = async (fileOrBlob, options = {}) => {
   if (!fileOrBlob) return false;
 
-  const { fileName: overrideName, displayName, mimeType } = options;
+  const { fileName: overrideName, displayName, mimeType, voiceMessage = false } = options;
   const intrinsicName =
     typeof fileOrBlob?.name === "string" && fileOrBlob.name
       ? fileOrBlob.name
@@ -7288,6 +7288,9 @@ const uploadFileAndSend = async (fileOrBlob, options = {}) => {
     formData.append("file", fileOrBlob, uploadName);
   } else {
     formData.append("file", fileOrBlob);
+  }
+  if (voiceMessage) {
+    formData.append("voiceMessage", "1");
   }
 
   const fakeTimer = setInterval(() => {
@@ -7415,6 +7418,8 @@ if (voiceBtn) {
 
     const pickMimeType = () => {
       const candidates = [
+        "audio/mp4;codecs=mp4a.40.2",
+        "audio/mp4",
         "audio/webm;codecs=opus",
         "audio/ogg;codecs=opus",
         "audio/webm",
@@ -7433,7 +7438,7 @@ if (voiceBtn) {
       if (type.includes("ogg")) return "ogg";
       if (type.includes("mp3")) return "mp3";
       if (type.includes("wav")) return "wav";
-      if (type.includes("m4a")) return "m4a";
+      if (type.includes("mp4") || type.includes("m4a")) return "m4a";
       return "webm";
     };
 
@@ -7800,6 +7805,7 @@ if (voiceBtn) {
           fileName: filename,
           displayName: filename,
           mimeType,
+          voiceMessage: true,
         });
       } catch {
         /* errors handled in uploadFileAndSend */
