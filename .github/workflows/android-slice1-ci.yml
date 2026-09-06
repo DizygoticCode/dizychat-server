@@ -5,6 +5,7 @@ on:
     branches:
       - feat/android-slice1-core
       - fix/android-relative-media-urls
+      - main
   pull_request:
     paths:
       - 'android/**'
