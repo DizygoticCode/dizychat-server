@@ -5,8 +5,8 @@ import fs from "node:fs";
 const sourcePath = new URL("../tampermonkey/dizygotic-rumble-chat-tool.user.js", import.meta.url);
 const source = fs.readFileSync(sourcePath, "utf8");
 
-test("Tampermonkey metadata advertises v1.12.5 with intelligent bounded Burn Bot memory", () => {
-  assert.match(source, /^\/\/ @version\s+1\.12\.5$/m);
+test("Tampermonkey metadata advertises v1.12.6 with intelligent bounded Burn Bot memory", () => {
+  assert.match(source, /^\/\/ @version\s+1\.12\.6$/m);
   assert.match(source, /curatedBurnMaxPerUser:\s*60,/);
   assert.match(source, /curatedBurnMaxUsers:\s*0,/);
   assert.match(source, /burnMasterEnabled:\s*true,/);

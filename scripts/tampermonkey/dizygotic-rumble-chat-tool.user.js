@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dizygotic Rumble Chat Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.12.5
+// @version      1.12.6
 // @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + transcript recorder/export + automated curated burn memory + outgoing message styling + auto-burn + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.
 // @author       Dizygotic
 // @match        https://rumble.com/*
@@ -25,6 +25,7 @@
     const CHAT_DB_NAME = "dizygoticRumbleChat";
     const CHAT_DB_VERSION = 1;
     const CHAT_DB_STORE = "messages";
+    const CHAT_TRANSCRIPT_READ_BATCH_SIZE = 250;
     const CURATED_BURNS_KEY = "rumbleCuratedBurnsV1";
     const CURATED_BURNS_SCHEMA = 2;
 
@@ -42,7 +43,11 @@
     let chatLog = [];
     let chatSequence = 0;
     let chatDbPromise = null;
+    let chatStorageReadyPromise = null;
     let chatStorageInitPromise = null;
+    let chatTranscriptHydrated = false;
+    let chatStorageHydrating = false;
+    let chatStorageHydrationCount = 0;
     let chatStorageMode = "loading";
     let chatStorageLastError = "";
     let pendingChatWrites = [];
@@ -178,17 +183,48 @@
     }
 
     async function readAllChatRecords(db) {
-        const transaction = db.transaction(CHAT_DB_STORE, "readonly");
-        const completed = waitForChatTransaction(transaction);
-        const request = transaction.objectStore(CHAT_DB_STORE).getAll();
-        const records = await new Promise((resolve, reject) => {
-            request.onsuccess = () => resolve(request.result || []);
-            request.onerror = () => reject(request.error || new Error("Unable to read transcript IndexedDB"));
-        });
-        await completed;
+        const records = [];
+        let lastKey = null;
+        let done = false;
+
+        while (!done) {
+            const transaction = db.transaction(CHAT_DB_STORE, "readonly");
+            const completed = waitForChatTransaction(transaction);
+            const store = transaction.objectStore(CHAT_DB_STORE);
+            const range = lastKey == null ? undefined : IDBKeyRange.lowerBound(lastKey, true);
+            const request = store.openCursor(range);
+            const result = await new Promise((resolve, reject) => {
+                const batch = [];
+                let batchLastKey = lastKey;
+                request.onsuccess = () => {
+                    const cursor = request.result;
+                    if (!cursor) {
+                        resolve({ batch, lastKey: batchLastKey, done: true });
+                        return;
+                    }
+                    batch.push(cursor.value);
+                    batchLastKey = cursor.key;
+                    if (batch.length >= CHAT_TRANSCRIPT_READ_BATCH_SIZE) {
+                        resolve({ batch, lastKey: batchLastKey, done: false });
+                        return;
+                    }
+                    cursor.continue();
+                };
+                request.onerror = () => reject(request.error || new Error("Unable to read transcript IndexedDB"));
+            });
+            await completed;
+            records.push(...result.batch);
+            lastKey = result.lastKey;
+            done = result.done;
+            chatStorageHydrationCount = records.length;
+            updateChatStorageStatus();
+            if (!done) {
+                await new Promise((resolve) => setTimeout(resolve, 0));
+            }
+        }
+
         return records.sort((a, b) => (Number(a.seq) || 0) - (Number(b.seq) || 0));
     }
-
     async function clearChatRecords(db) {
         const transaction = db.transaction(CHAT_DB_STORE, "readwrite");
         const completed = waitForChatTransaction(transaction);
@@ -197,6 +233,9 @@
     }
 
     function chatStorageSummaryText() {
+        if (chatStorageHydrating) {
+            return `${chatStorageHydrationCount.toLocaleString()} loaded messages · loading IndexedDB history…`;
+        }
         const mode = chatStorageMode === "indexeddb"
             ? "IndexedDB"
             : chatStorageMode === "memory"
@@ -214,17 +253,32 @@
         status.title = chatStorageLastError || "Transcript storage has no app-level message-count ceiling.";
     }
 
-    async function initializeChatTranscriptStorage() {
-        if (chatStorageInitPromise) return chatStorageInitPromise;
-        chatStorageInitPromise = (async () => {
+    async function readLatestChatSequence(db) {
+        const transaction = db.transaction(CHAT_DB_STORE, "readonly");
+        const completed = waitForChatTransaction(transaction);
+        const request = transaction.objectStore(CHAT_DB_STORE).openCursor(null, "prev");
+        const latestSequence = await new Promise((resolve, reject) => {
+            request.onsuccess = () => {
+                const cursor = request.result;
+                resolve(Number(cursor?.value?.seq ?? cursor?.key) || 0);
+            };
+            request.onerror = () => reject(request.error || new Error("Unable to read latest transcript sequence"));
+        });
+        await completed;
+        return latestSequence;
+    }
+
+    async function prepareChatTranscriptStorage() {
+        if (chatStorageReadyPromise) return chatStorageReadyPromise;
+        chatStorageReadyPromise = (async () => {
             try {
                 const db = await openChatTranscriptDb();
                 if (legacyChatLog.length) await putChatRecords(db, legacyChatLog);
-                chatLog = await readAllChatRecords(db);
-                chatSequence = chatLog.reduce(
+                const legacySequence = legacyChatLog.reduce(
                     (max, record) => Math.max(max, Number(record.seq) || 0),
                     0
                 );
+                chatSequence = Math.max(chatSequence, legacySequence, await readLatestChatSequence(db));
                 localStorage.removeItem(CHAT_LOG_KEY);
                 chatStorageMode = "indexeddb";
                 chatStorageLastError = "";
@@ -232,6 +286,7 @@
                 if (navigator.storage?.persist) {
                     navigator.storage.persist().catch(() => false);
                 }
+                return db;
             } catch (err) {
                 console.warn("IndexedDB transcript storage unavailable; preserving the legacy transcript and recording in memory for this session", err);
                 chatLog = legacyChatLog.slice();
@@ -239,11 +294,54 @@
                     (max, record) => Math.max(max, Number(record.seq) || 0),
                     0
                 );
+                chatTranscriptHydrated = true;
                 chatStorageMode = "memory";
                 chatStorageLastError = String(err?.message || err);
                 updateChatStorageStatus();
+                return null;
             }
-            return chatLog;
+        })();
+        return chatStorageReadyPromise;
+    }
+
+    async function initializeChatTranscriptStorage() {
+        if (chatTranscriptHydrated) return chatLog;
+        if (chatStorageInitPromise) return chatStorageInitPromise;
+        chatStorageInitPromise = (async () => {
+            const db = await prepareChatTranscriptStorage();
+            if (!db || chatStorageMode === "memory") return chatLog;
+
+            chatStorageHydrating = true;
+            chatStorageHydrationCount = 0;
+            updateChatStorageStatus();
+            try {
+                const storedRecords = await readAllChatRecords(db);
+                const sessionRecords = chatLog.slice();
+                const bySequence = new Map();
+                [...storedRecords, ...sessionRecords].forEach((record) => {
+                    const seq = Number(record?.seq) || 0;
+                    if (seq > 0) bySequence.set(seq, record);
+                });
+                chatLog = [...bySequence.values()].sort((a, b) => (Number(a.seq) || 0) - (Number(b.seq) || 0));
+                chatSequence = chatLog.reduce(
+                    (max, record) => Math.max(max, Number(record.seq) || 0),
+                    chatSequence
+                );
+                chatTranscriptHydrated = true;
+                chatStorageMode = "indexeddb";
+                chatStorageLastError = "";
+                backfillCuratedBurnsFromTranscript();
+                return chatLog;
+            } catch (err) {
+                chatStorageMode = "error";
+                chatStorageLastError = String(err?.message || err);
+                chatStorageInitPromise = null;
+                console.warn("Unable to hydrate the IndexedDB transcript; use the load/rebuild control to retry", err);
+                throw err;
+            } finally {
+                chatStorageHydrating = false;
+                updateChatStorageStatus();
+            }
         })();
         return chatStorageInitPromise;
     }
@@ -1911,6 +2009,10 @@
         const existing = document.querySelector("#rumbleBlockerSettingsPanel");
         if (existing) return;
 
+        void initializeChatTranscriptStorage().catch((err) => {
+            console.warn("IndexedDB transcript background load failed; use Load / Rebuild IndexedDB transcript to retry", err);
+        });
+
         const panel = document.createElement("div");
         panel.id = "rumbleBlockerSettingsPanel";
         panel.style.position = "fixed";
@@ -2018,7 +2120,7 @@
             <div id="curatedBurnStatus" style="font-size:12px;color:gray;margin-top:5px">${curatedBurnSummaryText()}</div>
             <div id="curatedBurnMemoryDiagnostic" style="font-size:11px;color:gray;margin-top:3px">${curatedBurnStore.lastMemoryDiagnostic?.angle ? `Last memory angle: ${curatedBurnStore.lastMemoryDiagnostic.angle} · ${curatedBurnStore.lastMemoryDiagnostic.source || "local"} · novelty rerolls ${Math.max(0, Number(curatedBurnStore.noveltyRerolls) || 0)}` : `Memory intelligence ready · novelty rerolls ${Math.max(0, Number(curatedBurnStore.noveltyRerolls) || 0)}`}</div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
-                <button type="button" id="rebuildCuratedBurnsBtn">Rebuild from transcript</button>
+                <button type="button" id="rebuildCuratedBurnsBtn">Load / Rebuild IndexedDB transcript</button>
                 <button type="button" id="clearCuratedBurnsBtn">Clear curated bank</button>
             </div>
             <div style="height:12px"></div>
@@ -4089,14 +4191,16 @@
         const target = providedTarget ||
             prompt("Enter the username to DM:", "general")?.toString().replace(/\s+/g, " ").trim() ||
             "general";
+        const dmParticipants = [resolvedNickname, target]
+            .map((name) => sanitizeNickname(name).toLowerCase())
+            .filter(Boolean)
+            .sort();
+        const roomName = target && target !== resolvedNickname ? `dizychat-dm-${dmParticipants.join("-")}` : "general";
 
-        const landingBaseURL = "https://dizychat-server.onrender.com/";
+        const landingBaseURL = "https://dizychat.com/login.html";
         const params = new URLSearchParams();
-        params.set("usernamePlaceholder", "Put your username here");
-        params.set("roomPlaceholder", "Put your room name here");
-        if (target && target !== resolvedNickname) {
-            params.set("invite", target);
-        }
+        params.set("username", resolvedNickname);
+        params.set("room", roomName);
         const landingURL = `${landingBaseURL}?${params.toString()}`;
 
         const dmWindow = window.open(landingURL, "_blank", "noopener,noreferrer");
@@ -4239,8 +4343,7 @@
      ***********************/
     async function boot() {
         setupAutoBackup();
-        await initializeChatTranscriptStorage();
-        backfillCuratedBurnsFromTranscript();
+        await prepareChatTranscriptStorage();
         initAudio();
 
         const chatBootInterval = setInterval(() => {

@@ -24,14 +24,16 @@ test("transcript remains in IndexedDB with no app message-count ceiling", () => 
   assert.doesNotMatch(source, /localStorage\.setItem\(CHAT_LOG_KEY, JSON\.stringify\(chatLog\)\)/);
 });
 
-test("legacy localStorage transcript migrates before the old key is removed", () => {
-  const init = between("async function initializeChatTranscriptStorage()", "function extractMentions(text)");
-  assert.match(init, /legacyChatLog/);
-  assert.match(init, /await putChatRecords\(db, legacyChatLog\)/);
-  assert.match(init, /chatLog = await readAllChatRecords\(db\)/);
-  assert.match(init, /localStorage\.removeItem\(CHAT_LOG_KEY\)/);
-  assert.ok(init.indexOf("await putChatRecords(db, legacyChatLog)") < init.indexOf("localStorage.removeItem(CHAT_LOG_KEY)"));
-  assert.ok(init.indexOf("chatLog = await readAllChatRecords(db)") < init.indexOf("localStorage.removeItem(CHAT_LOG_KEY)"));
+test("legacy localStorage transcript migrates during lightweight storage readiness before the old key is removed", () => {
+  const prepare = between("async function prepareChatTranscriptStorage()", "async function initializeChatTranscriptStorage()");
+  const hydrate = between("async function initializeChatTranscriptStorage()", "let chatLogSaveTimer = null;");
+  assert.match(prepare, /legacyChatLog/);
+  assert.match(prepare, /await putChatRecords\(db, legacyChatLog\)/);
+  assert.match(prepare, /await readLatestChatSequence\(db\)/);
+  assert.match(prepare, /localStorage\.removeItem\(CHAT_LOG_KEY\)/);
+  assert.doesNotMatch(prepare, /readAllChatRecords\(db\)/);
+  assert.match(hydrate, /await readAllChatRecords\(db\)/);
+  assert.ok(prepare.indexOf("await putChatRecords(db, legacyChatLog)") < prepare.indexOf("localStorage.removeItem(CHAT_LOG_KEY)"));
 });
 
 test("large transcript boot avoids spreading the full history into Math.max", () => {
@@ -61,9 +63,13 @@ test("clear, export and curated rebuild operate on the full IndexedDB-backed his
   assert.doesNotMatch(backfill, /slice\(-5000\)/);
 });
 
-test("boot waits for transcript storage and the panel reports IndexedDB status", () => {
+test("boot prepares IndexedDB sequence state without hydrating history and panel opens hydration", () => {
   assert.match(source, /id="chatStorageStatus"/);
   assert.match(source, /chatStorageSummaryText\(\)/);
-  assert.match(source, /async function boot\(\)[\s\S]*?await initializeChatTranscriptStorage\(\);[\s\S]*?backfillCuratedBurnsFromTranscript\(\);/);
+  const boot = between("async function boot()", "if (document.readyState");
+  const panel = between("function showSettingsPanel()", "function ensureFloatingSettingsButton()");
+  assert.match(boot, /await prepareChatTranscriptStorage\(\);/);
+  assert.doesNotMatch(boot, /initializeChatTranscriptStorage\(\)/);
+  assert.match(panel, /initializeChatTranscriptStorage\(\)/);
   assert.match(source, /navigator\.storage\?\.persist/);
 });
