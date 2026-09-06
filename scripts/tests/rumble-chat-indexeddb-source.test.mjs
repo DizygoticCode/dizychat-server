@@ -28,16 +28,19 @@ test("legacy localStorage transcript migrates before the old key is removed", ()
   const init = between("async function initializeChatTranscriptStorage()", "function extractMentions(text)");
   assert.match(init, /legacyChatLog/);
   assert.match(init, /await putChatRecords\(db, legacyChatLog\)/);
-  assert.match(init, /chatLog = await readAllChatRecords\(db\)/);
+  assert.match(init, /await readChatRecordsInChunks\(db\)/);
   assert.match(init, /localStorage\.removeItem\(CHAT_LOG_KEY\)/);
   assert.ok(init.indexOf("await putChatRecords(db, legacyChatLog)") < init.indexOf("localStorage.removeItem(CHAT_LOG_KEY)"));
-  assert.ok(init.indexOf("chatLog = await readAllChatRecords(db)") < init.indexOf("localStorage.removeItem(CHAT_LOG_KEY)"));
+  assert.ok(init.indexOf("await readChatRecordsInChunks(db)") < init.indexOf("localStorage.removeItem(CHAT_LOG_KEY)"));
 });
 
-test("large transcript boot avoids spreading the full history into Math.max", () => {
-  const init = between("async function initializeChatTranscriptStorage()", "function extractMentions(text)");
-  assert.doesNotMatch(init, /Math\.max\(\.\.\.chatLog\.map/);
-  assert.match(init, /chatLog\.reduce\(/);
+test("large transcript hydration is paged, yields between chunks, and primes the max sequence cheaply", () => {
+  const reader = between("async function readChatRecordsInChunks", "async function clearChatRecords");
+  assert.match(source, /const CHAT_DB_READ_BATCH_SIZE = 250;/);
+  assert.match(reader, /getAll\([^\n]*batchSize\)/);
+  assert.match(reader, /setTimeout\(resolve, CHAT_DB_READ_YIELD_MS\)/);
+  assert.match(reader, /openKeyCursor\(null, "prev"\)/);
+  assert.doesNotMatch(reader, /\.getAll\(\)/);
 });
 
 test("new records are queued and batch-written to IndexedDB instead of rewriting the whole transcript", () => {
@@ -61,9 +64,13 @@ test("clear, export and curated rebuild operate on the full IndexedDB-backed his
   assert.doesNotMatch(backfill, /slice\(-5000\)/);
 });
 
-test("boot waits for transcript storage and the panel reports IndexedDB status", () => {
+test("ordinary boot does not touch IndexedDB before the floating button and no-chat pages stay lazy", () => {
+  const boot = between("async function boot()", "if (document.readyState === \"complete\"");
   assert.match(source, /id="chatStorageStatus"/);
   assert.match(source, /chatStorageSummaryText\(\)/);
-  assert.match(source, /async function boot\(\)[\s\S]*?await initializeChatTranscriptStorage\(\);[\s\S]*?backfillCuratedBurnsFromTranscript\(\);/);
+  assert.match(boot, /ensureFloatingSettingsButton\(\);/);
+  assert.doesNotMatch(boot, /await initializeChatTranscriptStorage\(\)|void initializeChatTranscriptStorage\(\)/);
+  assert.match(boot, /if \(chatContainer\)[\s\S]*?activateChatTranscriptStorage\(\)/);
+  assert.match(source, /function showSettingsPanel\(\)[\s\S]*?activateChatTranscriptStorage\(\)/);
   assert.match(source, /navigator\.storage\?\.persist/);
 });
