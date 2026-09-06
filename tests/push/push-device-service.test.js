@@ -156,6 +156,18 @@ test('recipient listing revalidates revoked sessions and inactive accounts', asy
   assert.equal((await h.service.listRoomDevices('A')).length, 0);
 });
 
+test('account device listing returns only active devices backed by active mobile sessions', async () => {
+  const h = harness();
+  await register(h.service);
+  await register(h.service, { sessionId: '507f1f77bcf86cd799439012', deviceId: 'dev2', fcmToken: 'token2' });
+  await register(h.service, { sessionId: '507f1f77bcf86cd799439013', canonicalUsername: 'nick', deviceId: 'nick-dev', fcmToken: 'nick-token' });
+  h.PushDeviceModel.docs.find((item) => item.deviceId === 'dev2').disabledAt = new Date('2026-09-05T20:00:01.000Z');
+  assert.deepEqual((await h.service.listAccountDevices('ROB')).map((item) => item.deviceId), ['dev1']);
+  h.MobileSessionModel.docs.find((item) => item._id === '507f1f77bcf86cd799439011').revokedAt = new Date('2026-09-05T20:00:02.000Z');
+  assert.deepEqual(await h.service.listAccountDevices('rob'), []);
+  assert.deepEqual((await h.service.listAccountDevices('nick')).map((item) => item.deviceId), ['nick-dev']);
+});
+
 test('retireToken disables only matching active token and clears its lease', async () => {
   const h = harness();
   await register(h.service);
