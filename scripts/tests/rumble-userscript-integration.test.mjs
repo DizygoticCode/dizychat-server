@@ -44,3 +44,8 @@ test('transcript history is read progressively instead of getAll loading it at o
   assert.match(storage, /CHAT_TRANSCRIPT_READ_BATCH_SIZE/);
   assert.match(storage, /setTimeout\s*\(/, 'chunk loading must yield between batches');
 });
+
+test('existing rebuild control doubles as the explicit IndexedDB load/rebuild action', () => {
+  assert.match(source, /id="rebuildCuratedBurnsBtn">Load \/ Rebuild IndexedDB transcript<\/button>/);
+  assert.equal((source.match(/id="rebuildCuratedBurnsBtn"/g) || []).length, 1, 'reuse the existing rebuild button instead of adding a duplicate load control');
+});
