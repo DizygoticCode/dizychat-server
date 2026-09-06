@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 
-test('Android CI fail-closes and uploads only a verified signed release APK', () => {
+test('Android CI fail-closes and uploads a verified signed release APK', () => {
   const workflow = read('.github/workflows/android-slice1-ci.yml');
 
   for (const secret of [
@@ -23,7 +23,8 @@ test('Android CI fail-closes and uploads only a verified signed release APK', ()
   assert.match(workflow, /base64 --decode > android\/app\/dizychat-release\.jks/);
   assert.match(workflow, /DIZYCHAT_KEYSTORE_PATH:\s*\$\{\{ github\.workspace \}\}\/android\/app\/dizychat-release\.jks/);
   assert.match(workflow, /assembleRelease/);
-  assert.match(workflow, /apksigner verify --verbose --print-certs/);
+  assert.match(workflow, /APKSIGNER=/);
+  assert.match(workflow, /verify --verbose --print-certs/);
   assert.match(workflow, /name:\s*dizychat-android-release-apk/);
   assert.match(workflow, /path:\s*android\/app\/build\/outputs\/apk\/release\/app-release\.apk/);
 });
