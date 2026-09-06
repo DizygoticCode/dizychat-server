@@ -2,6 +2,7 @@
 
 const {
   buildPushIntent,
+  buildReadControlIntent,
   isDevicePushEligible,
 } = require('./notification-policy');
 
@@ -15,6 +16,29 @@ const createPushCoordinator = ({
   if (!pushDeviceService || !readStateService || !transport || typeof transport.send !== 'function') {
     throw new TypeError('push coordinator dependencies are required');
   }
+
+  const sendToDevice = async (intent, device, result) => {
+    const token = String(device?.fcmToken || '');
+    result.attempted += 1;
+    try {
+      await transport.send(intent, token);
+      result.sent += 1;
+    } catch (error) {
+      result.failed += 1;
+      const code = String(error?.code || 'unexpected');
+      const permanent = error?.permanent === true;
+      logger.warn?.('[Push] transport send failed', { code, permanent });
+      if (permanent) {
+        try {
+          await pushDeviceService.retireToken(token, code || 'permanent-error');
+        } catch (retireError) {
+          logger.warn?.('[Push] token retirement failed', {
+            code: String(retireError?.code || 'unexpected'),
+          });
+        }
+      }
+    }
+  };
 
   const onMessageStored = async (message, { senderCanonicalUsername = '' } = {}) => {
     const room = String(message?.room || '').trim();
@@ -51,35 +75,27 @@ const createPushCoordinator = ({
       })) continue;
 
       const intent = buildPushIntent({ device, message });
-      result.attempted += 1;
-
-      try {
-        await transport.send(intent, String(device.fcmToken || ''));
-        result.sent += 1;
-      } catch (error) {
-        result.failed += 1;
-        const code = String(error?.code || 'unexpected');
-        const permanent = error?.permanent === true;
-        logger.warn?.('[Push] transport send failed', { code, permanent });
-        if (permanent) {
-          try {
-            await pushDeviceService.retireToken(
-              String(device.fcmToken || ''),
-              code || 'permanent-error',
-            );
-          } catch (retireError) {
-            logger.warn?.('[Push] token retirement failed', {
-              code: String(retireError?.code || 'unexpected'),
-            });
-          }
-        }
-      }
+      await sendToDevice(intent, device, result);
     }
 
     return result;
   };
 
-  const sendRoomClear = async () => ({ attempted: 0, sent: 0, failed: 0 });
+  const sendRoomClear = async ({ canonicalUsername, room, cursor } = {}) => {
+    const normalizedRoom = String(room || '').trim();
+    if (!normalizedRoom || !cursor) return { attempted: 0, sent: 0, failed: 0 };
+
+    const devices = await pushDeviceService.listAccountDevices(canonicalUsername);
+    const result = { attempted: 0, sent: 0, failed: 0 };
+
+    for (const device of devices || []) {
+      if (!device || device.disabledAt != null || !String(device.fcmToken || '').trim()) continue;
+      const intent = buildReadControlIntent({ device, room: normalizedRoom, cursor });
+      await sendToDevice(intent, device, result);
+    }
+
+    return result;
+  };
 
   return {
     onMessageStored,
