@@ -68,9 +68,10 @@ test('safe preview normalizes whitespace, caps text, and labels attachment-only 
   assert.equal(buildSafePreview({ fileUrl: 'https://secret.example/raw' }).includes('http'), false);
 });
 
-test('push intent is allowlisted and notification key is stable opaque account+room hash', () => {
+test('push intent is allowlisted, explicitly typed, and notification key is stable opaque account+room hash', () => {
   const intent = buildPushIntent({ device, message });
-  assert.deepEqual(Object.keys(intent).sort(), ['messageId', 'notificationKey', 'preview', 'room', 'sender', 'timestamp'].sort());
+  assert.deepEqual(Object.keys(intent).sort(), ['type', 'messageId', 'notificationKey', 'preview', 'room', 'sender', 'timestamp'].sort());
+  assert.equal(intent.type, 'message');
   assert.equal(intent.notificationKey, buildNotificationKey('nick', 'ShittyChat'));
   assert.match(intent.notificationKey, /^[a-f0-9]{24}$/);
   const serialized = JSON.stringify(intent);
