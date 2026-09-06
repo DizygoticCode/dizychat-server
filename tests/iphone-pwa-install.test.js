@@ -24,32 +24,37 @@ test('iPhone web app manifest launches DizyChat standalone at the login screen',
   assert.ok(manifest.icons.some((icon) => icon.src === '/logo.png' && icon.type === 'image/png'));
 });
 
-test('landing and login pages expose manifest and Apple standalone metadata', () => {
-  for (const filename of ['index.html', 'login.html']) {
-    const html = readPublic(filename);
-    assert.match(html, /<link[^>]+rel=["']manifest["'][^>]+href=["']\/manifest\.webmanifest["']/i, `${filename} must link the web manifest`);
-    assert.match(html, /<link[^>]+rel=["']apple-touch-icon["'][^>]+href=["']\/logo\.png["']/i, `${filename} must expose the Home Screen icon`);
-    assert.match(html, /<meta[^>]+name=["']apple-mobile-web-app-capable["'][^>]+content=["']yes["']/i, `${filename} must opt into Apple standalone mode`);
-    assert.match(html, /<meta[^>]+name=["']apple-mobile-web-app-title["'][^>]+content=["']DizyChat["']/i, `${filename} must set the Apple web app title`);
-    assert.match(html, /<meta[^>]+name=["']theme-color["'][^>]+content=["']#020617["']/i, `${filename} must declare the app theme color`);
-  }
+test('shared helper installs manifest and Apple standalone metadata', () => {
+  const helperPath = path.join(publicDir, 'iphone-install.js');
+  assert.equal(fs.existsSync(helperPath), true, 'public/iphone-install.js must exist');
+  const helper = readPublic('iphone-install.js');
+
+  assert.match(helper, /manifest\.webmanifest/);
+  assert.match(helper, /apple-touch-icon/);
+  assert.match(helper, /apple-mobile-web-app-capable/);
+  assert.match(helper, /apple-mobile-web-app-title/);
+  assert.match(helper, /theme-color/);
+  assert.match(helper, /logo\.png/);
 });
 
-test('landing and login pages both provide the idiot-proof iPhone install guide', () => {
-  for (const filename of ['index.html', 'login.html']) {
-    const html = readPublic(filename);
-    assert.match(html, /id=["']iphone-install-button["'][^>]*hidden/i, `${filename} must have a hidden iPhone install button`);
-    assert.match(html, /id=["']iphone-install-guide["'][^>]*hidden/i, `${filename} must have a hidden iPhone install guide`);
-    assert.match(html, /Install on iPhone/i, `${filename} must label the install action clearly`);
-    assert.match(html, /Tap[^<]*Share/i, `${filename} must explain the Safari Share step`);
-    assert.match(html, /Add to Home Screen/i, `${filename} must explain Add to Home Screen`);
-    assert.match(html, /Tap[^<]*Add/i, `${filename} must explain the final Add step`);
-    assert.match(html, /href=["']\/iphone-install\.css["']/i, `${filename} must load the shared install styles`);
-    assert.match(html, /src=["']\/iphone-install\.js["']/i, `${filename} must load the shared install helper`);
-  }
-
+test('landing and login both load the same iPhone install helper', () => {
   const landing = readPublic('index.html');
+  const bootstrap = readPublic('mobile-bootstrap.js');
+
+  assert.match(landing, /src=["']\/iphone-install\.js["']/i, 'landing page must load the shared iPhone install helper');
+  assert.match(bootstrap, /loadScript\(['"]\/iphone-install\.js['"]\)/, 'login bootstrap must load the shared iPhone install helper');
   assert.match(landing, /window\.location\.href='\/login'/, 'normal landing navigation must remain unchanged');
+});
+
+test('shared helper renders the idiot-proof install button and three Safari steps', () => {
+  const helper = readPublic('iphone-install.js');
+  assert.match(helper, /iphone-install-button/);
+  assert.match(helper, /iphone-install-guide/);
+  assert.match(helper, /Install on iPhone/i);
+  assert.match(helper, /Tap Share/i);
+  assert.match(helper, /Add to Home Screen/i);
+  assert.match(helper, /Tap Add/i);
+  assert.match(helper, /iphone-install\.css/);
 });
 
 test('install helper offers guidance only on iOS outside standalone/native mode', () => {
@@ -79,6 +84,17 @@ test('install helper offers guidance only on iOS outside standalone/native mode'
     Capacitor: { isNativePlatform: () => true },
   };
   assert.equal(shouldOfferInstall(nativeIos), false);
+
+  const ipadDesktopMode = {
+    navigator: {
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1',
+      platform: 'MacIntel',
+      maxTouchPoints: 5,
+      standalone: false,
+    },
+    matchMedia: () => ({ matches: false }),
+  };
+  assert.equal(shouldOfferInstall(ipadDesktopMode), true);
 
   const desktopSafari = {
     navigator: {
