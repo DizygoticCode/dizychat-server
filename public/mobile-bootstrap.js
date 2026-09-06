@@ -42,7 +42,23 @@
       ? '/vendor/socket.io.min.js'
       : '/socket.io/socket.io.js';
     await loadScript(socketClientUrl);
+
+    let pushController = null;
+    if (runtime.isNativeRuntime(window)) {
+      await loadScript('/mobile-push-runtime.js');
+      const pushRuntime = window.dizychatMobilePushRuntime;
+      if (pushRuntime?.createPushController) {
+        pushController = pushRuntime.createPushController(window, {
+          backendOrigin: backend,
+          auth,
+        });
+        window.dizychatMobilePush = pushController;
+        pushRuntime.decorateIoFactory(window, pushController);
+      }
+    }
+
     await loadScript('/chat.js');
+    if (pushController) await pushController.onChatReady();
   } catch (error) {
     console.error('[DizyChat] bootstrap failed', error);
     showBootstrapError(error);
