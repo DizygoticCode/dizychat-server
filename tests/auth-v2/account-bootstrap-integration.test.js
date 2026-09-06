@@ -3,7 +3,9 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 
-const serverSource = fs.readFileSync(path.resolve(__dirname, '../../index.js'), 'utf8');
+const bootstrapSource = fs.readFileSync(path.resolve(__dirname, '../../index.js'), 'utf8');
+const coreSource = fs.readFileSync(path.resolve(__dirname, '../../server-core.js'), 'utf8');
+const serverSource = `${bootstrapSource}\n${coreSource}`;
 
 test('server builds Auth v2 account service from legacy migration inputs', () => {
   assert.match(serverSource, /require\('\.\/src\/models\/user'\)/);

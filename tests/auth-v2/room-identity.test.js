@@ -5,7 +5,9 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 
-const indexSource = fs.readFileSync(path.resolve(__dirname, '../../index.js'), 'utf8');
+const bootstrapSource = fs.readFileSync(path.resolve(__dirname, '../../index.js'), 'utf8');
+const coreSource = fs.readFileSync(path.resolve(__dirname, '../../server-core.js'), 'utf8');
+const indexSource = `${bootstrapSource}\n${coreSource}`;
 const joinStart = indexSource.indexOf("socket.on('join room'");
 const joinEnd = indexSource.indexOf("socket.on('leave room'", joinStart);
 const joinSource = indexSource.slice(joinStart, joinEnd > joinStart ? joinEnd : undefined);

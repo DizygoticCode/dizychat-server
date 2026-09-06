@@ -243,7 +243,7 @@ test('Android native boundary renders durable room notification with tap, Reply,
 });
 
 test('background mobile Reply derives account identity from bearer, active subscription, and canonical message service', () => {
-  const source = read('index.js');
+  const source = `${read('index.js')}\n${read('server-core.js')}`;
   const route = source.match(/app\.post\(['"]\/api\/mobile\/push\/reply['"][\s\S]{0,5000}/)?.[0] || '';
   assert.match(route, /requireHttpMobileAccount/);
   assert.match(route, /findActiveSubscription/);

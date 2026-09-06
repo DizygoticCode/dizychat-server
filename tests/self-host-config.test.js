@@ -6,6 +6,7 @@ const vm = require('node:vm');
 const configPath = path.join(__dirname, '..', 'public', 'app-config.js');
 const securityRunbookPath = path.join(__dirname, '..', 'docs', 'security-runbook.md');
 const serverPath = path.join(__dirname, '..', 'index.js');
+const serverCorePath = path.join(__dirname, '..', 'server-core.js');
 const readmePath = path.join(__dirname, '..', 'README.md');
 const gitignorePath = path.join(__dirname, '..', '.gitignore');
 const soundboardKeepPath = path.join(__dirname, '..', 'public', 'soundboards', '.gitkeep');
@@ -22,7 +23,7 @@ const generatedAndroidChatPath = path.join(
 );
 const source = fs.readFileSync(configPath, 'utf8');
 const securityRunbookSource = fs.readFileSync(securityRunbookPath, 'utf8');
-const serverSource = fs.readFileSync(serverPath, 'utf8');
+const serverSource = `${fs.readFileSync(serverPath, 'utf8')}\n${fs.readFileSync(serverCorePath, 'utf8')}`;
 const readmeSource = fs.readFileSync(readmePath, 'utf8');
 const gitignoreSource = fs.readFileSync(gitignorePath, 'utf8');
 

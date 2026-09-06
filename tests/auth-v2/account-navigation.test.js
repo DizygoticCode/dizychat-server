@@ -9,7 +9,7 @@ const { createSessionStore } = require('../../src/auth/session-store');
 const { createMobileSessionService } = require('../../src/auth/mobile-session-service');
 const read = (file) => fs.readFileSync(path.join(__dirname, '../..', file), 'utf8');
 const chat = read('public/chat.js');
-const server = read('index.js');
+const server = `${read('index.js')}\n${read('server-core.js')}`;
 const between = (source, start, end) => {
   const from = source.indexOf(start);
   const to = source.indexOf(end, from + start.length);
