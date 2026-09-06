@@ -137,14 +137,15 @@ test('device-local suppression lease clears while hidden or screen-off and token
   assert.equal(registrations.at(-1).body.fcmToken, 'fcm-rotated');
 });
 
-test('Android native boundary renders one room notification with tap, Reply, and Mark as read actions', () => {
+test('Android native boundary renders durable room notification with tap, Reply, and Mark as read actions', () => {
   const pluginPath = 'android/app/src/main/java/com/chat/dizychat/DizyPushPlugin.java';
   const servicePath = 'android/app/src/main/java/com/chat/dizychat/DizyFirebaseMessagingService.java';
   const notificationPath = 'android/app/src/main/java/com/chat/dizychat/DizyNotificationManager.java';
   const receiverPath = 'android/app/src/main/java/com/chat/dizychat/DizyNotificationActionReceiver.java';
   const secureStorePath = 'android/app/src/main/java/com/chat/dizychat/SecureSessionStore.java';
+  const stateStorePath = 'android/app/src/main/java/com/chat/dizychat/DizyNotificationStateStore.java';
 
-  for (const file of [pluginPath, servicePath, notificationPath, receiverPath, secureStorePath]) {
+  for (const file of [pluginPath, servicePath, notificationPath, receiverPath, secureStorePath, stateStorePath]) {
     assert.equal(exists(file), true, `${file} must exist`);
   }
 
@@ -158,16 +159,19 @@ test('Android native boundary renders one room notification with tap, Reply, and
 
   const notification = read(notificationPath);
   assert.match(notification, /notificationKey/);
+  assert.match(notification, /NotificationCompat\.MessagingStyle/);
+  assert.match(notification, /DizyNotificationStateStore\.recordMessage/);
   assert.match(notification, /RemoteInput/);
   assert.match(notification, /"Reply"/);
   assert.match(notification, /"Mark as read"/);
-  assert.match(notification, /messageId/);
-  assert.match(notification, /notificationId\(identity\)/);
+  assert.match(notification, /latestMessageId/);
+  assert.doesNotMatch(notification, /notificationKey\.hashCode\(\)|identity\.hashCode\(\)/);
 
   const receiver = read(receiverPath);
   assert.match(receiver, /\/api\/read-state\/mark/);
   assert.match(receiver, /\/api\/mobile\/push\/reply/);
   assert.match(receiver, /SecureSessionStore/);
+  assert.match(receiver, /DizyNotificationStateStore/);
   assert.match(receiver, /Authorization/);
   assert.match(receiver, /Bearer/);
   assert.doesNotMatch(receiver, /https:\/\/dizychat\.com/i, 'native actions must use configured backend, not duplicate production URL');
