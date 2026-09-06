@@ -40,9 +40,11 @@ test('recorded voice uploads are explicitly marked without changing ordinary att
   const uploadSlice = source.match(/const uploadFileAndSend = async \(fileOrBlob, options = \{\}\) => \{[\s\S]{0,2800}?\n\};/)?.[0] || '';
   assert.match(uploadSlice, /voiceMessage/);
   assert.match(uploadSlice, /formData\.append\(["']voiceMessage["'],\s*["']1["']\)/);
-
-  const voiceSlice = source.match(/\/\/ ------------------- Voice Messages[\s\S]{0,14000}?\/\/ ------------------- Live Calls/)?.[0] || '';
-  assert.match(voiceSlice, /uploadFileAndSend\(blob,[\s\S]{0,500}?voiceMessage:\s*true/);
+  assert.match(
+    source,
+    /uploadFileAndSend\(blob,\s*\{[\s\S]{0,500}?voiceMessage:\s*true/,
+    'recorded voice path must opt into server normalization'
+  );
 
   const attachmentSlice = source.match(/const uploadDroppedFiles = async[\s\S]{0,1200}?\n  \};/)?.[0] || '';
   assert.match(attachmentSlice, /uploadFileAndSend\(file\)/);
