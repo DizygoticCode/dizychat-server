@@ -56,11 +56,11 @@ jobs:
       - name: Sync Capacitor Android project
         run: npx cap sync android
 
-      - name: Build unsigned debug APK
+      - name: Run Android JVM tests and build unsigned debug APK
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew testDebugUnitTest assembleDebug --no-daemon
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
