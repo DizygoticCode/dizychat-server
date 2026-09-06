@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dizygotic Rumble Chat Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.12.5
+// @version      1.12.6
 // @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + transcript recorder/export + automated curated burn memory + outgoing message styling + auto-burn + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.
 // @author       Dizygotic
 // @match        https://rumble.com/*
@@ -25,6 +25,8 @@
     const CHAT_DB_NAME = "dizygoticRumbleChat";
     const CHAT_DB_VERSION = 1;
     const CHAT_DB_STORE = "messages";
+    const CHAT_DB_READ_BATCH_SIZE = 250;
+    const CHAT_DB_READ_YIELD_MS = 16;
     const CURATED_BURNS_KEY = "rumbleCuratedBurnsV1";
     const CURATED_BURNS_SCHEMA = 2;
 
@@ -43,7 +45,7 @@
     let chatSequence = 0;
     let chatDbPromise = null;
     let chatStorageInitPromise = null;
-    let chatStorageMode = "loading";
+    let chatStorageMode = "idle";
     let chatStorageLastError = "";
     let pendingChatWrites = [];
     let curatedBurnStore = (() => {
@@ -177,15 +179,36 @@
         await completed;
     }
 
-    async function readAllChatRecords(db) {
-        const transaction = db.transaction(CHAT_DB_STORE, "readonly");
-        const completed = waitForChatTransaction(transaction);
-        const request = transaction.objectStore(CHAT_DB_STORE).getAll();
-        const records = await new Promise((resolve, reject) => {
-            request.onsuccess = () => resolve(request.result || []);
-            request.onerror = () => reject(request.error || new Error("Unable to read transcript IndexedDB"));
+    async function readChatRecordsInChunks(db, batchSize = CHAT_DB_READ_BATCH_SIZE) {
+        const maxTransaction = db.transaction(CHAT_DB_STORE, "readonly");
+        const maxCompleted = waitForChatTransaction(maxTransaction);
+        const maxRequest = maxTransaction.objectStore(CHAT_DB_STORE).openKeyCursor(null, "prev");
+        const maxSeq = await new Promise((resolve, reject) => {
+            maxRequest.onsuccess = () => resolve(Number(maxRequest.result?.key) || 0);
+            maxRequest.onerror = () => reject(maxRequest.error || new Error("Unable to read transcript maximum sequence"));
         });
-        await completed;
+        await maxCompleted;
+
+        const records = [];
+        let lastSeq = null;
+        while (true) {
+            const transaction = db.transaction(CHAT_DB_STORE, "readonly");
+            const completed = waitForChatTransaction(transaction);
+            const store = transaction.objectStore(CHAT_DB_STORE);
+            const range = lastSeq == null ? undefined : IDBKeyRange.lowerBound(lastSeq, true);
+            const request = store.getAll(range, batchSize);
+            const batch = await new Promise((resolve, reject) => {
+                request.onsuccess = () => resolve(request.result || []);
+                request.onerror = () => reject(request.error || new Error("Unable to read transcript IndexedDB chunk"));
+            });
+            await completed;
+            if (!batch.length) break;
+            records.push(...batch);
+            lastSeq = Number(batch[batch.length - 1]?.seq) || lastSeq;
+            if (batch.length < batchSize) break;
+            await new Promise((resolve) => setTimeout(resolve, CHAT_DB_READ_YIELD_MS));
+        }
+        chatSequence = Math.max(chatSequence, maxSeq);
         return records.sort((a, b) => (Number(a.seq) || 0) - (Number(b.seq) || 0));
     }
 
@@ -203,7 +226,9 @@
                 ? "memory only"
                 : chatStorageMode === "error"
                     ? "IndexedDB write retrying"
-                    : "loading storage…";
+                    : chatStorageMode === "idle"
+                        ? "not loaded yet"
+                        : "loading storage…";
         return `${chatLog.length.toLocaleString()} saved messages · ${mode}`;
     }
 
@@ -220,11 +245,7 @@
             try {
                 const db = await openChatTranscriptDb();
                 if (legacyChatLog.length) await putChatRecords(db, legacyChatLog);
-                chatLog = await readAllChatRecords(db);
-                chatSequence = chatLog.reduce(
-                    (max, record) => Math.max(max, Number(record.seq) || 0),
-                    0
-                );
+                chatLog = await readChatRecordsInChunks(db);
                 localStorage.removeItem(CHAT_LOG_KEY);
                 chatStorageMode = "indexeddb";
                 chatStorageLastError = "";
@@ -246,6 +267,19 @@
             return chatLog;
         })();
         return chatStorageInitPromise;
+    }
+
+    function activateChatTranscriptStorage() {
+        if (chatStorageMode === "idle") {
+            chatStorageMode = "loading";
+            updateChatStorageStatus();
+        }
+        const activation = initializeChatTranscriptStorage();
+        void activation.then(() => {
+            backfillCuratedBurnsFromTranscript();
+            updateChatStorageStatus();
+        });
+        return activation;
     }
 
     let chatLogSaveTimer = null;
@@ -1908,6 +1942,7 @@
      * Settings panel
      ***********************/
     function showSettingsPanel() {
+        void activateChatTranscriptStorage();
         const existing = document.querySelector("#rumbleBlockerSettingsPanel");
         if (existing) return;
 
@@ -4079,10 +4114,10 @@
     function openDirectMessage(targetDisplayName) {
         const myNickname = detectMyNickname();
 
-        const resolvedNickname = sanitizeNickname(myNickname) || "Guest";
-        if (resolvedNickname !== settings.myNickname) {
-            settings.myNickname = resolvedNickname === "Guest" ? settings.myNickname : resolvedNickname;
-            if (resolvedNickname !== "Guest") saveSettings();
+        const resolvedNickname = sanitizeNickname(myNickname);
+        if (resolvedNickname && resolvedNickname !== settings.myNickname) {
+            settings.myNickname = resolvedNickname;
+            saveSettings();
         }
 
         const providedTarget = (targetDisplayName || "").toString().replace(/\s+/g, " ").trim();
@@ -4090,13 +4125,10 @@
             prompt("Enter the username to DM:", "general")?.toString().replace(/\s+/g, " ").trim() ||
             "general";
 
-        const landingBaseURL = "https://dizychat-server.onrender.com/";
+        const landingBaseURL = "https://dizychat.com/login.html";
         const params = new URLSearchParams();
-        params.set("usernamePlaceholder", "Put your username here");
-        params.set("roomPlaceholder", "Put your room name here");
-        if (target && target !== resolvedNickname) {
-            params.set("invite", target);
-        }
+        if (resolvedNickname) params.set("username", resolvedNickname);
+        params.set("room", target);
         const landingURL = `${landingBaseURL}?${params.toString()}`;
 
         const dmWindow = window.open(landingURL, "_blank", "noopener,noreferrer");
@@ -4221,7 +4253,7 @@
             );
 
             addMenuItem(`💬 Direct Message ${displayName}`, () => {
-                openDirectMessage(displayName);
+                openDirectMessage(username || displayName);
             });
 
             document.body.appendChild(menu);
@@ -4239,16 +4271,16 @@
      ***********************/
     async function boot() {
         setupAutoBackup();
-        await initializeChatTranscriptStorage();
-        backfillCuratedBurnsFromTranscript();
         initAudio();
+
+        ensureFloatingSettingsButton();
 
         const chatBootInterval = setInterval(() => {
             const chatContainer =
                 document.querySelector(".chat-history") || document.querySelector(".chat-list");
             if (chatContainer) {
                 clearInterval(chatBootInterval);
-                initChatObserver(chatContainer);
+                void activateChatTranscriptStorage().then(() => initChatObserver(chatContainer));
                 document
                     .querySelectorAll("button.chat-history--username.js-user-tag")
                     .forEach(attachContextMenuToUser);
@@ -4273,7 +4305,6 @@
             }
         }, 800);
 
-        ensureFloatingSettingsButton();
         installOutgoingComposerFormatting();
         setInterval(installOutgoingComposerFormatting, 800);
         document.addEventListener("visibilitychange", () => {
