@@ -11,6 +11,7 @@ import android.os.Build;
 
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
+import androidx.core.app.Person;
 import androidx.core.app.RemoteInput;
 import androidx.core.content.ContextCompat;
 
@@ -30,21 +31,68 @@ final class DizyNotificationManager {
             String notificationKey,
             String timestamp
     ) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            return;
+        if (!canNotify(context)) return;
+        try {
+            DizyNotificationStateStore.RoomState state = DizyNotificationStateStore.recordMessage(
+                    context,
+                    room,
+                    messageId,
+                    sender,
+                    preview,
+                    notificationKey,
+                    timestamp
+            );
+            if (state != null) renderState(context, state, true);
+        } catch (RuntimeException ignored) {
+            // Invalid/stale notification data fails safe without altering other room state.
         }
+    }
+
+    static void applyReadControl(
+            Context context,
+            String room,
+            String messageId,
+            String notificationKey,
+            String timestamp
+    ) {
+        try {
+            DizyNotificationStateStore.ReconcileResult result = DizyNotificationStateStore.applyReadCursor(
+                    context,
+                    room,
+                    notificationKey,
+                    messageId,
+                    timestamp
+            );
+            if (result.status == DizyNotificationStateStore.ReconcileStatus.CLEARED) {
+                cancel(context, result.notificationId);
+            } else if (result.status == DizyNotificationStateStore.ReconcileStatus.UPDATED
+                    && result.state != null
+                    && canNotify(context)) {
+                renderState(context, result.state, false);
+            }
+        } catch (RuntimeException ignored) {
+            // A malformed or out-of-order control must never clear unread state by guessing.
+        }
+    }
+
+    static void cancel(Context context, int notificationId) {
+        NotificationManagerCompat.from(context).cancel(notificationId);
+    }
+
+    private static void renderState(
+            Context context,
+            DizyNotificationStateStore.RoomState state,
+            boolean alert
+    ) {
         ensureChannel(context);
+        DizyNotificationStateStore.Entry latest = latestEntry(state);
+        if (latest == null) return;
 
-        String identity = notificationKey == null || notificationKey.trim().isEmpty()
-                ? room
-                : notificationKey.trim();
-        int notificationId = notificationId(identity);
-
+        int notificationId = state.notificationId;
         Intent tapIntent = new Intent(context, MainActivity.class)
                 .setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                .putExtra(DizyPushPlugin.EXTRA_ROOM, room)
-                .putExtra(DizyPushPlugin.EXTRA_MESSAGE_ID, messageId);
+                .putExtra(DizyPushPlugin.EXTRA_ROOM, state.room)
+                .putExtra(DizyPushPlugin.EXTRA_MESSAGE_ID, state.latestMessageId);
         PendingIntent tapPendingIntent = PendingIntent.getActivity(
                 context,
                 notificationId,
@@ -55,7 +103,13 @@ final class DizyNotificationManager {
         RemoteInput remoteInput = new RemoteInput.Builder(REMOTE_INPUT_KEY)
                 .setLabel("Reply")
                 .build();
-        Intent replyIntent = actionIntent(context, DizyNotificationActionReceiver.ACTION_REPLY, room, messageId, notificationId);
+        Intent replyIntent = actionIntent(
+                context,
+                DizyNotificationActionReceiver.ACTION_REPLY,
+                state.room,
+                state.latestMessageId,
+                notificationId
+        );
         PendingIntent replyPendingIntent = PendingIntent.getBroadcast(
                 context,
                 notificationId ^ 0x22000000,
@@ -68,7 +122,13 @@ final class DizyNotificationManager {
                 replyPendingIntent
         ).addRemoteInput(remoteInput).build();
 
-        Intent readIntent = actionIntent(context, DizyNotificationActionReceiver.ACTION_MARK_READ, room, messageId, notificationId);
+        Intent readIntent = actionIntent(
+                context,
+                DizyNotificationActionReceiver.ACTION_MARK_READ,
+                state.room,
+                state.latestMessageId,
+                notificationId
+        );
         PendingIntent readPendingIntent = PendingIntent.getBroadcast(
                 context,
                 notificationId ^ 0x44000000,
@@ -81,33 +141,45 @@ final class DizyNotificationManager {
                 readPendingIntent
         ).build();
 
-        String cleanSender = sender == null || sender.trim().isEmpty() ? "DizyChat" : sender.trim();
-        String cleanPreview = preview == null ? "" : preview.trim();
+        Person localUser = new Person.Builder().setName("You").build();
+        NotificationCompat.MessagingStyle style = new NotificationCompat.MessagingStyle(localUser)
+                .setConversationTitle(state.room)
+                .setGroupConversation(true);
+        for (DizyNotificationStateStore.Entry entry : state.entries) {
+            String sender = entry.sender.isEmpty() ? "DizyChat" : entry.sender;
+            Person person = new Person.Builder().setName(sender).build();
+            style.addMessage(
+                    entry.preview,
+                    DizyNotificationStateStore.timestampMillis(entry.timestamp),
+                    person
+            );
+        }
+
+        String cleanSender = latest.sender.isEmpty() ? "DizyChat" : latest.sender;
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.mipmap.ic_launcher)
-                .setContentTitle(cleanSender + " · " + room)
-                .setContentText(cleanPreview)
-                .setStyle(new NotificationCompat.BigTextStyle().bigText(cleanPreview))
+                .setContentTitle(cleanSender + " · " + state.room)
+                .setContentText(latest.preview)
+                .setStyle(style)
                 .setContentIntent(tapPendingIntent)
                 .setAutoCancel(false)
-                .setOnlyAlertOnce(false)
+                .setOnlyAlertOnce(!alert)
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setGroup("dizychat-room-" + room)
+                .setGroup("dizychat-room-" + state.notificationKey)
+                .setWhen(DizyNotificationStateStore.timestampMillis(state.latestTimestamp))
                 .addAction(replyAction)
                 .addAction(readAction);
-        if (timestamp != null && !timestamp.trim().isEmpty()) {
-            try {
-                builder.setWhen(Long.parseLong(timestamp.trim()));
-            } catch (NumberFormatException ignored) {
-                // Server timestamp is display-only metadata; system time is safe fallback.
-            }
-        }
+
         NotificationManagerCompat.from(context).notify(notificationId, builder.build());
     }
 
-    static void cancel(Context context, int notificationId) {
-        NotificationManagerCompat.from(context).cancel(notificationId);
+    private static DizyNotificationStateStore.Entry latestEntry(DizyNotificationStateStore.RoomState state) {
+        for (int index = state.entries.size() - 1; index >= 0; index -= 1) {
+            DizyNotificationStateStore.Entry entry = state.entries.get(index);
+            if (state.latestMessageId.equalsIgnoreCase(entry.messageId)) return entry;
+        }
+        return state.entries.isEmpty() ? null : state.entries.get(state.entries.size() - 1);
     }
 
     private static Intent actionIntent(Context context, String action, String room, String messageId, int notificationId) {
@@ -118,8 +190,9 @@ final class DizyNotificationManager {
                 .putExtra(EXTRA_NOTIFICATION_ID, notificationId);
     }
 
-    private static int notificationId(String notificationKey) {
-        return 0x12000000 | (notificationKey.hashCode() & 0x0fffffff);
+    private static boolean canNotify(Context context) {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
     }
 
     private static void ensureChannel(Context context) {
