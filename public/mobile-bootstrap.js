@@ -43,6 +43,14 @@
       : '/socket.io/socket.io.js';
     await loadScript(socketClientUrl);
 
+    await loadScript('/browser-notifications.js');
+    const browserNotificationRuntime = window.dizychatBrowserNotifications;
+    if (browserNotificationRuntime?.createBrowserNotificationController) {
+      const browserNotificationController = browserNotificationRuntime.createBrowserNotificationController(window);
+      window.dizychatBrowserNotificationController = browserNotificationController;
+      browserNotificationRuntime.decorateIoFactory(window, browserNotificationController);
+    }
+
     let pushController = null;
     if (runtime.isNativeRuntime(window)) {
       await loadScript('/mobile-push-runtime.js');
