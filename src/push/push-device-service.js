@@ -312,6 +312,17 @@ const createPushDeviceService = ({
     return candidates;
   };
 
+  const listAccountDevices = async (username) => {
+    const canonicalUsername = canonicalizeUsername(username);
+    if (!canonicalUsername) return [];
+    const devices = await PushDeviceModel.find({ canonicalUsername, disabledAt: null });
+    const active = [];
+    for (const device of devices || []) {
+      if (await isStillActive(device)) active.push(device);
+    }
+    return active;
+  };
+
   return {
     registerDevice,
     findRegisteredDevice,
@@ -324,6 +335,7 @@ const createPushDeviceService = ({
     disableSession,
     disableUser,
     listRoomDevices,
+    listAccountDevices,
   };
 };
 
