@@ -33,7 +33,7 @@ jobs:
             try {
                 const storedRecords = await readAllChatRecords(db);
                 const bySequence = new Map();
-'''
+          '''
           new = '''            chatStorageHydrating = true;
             chatStorageHydrationCount = 0;
             updateChatStorageStatus();
@@ -41,7 +41,7 @@ jobs:
                 const storedRecords = await readAllChatRecords(db);
                 const sessionRecords = chatLog.slice();
                 const bySequence = new Map();
-'''
+          '''
           if s.count(old) != 1:
               raise SystemExit(f'expected one hydration merge seam, found {s.count(old)}')
           p.write_text(s.replace(old, new, 1), encoding='utf-8')
