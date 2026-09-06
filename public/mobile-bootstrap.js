@@ -24,6 +24,8 @@
   });
 
   try {
+    await loadScript('/iphone-install.js');
+
     const auth = window.dizychatAuthV2;
     if (typeof auth?.restoreNativeSession === 'function') {
       await auth.restoreNativeSession();

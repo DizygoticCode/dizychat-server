@@ -1,0 +1,90 @@
+.iphone-install-shell {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, calc(env(safe-area-inset-bottom) + 12px));
+  z-index: 9998;
+  font-family: Inter, "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.iphone-install-button {
+  border: 0;
+  border-radius: 999px;
+  padding: 13px 18px;
+  background: linear-gradient(120deg, #a855f7, #ec4899);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  box-shadow: 0 14px 34px rgba(2, 6, 23, 0.38);
+  cursor: pointer;
+}
+
+.iphone-install-guide {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  width: min(340px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid rgba(168, 85, 247, 0.45);
+  border-radius: 20px;
+  background: rgba(15, 23, 42, 0.98);
+  color: #e2e8f0;
+  box-shadow: 0 20px 60px rgba(2, 6, 23, 0.65);
+}
+
+.iphone-install-guide[hidden] {
+  display: none;
+}
+
+.iphone-install-guide h2 {
+  margin: 0 36px 8px 0;
+  color: #f8fafc;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.iphone-install-intro {
+  margin: 0 0 12px;
+  color: #cbd5e1;
+}
+
+.iphone-install-guide ol {
+  margin: 0;
+  padding-left: 22px;
+}
+
+.iphone-install-guide li {
+  margin: 10px 0;
+  line-height: 1.45;
+}
+
+.iphone-install-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.14);
+  color: #f8fafc;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+@media (max-width: 480px) {
+  .iphone-install-shell {
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+  }
+
+  .iphone-install-button {
+    width: 100%;
+  }
+
+  .iphone-install-guide {
+    left: 0;
+    right: 0;
+    width: 100%;
+  }
+}
