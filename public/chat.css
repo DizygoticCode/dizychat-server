@@ -2372,6 +2372,12 @@ body:not(.dark) #voice-btn.recording {
   cursor: not-allowed;
 }
 
+#voice-call-btn:not(.call-active) {
+  background: #8a2d2d;
+  border-color: #d65b5b;
+  color: #fff;
+}
+
 #voice-call-btn.call-active {
   background: #1f9d55;
   border-color: #43d17a;
@@ -2379,13 +2385,11 @@ body:not(.dark) #voice-btn.recording {
 }
 
 #voice-call-btn.call-muted {
-  background: #8a2d2d;
-  border-color: #d65b5b;
+  border-color: #43d17a;
 }
 
 #voice-call-btn.call-video-active {
-  background: #2563eb;
-  border-color: #60a5fa;
+  border-color: #43d17a;
   color: #fff;
 }
 
