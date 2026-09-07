@@ -14,6 +14,7 @@
   const FETCH_ROUTER_MARKER = Symbol.for('dizychat.mobile.fetch-router');
   const EXTERNAL_LINK_MARKER = Symbol.for('dizychat.mobile.external-links');
   const MEDIA_PERMISSION_MARKER = Symbol.for('dizychat.mobile.media-permissions');
+  const MEDIA_SOURCE_ROUTER_MARKER = Symbol.for('dizychat.mobile.media-source-router');
   const trimTrailingSlash = (value) => String(value || '').trim().replace(/\/+$/, '');
 
   const isNativeRuntime = (win = {}) => {
@@ -68,6 +69,15 @@
     return normaliseHttpOrigin(config.defaultNativeBackendUrl);
   };
 
+  const isBackendMediaPath = (value) => {
+    if (typeof value !== 'string') return false;
+    const pathname = value.split(/[?#]/, 1)[0];
+    return (
+      /^\/(uploads|soundboards|emojis)\//.test(pathname)
+      || pathname === '/newmessage.wav'
+    );
+  };
+
   const resolveMediaUrl = (value, win = {}) => {
     if (typeof value !== 'string') return value;
 
@@ -81,7 +91,7 @@
     const backend = resolveBackendOrigin(win, win.dizychatConfig || {});
     if (!backend) return value;
 
-    if (/^\/(uploads|soundboards|emojis)\//.test(value)) {
+    if (isBackendMediaPath(value)) {
       return `${backend}${value}`;
     }
 
@@ -94,7 +104,7 @@
       if (
         appOrigin
         && parsed.origin === appOrigin
-        && /^\/(uploads|soundboards|emojis)\//.test(parsed.pathname)
+        && isBackendMediaPath(parsed.pathname)
       ) {
         return `${backend}${parsed.pathname}${parsed.search}${parsed.hash}`;
       }
@@ -103,6 +113,54 @@
     }
 
     return value;
+  };
+
+  const installNativeMediaSourceRouting = (win = {}) => {
+    try {
+      if (!win?.Capacitor?.isNativePlatform?.()) return false;
+    } catch (_err) {
+      return false;
+    }
+    if (win[MEDIA_SOURCE_ROUTER_MARKER]) return true;
+
+    const patchSrcSetter = (Ctor) => {
+      const prototype = Ctor?.prototype;
+      if (!prototype) return false;
+      const descriptor = Object.getOwnPropertyDescriptor(prototype, 'src');
+      if (!descriptor?.set || !descriptor?.get || descriptor.configurable === false) return false;
+
+      Object.defineProperty(prototype, 'src', {
+        configurable: descriptor.configurable,
+        enumerable: descriptor.enumerable,
+        get: descriptor.get,
+        set(value) {
+          return descriptor.set.call(this, resolveMediaUrl(value, win));
+        },
+      });
+      return true;
+    };
+
+    patchSrcSetter(win.HTMLImageElement);
+    patchSrcSetter(win.HTMLMediaElement);
+
+    const NativeAudio = win.Audio;
+    if (typeof NativeAudio === 'function' && !NativeAudio[MEDIA_SOURCE_ROUTER_MARKER]) {
+      const RoutedAudio = function RoutedAudio(src) {
+        if (arguments.length === 0) return new NativeAudio();
+        return new NativeAudio(resolveMediaUrl(src, win));
+      };
+      RoutedAudio.prototype = NativeAudio.prototype;
+      try {
+        Object.setPrototypeOf(RoutedAudio, NativeAudio);
+      } catch (_err) {
+        /* static Audio properties are optional */
+      }
+      Object.defineProperty(RoutedAudio, MEDIA_SOURCE_ROUTER_MARKER, { value: true });
+      win.Audio = RoutedAudio;
+    }
+
+    Object.defineProperty(win, MEDIA_SOURCE_ROUTER_MARKER, { value: true });
+    return true;
   };
 
   const shouldRouteBackendRequest = (value) => {
@@ -266,6 +324,7 @@
     isNativeRuntime,
     resolveBackendOrigin,
     resolveMediaUrl,
+    installNativeMediaSourceRouting,
     shouldRouteBackendRequest,
     resolveBackendUrl,
     installBackendFetchRouting,
