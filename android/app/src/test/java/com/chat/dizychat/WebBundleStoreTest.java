@@ -56,6 +56,15 @@ public class WebBundleStoreTest {
         store.markBundleComplete(version);
     }
 
+    private static void deleteRecursively(File file) {
+        if (file == null || !file.exists()) return;
+        File[] children = file.listFiles();
+        if (children != null) {
+            for (File child : children) deleteRecursively(child);
+        }
+        assertTrue("failed to delete " + file, file.delete() || !file.exists());
+    }
+
     @Test
     public void firstHealthyBundleBecomesActive() throws Exception {
         MemoryState state = new MemoryState();
@@ -119,7 +128,7 @@ public class WebBundleStoreTest {
         createCompleteBundle(store, V1);
         store.beginPendingActivation(V1);
         store.markHealthy();
-        assertTrue(store.bundleDirectory(V1).delete() || !store.bundleDirectory(V1).exists());
+        deleteRecursively(store.bundleDirectory(V1));
 
         assertNull(store.prepareLaunch());
         assertNull(store.getActiveVersion());
