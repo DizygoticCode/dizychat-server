@@ -69,17 +69,16 @@ See [`docs/android-private-apk.md`](docs/android-private-apk.md) for signing, CI
 ### Rumble companion userscript
 The companion userscript lives at [`scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js`](scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js).
 
-The repository source is currently **v1.12.9**.
+The repository source is currently **v1.12.10**.
 
-Distribution/source links:
+GitHub install/update source:
 
-- **Greasy Fork listing:** https://greasyfork.org/en/scripts/565816-dizygotic-rumble-chat-tool
 - **Repository source:** [`scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js`](scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js)
-- **Raw userscript:** https://raw.githubusercontent.com/DizygoticCode/dizychat-server/main/scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+- **Raw userscript (install/update):** https://raw.githubusercontent.com/DizygoticCode/dizychat-server/main/scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
 
 The **Dizygotic Rumble Chat Tool** currently provides blocking/highlighting, keyword filters, compact/timestamp controls, notifications, autoscroll controls, transcript recording/export, IndexedDB-backed transcript history, curated burn-memory tooling, selectable auto-burn engines, outgoing Unicode/font and colour styling, settings import/export/backup, and DizyChat handoff tools. Recent transcript work serializes/yields hydration and curated backfill work so overlapping history processing does not corrupt the in-memory/live record path.
 
-Install with Tampermonkey by installing the Tampermonkey browser extension, opening the Greasy Fork listing or raw `.user.js` source above, reviewing the Rumble-only match scope/dependencies, and accepting the userscript. The floating chat-settings control appears on supported Rumble chat pages once the chat DOM is available.
+Install with Tampermonkey by installing the Tampermonkey browser extension, opening the public GitHub raw `.user.js` source above, reviewing the Rumble-only match scope/dependencies, and accepting the userscript. No GitHub account is required to read or install the public raw file. The userscript declares the same public GitHub raw URL as its `@updateURL` and `@downloadURL`, so Tampermonkey can use GitHub directly for future version updates. The floating chat-settings control appears on supported Rumble chat pages once the chat DOM is available.
 
 The Rumble userscript is a companion to DizyChat, not part of the DizyChat server runtime. Its source and deterministic source-contract tests are kept in this repository.
 
