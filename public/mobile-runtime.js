@@ -69,15 +69,40 @@
   };
 
   const resolveMediaUrl = (value, win = {}) => {
-    if (typeof value !== 'string' || !/^\/(uploads|soundboards|emojis)\//.test(value)) return value;
+    if (typeof value !== 'string') return value;
+
     // A normal browser on localhost must retain current-origin media URLs.
     try {
       if (!win.Capacitor?.isNativePlatform?.()) return value;
     } catch (_err) {
       return value;
     }
+
     const backend = resolveBackendOrigin(win, win.dizychatConfig || {});
-    return backend ? `${backend}${value}` : value;
+    if (!backend) return value;
+
+    if (/^\/(uploads|soundboards|emojis)\//.test(value)) {
+      return `${backend}${value}`;
+    }
+
+    // Some renderers may already have resolved a root-relative media path
+    // against Capacitor's https://localhost pseudo-origin. Recover that path
+    // before it reaches the DOM, while leaving real external URLs untouched.
+    try {
+      const parsed = new URL(value);
+      const appOrigin = normaliseHttpOrigin(win?.location?.origin);
+      if (
+        appOrigin
+        && parsed.origin === appOrigin
+        && /^\/(uploads|soundboards|emojis)\//.test(parsed.pathname)
+      ) {
+        return `${backend}${parsed.pathname}${parsed.search}${parsed.hash}`;
+      }
+    } catch (_err) {
+      /* non-URL values remain unchanged */
+    }
+
+    return value;
   };
 
   const shouldRouteBackendRequest = (value) => {
