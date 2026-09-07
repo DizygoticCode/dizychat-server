@@ -16,37 +16,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  patch:
-    if: "${{ github.ref_name == 'fix/rumble-curated-backfill-yield' && github.actor != 'github-actions[bot]' }}"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: fix/rumble-curated-backfill-yield
-          fetch-depth: 0
-      - name: Apply guarded patch
-        run: python3 scripts/maintenance/tmp_patch_rumble_backfill.py
-      - name: Validate patch before push
-        run: |
-          node --check scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
-          node --test scripts/tests/rumble-chat-indexeddb-source.test.mjs scripts/tests/rumble-userscript-version-source.test.mjs
-      - name: Restore CI and commit only real changes
-        run: |
-          git fetch origin main
-          git show origin/main:.github/workflows/rumble-userscript-ci.yml > .github/workflows/rumble-userscript-ci.yml
-          rm -f .github/workflows/tmp-patch-rumble-backfill.yml
-          rm -f scripts/maintenance/tmp_patch_rumble_backfill.py
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add -A
-          git commit -m "fix: yield during curated transcript backfill"
-          git push origin HEAD:fix/rumble-curated-backfill-yield
-
   verify:
-    if: "${{ github.ref_name != 'fix/rumble-curated-backfill-yield' || github.actor == 'github-actions[bot]' }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

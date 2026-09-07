@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dizygotic Rumble Chat Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.12.6
+// @version      1.12.7
 // @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + transcript recorder/export + automated curated burn memory + outgoing message styling + auto-burn + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.
 // @author       Dizygotic
 // @match        https://rumble.com/*
@@ -26,6 +26,8 @@
     const CHAT_DB_VERSION = 1;
     const CHAT_DB_STORE = "messages";
     const CHAT_TRANSCRIPT_READ_BATCH_SIZE = 250;
+    const CURATED_BACKFILL_BATCH_SIZE = 25;
+    const CURATED_BACKFILL_PROFILE_BATCH_SIZE = 5;
     const CURATED_BURNS_KEY = "rumbleCuratedBurnsV1";
     const CURATED_BURNS_SCHEMA = 2;
 
@@ -330,7 +332,7 @@
                 chatTranscriptHydrated = true;
                 chatStorageMode = "indexeddb";
                 chatStorageLastError = "";
-                backfillCuratedBurnsFromTranscript();
+                await backfillCuratedBurnsFromTranscript();
                 return chatLog;
             } catch (err) {
                 chatStorageMode = "error";
@@ -544,7 +546,7 @@
             chatStorageMode = "indexeddb";
             chatStorageLastError = "";
             updateChatStorageStatus();
-            backfillCuratedBurnsFromTranscript();
+            await backfillCuratedBurnsFromTranscript();
         }
 
         return {
@@ -1406,20 +1408,37 @@
         }
     }
 
-    function backfillCuratedBurnsFromTranscript() {
+    async function backfillCuratedBurnsFromTranscript() {
         if (!settings.curatedBurnsEnabled || !chatLog.length) return;
         const lastProcessed = Number(curatedBurnStore.lastProcessedSeq) || 0;
         const pending = chatLog.filter((record) => (Number(record.seq) || 0) > lastProcessed);
         if (!pending.length) return;
         const touched = new Set();
-        pending.forEach((record) => {
-            ingestCuratedRecord(record, { deferSave: true, deferCurate: true });
-            if (record?.username) touched.add(String(record.username).toLowerCase());
-        });
-        touched.forEach((username) => {
-            const profile = curatedBurnStore.users[username];
-            if (profile && profile.messageCount >= Math.max(3, Number(settings.curatedBurnMinMessages) || 8)) regenerateCuratedBurns(profile);
-        });
+
+        for (let index = 0; index < pending.length; index += CURATED_BACKFILL_BATCH_SIZE) {
+            const batchEnd = Math.min(index + CURATED_BACKFILL_BATCH_SIZE, pending.length);
+            for (let offset = index; offset < batchEnd; offset += 1) {
+                const record = pending[offset];
+                ingestCuratedRecord(record, { deferSave: true, deferCurate: true });
+                if (record?.username) touched.add(String(record.username).toLowerCase());
+            }
+            if (batchEnd < pending.length) {
+                await new Promise((resolve) => setTimeout(resolve, 0));
+            }
+        }
+
+        const touchedUsers = Array.from(touched);
+        for (let index = 0; index < touchedUsers.length; index += CURATED_BACKFILL_PROFILE_BATCH_SIZE) {
+            const batchEnd = Math.min(index + CURATED_BACKFILL_PROFILE_BATCH_SIZE, touchedUsers.length);
+            for (let offset = index; offset < batchEnd; offset += 1) {
+                const profile = curatedBurnStore.users[touchedUsers[offset]];
+                if (profile && profile.messageCount >= Math.max(3, Number(settings.curatedBurnMinMessages) || 8)) regenerateCuratedBurns(profile);
+            }
+            if (batchEnd < touchedUsers.length) {
+                await new Promise((resolve) => setTimeout(resolve, 0));
+            }
+        }
+
         saveCuratedBurnStore();
     }
 
