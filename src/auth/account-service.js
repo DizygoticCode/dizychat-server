@@ -192,6 +192,32 @@ const createAccountService = ({ UserModel, legacyCredentials = new Map() } = {})
     }
   };
 
+  const updateRecoveryEmail = async (principal, recoveryEmailValue) => {
+    const canonicalUsername = canonicalizeUsername(
+      principal?.canonicalUsername || principal?.username
+    );
+    if (principal?.kind !== 'account' || !canonicalUsername) {
+      throw createAccountError('ACCOUNT_AUTH_REQUIRED', 'account authentication is required');
+    }
+
+    const recoveryEmail = normalizeRecoveryEmail(recoveryEmailValue);
+    if (!recoveryEmail) {
+      throw createAccountError('ACCOUNT_RECOVERY_EMAIL_INVALID', 'recovery email is required');
+    }
+
+    const account = await findByCanonical(canonicalUsername);
+    if (!account || account.state !== ACCOUNT_STATES.ACTIVE) {
+      throw createAccountError('ACCOUNT_AUTH_REQUIRED', 'account authentication is required');
+    }
+
+    account.recoveryEmail = recoveryEmail;
+    if (typeof account.save !== 'function') {
+      throw new TypeError('account document must be saveable');
+    }
+    await account.save();
+    return sanitizeAccount(account);
+  };
+
   const createManagedUser = async (actor, input = {}) => {
     if (!actor || actor.role !== ROLES.OWNER) {
       throw new Error('owner role required to manage accounts');
@@ -244,6 +270,7 @@ const createAccountService = ({ UserModel, legacyCredentials = new Map() } = {})
     isRegisteredUsername,
     registerPublicUser,
     sanitizeAccount,
+    updateRecoveryEmail,
   };
 };
 
