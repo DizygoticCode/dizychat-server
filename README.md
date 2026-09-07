@@ -1,150 +1,170 @@
 # DizyChat Server
 
-DizyChat is a Socket.IO and Express-powered real-time chat backend designed for music and community discussions. It ships with MongoDB persistence, media uploads, granular moderation, and rich UX niceties such as link previews and GIF embedding.
+DizyChat is a self-hosted real-time chat platform built with Express, Socket.IO and MongoDB. It combines persistent rooms and messaging with media uploads, moderation, public accounts, Android push notifications, browser/iPhone access, LiveKit audio/video calls, music-focused call mode, custom emoji/GIFs, soundboards, and a Rumble companion userscript.
 
-## Features
+Production: **https://dizychat.com**
 
-### Realtime chat engine
-- Uses **Socket.IO** atop an Express HTTP server for bidirectional messaging, typing indicators, message delivery/read receipts, and live room membership updates.
-- Persists chat history, reactions, pins, stars, replies, and delivery status in MongoDB through a comprehensive `Message` schema.
-- Provides paginated history fetching so clients can lazy-load older messages without over-fetching.
+## Current platform
 
-### Media uploads
-- Accepts uploads via `/upload`, stores assets under `public/uploads`, and advertises the configured size limit in logs.
-- Upload MIME/file-signature rejection remains intentionally permissive for mobile compatibility, while every completed upload is quarantined and must receive a clean local ClamAV verdict before it becomes publicly accessible.
-- Supports configurable size caps (including "unlimited") through `MAX_UPLOAD_SIZE_MB`.
+### Realtime chat and rooms
+- **Socket.IO** provides bidirectional messaging, typing indicators, message delivery/read state and live room membership updates.
+- MongoDB persists chat history, reactions, replies, pins, stars and room/account state.
+- History is fetched in bounded pages so clients can load older messages without pulling the entire room at once.
+- Rooms support passwords, per-room bans, blocks and timed mutes; empty ad-hoc rooms are trimmed automatically.
 
-### Rich content previews
-- Link preview endpoint fetches remote pages, parses OpenGraph/Twitter/JSON-LD metadata, and normalizes image/icon URLs with caching to reduce load.
-- GIPHY search powers the composer media picker through a server-side proxy with tabs for GIFs, Clips, stickers, emoji, and text-sticker-style results, while Tenor share links can still be resolved for legacy embeds.
+### Accounts and recovery
+- Public users can create registered DizyChat accounts from the login UI.
+- Registered accounts use server-authoritative authentication rather than trusting a client-supplied username.
+- Recovery email and password-reset flows are supported without exposing mail-provider credentials to the browser.
+- The Android app uses a durable native session store so closing/reopening the app does not normally force another login; explicit logout and server-declared invalid/revoked sessions clear the stored native session.
 
-### Moderation & administration
-- Admin accounts can be provisioned through environment variables with flexible username/password pairs.
-- Socket-level admin authentication unlocks commands for announcements, muting, blocking, banning, and unblocking users with automatic notifications and toasts.
-- Supports room passwords, per-room user bans, blocks, and timed mutes with presence snapshots that flag muted or blocked members.
+### Messaging and media
+- Messages support editing, deletion, reactions, replies, pinning, starring and search.
+- Uploads use the existing `/upload` contract and are written to a private quarantine first.
+- Every completed upload must receive a clean local ClamAV verdict before it is atomically promoted into the public upload store.
+- Voice messages are normalized for broad browser/mobile playback compatibility.
+- Custom emoji/GIF assets, uploaded images/audio/video and soundboard audio work in normal browsers and in the Android Capacitor shell.
+- The GIPHY picker is proxied through DizyChat so the GIPHY key stays server-side.
+- The searchable meme soundboard is backed by JSON catalogs under `data/soundboards` and `/soundboard-clips`.
 
-### Room management & discovery
-- Preconfigures persistent lobbies and dynamically tracks occupants, broadcasting updates to all clients so they can list active rooms.
-- Enforces per-room passwords and bans, and automatically trims empty ad-hoc rooms to conserve memory.
+### Notifications
+- Browser users can enable lightweight new-message sounds, with the preference stored locally.
+- The Android app supports FCM-backed room notifications with room/message tap routing.
+- Android notifications support inline **Reply** and **Mark as read** actions where the OS exposes them.
+- Notification state is reconciled per room so stale/out-of-order controls do not clear unread state by guessing.
 
-### Message enrichment tools
-- Allows message editing, deletion (with file cleanup), pinning, starring, emoji reactions, threaded replies, and full-text search.
-- Sanitizes all user-provided text and filenames to avoid HTML/script injection.
-- Packs a GIPHY GIF browser plus a curated meme soundboard picker backed by `/soundboard-clips`, sourcing JSON catalogs from `data/soundboards` so clips can be hosted entirely offline.
+### LiveKit calls and Music Mode
+- DizyChat supports room-scoped LiveKit audio calls with optional camera video.
+- Production can use LiveKit Cloud or the self-hosted service documented in [`deploy/livekit/README.md`](deploy/livekit/README.md).
+- Normal voice mode uses browser voice processing such as echo cancellation, noise suppression and automatic gain control.
+- **Music Mode** is selected per connection before joining. While joining/connected the choice is locked; after disconnect it resets so the next call requires a fresh Normal/Music choice.
+- Music Mode requests **48 kHz stereo** capture with echo cancellation, noise suppression and automatic gain control disabled, uses a **510 kb/s Opus target/max**, forces stereo, and disables DTX and RED.
+- Music Mode also checks the captured track settings and refuses to publish if browser voice processing remains enabled after strict constraints are reapplied.
+- `510 kb/s` is the application publish target/max, not a promise that every network path will transmit exactly that bitrate; the effective encoder rate still depends on LiveKit/WebRTC conditions.
 
-### Client experience helpers
-- Broadcasts typing status with rate limiting to prevent spam.
-- Provides `/version` endpoint exposing build metadata for clients to surface release information.
-- Serves the bundled front-end from `public/` with a catch-all route for client-side routing.
-- Toolbar toggle lets users persistently enable/disable sound notifications, with gentle chimes and accessibility labels that survive reloads via local storage.
+### iPhone / iPad Home Screen web app
+DizyChat does not require an App Store build on iPhone or iPad. Open **https://dizychat.com** in Safari and use the built-in **Install on iPhone** guidance:
 
-### Live broadcast companions
-- The dedicated Psybin Radio room surfaces a mini audio player that streams the live station, polls `/api/psybin/now-playing` for metadata, and exposes play/pause, mute, and volume controls with resilient reconnect logic.
-- Rumble live streams pop into a draggable, resizable modal so viewers can park the broadcast alongside chat without losing context.
-- **Dizygotic Rumble Chat Companion v1.9.3** extends Rumble itself with blocking/highlighting, keyword filtering, transcript capture/export, configurable chat appearance, DizyChat DM handoff, notifications, and independently switchable auto-burn engines from the companion userscript in `scripts/tampermonkey/`.
-- Watch2Gether watch-party launchers create synced W2G rooms from inside a DizyChat room while keeping the API key server-side.
+1. Tap **Share**.
+2. Choose **Add to Home Screen**.
+3. Tap **Add**.
 
-### Recently added
-- **Rumble Chat Companion v1.9.3** – the companion userscript now adds a bounded passive transcript recorder with JSON/CSV export, outgoing Unicode font styles plus outgoing single/rainbow/multi-colour rich-composer modes; incoming public chat is no longer repainted by these controls, independently enableable burn engines, backward-compatible settings import/export, and the existing block/highlight/DM toolset. Auto-backup now silently overwrites a single localStorage backup slot with timestamp/filename metadata; only manual Export opens a download. v1.9.2 hardens the live Rumble send path with automatic self-handle learning, an explicit username fallback, composer/send diagnostics, delayed controlled-composer submission, and matching JSON/CSV MIME exports. v1.9.3 removes the curated review popup from automatic replies, makes the selected Primary engine run first, reports the engine actually used, and skips a bounded set of recently sent burn lines before falling back. v1.9 adds automatic local curated-burn memory: recorded public chat is distilled into bounded per-user repetition, phrase, topic and contradiction evidence with source sequence IDs; Curated History is tried automatically before generic burn engines when enough history exists, while sensitive/contact/network-looking messages are excluded from curation.
-- **Push-to-talk voice notes** – the web client exposes a hold-to-record microphone button that uploads and posts audio clips with automatic cleanup and status toasts so moderators can manage voice memos alongside regular attachments.
-- **Theme & density toggles** – users can flip between dark/light themes and compact/comfortable layouts, both of which persist per browser via local storage to keep the interface feeling familiar across sessions.
-- **Inline Rumble embeds** – links to Rumble videos auto-expand into responsive iframes so shared broadcasts can play without leaving the room.
-- **Psybin Radio tuner** – the Psybin room now auto-reveals a dedicated player with live metadata sourced from `/api/psybin/now-playing`, plus play, pause, mute, and volume controls that reconnect automatically after hiccups.
-- **Searchable meme soundboard** – a composer button opens a searchable clip library powered by `/soundboard-clips`, driven by JSON catalogs under `data/soundboards` (kept fresh via `scripts/download-101-soundboard.js`).
-- **Sound notification toggle** – chat toolbar switch enables lightweight audio alerts for new messages, persisting each visitor’s preference in local storage so the cues stick between sessions.
+The installed web app launches in standalone mode at the DizyChat login screen. The helper is shown only for eligible iPhone/iPad browser sessions and is hidden once DizyChat is already running standalone.
 
-## Private Android app
+### Android app
+DizyChat also ships a signed, sideload-only Android app. The current architecture is a **thin Capacitor/native shell** rather than a hundreds-of-megabytes bundled web application.
 
-DizyChat Android Slice 1 is a **private, sideload-only APK** for selected testers. The bundled Capacitor client connects to the self-hosted production backend at `https://dizychat.com`; possession of the APK does not bypass normal DizyChat account authorization. Release signing keys and passwords remain outside Git.
+The shell connects to the production backend at `https://dizychat.com`, downloads the server-managed web bundle, verifies the bundle manifest/assets with SHA-256 before activation, and keeps a last-known-good local bundle rather than repeatedly reloading a bad update. Ordinary DizyChat web/UI changes therefore normally deploy from the server **without rebuilding the APK**. Native Java, manifest, Capacitor-plugin or signing changes still require a new signed APK.
 
-See [`docs/android-private-apk.md`](docs/android-private-apk.md) for the reproducible CI artifact, private release-signing build, ADB install steps, and the 14-point real-device acceptance gate.
+Current tester release:
 
-**Slice 2** will add push notifications, notification routing, inline notification Reply, and Mark as read after the durable Slice 1 device-session baseline is proven.
+- **APK:** https://github.com/DizygoticCode/dizychat-server/releases/download/v1.0.0/dizychat-v1.apk
+- **SHA-256:** `26c47392baab81b2c5dee8dfc976c1c23fbba03769c41c102cbd755c75d0ab35`
+- **Package:** `com.chat.dizychat`
+
+Google Play Protect may offer to scan the sideloaded APK. For the current release, allowing the scan is the straightforward install path; after the scan completes, Android can continue with the normal installation.
+
+See [`docs/android-private-apk.md`](docs/android-private-apk.md) for signing, CI, bundle/update behaviour and the current real-device acceptance checks.
+
+### Rumble companion userscript
+The companion userscript lives at [`scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js`](scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js).
+
+Current userscript version: **1.12.9**.
+
+Install/update page:
+
+- **Greasy Fork:** https://greasyfork.org/en/scripts/565816-dizygotic-rumble-chat-tool
+
+The **Dizygotic Rumble Chat Tool** currently provides blocking/highlighting, keyword filters, compact/timestamp controls, notifications, autoscroll controls, transcript recording/export, IndexedDB-backed transcript history, curated burn-memory tooling, selectable auto-burn engines, outgoing Unicode/font and colour styling, settings import/export/backup, and DizyChat handoff tools. Recent transcript work serializes/yields hydration and curated backfill work so overlapping history processing does not corrupt the in-memory/live record path.
+
+The Rumble userscript is a companion to DizyChat, not part of the DizyChat server runtime. Its source and deterministic source-contract tests are kept in this repository.
+
+### Other companions
+- Psybin Radio rooms expose a mini player with now-playing metadata and resilient reconnect behaviour.
+- Rumble links can open in a draggable/resizable modal alongside chat.
+- Watch2Gether launchers create synchronized watch-party rooms while keeping the W2G API key server-side.
+- Jam-session helpers can launch JackTrip/SonoBus destinations configured by the server.
 
 ## Project structure
 
-```
-index.js              # Express & Socket.IO server entry point
-src/models/message.js # Mongoose schema for chat messages
-public/               # Static assets served to clients (uploads, UI bundle)
-scripts/tampermonkey/ # Dizygotic Rumble Chat Companion userscript
-tests/                # Automated tests (if/when added)
+```text
+index.js                         # Express/Socket.IO entry point
+server-core.js                   # Main server routes/socket wiring
+src/auth/                        # Accounts, sessions and password recovery
+src/messages/                    # Message service boundaries
+src/mobile-web/                  # Server-managed Android web-bundle manifest/assets
+src/push/                        # Push policy, FCM transport and read-state services
+src/uploads/                     # ClamAV and voice-message normalization
+src/models/                      # MongoDB models
+public/                          # Browser UI and server-managed frontend assets
+public/iphone-install.*          # iPhone/iPad Home Screen helper
+public/mobile-*.js               # Native/mobile web runtime integration
+android-shell/                   # Minimal native bootstrap web shell
+android/                         # Capacitor Android project and native plugins
+scripts/tampermonkey/            # Dizygotic Rumble Chat Tool userscript
+scripts/tests/                   # Userscript deterministic source tests
+tests/                           # Server/browser/native deterministic tests
+deploy/livekit/                  # Self-hosted LiveKit Compose/runbook
 ```
 
 ## Prerequisites
 
-- **Node.js 22+** (matching the `engines` field).
-- **MongoDB** instance accessible via connection string.
-- **ClamAV daemon and `clamdscan`** are required for uploads; scanning is local and fails closed if the scanner is unavailable.
+- **Node.js 22+** (matching `package.json`).
+- **MongoDB** reachable through `MONGO_URI`.
+- **ClamAV daemon plus `clamdscan`** for uploads; scanning fails closed if unavailable.
+- LiveKit credentials only when live calls are enabled.
+- Firebase/FCM credentials only when Android push delivery is enabled.
 
 ## Installation
 
-1. Clone the repository and install dependencies:
-   ```bash
-   git clone https://github.com/<you>/dizychat-server.git
-   cd dizychat-server
-   npm install
-   ```
-2. Ensure MongoDB is running/available.
-3. Create a local `.env` file for development or configure the service runtime environment on the host.
+```bash
+git clone https://github.com/DizygoticCode/dizychat-server.git
+cd dizychat-server
+npm install
+```
+
+Create a local `.env` for development or configure the protected service environment on the deployment host. Production secrets, MongoDB credentials, API keys, Firebase credentials and Android signing material must stay outside Git.
 
 ## Environment variables
 
-Local `.env` files and host runtime environment files are deliberately excluded by `.gitignore`. Never commit production credentials, API keys, MongoDB credentials, or service environment files. Commit only scrubbed example templates such as `.env.example` when documentation is needed.
-
 | Variable | Description |
 | --- | --- |
-| `PORT` | (Optional) HTTP port, defaults to `10000`. |
-| `MONGO_URI` | **Required.** MongoDB connection string. Server exits if missing. |
-| `SOCKET_IO_CORS_ORIGINS` | (Recommended for public deployments) Comma-separated Socket.IO CORS origin allowlist (example: `https://chat.example.com,https://app.example.com`). |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Optional default admin credential pair. |
-| `ADMIN_CREDENTIALS` | Comma-separated list of `username:password` pairs for multiple admins. |
-| `ADMIN_PASSWORD_HASH` | Preferred hashed admin credential for `ADMIN_USERNAME`, encoded as `scrypt$N$r$p$saltBase64$keyBase64$keyLength`. |
-| `ADMIN_CREDENTIALS_HASHED` | Preferred comma-separated list of `username:scrypt$N$r$p$saltBase64$keyBase64$keyLength` pairs. |
-| `ADMIN_AUTH_MAX_FAILURES` | (Optional) Failed admin auth attempts allowed per window before temporary lockout; defaults to `5`. |
-| `ADMIN_AUTH_WINDOW_MS` | (Optional) Rolling window in milliseconds for counting failed admin auth attempts; defaults to `600000` (10 minutes). |
-| `ADMIN_AUTH_LOCK_MS` | (Optional) Temporary lockout duration in milliseconds after too many failed failures; defaults to `900000` (15 minutes). |
-| `MESSAGE_HISTORY_CHUNK_SIZE` | Page size (25-500) for history fetches; defaults to 150. |
-| `MAX_UPLOAD_SIZE_MB` | File upload cap; accepts values like `50`, `50mb`, or `2gb`. Use `unlimited` to disable the limit. |
-| `UPLOAD_QUARANTINE_DIR` | Private pre-scan upload directory; defaults to `/var/lib/dizychat/upload-quarantine`. It must not be inside the web-served `public/` tree. |
-| `CLAMAV_SCAN_COMMAND` | Local ClamAV client command; defaults to `clamdscan`. |
-| `CLAMAV_SCAN_TIMEOUT_MS` | Per-file ClamAV timeout in milliseconds; defaults to `120000` and is bounded between 5000 and 600000. |
-| `ENABLE_VOICE_CALLS` | (Optional) Set to `true`/`false` to force LiveKit call availability. The legacy name is still used for compatibility; when enabled, calls support microphone audio and optional camera video. If unset, calls enable automatically when all LiveKit credentials are present. |
-| `LIVEKIT_URL` | Required when LiveKit calls are enabled. Browser-reachable LiveKit WebSocket URL; for self-hosting use the trusted TLS endpoint you configured (for example `wss://<your-livekit-host>`). |
-| `LIVEKIT_API_KEY` | Required when LiveKit calls are enabled. LiveKit API key used by the backend to issue room-scoped access tokens. |
-| `LIVEKIT_API_SECRET` | Required when LiveKit calls are enabled. LiveKit API secret paired with `LIVEKIT_API_KEY`. |
-| `GIPHY_SDK_KEY` | Required for the GIF picker. Keep the key only in the server runtime environment, outside source control. |
-| `W2G_API_KEY` | Required for Watch2Gether watch-party room creation. Keep this server-side in the runtime environment; clients only see generated W2G room links. Aliases `WATCH2GETHER_API_KEY` and `WATCH_2_GETHER_API_KEY` are also accepted. |
-| `W2G_REQUEST_TIMEOUT_MS` | (Optional) Timeout for Watch2Gether API room creation; defaults to 10000 ms. |
-| `JACKTRIP_STUDIO_CREATE_URL` | (Optional) Override the JackTrip create-studio URL used by the Jam Session launcher; defaults to `https://app.jacktrip.org/studios/create`. |
-| `JACKTRIP_STUDIO_INVITE_URL` | (Optional) If you already have a reusable JackTrip studio invite, expose that directly instead of the create-studio page. |
-| `SONOBUS_DOWNLOAD_URL` | (Optional) Override the SonoBus fallback URL; defaults to `https://sonobus.net/index.html`. |
+| `PORT` | Optional HTTP port; defaults to `10000`. |
+| `MONGO_URI` | **Required.** MongoDB connection string. |
+| `SOCKET_IO_CORS_ORIGINS` | Recommended public-deployment Socket.IO CORS allowlist. |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Optional legacy/default admin credential pair. |
+| `ADMIN_CREDENTIALS` | Optional comma-separated `username:password` admin pairs. |
+| `ADMIN_PASSWORD_HASH` | Preferred hashed admin credential for `ADMIN_USERNAME`. |
+| `ADMIN_CREDENTIALS_HASHED` | Preferred comma-separated hashed admin credentials. |
+| `ADMIN_AUTH_MAX_FAILURES` | Failed admin-auth attempts allowed per rolling window; default `5`. |
+| `ADMIN_AUTH_WINDOW_MS` | Admin-auth rolling window; default `600000`. |
+| `ADMIN_AUTH_LOCK_MS` | Admin-auth temporary lock duration; default `900000`. |
+| `MESSAGE_HISTORY_CHUNK_SIZE` | History page size (25-500); default `150`. |
+| `MAX_UPLOAD_SIZE_MB` | Upload cap; accepts values such as `50`, `50mb`, `2gb`, or `unlimited`. |
+| `UPLOAD_QUARANTINE_DIR` | Private pre-scan upload directory; default `/var/lib/dizychat/upload-quarantine`. |
+| `CLAMAV_SCAN_COMMAND` | ClamAV client command; default `clamdscan`. |
+| `CLAMAV_SCAN_TIMEOUT_MS` | Per-file scan timeout; default `120000`, bounded 5000-600000 ms. |
+| `ENABLE_VOICE_CALLS` | Optional explicit LiveKit call enable/disable flag. If unset, calls enable when all LiveKit credentials are present. |
+| `LIVEKIT_URL` | Browser-reachable LiveKit URL, normally trusted `wss://...`. |
+| `LIVEKIT_API_KEY` | LiveKit API key used by DizyChat to issue room-scoped tokens. |
+| `LIVEKIT_API_SECRET` | Secret paired with `LIVEKIT_API_KEY`. |
+| `DIZYCHAT_FCM_ENABLED` | Enables the FCM push transport when set to `1`, `true`, `yes` or `on`. |
+| `DIZYCHAT_FIREBASE_PROJECT_ID` | Firebase project ID used by the server-side FCM transport. |
+| `GIPHY_SDK_KEY` | Server-side GIPHY key used by the GIF picker proxy. |
+| `W2G_API_KEY` | Server-side Watch2Gether API key. Aliases `WATCH2GETHER_API_KEY` and `WATCH_2_GETHER_API_KEY` are accepted. |
+| `W2G_REQUEST_TIMEOUT_MS` | Watch2Gether request timeout; default 10000 ms. |
+| `JACKTRIP_STUDIO_CREATE_URL` | Optional JackTrip create-studio URL override. |
+| `JACKTRIP_STUDIO_INVITE_URL` | Optional reusable JackTrip studio invite URL. |
+| `SONOBUS_DOWNLOAD_URL` | Optional SonoBus fallback URL override. |
 
 ### GIPHY setup
-
-Yes, the GIF picker requires your own `GIPHY_SDK_KEY`; there is no bundled shared key and no fallback key name. Create a GIPHY developer account, create an SDK key in the GIPHY Developer Dashboard, add the key to the server's protected runtime environment, and restart the DizyChat service. The browser never receives the key directly because the composer calls DizyChat's `/giphy-search` endpoint, and the server forwards requests to GIPHY.
-
-GIPHY SDK keys start as beta keys with limited hourly usage. If chat traffic grows beyond beta limits, upgrade the key from the GIPHY dashboard before relying on the GIF picker in production.
-
-## Running locally
-
-### Development mode
-Use Nodemon for auto-restarts:
-```bash
-npm run dev
-```
-
-### Production mode
-Launch the server with Node:
-```bash
-npm start
-```
+The browser calls DizyChat's `/giphy-search` endpoint; DizyChat calls GIPHY server-side. Keep `GIPHY_SDK_KEY` in the protected runtime environment. GIPHY beta keys have usage limits, so check the provider's current quota before relying on them for larger traffic.
 
 ### ClamAV upload scanning
+DizyChat keeps the `/uploads/...` public URL contract but does not write incoming files directly into the public store. Multer completes the upload in `UPLOAD_QUARANTINE_DIR`, `clamdscan --fdpass --no-summary` returns the local malware verdict, and only a clean file is atomically renamed into the public upload directory.
 
-DizyChat keeps the existing `/uploads/...` URL contract but no longer writes an incoming file directly into the public upload store. Multer writes the complete file to `UPLOAD_QUARANTINE_DIR`, `clamdscan --fdpass --no-summary` asks the local ClamAV daemon for the verdict, and only a clean file is atomically renamed into `public/uploads`. Infected files and scanner errors/timeouts are deleted from quarantine and rejected. MIME and file-signature allowlists are deliberately not used as an acceptance gate, preserving Android/HEIC/WebM/3GP and other mobile upload compatibility.
+Ubuntu/Debian example:
 
-On Ubuntu/Debian self-hosts:
 ```bash
 sudo apt update
 sudo apt install -y clamav clamav-daemon
@@ -153,224 +173,71 @@ sudo install -d -o dizy -g dizy -m 0700 /var/lib/dizychat/upload-quarantine
 clamdscan --fdpass --no-summary /etc/hosts
 ```
 
-The last command should report `/etc/hosts: OK`. Keep quarantine outside every web-served or symlink-exposed directory. The current DizyChat self-host may continue using `public/uploads -> /var/soundboards/uploads`; existing files and URLs do not need to move for ClamAV.
+Keep quarantine outside every web-served or symlink-exposed directory.
 
-The server will log the active port, build/version information, and upload limit during boot.
+### LiveKit setup
+For the current self-hosted production-style configuration, use [`deploy/livekit/README.md`](deploy/livekit/README.md). DizyChat and LiveKit remain separate services: DizyChat handles room/auth/token lifecycle while LiveKit transports realtime media.
 
-### LiveKit call provider setup
+Minimum application contract:
 
-> **Self-hosted deployment:** Use the production-oriented Compose service and complete network/TLS runbook in [`deploy/livekit/README.md`](deploy/livekit/README.md). It preserves the existing `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` application contract; no call or authentication code changes are required.
-
-Live audio/video calls are **not self-contained inside the DizyChat server**. The chat server provides the UI, room lifecycle events, and LiveKit access-token minting, but real-time microphone/camera transport still requires a LiveKit Cloud project or a self-hosted LiveKit server. Until `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` are configured, `/api/calls/status` reports `configured: false` with a `missingRequiredEnv` list, and the client shows the missing server variables instead of a generic setup error.
-
-Recommended options:
-
-1. **Use LiveKit Cloud** for the fastest production path. Create a LiveKit Cloud project, copy its project URL plus API key/secret, then set those values as `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` in the DizyChat runtime environment. If LiveKit shows the project URL as `https://...`, paste it as-is or change it to `wss://...`; DizyChat normalizes it before sending it to the browser. DizyChat also accepts common aliases such as `LIVE_KIT_URL`, `LIVE_KIT_API_KEY`, and `LIVE_KIT_API_SECRET`, but the canonical `LIVEKIT_*` names are recommended because they match LiveKit's own examples.
-2. **Self-host LiveKit on infrastructure that supports WebRTC networking** if you need full control. A production LiveKit server needs a trusted TLS certificate, public DNS such as `wss://livekit.example.com`, TCP signaling, and exposed ICE UDP/TCP ports. This usually fits a VM, Kubernetes cluster, or LiveKit-focused host better than a standard single-port app service.
-3. **Keep LiveKit separate from the DizyChat Node process.** Whether LiveKit Cloud or a self-hosted LiveKit server is used, its realtime media networking is a separate service and should not be bundled into the same Express process.
-4. **Use `livekit-server --dev` only for local testing.** The dev server uses the built-in `devkey` / `secret` credentials and is not a production deployment.
-
-For audio and optional camera video, configure only the LiveKit variables above. DizyChat uses the same LiveKit room connection for microphone and camera tracks; users join with audio first and can press **Add video** in the live call panel to publish their camera. Browser camera access requires HTTPS or localhost, and the current server permissions policy allows both microphone and camera access.
-
-When users choose **Music mode On**, the token endpoint marks the call as music mode and returns high-fidelity audio settings to the browser. The browser then requests a stereo microphone track with echo cancellation, noise suppression, and automatic gain control disabled, and publishes it with a 320 kbps LiveKit/Opus target, DTX disabled, and RED disabled. This is an application-side publish setting, not a separate DizyChat media backend; actual quality can still vary with the user's microphone, browser, operating-system audio path, and network conditions. LiveKit Cloud's free Build plan has usage quotas and included allowances, but LiveKit documents hi-fi audio publish settings up to 510 kbps stereo rather than a free-plan-specific low-bitrate cap.
-
-### Jam session launcher setup
-
-The **Jam Session** button is an external pro-audio handoff for musician rooms. It recommends JackTrip first because JackTrip currently offers a free hosted-studio test path for up to 5 musicians for 30 minutes, then exposes SonoBus as a free fallback for open-source peer-to-peer audio with ASIO support through its native app.
-
-No JackTrip API key is required for the default launcher. If `JACKTRIP_STUDIO_CREATE_URL`, `JACKTRIP_STUDIO_INVITE_URL`, and `SONOBUS_DOWNLOAD_URL` are unset, DizyChat works as-is by opening JackTrip's create-studio page and SonoBus's download page. Set those variables only when you want the self-hosted DizyChat service to point users at a specific reusable JackTrip studio invite, a different JackTrip landing page, or a mirrored SonoBus URL.
-
-DizyChat does not handle ASIO audio directly in the browser. The launcher opens the external provider and gives room-specific instructions so musicians can use the provider's native desktop app/audio-interface support while staying coordinated in DizyChat.
-
-
-### Configuring native/WebView builds
-Capacitor and similar wrappers load the web bundle from a non-HTTP origin (`capacitor://localhost`).
-The default Socket.IO client assumes it can reuse the current origin, so the native shell
-needs to know which deployed backend to contact. Override the connection target by editing
-`public/app-config.js` before running `npx cap copy android`:
-
-```js
-window.dizychatConfig = {
-  socketUrl: "https://your-production-server.example.com",
-  // Optional: automatically use this URL whenever the page is loaded
-  // from capacitor://localhost or file:// origins.
-  defaultNativeSocketUrl: "https://your-production-server.example.com",
-  // Optional Socket.IO client options
-  socketOptions: {
-    transports: ["websocket"],
-  },
-};
+```dotenv
+LIVEKIT_URL=wss://<your-livekit-host>
+LIVEKIT_API_KEY=<key>
+LIVEKIT_API_SECRET=<secret>
 ```
 
-At runtime you can also drop an alternate server URL into `localStorage` under the
-`dizychat-socket-url` key (configurable via `socketUrlStorageKey`) to point debug builds at
-different environments without rebuilding the native project.
+Browser microphone/camera access requires HTTPS (or localhost for development). The same LiveKit room connection carries microphone audio and optional camera video.
 
-> **Tip:** keep your Git commits lean by excluding Gradle build output and Android Studio
-> workspace files. The repository’s `.gitignore` already filters `android/app/build/`,
-> `android/.gradle/`, `android/.idea/`, and `android/local.properties`. If you accidentally
-> generated these before updating `.gitignore`, run:
->
-> ```bash
-> git rm -r --cached android/app/build android/.gradle android/.idea android/local.properties
-> ```
->
-> …then commit to drop the tracked artifacts. This keeps your repo small while still
-> checking in the Capacitor project files needed to rebuild the APK.
+## Android server-managed web bundle
 
-## Automated UI smoke tests
+The production Android client is intentionally split into two layers:
 
-The `tests/` folder contains Playwright- and Puppeteer-based smoke tests that run against an isolated local DizyChat instance in CI and capture screenshots/video artifacts. They are optional and require installing the browsers locally:
+1. **Native shell:** signing identity, Capacitor/native plugins, secure session, push notifications, native navigation/media boundaries and the bundle updater.
+2. **Server-managed web bundle:** DizyChat HTML/CSS/JS and related frontend assets published by the server.
+
+The app fetches a manifest for the current server bundle, downloads only declared assets, validates hashes before promotion and retains a previously verified bundle as fallback. A failed/partial update must not replace the known-good local bundle.
+
+Because of that split, normal frontend changes under the server-managed bundle do not justify issuing another Android release. Rebuild the APK only when the native shell itself changes.
+
+Native relative media URLs are resolved against the configured DizyChat backend inside Capacitor; ordinary browser relative URLs continue using the browser's own current origin.
+
+## Running locally
+
+Development with Nodemon:
 
 ```bash
-npm install --save-dev playwright puppeteer
+npm run dev
 ```
 
-Run the CommonJS harness (which includes retries and artifact generation) with Node.js:
+Production-style start:
 
 ```bash
-node tests/ui-test.cjs             # Playwright only
-node tests/ui-test.cjs --puppeteer # Playwright + Puppeteer snapshot
+npm start
 ```
 
-Artifacts are written to `ui-test-artifacts/` and include timestamped screenshots, videos, and an `index.html` viewer. Set the `TIMESTAMP` environment variable to control the artifact prefix if you need deterministic names.
+## Testing
 
-## API reference
-
-### `GET /version`
-Returns JSON containing `{ version, build, time }` for client diagnostics.
-
-### `POST /upload`
-Accepts multipart form field `file`. Supported uploads include JPEG/JPG, PNG, GIF, WebP, HEIC/HEIF, MP3, M4A, WAV, OGG/Opus, WebM voice clips, MP4/M4V/MOV videos, PDF, text/CSV/JSON/Markdown, ZIP, and Office documents. Returns `{ url, name, type, size }` for clean files; otherwise reports validation or antivirus failures.
-
-### `GET /link-preview?url=...`
-Fetches metadata for an absolute URL and responds with normalized preview attributes. Non-HTML content returns empty fields.
-
-### `GET /tenor-proxy?url=...`
-Resolves a Tenor share URL to embeddable GIF URLs via Tenor oEmbed.
-
-### `GET /giphy-search?q=...&limit=24&type=gifs|clips|stickers|emoji|text`
-Returns normalized GIPHY results for the composer picker. Omit `q` to load trending GIFs, stickers, Clips, or emoji depending on `type`. Requires `GIPHY_SDK_KEY`; Clips availability depends on GIPHY account approval.
-
-### `GET /soundboard-clips`
-Returns locally curated soundboard clips aggregated from JSON definitions in `data/soundboards`. Accepts optional `q` and `board` query parameters for search filtering and responds with normalized clip metadata for the soundboard picker.
-
-### `GET /api/jam/status`
-Returns available external jam providers, including JackTrip as the recommended free test path and SonoBus as the free fallback.
-
-### `POST /api/jam/session`
-Accepts JSON `{ "provider": "jacktrip" | "sonobus", "room": "Room Name" }` and returns launch instructions for the selected external jam provider. JackTrip sessions return the configured create/invite URL plus free-tier guidance; SonoBus sessions generate a room-specific group name and password for copying into the native app.
-
-### Importing meme boards from 101Soundboards
-
-The repository now stores soundboard metadata locally instead of proxying Pixabay. To pull curated boards from [101soundboards.com](https://www.101soundboards.com/):
+Run the deterministic Node test gate:
 
 ```bash
-node scripts/download-101-soundboard.js --board https://www.101soundboards.com/boards/<board-slug>
+npm test
 ```
 
-The script downloads every clip from the target board into `public/soundboards/<board-slug>/` and updates the JSON catalog in `data/soundboards`. The `public/soundboards` directory is intentionally gitignored so the repo stays binary-free—commit only the JSON definitions. If you need to distribute the audio assets, publish them through your own storage or an artifact bundle instead of checking the binaries into source control.
+The repository also contains Android/native contract tests, browser UI tests, iPhone PWA install tests, LiveKit Music Mode tests, push/read-state tests and userscript source-contract tests. CI additionally builds/verifies the signed Android package when the required encrypted signing/Firebase material is available.
 
-Some boards now require a browser cookie to bypass anti-bot checks. Set `SB_101SOUNDBOARDS_COOKIE` to the cookie you see after loading a board in your browser (for example, `user_session_id=<value>`). You can paste just the value—the importer will prefix the cookie name for you.
+## Android release signing
 
-All marketing routes serve the hero experience from `public/index.html`; the chat client now lives at `/login.html` (also aliased to `/login`, `/chat`, and `/app`).
+Release signing keys/passwords are never committed. CI reconstructs the keystore only on the ephemeral Actions runner from encrypted repository secrets and verifies the produced APK with Android `apksigner` before exposing the release artifact.
 
-## Socket.IO events (highlights)
+See [`docs/android-private-apk.md`](docs/android-private-apk.md) for the full signing/build/install boundary.
 
-| Event | Direction | Purpose |
-| --- | --- | --- |
-| `join room` | Client → Server | Enter a room (optionally password-protected) and trigger history loading. |
-| `chat message` | Client → Server | Send sanitized text/file messages with optional reply snapshots. |
-| `load messages` / `older messages` | Server → Client | Deliver initial and paginated history chunks. |
-| `typing` / `stop typing` | Bidirectional | Broadcast or clear typing indicators with rate limiting. |
-| `message status` | Server → Client | Update delivery/read receipts when status changes. |
-| `pin message`, `star message`, `react message`, etc. | Bidirectional | Manage message metadata actions. |
-| `moderate` | Client → Server | Admin actions for mute/block/ban/unban with notifications. |
-| `call:start`, `call:join`, `call:leave`, `call:end` | Bidirectional | Manage optional LiveKit-backed voice/video call lifecycle; the first participant can start a room call automatically. |
-| `call:mute-user`, `call:kick-user`, `call:disable-video-user`, `call:enable-video-user` | Client → Server | Admin-only call moderation actions for audio, removal, and camera access. Camera disables are remembered for the active room call until an admin allows the camera again or the call ends. |
-| `call:user-muted`, `call:user-kicked`, `call:user-video-disabled`, `call:user-video-enabled` | Server → Client | Targeted room call moderation notifications; affected clients mute audio, leave, stop camera video, or re-enable their camera control. |
-| `watch-party:w2g-create` | Client → Server | Creates a Watch2Gether room for the current DizyChat room using the server-side `W2G_API_KEY`. |
-| `watch-party:external-created`, `watch-party:external-active`, `watch-party:external-cleared`, `watch-party:error` | Server → Client | Broadcasts the current external Watch2Gether room card, clears it, or reports room-creation failures. |
-| `room list` | Server → Client | Broadcasts current public rooms and occupant counts. |
+## Security notes
 
-## Security considerations
+- Do not commit `.env`, API keys, MongoDB credentials, Firebase service credentials or Android signing material.
+- Upload scanning fails closed: an infected file, scanner error or scan timeout is not promoted into the public upload store.
+- Server authorization remains authoritative for accounts, sessions, room access, moderation and notification actions.
+- Possessing the Android APK does not bypass DizyChat authentication.
 
-- All user text and filenames are sanitized before persistence or broadcast to avoid XSS vectors.
-- Room passwords, admin credentials, and mute/block lists are normalized to avoid casing mismatches.
-- File uploads must pass antivirus checks; failure removes the file and notifies the client.
-- Restrict Socket.IO CORS origins with `SOCKET_IO_CORS_ORIGINS` before exposing the service publicly.
-- Prefer hashed admin credentials (`ADMIN_PASSWORD_HASH` / `ADMIN_CREDENTIALS_HASHED`); plaintext admin passwords are still accepted for migration compatibility.
-- Admin authentication now includes anti-bruteforce controls (progressive retry delay + temporary lockout after repeated failures).
-- HTTP responses include hardened security headers (CSP, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, and `Permissions-Policy`) while allowing trusted inline media frames from YouTube, Spotify, SoundCloud, and Rumble so chat link embeds keep working; Express `x-powered-by` is disabled.
-- Keep production environment files outside the repository with restrictive filesystem permissions. `.gitignore` blocks `.env`, `.env.*`, `*.env`, and `*.env.*` while allowing scrubbed example templates.
+## License
 
-## Deployment notes
-
-- The canonical production deployment is self-hosted behind a reverse proxy; ensure WebSocket upgrades are forwarded to the Node server.
-- Provision persistent storage for `public/uploads` if you need to retain files across deploys.
-- Configure process managers (PM2, systemd, Docker, etc.) to supply environment variables securely from outside the Git checkout.
-- Rotate admin credentials on a fixed cadence (for example every 60–90 days) and immediately after suspected exposure.
-- Scale horizontally by sharing the same MongoDB and enabling a Socket.IO adapter (e.g., Redis) if broadcasting across instances is required.
-
-## Roadmap ideas
-
-- Automated tests for moderation workflows and file scanning fallbacks.
-- Redis or MongoDB change streams for cross-instance Socket.IO scaling.
-- Rate-limited public APIs to expose room listings and message statistics.
-
-## Dizygotic Rumble Chat Companion (Tampermonkey v1.8)
-
-The companion userscript at `scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js` brings DizyChat-style moderation, appearance, recording, and utility controls directly into Rumble livestream chat. Rumble remains the underlying chat service; the companion augments the rendered chat page in the browser and can hand users into DizyChat for private direct-message rooms.
-
-**Current distribution:**
-- Repository source: `scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js`
-- Greasy Fork: https://greasyfork.org/en/scripts/565816-dizygotic-rumble-chat-tool
-- Existing JSON settings exported by earlier releases remain importable in v1.8; new settings are merged with defaults.
-
-### v1.8 feature highlights
-- **Context-menu moderation & DizyChat handoff** – right-click a Rumble username to block/unblock, highlight/unhighlight, or open a DizyChat direct-message tab for that user.
-- **Filtering and chat controls** – keyword hide/mask modes, compact display, timestamps with 12/24-hour modes, autoscroll lock, optional system-message hiding, long-message collapse, highlighted-user notifications, and configurable notification sound/volume.
-- **Passive transcript recorder** – optionally records public chat locally with sequence number, ISO capture time, username/display name, message text, @mentions, page URL/title, original rendered message HTML, and row classes. The recorder is bounded to 20,000 messages and batches local-storage writes so busy livestream chats do not constantly rewrite the full transcript.
-- **JSON/CSV transcript export** – export the locally captured transcript for later analysis, or clear it independently of the main settings/blocklist.
-- **Chat appearance controls** – choose an installed font family by name, enumerate locally installed fonts where the browser exposes the Local Font Access API, override font size, choose a single text colour, or apply per-character rainbow/configurable multi-colour styling to the rendered Rumble chat DOM.
-- **Selectable burn engines** – optional mention-triggered replies with cooldown control. Built-in quips, Compromise NLP, RiTa creative generation, local Markov generation, and a custom JavaScript hook can each be enabled or disabled independently. A preferred engine can be selected while graceful fallbacks keep the feature usable if an optional engine is unavailable.
-- **Portable settings** – export/import blocklists and settings, schedule automatic backups, and import JSON exported by earlier script versions; new v1.8 fields fall back to defaults when absent from an older profile.
-- **Persistent draggable UI** – the floating **Chat Settings** button remembers its screen position and keeps block/highlight management, appearance, recorder, notifications, burn-engine controls, DM integration, dark mode, and other options in one panel.
-
-### Burn engine choices
-- **Built-in** – no external dependency; always available.
-- **Compromise** – loaded by Tampermonkey with `@require` for lightweight noun/verb-aware replies.
-- **RiTa** – loaded with `@require` for more playful creative generation.
-- **Markov** – small local word-chain generator with a user-supplied corpus field, avoiding a runtime dependency on a third-party Markov CDN.
-- **Custom** – exposes `window.rumbleBlocker.customBurnGenerator(ctx)` for a user-defined response function.
-
-Each engine can be enabled or disabled independently from the settings panel, with a separate preferred-engine selector and cooldown control.
-
-### Transcript/evidence mode
-The recorder is deliberately passive: it watches the public chat rows already rendered by Rumble and stores a bounded local copy in the browser. It does not require posting to chat. JSON/CSV exports can be used for later message/timing analysis, while the captured raw rendered HTML and row classes make it possible to inspect how unusual Rumble chat formatting was represented in the DOM.
-
-### Install with Tampermonkey
-1. Install the [Tampermonkey](https://www.tampermonkey.net/) browser extension.
-2. Install from the Greasy Fork listing above, or open the repository source directly: `https://raw.githubusercontent.com/DizygoticCode/dizychat-server/main/scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js`.
-3. Review the requested Rumble match scope and dependencies, then install the userscript.
-4. Visit a Rumble livestream with chat. The floating **Chat Settings** button appears once the chat DOM is available.
-5. Existing users can open **Import** and select a settings JSON exported by an older release; v1.8 merges it with the current defaults.
-
-### Local data and privacy
-The transcript recorder, blocklist, highlights, appearance settings, and other preferences are stored in the browser. Transcript export is user-triggered. The companion does not require access to DizyChat server data for normal Rumble filtering/recording; the DizyChat server is only opened when the user explicitly chooses the direct-message handoff.
-
-### Standalone browser extension direction
-The Tampermonkey/Greasy Fork edition remains useful as the rapid-development and beta channel, but the companion is also a good candidate for a standalone **Chrome / Brave / Edge / Firefox WebExtension** so ordinary users do not need to install a userscript manager.
-
-The intended extension split is straightforward:
-- a Rumble content script reusing the existing DOM observer/moderation/recorder/appearance logic;
-- extension-native settings/storage/download/notification APIs replacing Tampermonkey glue;
-- migration/import support for existing v1.8 JSON settings;
-- a narrow Rumble-only host permission rather than broad browsing access;
-- one shared core codebase producing Chromium and Firefox packages.
-
-Until that standalone package exists, the GitHub-backed userscript in `scripts/tampermonkey/` is the canonical development source and Greasy Fork remains the easiest public userscript distribution route.
-
----
-
-Feel free to open issues or PRs to collaborate on future iterations of DizyChat!
+MIT
