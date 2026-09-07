@@ -1,0 +1,122 @@
+.room-entry-card {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.room-entry-card h2,
+.auth-subpanel h3 {
+  margin: 0 0 6px;
+}
+
+.room-entry-card p,
+.auth-help {
+  margin: 0 0 10px;
+  font-size: 0.86rem;
+  line-height: 1.4;
+  opacity: 0.78;
+}
+
+.auth-entry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.auth-link-button {
+  border: 0;
+  background: transparent;
+  padding: 5px 7px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  opacity: 0.88;
+}
+
+.auth-subpanel {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.auth-subpanel[hidden] {
+  display: none !important;
+}
+
+.auth-subpanel input,
+.auth-subpanel button {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.auth-entry-status[data-kind="error"] {
+  color: #ff9aac;
+}
+
+.auth-entry-status[data-kind="success"] {
+  color: #8ee6b0;
+}
+
+.reset-password-page {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  box-sizing: border-box;
+}
+
+.reset-password-card {
+  width: min(420px, 100%);
+  box-sizing: border-box;
+  padding: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  text-align: center;
+}
+
+.reset-password-card .logo {
+  width: min(220px, 70%);
+  height: auto;
+}
+
+.reset-password-card form {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.reset-password-card input,
+.reset-password-card button {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.reset-password-card a {
+  display: inline-block;
+  margin-top: 12px;
+}
+
+@media (max-width: 600px) {
+  .room-entry-card {
+    padding: 11px;
+  }
+
+  .room-entry-card p,
+  .auth-help {
+    font-size: 0.8rem;
+  }
+
+  .auth-entry-actions {
+    gap: 2px 6px;
+  }
+
+  .auth-subpanel {
+    margin-top: 8px;
+    padding-top: 8px;
+  }
+}
