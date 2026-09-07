@@ -45,6 +45,9 @@ public class WebBundlePlugin extends Plugin {
                         throw new IOException("Published web bundle failed verification");
                     }
                 }
+                if (!store.isBundleComplete(stagingVersion)) {
+                    store.markBundleComplete(stagingVersion);
+                }
 
                 String activeVersion = store.getActiveVersion();
                 if (!stagingVersion.equals(activeVersion)) {
