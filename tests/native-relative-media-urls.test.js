@@ -16,7 +16,7 @@ const makeWindow = (native, origin = 'https://localhost') => ({
 
 test('browser media keeps its relative value and current-origin resolution, including localhost', () => {
   for (const origin of ['https://web.example', 'https://localhost']) {
-    for (const source of ['/uploads/picture.png', '/soundboards/clip.mp3', '/emojis/custom/reaction.gif']) {
+    for (const source of ['/uploads/picture.png', '/soundboards/clip.mp3', '/emojis/custom/reaction.gif', '/newmessage.wav']) {
       const resolved = runtime.resolveMediaUrl(source, makeWindow(false, origin));
       assert.equal(resolved, source);
       assert.equal(new URL(resolved, origin).origin, origin);
@@ -30,11 +30,28 @@ for (const source of [
   '/uploads/movie.mp4',
   '/soundboards/board/clip%20one.mp3',
   '/emojis/custom/reaction.gif',
+  '/newmessage.wav',
 ]) {
   test(`native media resolves ${source} using existing backend config`, () => {
     assert.equal(runtime.resolveMediaUrl(source, makeWindow(true)), backend + source);
   });
 }
+
+test('native media also recovers app-origin media URLs already resolved against Capacitor localhost', () => {
+  const win = makeWindow(true);
+  for (const source of [
+    'https://localhost/uploads/picture.png?version=2#preview',
+    'https://localhost/soundboards/clip.mp3',
+    'https://localhost/emojis/custom/cat-potatoes.gif',
+    'https://localhost/newmessage.wav',
+  ]) {
+    const parsed = new URL(source);
+    assert.equal(
+      runtime.resolveMediaUrl(source, win),
+      `${backend}${parsed.pathname}${parsed.search}${parsed.hash}`,
+    );
+  }
+});
 
 test('native media uses the existing backend override and preserves missing-config fallback', () => {
   const win = makeWindow(true);
@@ -42,12 +59,14 @@ test('native media uses the existing backend override and preserves missing-conf
   win.localStorage = { getItem(key) { assert.equal(key, 'existing-backend-key'); return 'https://override.example/'; } };
   assert.equal(runtime.resolveMediaUrl('/uploads/a.png', win), 'https://override.example/uploads/a.png');
   assert.equal(runtime.resolveMediaUrl('/emojis/custom/a.gif', win), 'https://override.example/emojis/custom/a.gif');
+  assert.equal(runtime.resolveMediaUrl('/newmessage.wav', win), 'https://override.example/newmessage.wav');
   win.dizychatConfig = {};
   assert.equal(runtime.resolveMediaUrl('/uploads/a.png', win), '/uploads/a.png');
   assert.equal(runtime.resolveMediaUrl('/emojis/custom/a.gif', win), '/emojis/custom/a.gif');
+  assert.equal(runtime.resolveMediaUrl('/newmessage.wav', win), '/newmessage.wav');
 });
 
-test('absolute, external, blob, data and unrelated packaged sources are untouched', () => {
+test('absolute external, blob, data and unrelated packaged sources are untouched', () => {
   for (const native of [false, true]) {
     for (const source of [backend + '/uploads/a.png', 'https://external.example/a.mp3',
       '//external.example/uploads/a.png', 'blob:https://localhost/id', 'data:image/png;base64,AAAA',
@@ -57,7 +76,89 @@ test('absolute, external, blob, data and unrelated packaged sources are untouche
   }
 });
 
-// Exercise the production DOM renderers, stubbing DOM mechanics only.
+const defineSrcProperty = (Ctor) => {
+  Object.defineProperty(Ctor.prototype, 'src', {
+    configurable: true,
+    enumerable: true,
+    get() { return this._src || ''; },
+    set(value) { this._src = value; },
+  });
+};
+
+const makeDomRoutingWindow = (native) => {
+  class FakeImage {}
+  class FakeMedia {}
+  defineSrcProperty(FakeImage);
+  defineSrcProperty(FakeMedia);
+  class FakeAudio extends FakeMedia {
+    constructor(src) {
+      super();
+      if (src !== undefined) this.src = src;
+    }
+  }
+
+  return Object.assign(makeWindow(native), {
+    HTMLImageElement: FakeImage,
+    HTMLMediaElement: FakeMedia,
+    Audio: FakeAudio,
+  });
+};
+
+test('browser DOM media source routing is not installed', () => {
+  const win = makeDomRoutingWindow(false);
+  const OriginalAudio = win.Audio;
+  assert.equal(runtime.installNativeMediaSourceRouting(win), false);
+  assert.equal(win.Audio, OriginalAudio);
+
+  const img = new win.HTMLImageElement();
+  img.src = '/emojis/custom/cat-potatoes.gif';
+  assert.equal(img.src, '/emojis/custom/cat-potatoes.gif');
+
+  const tone = new win.Audio('/newmessage.wav');
+  assert.equal(tone.src, '/newmessage.wav');
+});
+
+test('native DOM media source routing fixes emoji images and notification audio at the shared boundary', () => {
+  const win = makeDomRoutingWindow(true);
+  assert.equal(runtime.installNativeMediaSourceRouting(win), true);
+
+  const pickerImage = new win.HTMLImageElement();
+  pickerImage.src = '/emojis/custom/cat-potatoes.gif';
+  assert.equal(pickerImage.src, `${backend}/emojis/custom/cat-potatoes.gif`);
+
+  const renderedImage = new win.HTMLImageElement();
+  renderedImage.src = 'https://localhost/emojis/custom/reaction.gif';
+  assert.equal(renderedImage.src, `${backend}/emojis/custom/reaction.gif`);
+
+  const uploadedAudio = new win.HTMLMediaElement();
+  uploadedAudio.src = '/uploads/voice.webm';
+  assert.equal(uploadedAudio.src, `${backend}/uploads/voice.webm`);
+
+  const soundboardAudio = new win.HTMLMediaElement();
+  soundboardAudio.src = '/soundboards/clip.mp3';
+  assert.equal(soundboardAudio.src, `${backend}/soundboards/clip.mp3`);
+
+  const externalImage = new win.HTMLImageElement();
+  externalImage.src = 'https://external.example/reaction.gif';
+  assert.equal(externalImage.src, 'https://external.example/reaction.gif');
+
+  const tone = new win.Audio('/newmessage.wav');
+  assert.equal(tone.src, `${backend}/newmessage.wav`);
+
+  assert.equal(runtime.installNativeMediaSourceRouting(win), true, 'installer is idempotent');
+  const secondTone = new win.Audio('/newmessage.wav');
+  assert.equal(secondTone.src, `${backend}/newmessage.wav`);
+});
+
+const bootstrap = fs.readFileSync(path.join(__dirname, '../public/mobile-bootstrap.js'), 'utf8');
+test('native DOM media routing is installed before chat.js executes', () => {
+  const installAt = bootstrap.indexOf('runtime.installNativeMediaSourceRouting(window);');
+  const chatAt = bootstrap.indexOf("await loadScript('/chat.js');");
+  assert.ok(installAt >= 0, 'mobile bootstrap must install DOM media routing');
+  assert.ok(chatAt > installAt, 'DOM media routing must be active before chat.js creates emoji/audio elements');
+});
+
+// Exercise the existing production attachment/lightbox renderers, stubbing DOM mechanics only.
 const chat = fs.readFileSync(path.join(__dirname, '../public/chat.js'), 'utf8');
 const section = (start, end) => {
   const from = chat.indexOf(start), to = chat.indexOf(end, from);
