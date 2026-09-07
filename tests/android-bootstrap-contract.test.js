@@ -33,7 +33,7 @@ test('app config pins the production Socket.IO endpoint only for packaged native
   assert.equal(webConfig.socketUrl, '');
 });
 
-test('login page bootstraps packaged runtime before chat instead of loading localhost Socket.IO directly', () => {
+test('login page bootstraps runtime before chat instead of loading Socket.IO directly', () => {
   const source = read('public/login.html');
   const config = source.indexOf('src="/app-config.js"');
   const auth = source.indexOf('src="/auth-v2-client.js"');
@@ -48,37 +48,67 @@ test('login page bootstraps packaged runtime before chat instead of loading loca
   assert.doesNotMatch(source, /src="\/chat\.js"/);
 });
 
-test('mobile bootstrap uses bundled Socket.IO only on native while normal web keeps same-origin Socket.IO', () => {
+test('mobile bootstrap checks WebBundle only on native and loads Socket.IO from backend', () => {
   const source = read('public/mobile-bootstrap.js');
   assert.match(source, /restoreNativeSession\(\)/);
   assert.match(source, /resolveBackendOrigin\(window,\s*window\.dizychatConfig\)/);
   assert.match(source, /installBackendFetchRouting\(window,\s*backend\)/);
   assert.match(source, /isNativeRuntime\(window\)/);
-  assert.match(source, /["']\/vendor\/socket\.io\.min\.js["']/);
+  assert.match(source, /Capacitor\?\.Plugins\?\.WebBundle/);
+  assert.match(source, /syncAndActivate\(\{\s*backendUrl:\s*window\.dizychatConfig\?\.defaultNativeBackendUrl\s*\}\)/);
+  assert.match(source, /`\$\{backend\}\/socket\.io\/socket\.io\.js`/);
   assert.match(source, /["']\/socket\.io\/socket\.io\.js["']/);
-  assert.doesNotMatch(source, /\$\{backend\}\/socket\.io\/socket\.io\.js/);
+  assert.doesNotMatch(source, /\/vendor\/socket\.io\.min\.js/);
   assert.match(source, /loadScript\(socketClientUrl\)/);
   assert.match(source, /loadScript\(["']\/chat\.js["']\)/);
   assert.match(source, /dizychat-bootstrap-error/);
 });
 
-test('Android build prepares the bundled Socket.IO browser client before Capacitor sync', () => {
+test('native bundle health is committed only after chat, auth UI, and push readiness succeed', () => {
+  const source = read('public/mobile-bootstrap.js');
+  const chatReady = source.indexOf("await loadScript('/chat.js')");
+  const authReady = source.indexOf("await loadScript('/public-auth-ui.js')");
+  const pushReady = source.indexOf('await pushController.onChatReady()');
+  const healthCommit = source.indexOf('await WebBundle.markHealthy()');
+
+  assert.ok(chatReady >= 0, 'chat.js must load');
+  assert.ok(authReady > chatReady, 'public auth UI must load after chat');
+  assert.ok(pushReady > authReady, 'native push readiness must run after chat/auth UI');
+  assert.ok(healthCommit > pushReady, 'pending bundle must become healthy only after full native bootstrap succeeds');
+});
+
+test('native update-check failure is non-blocking for an already-running verified bundle', () => {
+  const source = read('public/mobile-bootstrap.js');
+  const sync = source.indexOf('await WebBundle.syncAndActivate');
+  const warning = source.indexOf("console.warn('[DizyChat] web bundle update check failed'");
+  const restore = source.indexOf('await auth.restoreNativeSession()');
+
+  assert.ok(sync >= 0, 'native update check must run');
+  assert.ok(warning > sync, 'update failure must be caught and downgraded to a warning');
+  assert.ok(restore > warning, 'normal app bootstrap must continue after a failed update check');
+});
+
+test('Android build prepares only canonical tiny-shell assets before Capacitor sync', () => {
   const scriptPath = path.join(root, 'scripts/prepare-android-assets.js');
   assert.equal(fs.existsSync(scriptPath), true, 'Android asset preparation script must exist');
 
   const prepareSource = fs.readFileSync(scriptPath, 'utf8');
   const workflow = read('.github/workflows/android-slice1-ci.yml');
   const pkg = JSON.parse(read('package.json'));
+  const config = JSON.parse(read('capacitor.config.json'));
 
   assert.equal(pkg.scripts?.['android:prepare'], 'node scripts/prepare-android-assets.js');
-  assert.match(prepareSource, /socket\.io/);
-  assert.match(prepareSource, /client-dist/);
-  assert.match(prepareSource, /socket\.io\.min\.js/);
-  assert.match(prepareSource, /public[\\/]vendor/);
+  assert.equal(config.webDir, 'android-shell');
+  assert.equal(Object.prototype.hasOwnProperty.call(config, 'server'), false, 'production shell must not use server.url');
+  assert.match(prepareSource, /android-shell/);
+  assert.match(prepareSource, /public[\\/]app-config\.js/);
+  assert.match(prepareSource, /public[\\/]logo\.svg/);
+  assert.doesNotMatch(prepareSource, /socket\.io/);
+  assert.doesNotMatch(prepareSource, /public[\\/]vendor/);
   assert.match(workflow, /npm run android:prepare[\s\S]*npx cap sync android/);
 });
 
-test('native runtime exposes an idempotent fetch router that keeps bundled assets local', () => {
+test('native runtime exposes an idempotent API fetch router while bundle assets stay local', () => {
   const runtime = require('../public/mobile-runtime.js');
   assert.equal(typeof runtime.installBackendFetchRouting, 'function');
 
@@ -103,9 +133,18 @@ test('native runtime exposes an idempotent fetch router that keeps bundled asset
   assert.equal(calls[1][0], '/emojis.json');
 });
 
-test('packaged native launch redirects the marketing entry point to the chat login surface', () => {
-  const source = read('public/index.html');
-  assert.match(source, /Capacitor/);
-  assert.match(source, /isNativePlatform/);
-  assert.match(source, /location\.replace\(["']\/login\.html["']\)/);
+test('packaged Android launch is a tiny updater shell instead of the marketing application', () => {
+  const config = JSON.parse(read('capacitor.config.json'));
+  assert.equal(config.webDir, 'android-shell');
+  assert.equal(fs.existsSync(path.join(root, 'android-shell/index.html')), true);
+  assert.equal(fs.existsSync(path.join(root, 'android-shell/bootstrap.js')), true);
+  const source = read('android-shell/index.html');
+  assert.match(source, /app-config\.js/);
+  assert.match(source, /bootstrap\.js/);
+  assert.doesNotMatch(source, /chat\.js|mobile-bootstrap\.js|socket\.io/i);
+  const bootstrap = read('android-shell/bootstrap.js');
+  assert.match(bootstrap, /defaultNativeBackendUrl/);
+  assert.match(bootstrap, /WebBundle/);
+  assert.match(bootstrap, /syncAndActivate/);
+  assert.match(bootstrap, /Retry/i);
 });

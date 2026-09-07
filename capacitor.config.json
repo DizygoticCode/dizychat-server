@@ -1,5 +1,5 @@
 {
   "appId": "com.chat.dizychat",
   "appName": "DizyChat",
-  "webDir": "public"
+  "webDir": "android-shell"
 }
