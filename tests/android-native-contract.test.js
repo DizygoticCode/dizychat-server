@@ -130,9 +130,9 @@ test('Android Slice 1 CI reproducibly runs JVM tests, builds, and uploads an uns
   assert.doesNotMatch(debugBuildStep, /DIZYCHAT_KEYSTORE_PASSWORD|DIZYCHAT_KEY_PASSWORD/, 'debug build step must not receive release signing secrets');
 });
 
-test('private APK runbook keeps release signing material outside Git and defines the device gate', () => {
+test('Android APK runbook keeps release signing material outside the repository and defines the current device gate', () => {
   const runbookPath = 'docs/android-private-apk.md';
-  assert.equal(exists(runbookPath), true, 'private APK runbook must exist');
+  assert.equal(exists(runbookPath), true, 'Android APK runbook must exist');
   const runbook = read(runbookPath);
 
   assert.match(runbook, /\$HOME\/\.dizychat\/dizychat-release\.jks/);
@@ -144,16 +144,18 @@ test('private APK runbook keeps release signing material outside Git and defines
   assert.match(runbook, /DIZYCHAT_KEY_PASSWORD/);
   assert.match(runbook, /assembleRelease --no-daemon/);
   assert.match(runbook, /adb install -r android\/app\/build\/outputs\/apk\/release\/dizychat-v1\.apk/);
-  assert.match(runbook, /outside Git/i);
-  assert.match(runbook, /real-device acceptance/i);
+  assert.match(runbook, /outside the repository/i);
+  assert.match(runbook, /current real-device acceptance gate/i);
 });
 
-test('README identifies the private sideloaded Android app and defers notifications to Slice 2', () => {
+test('README documents the sideloaded thin Android app and implemented notification actions', () => {
   const readme = read('README.md');
   assert.match(readme, /docs\/android-private-apk\.md/);
   assert.match(readme, /sideload/i);
   assert.match(readme, /https:\/\/dizychat\.com/);
-  assert.match(readme, /Slice 2/i);
-  assert.match(readme, /push/i);
-  assert.match(readme, /inline/i);
+  assert.match(readme, /thin Capacitor\/native shell/i);
+  assert.match(readme, /FCM-backed room notifications/i);
+  assert.match(readme, /inline \*\*Reply\*\*/i);
+  assert.match(readme, /\*\*Mark as read\*\*/i);
+  assert.doesNotMatch(readme, /Slice 2/i, 'README must not describe implemented Android notifications as future Slice 2 work');
 });
