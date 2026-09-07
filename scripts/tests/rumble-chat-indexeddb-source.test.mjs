@@ -72,6 +72,8 @@ test("automatic curated backfill yields during transcript ingestion and profile 
   assert.match(backfill, /\(index \+ 1\) % yieldEvery === 0[\s\S]*?setTimeout\(resolve, 0\)/);
   assert.match(backfill, /for \(const username of touched\)/);
   assert.match(backfill, /finalized % 50 === 0[\s\S]*?setTimeout\(resolve, 0\)/);
+  assert.doesNotMatch(backfill, /pending\.forEach/);
+  assert.doesNotMatch(backfill, /touched\.forEach/);
 });
 
 test("boot prepares IndexedDB sequence state without hydrating history and panel opens hydration", () => {
