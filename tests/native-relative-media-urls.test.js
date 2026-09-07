@@ -16,7 +16,7 @@ const makeWindow = (native, origin = 'https://localhost') => ({
 
 test('browser media keeps its relative value and current-origin resolution, including localhost', () => {
   for (const origin of ['https://web.example', 'https://localhost']) {
-    for (const source of ['/uploads/picture.png', '/soundboards/clip.mp3']) {
+    for (const source of ['/uploads/picture.png', '/soundboards/clip.mp3', '/emojis/custom/reaction.gif']) {
       const resolved = runtime.resolveMediaUrl(source, makeWindow(false, origin));
       assert.equal(resolved, source);
       assert.equal(new URL(resolved, origin).origin, origin);
@@ -24,7 +24,13 @@ test('browser media keeps its relative value and current-origin resolution, incl
   }
 });
 
-for (const source of ['/uploads/picture.png?version=2#preview', '/uploads/voice.webm', '/uploads/movie.mp4', '/soundboards/board/clip%20one.mp3']) {
+for (const source of [
+  '/uploads/picture.png?version=2#preview',
+  '/uploads/voice.webm',
+  '/uploads/movie.mp4',
+  '/soundboards/board/clip%20one.mp3',
+  '/emojis/custom/reaction.gif',
+]) {
   test(`native media resolves ${source} using existing backend config`, () => {
     assert.equal(runtime.resolveMediaUrl(source, makeWindow(true)), backend + source);
   });
@@ -35,15 +41,17 @@ test('native media uses the existing backend override and preserves missing-conf
   win.dizychatConfig.backendUrlStorageKey = 'existing-backend-key';
   win.localStorage = { getItem(key) { assert.equal(key, 'existing-backend-key'); return 'https://override.example/'; } };
   assert.equal(runtime.resolveMediaUrl('/uploads/a.png', win), 'https://override.example/uploads/a.png');
+  assert.equal(runtime.resolveMediaUrl('/emojis/custom/a.gif', win), 'https://override.example/emojis/custom/a.gif');
   win.dizychatConfig = {};
   assert.equal(runtime.resolveMediaUrl('/uploads/a.png', win), '/uploads/a.png');
+  assert.equal(runtime.resolveMediaUrl('/emojis/custom/a.gif', win), '/emojis/custom/a.gif');
 });
 
 test('absolute, external, blob, data and unrelated packaged sources are untouched', () => {
   for (const native of [false, true]) {
     for (const source of [backend + '/uploads/a.png', 'https://external.example/a.mp3',
       '//external.example/uploads/a.png', 'blob:https://localhost/id', 'data:image/png;base64,AAAA',
-      '/logo.svg', '/vendor/socket.io.min.js', '/uploads-other/a.png', '', null]) {
+      '/logo.svg', '/vendor/socket.io.min.js', '/uploads-other/a.png', '/emojis.json', '', null]) {
       assert.equal(runtime.resolveMediaUrl(source, makeWindow(native)), source);
     }
   }
