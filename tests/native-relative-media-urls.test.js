@@ -59,6 +59,20 @@ test('absolute, external, blob, data and unrelated packaged sources are untouche
 
 // Exercise the production DOM renderers, stubbing DOM mechanics only.
 const chat = fs.readFileSync(path.join(__dirname, '../public/chat.js'), 'utf8');
+
+test('custom emoji DOM src assignments use the shared native-aware media resolver', () => {
+  assert.match(
+    chat,
+    /img\.src\s*=\s*resolveMediaSource\(item\.url\)/,
+    'emoji picker preview must resolve /emojis/... against the configured native backend',
+  );
+  assert.match(
+    chat,
+    /img\.src\s*=\s*resolveMediaSource\(normalizedLink\)/,
+    'rendered custom emoji messages must resolve /emojis/... against the configured native backend',
+  );
+});
+
 const section = (start, end) => {
   const from = chat.indexOf(start), to = chat.indexOf(end, from);
   assert.ok(from >= 0 && to > from);
