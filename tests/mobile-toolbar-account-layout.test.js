@@ -77,3 +77,31 @@ test('mobile header uses deliberately compact geometry without changing desktop 
     /#chat-container header \.header-right\s*\{[\s\S]*gap:\s*4px;[\s\S]*\}/,
   );
 });
+
+test('narrow phones render jump-to-present as a compact circular icon while desktop keeps the pill', () => {
+  assert.match(
+    loginSource,
+    /<button[^>]*id="scroll-to-latest"[^>]*aria-label="Jump to present"[^>]*>[\s\S]*<span class="scroll-to-latest-label">Jump to present<\/span>/,
+  );
+  assert.match(
+    baseCssSource,
+    /\.scroll-to-latest\s*\{[\s\S]*left:\s*50%;[\s\S]*border-radius:\s*999px;[\s\S]*transform:\s*translateX\(-50%\);[\s\S]*\}/,
+  );
+
+  const mobileStart = mobileCssSource.lastIndexOf('@media (max-width: 600px)');
+  assert.notEqual(mobileStart, -1, 'expected a 600px narrow-phone breakpoint');
+  const mobileSource = mobileCssSource.slice(mobileStart);
+
+  assert.match(
+    mobileSource,
+    /\.scroll-to-latest\s*\{[\s\S]*left:\s*auto;[\s\S]*right:\s*12px;[\s\S]*width:\s*44px;[\s\S]*height:\s*44px;[\s\S]*padding:\s*0;[\s\S]*border-radius:\s*50%;[\s\S]*transform:\s*none;[\s\S]*\}/,
+  );
+  assert.match(mobileSource, /\.scroll-to-latest::before\s*\{[\s\S]*content:\s*["']↓["'];[\s\S]*\}/);
+  assert.match(mobileSource, /\.scroll-to-latest \.scroll-to-latest-label\s*\{[\s\S]*display:\s*none;[\s\S]*\}/);
+  assert.match(
+    mobileSource,
+    /\.scroll-to-latest \.scroll-to-latest-count\s*\{[\s\S]*position:\s*absolute;[\s\S]*top:\s*-6px;[\s\S]*right:\s*-6px;[\s\S]*\}/,
+  );
+  assert.match(mobileSource, /\.scroll-to-latest:hover\s*\{[\s\S]*transform:\s*translateY\(-1px\);[\s\S]*\}/);
+  assert.match(mobileSource, /\.scroll-to-latest:active\s*\{[\s\S]*transform:\s*none;[\s\S]*\}/);
+});
