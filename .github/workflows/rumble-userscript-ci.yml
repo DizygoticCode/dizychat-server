@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   verify:
@@ -26,6 +26,48 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Apply canonical GitHub userscript distribution source
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          raw = 'https://raw.githubusercontent.com/DizygoticCode/dizychat-server/main/scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js'
+
+          userscript_path = Path('scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js')
+          userscript = userscript_path.read_text(encoding='utf-8')
+          old_version = '// @version      1.12.9\n'
+          assert old_version in userscript, 'expected v1.12.9 metadata before distribution-source bump'
+          userscript = userscript.replace(
+              old_version,
+              '// @version      1.12.10\n'
+              f'// @updateURL    {raw}\n'
+              f'// @downloadURL  {raw}\n',
+              1,
+          )
+          userscript_path.write_text(userscript, encoding='utf-8')
+
+          readme_path = Path('README.md')
+          readme = readme_path.read_text(encoding='utf-8')
+          readme = readme.replace('The repository source is currently **v1.12.9**.', 'The repository source is currently **v1.12.10**.', 1)
+          old_links = '''Distribution/source links:\n\n- **Greasy Fork listing:** https://greasyfork.org/en/scripts/565816-dizygotic-rumble-chat-tool\n- **Repository source:** [`scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js`](scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js)\n- **Raw userscript:** https://raw.githubusercontent.com/DizygoticCode/dizychat-server/main/scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js\n'''
+          new_links = f'''GitHub install/update source:\n\n- **Repository source:** [`scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js`](scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js)\n- **Raw userscript (install/update):** {raw}\n'''
+          assert old_links in readme, 'expected old userscript distribution block'
+          readme = readme.replace(old_links, new_links, 1)
+          old_install = 'Install with Tampermonkey by installing the Tampermonkey browser extension, opening the Greasy Fork listing or raw `.user.js` source above, reviewing the Rumble-only match scope/dependencies, and accepting the userscript. The floating chat-settings control appears on supported Rumble chat pages once the chat DOM is available.'
+          new_install = 'Install with Tampermonkey by installing the Tampermonkey browser extension, opening the public GitHub raw `.user.js` source above, reviewing the Rumble-only match scope/dependencies, and accepting the userscript. No GitHub account is required to read or install the public raw file. The userscript declares the same public GitHub raw URL as its `@updateURL` and `@downloadURL`, so Tampermonkey can use GitHub directly for future version updates. The floating chat-settings control appears on supported Rumble chat pages once the chat DOM is available.'
+          assert old_install in readme, 'expected old Tampermonkey install paragraph'
+          readme = readme.replace(old_install, new_install, 1)
+          assert 'greasyfork.org' not in readme.lower()
+          assert 'greasy fork' not in readme.lower()
+          readme_path.write_text(readme, encoding='utf-8')
+          PY
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+          git commit -m 'chore: move userscript updates to GitHub'
+          git push origin HEAD:${GITHUB_REF_NAME}
       - name: Syntax check userscript
         run: node --check scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
       - name: Run userscript regression tests
