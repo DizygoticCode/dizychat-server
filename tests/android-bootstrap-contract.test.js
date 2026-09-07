@@ -64,6 +64,30 @@ test('mobile bootstrap checks WebBundle only on native and loads Socket.IO from 
   assert.match(source, /dizychat-bootstrap-error/);
 });
 
+test('native bundle health is committed only after chat, auth UI, and push readiness succeed', () => {
+  const source = read('public/mobile-bootstrap.js');
+  const chatReady = source.indexOf("await loadScript('/chat.js')");
+  const authReady = source.indexOf("await loadScript('/public-auth-ui.js')");
+  const pushReady = source.indexOf('await pushController.onChatReady()');
+  const healthCommit = source.indexOf('await WebBundle.markHealthy()');
+
+  assert.ok(chatReady >= 0, 'chat.js must load');
+  assert.ok(authReady > chatReady, 'public auth UI must load after chat');
+  assert.ok(pushReady > authReady, 'native push readiness must run after chat/auth UI');
+  assert.ok(healthCommit > pushReady, 'pending bundle must become healthy only after full native bootstrap succeeds');
+});
+
+test('native update-check failure is non-blocking for an already-running verified bundle', () => {
+  const source = read('public/mobile-bootstrap.js');
+  const sync = source.indexOf('await WebBundle.syncAndActivate');
+  const warning = source.indexOf("console.warn('[DizyChat] web bundle update check failed'");
+  const restore = source.indexOf('await auth.restoreNativeSession()');
+
+  assert.ok(sync >= 0, 'native update check must run');
+  assert.ok(warning > sync, 'update failure must be caught and downgraded to a warning');
+  assert.ok(restore > warning, 'normal app bootstrap must continue after a failed update check');
+});
+
 test('Android build prepares only canonical tiny-shell assets before Capacitor sync', () => {
   const scriptPath = path.join(root, 'scripts/prepare-android-assets.js');
   assert.equal(fs.existsSync(scriptPath), true, 'Android asset preparation script must exist');
