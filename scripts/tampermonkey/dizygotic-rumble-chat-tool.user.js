@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dizygotic Rumble Chat Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.12.7
+// @version      1.12.9
 // @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + transcript recorder/export + automated curated burn memory + outgoing message styling + auto-burn + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.
 // @author       Dizygotic
 // @match        https://rumble.com/*
@@ -51,6 +51,9 @@
     let chatStorageMode = "loading";
     let chatStorageLastError = "";
     let pendingChatWrites = [];
+    let curatedBackfillInProgress = false;
+    let curatedBackfillPromise = null;
+    let pendingLiveCuratedRecords = [];
     let curatedBurnStore = (() => {
         try {
             const parsed = JSON.parse(localStorage.getItem(CURATED_BURNS_KEY) || "null");
@@ -404,7 +407,11 @@
         pendingChatWrites.push(record);
         updateChatStorageStatus();
         maybeLearnSelfNickname(record);
-        ingestCuratedRecord(record);
+        if (settings.curatedBurnsEnabled && (chatStorageHydrating || curatedBackfillInProgress)) {
+            pendingLiveCuratedRecords.push(record);
+        } else {
+            ingestCuratedRecord(record);
+        }
         scheduleChatLogSave();
     }
 
@@ -544,7 +551,7 @@
             chatStorageMode = "indexeddb";
             chatStorageLastError = "";
             updateChatStorageStatus();
-            backfillCuratedBurnsFromTranscript();
+            await backfillCuratedBurnsFromTranscript();
         }
 
         return {
@@ -1408,27 +1415,50 @@
 
     async function backfillCuratedBurnsFromTranscript() {
         if (!settings.curatedBurnsEnabled || !chatLog.length) return;
-        const lastProcessed = Number(curatedBurnStore.lastProcessedSeq) || 0;
-        const pending = chatLog.filter((record) => (Number(record.seq) || 0) > lastProcessed);
-        if (!pending.length) return;
-        const touched = new Set();
-        const yieldEvery = 250;
-        for (let index = 0; index < pending.length; index += 1) {
-            const record = pending[index];
-            ingestCuratedRecord(record, { deferSave: true, deferCurate: true });
-            if (record?.username) touched.add(String(record.username).toLowerCase());
-            if ((index + 1) % yieldEvery === 0) {
-                await new Promise((resolve) => setTimeout(resolve, 0));
+        if (curatedBackfillPromise) return curatedBackfillPromise;
+
+        curatedBackfillPromise = (async () => {
+            const yieldEvery = 250;
+            curatedBackfillInProgress = true;
+            try {
+                while (settings.curatedBurnsEnabled) {
+                    const lastProcessed = Number(curatedBurnStore.lastProcessedSeq) || 0;
+                    const pending = chatLog.filter((record) => (Number(record.seq) || 0) > lastProcessed);
+                    if (!pending.length) break;
+
+                    const touched = new Set();
+                    for (let index = 0; index < pending.length; index += 1) {
+                        const record = pending[index];
+                        ingestCuratedRecord(record, { deferSave: true, deferCurate: true });
+                        if (record?.username) touched.add(String(record.username).toLowerCase());
+                        if ((index + 1) % yieldEvery === 0) {
+                            await new Promise((resolve) => setTimeout(resolve, 0));
+                        }
+                    }
+
+                    let finalized = 0;
+                    for (const username of touched) {
+                        const profile = curatedBurnStore.users[username];
+                        if (profile && profile.messageCount >= Math.max(3, Number(settings.curatedBurnMinMessages) || 8)) regenerateCuratedBurns(profile);
+                        finalized += 1;
+                        if (finalized % 50 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+                    }
+                    saveCuratedBurnStore();
+                }
+
+                const queuedLiveRecords = pendingLiveCuratedRecords.splice(0);
+                queuedLiveRecords.sort((a, b) => (Number(a.seq) || 0) - (Number(b.seq) || 0));
+                queuedLiveRecords.forEach((record) => ingestCuratedRecord(record));
+            } finally {
+                curatedBackfillInProgress = false;
             }
+        })();
+
+        try {
+            return await curatedBackfillPromise;
+        } finally {
+            curatedBackfillPromise = null;
         }
-        let finalized = 0;
-        for (const username of touched) {
-            const profile = curatedBurnStore.users[username];
-            if (profile && profile.messageCount >= Math.max(3, Number(settings.curatedBurnMinMessages) || 8)) regenerateCuratedBurns(profile);
-            finalized += 1;
-            if (finalized % 50 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
-        }
-        saveCuratedBurnStore();
     }
 
     function clearCuratedBurns(options = {}) {
