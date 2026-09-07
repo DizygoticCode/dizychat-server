@@ -18,75 +18,18 @@ jobs:
         with:
           ref: fix/rumble-hydration-yield
           fetch-depth: 0
-      - name: Patch automatic transcript backfill
-        shell: bash
+      - name: Apply guarded patch
+        run: python3 scripts/patch-rumble-hydration-yield.py
+      - name: Verify userscript
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          source_path = Path('scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js')
-          source = source_path.read_text(encoding='utf-8')
-
-          old_call = '                backfillCuratedBurnsFromTranscript();'
-          new_call = '                await backfillCuratedBurnsFromTranscript();'
-          if source.count(old_call) != 1:
-              raise SystemExit(f'expected exactly one hydrate backfill call, found {source.count(old_call)}')
-          source = source.replace(old_call, new_call, 1)
-
-          start_needle = '    function backfillCuratedBurnsFromTranscript() {'
-          end_needle = '    function clearCuratedBurns(options = {}) {'
-          start = source.find(start_needle)
-          end = source.find(end_needle, start + len(start_needle))
-          if start < 0 or end <= start:
-              raise SystemExit(f'backfill boundaries not found: start={start}, end={end}')
-
-          new_backfill = '''    async function backfillCuratedBurnsFromTranscript() {
-              if (!settings.curatedBurnsEnabled || !chatLog.length) return;
-              const lastProcessed = Number(curatedBurnStore.lastProcessedSeq) || 0;
-              const pending = chatLog.filter((record) => (Number(record.seq) || 0) > lastProcessed);
-              if (!pending.length) return;
-              const touched = new Set();
-              const yieldEvery = 250;
-              for (let index = 0; index < pending.length; index += 1) {
-                  const record = pending[index];
-                  ingestCuratedRecord(record, { deferSave: true, deferCurate: true });
-                  if (record?.username) touched.add(String(record.username).toLowerCase());
-                  if ((index + 1) % yieldEvery === 0) {
-                      await new Promise((resolve) => setTimeout(resolve, 0));
-                  }
-              }
-              let finalized = 0;
-              for (const username of touched) {
-                  const profile = curatedBurnStore.users[username];
-                  if (profile && profile.messageCount >= Math.max(3, Number(settings.curatedBurnMinMessages) || 8)) regenerateCuratedBurns(profile);
-                  finalized += 1;
-                  if (finalized % 50 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
-              }
-              saveCuratedBurnStore();
-          }
-
-'''
-          source = source[:start] + new_backfill + source[end:]
-
-          if source.count('// @version      1.12.6') != 1:
-              raise SystemExit('expected userscript version 1.12.6')
-          source = source.replace('// @version      1.12.6', '// @version      1.12.7', 1)
-          source_path.write_text(source, encoding='utf-8')
-
-          version_path = Path('scripts/tests/rumble-userscript-version-source.test.mjs')
-          version_test = version_path.read_text(encoding='utf-8')
-          version_test = version_test.replace('v1.12.6 with intelligent bounded Burn Bot memory', 'v1.12.7 with cooperative transcript hydration')
-          version_test = version_test.replace('1\\.12\\.6', '1\\.12\\.7')
-          version_path.write_text(version_test, encoding='utf-8')
-          PY
           node --check scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
           node --test scripts/tests/*.test.mjs
-          rm .github/workflows/patch-rumble-hydration-yield.yml
-      - name: Commit patch
-        shell: bash
+      - name: Commit clean patch
         run: |
+          rm .github/workflows/patch-rumble-hydration-yield.yml
+          rm scripts/patch-rumble-hydration-yield.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js scripts/tests/rumble-userscript-version-source.test.mjs .github/workflows/patch-rumble-hydration-yield.yml
+          git add -A
           git commit -m "fix: yield automatic transcript backfill"
           git push origin HEAD:fix/rumble-hydration-yield
