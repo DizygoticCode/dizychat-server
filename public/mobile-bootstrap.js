@@ -24,37 +24,57 @@
   });
 
   try {
-    await loadScript('/iphone-install.js');
+    const runtime = window.dizychatMobileRuntime;
+    if (!runtime) throw new Error('Mobile runtime is unavailable.');
+    const isNative = runtime.isNativeRuntime(window);
+
+    if (!isNative) {
+      await loadScript('/iphone-install.js');
+    }
+
+    if (isNative) {
+      const WebBundle = window.Capacitor?.Plugins?.WebBundle;
+      if (WebBundle?.syncAndActivate) {
+        try {
+          const updateResult = await WebBundle.syncAndActivate({
+            backendUrl: window.dizychatConfig?.defaultNativeBackendUrl,
+          });
+          if (updateResult?.reloading) return;
+        } catch (error) {
+          console.warn('[DizyChat] web bundle update check failed', error);
+        }
+      }
+    }
 
     const auth = window.dizychatAuthV2;
     if (typeof auth?.restoreNativeSession === 'function') {
       await auth.restoreNativeSession();
     }
 
-    const runtime = window.dizychatMobileRuntime;
-    if (!runtime) throw new Error('Mobile runtime is unavailable.');
-
     const backend = runtime.resolveBackendOrigin(window, window.dizychatConfig);
     runtime.installBackendFetchRouting(window, backend);
     runtime.installNativeMediaPermissions(window);
 
     if (backend) window.dizychatConfig.socketUrl = backend;
+    if (isNative && !backend) throw new Error('Native backend is not configured.');
 
-    const socketClientUrl = runtime.isNativeRuntime(window)
-      ? '/vendor/socket.io.min.js'
+    const socketClientUrl = isNative
+      ? `${backend}/socket.io/socket.io.js`
       : '/socket.io/socket.io.js';
     await loadScript(socketClientUrl);
 
-    await loadScript('/browser-notifications.js');
-    const browserNotificationRuntime = window.dizychatBrowserNotifications;
-    if (browserNotificationRuntime?.createBrowserNotificationController) {
-      const browserNotificationController = browserNotificationRuntime.createBrowserNotificationController(window);
-      window.dizychatBrowserNotificationController = browserNotificationController;
-      browserNotificationRuntime.decorateIoFactory(window, browserNotificationController);
+    if (!isNative) {
+      await loadScript('/browser-notifications.js');
+      const browserNotificationRuntime = window.dizychatBrowserNotifications;
+      if (browserNotificationRuntime?.createBrowserNotificationController) {
+        const browserNotificationController = browserNotificationRuntime.createBrowserNotificationController(window);
+        window.dizychatBrowserNotificationController = browserNotificationController;
+        browserNotificationRuntime.decorateIoFactory(window, browserNotificationController);
+      }
     }
 
     let pushController = null;
-    if (runtime.isNativeRuntime(window)) {
+    if (isNative) {
       await loadScript('/mobile-push-runtime.js');
       const pushRuntime = window.dizychatMobilePushRuntime;
       if (pushRuntime?.createPushController) {
