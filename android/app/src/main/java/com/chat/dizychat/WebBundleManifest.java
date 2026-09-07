@@ -4,7 +4,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -147,8 +146,8 @@ public final class WebBundleManifest {
 
         final String decoded;
         try {
-            decoded = URLDecoder.decode(value, StandardCharsets.UTF_8);
-        } catch (IllegalArgumentException error) {
+            decoded = URLDecoder.decode(value, "UTF-8");
+        } catch (IllegalArgumentException | java.io.UnsupportedEncodingException error) {
             return false;
         }
         if (decoded.isEmpty() || decoded.startsWith("/") || decoded.contains("\\")) return false;
