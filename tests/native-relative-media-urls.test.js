@@ -76,28 +76,90 @@ test('absolute external, blob, data and unrelated packaged sources are untouched
   }
 });
 
-// Exercise the production DOM renderers, stubbing DOM mechanics only.
-const chat = fs.readFileSync(path.join(__dirname, '../public/chat.js'), 'utf8');
+const defineSrcProperty = (Ctor) => {
+  Object.defineProperty(Ctor.prototype, 'src', {
+    configurable: true,
+    enumerable: true,
+    get() { return this._src || ''; },
+    set(value) { this._src = value; },
+  });
+};
 
-test('every custom emoji DOM src assignment uses the shared native-aware media resolver', () => {
-  for (const [pattern, message] of [
-    [/img\.src\s*=\s*resolveMediaSource\(item\.url\)/, 'emoji picker preview'],
-    [/img\.src\s*=\s*resolveMediaSource\(normalizedLink\)/, 'rendered custom emoji message'],
-    [/img\.src\s*=\s*resolveMediaSource\(entry\.preview\s*\|\|\s*entry\.value\)/, 'recent custom emoji preview'],
-    [/img\.src\s*=\s*resolveMediaSource\(group\.emoji\)/, 'custom emoji reaction'],
-  ]) {
-    assert.match(chat, pattern, `${message} must resolve /emojis/... against the configured native backend`);
+const makeDomRoutingWindow = (native) => {
+  class FakeImage {}
+  class FakeMedia {}
+  defineSrcProperty(FakeImage);
+  defineSrcProperty(FakeMedia);
+  class FakeAudio extends FakeMedia {
+    constructor(src) {
+      super();
+      if (src !== undefined) this.src = src;
+    }
   }
+
+  return Object.assign(makeWindow(native), {
+    HTMLImageElement: FakeImage,
+    HTMLMediaElement: FakeMedia,
+    Audio: FakeAudio,
+  });
+};
+
+test('browser DOM media source routing is not installed', () => {
+  const win = makeDomRoutingWindow(false);
+  const OriginalAudio = win.Audio;
+  assert.equal(runtime.installNativeMediaSourceRouting(win), false);
+  assert.equal(win.Audio, OriginalAudio);
+
+  const img = new win.HTMLImageElement();
+  img.src = '/emojis/custom/cat-potatoes.gif';
+  assert.equal(img.src, '/emojis/custom/cat-potatoes.gif');
+
+  const tone = new win.Audio('/newmessage.wav');
+  assert.equal(tone.src, '/newmessage.wav');
 });
 
-test('notification sound DOM source uses the shared native-aware media resolver', () => {
-  assert.match(
-    chat,
-    /new Audio\(resolveMediaSource\(NOTIFICATION_SOUND_SRC\)\)/,
-    'notification sound must resolve /newmessage.wav against the configured native backend',
-  );
+test('native DOM media source routing fixes emoji images and notification audio at the shared boundary', () => {
+  const win = makeDomRoutingWindow(true);
+  assert.equal(runtime.installNativeMediaSourceRouting(win), true);
+
+  const pickerImage = new win.HTMLImageElement();
+  pickerImage.src = '/emojis/custom/cat-potatoes.gif';
+  assert.equal(pickerImage.src, `${backend}/emojis/custom/cat-potatoes.gif`);
+
+  const renderedImage = new win.HTMLImageElement();
+  renderedImage.src = 'https://localhost/emojis/custom/reaction.gif';
+  assert.equal(renderedImage.src, `${backend}/emojis/custom/reaction.gif`);
+
+  const uploadedAudio = new win.HTMLMediaElement();
+  uploadedAudio.src = '/uploads/voice.webm';
+  assert.equal(uploadedAudio.src, `${backend}/uploads/voice.webm`);
+
+  const soundboardAudio = new win.HTMLMediaElement();
+  soundboardAudio.src = '/soundboards/clip.mp3';
+  assert.equal(soundboardAudio.src, `${backend}/soundboards/clip.mp3`);
+
+  const externalImage = new win.HTMLImageElement();
+  externalImage.src = 'https://external.example/reaction.gif';
+  assert.equal(externalImage.src, 'https://external.example/reaction.gif');
+
+  const tone = new win.Audio('/newmessage.wav');
+  assert.equal(tone.src, `${backend}/newmessage.wav`);
+
+  assert.equal(runtime.installNativeMediaSourceRouting(win), true, 'installer is idempotent');
+  const secondTone = new win.Audio('/newmessage.wav');
+  assert.equal(secondTone.src, `${backend}/newmessage.wav`);
 });
 
+const bootstrap = fs.readFileSync(path.join(__dirname, '../public/mobile-bootstrap.js'), 'utf8');
+test('native DOM media routing is installed before chat.js executes', () => {
+  const installAt = bootstrap.indexOf('runtime.installNativeMediaSourceRouting(window);');
+  const chatAt = bootstrap.indexOf("await loadScript('/chat.js');");
+  assert.ok(installAt >= 0, 'mobile bootstrap must install DOM media routing');
+  assert.ok(chatAt > installAt, 'DOM media routing must be active before chat.js creates emoji/audio elements');
+});
+
+// Exercise the existing production attachment/lightbox renderers, stubbing DOM mechanics only.
+const chat = fs.readFileSync(path.join(__dirname, '../public/chat.js'), 'utf8');
 const section = (start, end) => {
   const from = chat.indexOf(start), to = chat.indexOf(end, from);
   assert.ok(from >= 0 && to > from);
