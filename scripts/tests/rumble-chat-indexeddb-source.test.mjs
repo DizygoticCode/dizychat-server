@@ -63,6 +63,17 @@ test("clear, export and curated rebuild operate on the full IndexedDB-backed his
   assert.doesNotMatch(backfill, /slice\(-5000\)/);
 });
 
+test("automatic curated backfill yields between bounded batches instead of freezing the Rumble page", () => {
+  const hydrate = between("async function initializeChatTranscriptStorage()", "let chatLogSaveTimer = null;");
+  const backfill = between("function backfillCuratedBurnsFromTranscript()", "function clearCuratedBurns(options = {})");
+  assert.match(source, /const CURATED_BACKFILL_BATCH_SIZE = \d+;/);
+  assert.match(source, /async function backfillCuratedBurnsFromTranscript\(\)/);
+  assert.match(hydrate, /await backfillCuratedBurnsFromTranscript\(\);/);
+  assert.doesNotMatch(backfill, /pending\.forEach\(/);
+  assert.match(backfill, /for \(let index = 0; index < pending\.length; index \+= CURATED_BACKFILL_BATCH_SIZE\)/);
+  assert.match(backfill, /await new Promise\(\(resolve\) => setTimeout\(resolve, 0\)\)/);
+});
+
 test("boot prepares IndexedDB sequence state without hydrating history and panel opens hydration", () => {
   assert.match(source, /id="chatStorageStatus"/);
   assert.match(source, /chatStorageSummaryText\(\)/);
