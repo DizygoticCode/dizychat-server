@@ -4,16 +4,18 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
-const socketIoEntry = require.resolve('socket.io');
-const socketIoRoot = path.resolve(path.dirname(socketIoEntry), '..');
-const source = path.join(socketIoRoot, 'client-dist', 'socket.io.min.js');
-const targetDir = path.join(root, 'public/vendor');
-const target = path.join(targetDir, 'socket.io.min.js');
+const copies = [
+  ['public/app-config.js', 'android-shell/app-config.js'],
+  ['public/logo.svg', 'android-shell/logo.svg'],
+];
 
-if (!fs.existsSync(source)) {
-  throw new Error(`Socket.IO browser client not found at ${source}`);
+for (const [sourcePath, targetPath] of copies) {
+  const source = path.join(root, sourcePath);
+  const target = path.join(root, targetPath);
+  if (!fs.existsSync(source)) {
+    throw new Error(`Required Android shell source not found: ${sourcePath}`);
+  }
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.copyFileSync(source, target);
+  console.log(`Prepared Android shell asset: ${targetPath}`);
 }
-
-fs.mkdirSync(targetDir, { recursive: true });
-fs.copyFileSync(source, target);
-console.log(`Prepared Android Socket.IO client: ${target}`);
