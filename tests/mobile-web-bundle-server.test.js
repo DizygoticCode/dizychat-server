@@ -151,3 +151,16 @@ test('mobile bundle router serves only manifest-approved assets with no-store ma
     assert.ok([400, 404].includes(response.status), `${forbidden} returned ${response.status}`);
   }
 });
+
+test('mobile web router is mounted before server-core registers its GET catch-all', () => {
+  const source = fs.readFileSync(path.join(repoRoot, 'index.js'), 'utf8');
+  const captureStart = source.indexOf('http.createServer = function captureDizyChatApp');
+  const earlyMount = source.indexOf("requestListener.use('/api/mobile-web'");
+  const serverCoreLoad = source.indexOf("require('./server-core')");
+  const lateMount = source.indexOf("app.use('/api/mobile-web'");
+
+  assert.ok(captureStart >= 0, 'index.js must intercept server-core app creation');
+  assert.ok(earlyMount > captureStart, 'mobile web router must mount during app capture');
+  assert.ok(earlyMount < serverCoreLoad, 'mobile web router must mount before server-core registers routes');
+  assert.equal(lateMount, -1, 'mobile web router must not be mounted after server-core catch-all registration');
+});
