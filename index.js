@@ -29,7 +29,12 @@ const originalCreateSessionStore = sessionStoreModule.createSessionStore;
 const originalCreateMobileSessionService = mobileSessionServiceModule.createMobileSessionService;
 
 http.createServer = function captureDizyChatApp(requestListener, ...args) {
-  if (!app && typeof requestListener === 'function') app = requestListener;
+  if (!app && typeof requestListener === 'function') {
+    app = requestListener;
+    requestListener.use('/api/mobile-web', createMobileWebBundleRouter({
+      publicDir: path.join(__dirname, 'public'),
+    }));
+  }
   return originalCreateServer.call(this, requestListener, ...args);
 };
 
@@ -95,8 +100,4 @@ app.use('/api/auth', createPublicAuthRouter({
   accountService,
   passwordResetService,
   resolveAccountSessionToken,
-}));
-
-app.use('/api/mobile-web', createMobileWebBundleRouter({
-  publicDir: path.join(__dirname, 'public'),
 }));
