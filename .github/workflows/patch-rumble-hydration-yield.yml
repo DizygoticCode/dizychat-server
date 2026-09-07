@@ -33,23 +33,13 @@ jobs:
               raise SystemExit(f'expected exactly one hydrate backfill call, found {source.count(old_call)}')
           source = source.replace(old_call, new_call, 1)
 
-          old_backfill = '''    function backfillCuratedBurnsFromTranscript() {
-              if (!settings.curatedBurnsEnabled || !chatLog.length) return;
-              const lastProcessed = Number(curatedBurnStore.lastProcessedSeq) || 0;
-              const pending = chatLog.filter((record) => (Number(record.seq) || 0) > lastProcessed);
-              if (!pending.length) return;
-              const touched = new Set();
-              pending.forEach((record) => {
-                  ingestCuratedRecord(record, { deferSave: true, deferCurate: true });
-                  if (record?.username) touched.add(String(record.username).toLowerCase());
-              });
-              touched.forEach((username) => {
-                  const profile = curatedBurnStore.users[username];
-                  if (profile && profile.messageCount >= Math.max(3, Number(settings.curatedBurnMinMessages) || 8)) regenerateCuratedBurns(profile);
-              });
-              saveCuratedBurnStore();
-          }
-          '''
+          start_needle = '    function backfillCuratedBurnsFromTranscript() {'
+          end_needle = '    function clearCuratedBurns(options = {}) {'
+          start = source.find(start_needle)
+          end = source.find(end_needle, start + len(start_needle))
+          if start < 0 or end <= start:
+              raise SystemExit(f'backfill boundaries not found: start={start}, end={end}')
+
           new_backfill = '''    async function backfillCuratedBurnsFromTranscript() {
               if (!settings.curatedBurnsEnabled || !chatLog.length) return;
               const lastProcessed = Number(curatedBurnStore.lastProcessedSeq) || 0;
@@ -74,10 +64,9 @@ jobs:
               }
               saveCuratedBurnStore();
           }
-          '''
-          if source.count(old_backfill) != 1:
-              raise SystemExit(f'expected exactly one synchronous backfill body, found {source.count(old_backfill)}')
-          source = source.replace(old_backfill, new_backfill, 1)
+
+'''
+          source = source[:start] + new_backfill + source[end:]
 
           if source.count('// @version      1.12.6') != 1:
               raise SystemExit('expected userscript version 1.12.6')
