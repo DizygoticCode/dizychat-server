@@ -4,6 +4,7 @@
 // entrypoint wires the small public-auth boundary around its existing app and
 // session authorities.
 const http = require('http');
+const path = require('node:path');
 const User = require('./src/models/user');
 const accountServiceModule = require('./src/auth/account-service');
 const sessionStoreModule = require('./src/auth/session-store');
@@ -11,6 +12,7 @@ const mobileSessionServiceModule = require('./src/auth/mobile-session-service');
 const { createResendPasswordResetMailer } = require('./src/auth/resend-password-reset-mailer');
 const { createPasswordResetService } = require('./src/auth/password-reset-service');
 const { createPublicAuthRouter } = require('./src/auth/public-auth-router');
+const { createMobileWebBundleRouter } = require('./src/mobile-web/public-bundle-router');
 
 const nodeFetchModulePromise = import('node-fetch');
 const fetch = (...args) =>
@@ -93,4 +95,8 @@ app.use('/api/auth', createPublicAuthRouter({
   accountService,
   passwordResetService,
   resolveAccountSessionToken,
+}));
+
+app.use('/api/mobile-web', createMobileWebBundleRouter({
+  publicDir: path.join(__dirname, 'public'),
 }));
