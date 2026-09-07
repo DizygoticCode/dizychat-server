@@ -16,10 +16,42 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
+  patch:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/fix/rumble-hydration-live-race'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/rumble-hydration-live-race
+          fetch-depth: 0
+      - name: Apply single-flight repair
+        run: |
+          python3 scripts/maintenance/tmp_patch_rumble_singleflight.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/tests/rumble-userscript-version-source.test.mjs')
+          p.write_text(p.read_text().replace(r'1\.12\.8', r'1\.12\.9'))
+          PY
+      - name: Validate repaired source
+        run: |
+          node --check scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
+          node --test scripts/tests/rumble-chat-backfill-singleflight-source.test.mjs scripts/tests/rumble-chat-indexeddb-source.test.mjs scripts/tests/rumble-userscript-version-source.test.mjs
+      - name: Restore normal CI and push real changes
+        run: |
+          git fetch origin main
+          git checkout origin/main -- .github/workflows/rumble-userscript-ci.yml
+          rm scripts/maintenance/tmp_patch_rumble_singleflight.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js scripts/tests .github/workflows/rumble-userscript-ci.yml scripts/maintenance/tmp_patch_rumble_singleflight.py
+          git commit -m 'fix: serialize overlapping curated transcript backfills'
+          git push origin HEAD:fix/rumble-hydration-live-race
+
   verify:
+    if: github.event_name != 'push' || github.ref != 'refs/heads/fix/rumble-hydration-live-race'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
