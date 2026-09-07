@@ -36,6 +36,21 @@ for (const source of [
   });
 }
 
+test('native media also recovers app-origin media URLs already resolved against Capacitor localhost', () => {
+  const win = makeWindow(true);
+  for (const source of [
+    'https://localhost/uploads/picture.png?version=2#preview',
+    'https://localhost/soundboards/clip.mp3',
+    'https://localhost/emojis/custom/cat-potatoes.gif',
+  ]) {
+    const parsed = new URL(source);
+    assert.equal(
+      runtime.resolveMediaUrl(source, win),
+      `${backend}${parsed.pathname}${parsed.search}${parsed.hash}`,
+    );
+  }
+});
+
 test('native media uses the existing backend override and preserves missing-config fallback', () => {
   const win = makeWindow(true);
   win.dizychatConfig.backendUrlStorageKey = 'existing-backend-key';
@@ -47,7 +62,7 @@ test('native media uses the existing backend override and preserves missing-conf
   assert.equal(runtime.resolveMediaUrl('/emojis/custom/a.gif', win), '/emojis/custom/a.gif');
 });
 
-test('absolute, external, blob, data and unrelated packaged sources are untouched', () => {
+test('absolute external, blob, data and unrelated packaged sources are untouched', () => {
   for (const native of [false, true]) {
     for (const source of [backend + '/uploads/a.png', 'https://external.example/a.mp3',
       '//external.example/uploads/a.png', 'blob:https://localhost/id', 'data:image/png;base64,AAAA',
@@ -60,17 +75,15 @@ test('absolute, external, blob, data and unrelated packaged sources are untouche
 // Exercise the production DOM renderers, stubbing DOM mechanics only.
 const chat = fs.readFileSync(path.join(__dirname, '../public/chat.js'), 'utf8');
 
-test('custom emoji DOM src assignments use the shared native-aware media resolver', () => {
-  assert.match(
-    chat,
-    /img\.src\s*=\s*resolveMediaSource\(item\.url\)/,
-    'emoji picker preview must resolve /emojis/... against the configured native backend',
-  );
-  assert.match(
-    chat,
-    /img\.src\s*=\s*resolveMediaSource\(normalizedLink\)/,
-    'rendered custom emoji messages must resolve /emojis/... against the configured native backend',
-  );
+test('every custom emoji DOM src assignment uses the shared native-aware media resolver', () => {
+  for (const [pattern, message] of [
+    [/img\.src\s*=\s*resolveMediaSource\(item\.url\)/, 'emoji picker preview'],
+    [/img\.src\s*=\s*resolveMediaSource\(normalizedLink\)/, 'rendered custom emoji message'],
+    [/img\.src\s*=\s*resolveMediaSource\(entry\.preview\s*\|\|\s*entry\.value\)/, 'recent custom emoji preview'],
+    [/img\.src\s*=\s*resolveMediaSource\(group\.emoji\)/, 'custom emoji reaction'],
+  ]) {
+    assert.match(chat, pattern, `${message} must resolve /emojis/... against the configured native backend`);
+  }
 });
 
 const section = (start, end) => {
