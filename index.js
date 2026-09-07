@@ -62,6 +62,13 @@ if (!app || !accountService || !accountSessions || !mobileAccountSessions) {
   throw new Error('DizyChat public auth bootstrap could not capture the existing server authorities.');
 }
 
+const resolveAccountSessionToken = async (token) => {
+  if (typeof token !== 'string' || !token) return null;
+  const browserSession = accountSessions.resolve(token);
+  if (browserSession) return browserSession;
+  return mobileAccountSessions.resolve(token);
+};
+
 const passwordResetMailer = {
   sendPasswordReset: async (payload) => {
     const mailer = createResendPasswordResetMailer({
@@ -85,4 +92,5 @@ const passwordResetService = createPasswordResetService({
 app.use('/api/auth', createPublicAuthRouter({
   accountService,
   passwordResetService,
+  resolveAccountSessionToken,
 }));

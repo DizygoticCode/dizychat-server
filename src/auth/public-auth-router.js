@@ -37,9 +37,16 @@ const createRateLimiter = ({ maxAttempts, windowMs, now }) => {
   };
 };
 
+const bearerToken = (req) => {
+  const header = String(req.headers?.authorization || '').trim();
+  const match = /^Bearer\s+(.+)$/i.exec(header);
+  return match ? String(match[1] || '').trim() : '';
+};
+
 const createPublicAuthRouter = ({
   accountService,
   passwordResetService,
+  resolveAccountSessionToken = async () => null,
   now = Date.now,
   logger = console,
 } = {}) => {
@@ -52,6 +59,9 @@ const createPublicAuthRouter = ({
     || typeof passwordResetService.confirmReset !== 'function'
   ) {
     throw new TypeError('passwordResetService request/confirm methods are required');
+  }
+  if (typeof resolveAccountSessionToken !== 'function') {
+    throw new TypeError('resolveAccountSessionToken must be a function');
   }
   if (typeof now !== 'function') throw new TypeError('public auth clock must be a function');
 
@@ -75,6 +85,45 @@ const createPublicAuthRouter = ({
       const status = registrationStatusByCode[code];
       if (status) return res.status(status).json({ ok: false, code });
       logger?.warn?.('[Auth] public registration failed', { code: code || 'unexpected' });
+      return res.status(500).json({ ok: false, code: 'AUTH_UNAVAILABLE' });
+    }
+  });
+
+  router.post('/recovery-email', async (req, res) => {
+    const token = bearerToken(req);
+    if (!token) {
+      return res.status(401).json({ ok: false, code: 'ACCOUNT_AUTH_REQUIRED' });
+    }
+
+    let session = null;
+    try {
+      session = await resolveAccountSessionToken(token);
+    } catch (error) {
+      logger?.warn?.('[Auth] recovery email session lookup failed', {
+        code: String(error?.code || 'unexpected'),
+      });
+    }
+
+    const principal = session?.principal;
+    if (!principal || principal.kind !== 'account') {
+      return res.status(401).json({ ok: false, code: 'ACCOUNT_AUTH_REQUIRED' });
+    }
+
+    try {
+      if (typeof accountService.updateRecoveryEmail !== 'function') {
+        throw new TypeError('accountService.updateRecoveryEmail is required');
+      }
+      await accountService.updateRecoveryEmail(principal, req.body?.recoveryEmail);
+      return res.json({ ok: true });
+    } catch (error) {
+      const code = String(error?.code || '');
+      if (code === 'ACCOUNT_RECOVERY_EMAIL_INVALID') {
+        return res.status(400).json({ ok: false, code });
+      }
+      if (code === 'ACCOUNT_AUTH_REQUIRED') {
+        return res.status(401).json({ ok: false, code });
+      }
+      logger?.warn?.('[Auth] recovery email update failed', { code: code || 'unexpected' });
       return res.status(500).json({ ok: false, code: 'AUTH_UNAVAILABLE' });
     }
   });

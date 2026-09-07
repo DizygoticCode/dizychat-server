@@ -10,6 +10,7 @@
   <link rel="icon" href="/logo.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/chat.css" />
   <link rel="stylesheet" href="/mobile-toolbar.css" />
+  <link rel="stylesheet" href="/public-auth.css" />
 </head>
 
 <body class="dark">
@@ -26,10 +27,17 @@
       />
       <h1>Welcome to DizyChat</h1>
       <div class="landing-inputs auth-v2-landing">
-        <div class="room-entry-fields" aria-label="Room details">
-          <input id="room-input" placeholder="Enter room name" autocomplete="off" />
-          <input id="room-password" type="password" placeholder="Room password (optional)" autocomplete="current-password" />
-        </div>
+        <section class="room-entry-card" aria-labelledby="room-entry-title">
+          <h2 id="room-entry-title">Choose or create a room</h2>
+          <p>
+            Enter an existing room name to join it, or a new room name to create it. An optional room password makes that room private.
+            Remember or save the room name and room password separately from your DizyChat account details so you can return or share them.
+          </p>
+          <div class="room-entry-fields" aria-label="Room details">
+            <input id="room-input" placeholder="Room name — join existing or create new" autocomplete="off" />
+            <input id="room-password" type="password" placeholder="Room password (optional)" autocomplete="current-password" />
+          </div>
+        </section>
 
         <div class="auth-entry-grid">
           <section id="registered-login" class="auth-entry-card" aria-labelledby="registered-login-title">
@@ -38,8 +46,39 @@
             <input id="account-username" placeholder="Account username" autocomplete="username" />
             <input id="account-password" type="password" placeholder="Account password" autocomplete="current-password" />
             <button id="registered-join-btn" type="button">Sign in to account</button>
+            <div class="auth-entry-actions" aria-label="Registered account options">
+              <button id="create-account-btn" type="button" class="auth-link-button" aria-expanded="false" aria-controls="create-account-panel">Create account</button>
+              <button id="forgot-password-btn" type="button" class="auth-link-button" aria-expanded="false" aria-controls="forgot-password-panel">Forgot password?</button>
+            </div>
             <p id="account-login-status" class="auth-entry-status" aria-live="polite"></p>
             <button id="lobby-account-logout-btn" type="button" hidden>Sign out of registered account</button>
+
+            <div id="create-account-panel" class="auth-subpanel" hidden>
+              <h3>Create account</h3>
+              <input id="register-username" placeholder="Choose username" autocomplete="username" />
+              <input id="register-password" type="password" placeholder="Choose password (8+ characters)" autocomplete="new-password" />
+              <input id="register-password-confirm" type="password" placeholder="Confirm password" autocomplete="new-password" />
+              <input id="register-recovery-email" type="email" placeholder="Recovery email (optional)" autocomplete="email" />
+              <p class="auth-help">Recovery email is optional and is used only for password recovery. No email verification is required.</p>
+              <button id="register-submit-btn" type="button">Create account</button>
+              <p id="register-status" class="auth-entry-status" aria-live="polite"></p>
+            </div>
+
+            <div id="forgot-password-panel" class="auth-subpanel" hidden>
+              <h3>Reset password</h3>
+              <input id="reset-request-username" placeholder="Account username" autocomplete="username" />
+              <p class="auth-help">If that account has a recovery email, DizyChat will email a one-time reset link.</p>
+              <button id="reset-request-submit-btn" type="button">Email reset link</button>
+              <p id="reset-request-status" class="auth-entry-status" aria-live="polite"></p>
+            </div>
+
+            <div id="recovery-email-manage" class="auth-subpanel" hidden>
+              <h3>Add or change recovery email</h3>
+              <p class="auth-help">Set an email for future password recovery. Your saved recovery address is never displayed here.</p>
+              <input id="recovery-email-update" type="email" placeholder="Recovery email" autocomplete="email" />
+              <button id="recovery-email-update-btn" type="button">Save recovery email</button>
+              <p id="recovery-email-status" class="auth-entry-status" aria-live="polite"></p>
+            </div>
           </section>
 
           <section id="guest-login" class="auth-entry-card" aria-labelledby="guest-login-title">
