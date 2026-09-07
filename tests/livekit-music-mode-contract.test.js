@@ -45,6 +45,8 @@ test('client pins LiveKit SDK and publishes raw 48 kHz stereo Music Mode at 510 
 
 test('Music Mode choice is explicit per connection and locked once joining starts', () => {
   assert.match(client, /const requestedMusicMode = callState\.musicModeEnabled === true;/);
+  assert.match(client, /const locked = inCall \|\| callState\.joining;/);
+  assert.match(client, /if \(callState\.room \|\| callState\.joining\)/);
   assert.match(client, /const fetchToken = async \(musicMode\) =>/);
   assert.match(client, /musicMode: musicMode === true/);
   assert.match(client, /tokenPayload\.musicMode !== requestedMusicMode/);
@@ -55,8 +57,8 @@ test('Music Mode choice is explicit per connection and locked once joining start
 });
 
 test('Live Call toolbar icon is red disconnected and green connected', () => {
-  assert.match(css, /#voice-call-btn:not\(\.call-active\)[\s\S]*background:\s*#8a2d2d/);
-  assert.match(css, /#voice-call-btn\.call-active[\s\S]*background:\s*#1f9d55/);
-  assert.doesNotMatch(css, /#voice-call-btn\.call-muted\s*\{[\s\S]*?background:/);
-  assert.doesNotMatch(css, /#voice-call-btn\.call-video-active\s*\{[\s\S]*?background:/);
+  assert.match(css, /#voice-call-btn:not\(\.call-active\)\s*\{[^}]*background:\s*#8a2d2d/);
+  assert.match(css, /#voice-call-btn\.call-active\s*\{[^}]*background:\s*#1f9d55/);
+  assert.doesNotMatch(css, /#voice-call-btn\.call-muted\s*\{[^}]*background:/);
+  assert.doesNotMatch(css, /#voice-call-btn\.call-video-active\s*\{[^}]*background:/);
 });
