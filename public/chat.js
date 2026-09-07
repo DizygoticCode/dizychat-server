@@ -7928,9 +7928,10 @@ if (voiceBtn) {
     return Math.min(1, Math.max(0, numeric));
   };
 
-  const MUSIC_MODE_AUDIO_BITRATE = 320000;
+  const MUSIC_MODE_AUDIO_BITRATE = 510000;
   const MUSIC_MODE_FALLBACK_AUDIO_SETTINGS = Object.freeze({
     channelCount: 2,
+    sampleRate: 48000,
     echoCancellation: false,
     noiseSuppression: false,
     autoGainControl: false,
@@ -7943,6 +7944,7 @@ if (voiceBtn) {
   const callState = {
     sdkLoaded: false,
     room: null,
+    joining: false,
     localTrack: null,
     localLevel: 0,
     localMeter: null,
@@ -8177,19 +8179,20 @@ if (voiceBtn) {
 
   const updateMusicModeUi = (inCall = Boolean(callState.room)) => {
     const hasChoice = callState.musicModeEnabled !== null;
+    const locked = inCall || callState.joining;
     musicModePanel?.classList.toggle("music-mode-selected", hasChoice);
-    musicModePanel?.classList.toggle("music-mode-locked", inCall);
+    musicModePanel?.classList.toggle("music-mode-locked", locked);
     musicModeOffControl?.classList.toggle("active", callState.musicModeEnabled === false);
     musicModeOnControl?.classList.toggle("active", callState.musicModeEnabled === true);
     musicModeOffControl?.setAttribute("aria-pressed", String(callState.musicModeEnabled === false));
     musicModeOnControl?.setAttribute("aria-pressed", String(callState.musicModeEnabled === true));
-    if (musicModeOffControl) musicModeOffControl.disabled = inCall;
-    if (musicModeOnControl) musicModeOnControl.disabled = inCall;
+    if (musicModeOffControl) musicModeOffControl.disabled = locked;
+    if (musicModeOnControl) musicModeOnControl.disabled = locked;
     if (joinControl) joinControl.title = hasChoice ? "Join live call" : "Choose Music mode Off or On before joining.";
   };
 
   const chooseMusicMode = (enabled) => {
-    if (callState.room) {
+    if (callState.room || callState.joining) {
       showToast("Disconnect and join again to change Music mode.", "warn");
       return;
     }
@@ -8198,8 +8201,8 @@ if (voiceBtn) {
     setCallUiState({ inCall: false, muted: false, cameraEnabled: false });
   };
 
-  const getMusicModeAudioSettings = (tokenPayload = {}) => {
-    if (!callState.musicModeEnabled) return null;
+  const getMusicModeAudioSettings = (tokenPayload = {}, musicMode = callState.musicModeEnabled === true) => {
+    if (!musicMode) return null;
     const serverSettings = tokenPayload?.audioSettings && typeof tokenPayload.audioSettings === "object"
       ? tokenPayload.audioSettings
       : {};
@@ -8213,29 +8216,69 @@ if (voiceBtn) {
     };
   };
 
-  const getMicrophoneSettings = (tokenPayload = {}) => {
-    const musicSettings = getMusicModeAudioSettings(tokenPayload);
+  const getMicrophoneSettings = (tokenPayload = {}, musicMode = callState.musicModeEnabled === true) => {
+    const musicSettings = getMusicModeAudioSettings(tokenPayload, musicMode);
     if (musicSettings) {
       return {
-        channelCount: musicSettings.channelCount,
-        echoCancellation: musicSettings.echoCancellation,
-        noiseSuppression: musicSettings.noiseSuppression,
-        autoGainControl: musicSettings.autoGainControl,
+        channelCount: { ideal: musicSettings.channelCount || 2 },
+        sampleRate: { ideal: musicSettings.sampleRate || 48000 },
+        echoCancellation: { exact: false },
+        noiseSuppression: { exact: false },
+        autoGainControl: { exact: false },
       };
     }
     return { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
   };
 
-  const getAudioPublishOptions = (LK, tokenPayload = {}) => {
+  const getAudioPublishOptions = (LK, tokenPayload = {}, musicMode = callState.musicModeEnabled === true) => {
     const options = { source: LK.Track?.Source?.Microphone };
-    const musicSettings = getMusicModeAudioSettings(tokenPayload);
+    const musicSettings = getMusicModeAudioSettings(tokenPayload, musicMode);
     if (!musicSettings) return options;
-    options.audioBitrate = musicSettings.audioBitrate;
-    options.dtx = Boolean(musicSettings.dtx);
-    options.red = Boolean(musicSettings.red);
-    options.forceStereo = musicSettings.forceStereo !== false;
-    options.audioPreset = { maxBitrate: musicSettings.audioBitrate };
+    options.audioBitrate = musicSettings.audioBitrate || MUSIC_MODE_AUDIO_BITRATE;
+    options.dtx = false;
+    options.red = false;
+    options.forceStereo = true;
+    options.audioPreset = { maxBitrate: musicSettings.audioBitrate || MUSIC_MODE_AUDIO_BITRATE };
     return options;
+  };
+
+  const enforceMusicModeCapture = async (track, microphoneSettings) => {
+    const mediaTrack = track?.mediaStreamTrack;
+    if (!mediaTrack) {
+      throw new Error("Music mode could not inspect the captured audio track.");
+    }
+
+    try {
+      if ("contentHint" in mediaTrack) mediaTrack.contentHint = "music";
+    } catch {
+      /* contentHint is advisory; capture processing checks below are authoritative. */
+    }
+
+    const processingKeys = ["echoCancellation", "noiseSuppression", "autoGainControl"];
+    const hasVoiceProcessing = (settings) => processingKeys.some((key) => settings?.[key] === true);
+    let settings = mediaTrack.getSettings?.() || {};
+
+    if (hasVoiceProcessing(settings) && typeof mediaTrack.applyConstraints === "function") {
+      await mediaTrack.applyConstraints(microphoneSettings);
+      settings = mediaTrack.getSettings?.() || {};
+    }
+
+    if (hasVoiceProcessing(settings)) {
+      track.stop?.();
+      throw new Error("Music mode refused to publish because browser voice processing is still enabled.");
+    }
+
+    console.info("[LiveCall] Music mode capture verified", {
+      channelCount: settings.channelCount,
+      sampleRate: settings.sampleRate,
+      echoCancellation: settings.echoCancellation,
+      noiseSuppression: settings.noiseSuppression,
+      autoGainControl: settings.autoGainControl,
+      bitrate: MUSIC_MODE_AUDIO_BITRATE,
+      dtx: false,
+      red: false,
+      forceStereo: true,
+    });
   };
 
   const setCallUiState = ({ inCall = false, muted = false, cameraEnabled = callState.cameraEnabled } = {}) => {
@@ -8247,10 +8290,16 @@ if (voiceBtn) {
     muteControl.disabled = !inCall;
     cameraControl.disabled = !inCall;
     leaveControl.disabled = !inCall;
-    joinControl.disabled = inCall || !hasMusicModeChoice;
+    joinControl.disabled = inCall || callState.joining || !hasMusicModeChoice;
     muteControl.textContent = muted ? "Unmute" : "Mute";
     cameraControl.textContent = cameraEnabled ? "Stop video" : "Add video";
     updateMusicModeUi(inCall);
+  };
+
+  const resetMusicModeChoice = () => {
+    if (callState.room || callState.joining) return;
+    callState.musicModeEnabled = null;
+    setCallUiState({ inCall: false, muted: false, cameraEnabled: false });
   };
 
   const startPanelDrag = (event) => {
@@ -8363,8 +8412,8 @@ if (voiceBtn) {
     }
 
     const sdkSources = [
-      "https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js",
-      "https://unpkg.com/livekit-client/dist/livekit-client.umd.min.js",
+      "https://cdn.jsdelivr.net/npm/livekit-client@2.22.2/dist/livekit-client.umd.min.js",
+      "https://unpkg.com/livekit-client@2.22.2/dist/livekit-client.umd.min.js",
     ];
 
     for (const src of sdkSources) {
@@ -8589,14 +8638,14 @@ if (voiceBtn) {
     }
   };
 
-  const fetchToken = async () => {
+  const fetchToken = async (musicMode) => {
     const res = await fetch("/api/calls/token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         room: window.currentRoom,
         username: window.currentUser,
-        musicMode: callState.musicModeEnabled === true,
+        musicMode: musicMode === true,
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -8659,6 +8708,7 @@ if (voiceBtn) {
       if (callState.room) await callState.room.disconnect();
       callState.localTrack = null;
       callState.room = null;
+      callState.joining = false;
       callState.muted = false;
       callState.cameraEnabled = false;
       callState.participants.clear();
@@ -8666,7 +8716,7 @@ if (voiceBtn) {
       clearRemoteAudioTracks();
       clearRemoteVideoTracks();
       renderPeers();
-      setCallUiState({ inCall: false, muted: false, cameraEnabled: false });
+      resetMusicModeChoice();
       setStatus("Not connected.");
       if (!silent) socket.emit("call:leave", { room: window.currentRoom });
     } catch (error) {
@@ -8679,6 +8729,9 @@ if (voiceBtn) {
       showToast("Please choose Music mode Off or On before starting the call.", "warn");
       return;
     }
+    const requestedMusicMode = callState.musicModeEnabled === true;
+    callState.joining = true;
+    setCallUiState({ inCall: false, muted: false, cameraEnabled: false });
     if (!window.currentRoom || !window.currentUser) {
       showToast("Join a chat room first.", "warn");
       return;
@@ -8688,8 +8741,14 @@ if (voiceBtn) {
     setStatus("Loading voice engine…");
     await ensureSdk();
     setStatus("Requesting call token…");
-    const tokenPayload = await fetchToken();
+    const tokenPayload = await fetchToken(requestedMusicMode);
     if (!tokenPayload?.token || !tokenPayload?.url) throw new Error("Missing LiveKit token or URL from server.");
+    if (tokenPayload.musicMode !== requestedMusicMode) {
+      throw new Error("LiveKit Music mode selection did not match the server token response.");
+    }
+    if (requestedMusicMode && !tokenPayload.audioSettings) {
+      throw new Error("Music mode was requested but the server returned no audio settings.");
+    }
     callState.cameraBlocked = Boolean(tokenPayload.cameraDisabled);
     const LK = getLiveKitClient();
     const room = new LK.Room({ adaptiveStream: true, dynacast: true });
@@ -8735,11 +8794,18 @@ if (voiceBtn) {
         console.warn("[LiveCall] remote audio start warning", error);
       });
     }
-    setStatus(callState.musicModeEnabled ? "Requesting microphone for Music mode…" : "Requesting microphone…");
-    const track = await LK.createLocalAudioTrack(getMicrophoneSettings(tokenPayload));
-    setStatus("Publishing microphone…");
-    await room.localParticipant.publishTrack(track, getAudioPublishOptions(LK, tokenPayload));
+    setStatus(requestedMusicMode ? "Requesting raw stereo microphone for Music mode…" : "Requesting microphone…");
+    const microphoneSettings = getMicrophoneSettings(tokenPayload, requestedMusicMode);
+    const track = await LK.createLocalAudioTrack(microphoneSettings);
+    if (requestedMusicMode) {
+      await enforceMusicModeCapture(track, microphoneSettings);
+      setStatus("Publishing Music mode — Opus stereo 510 kb/s…");
+    } else {
+      setStatus("Publishing microphone…");
+    }
+    await room.localParticipant.publishTrack(track, getAudioPublishOptions(LK, tokenPayload, requestedMusicMode));
     callState.localTrack = track;
+    callState.joining = false;
     callState.muted = false;
     startLocalMeter(track);
     setCallUiState({ inCall: true, muted: false, cameraEnabled: false });
@@ -8786,6 +8852,7 @@ if (voiceBtn) {
   });
 
   voiceCallBtn.addEventListener("click", () => {
+    if (!callState.room && panel.hidden) resetMusicModeChoice();
     panel.hidden = !panel.hidden;
   });
   musicModeOffControl?.addEventListener("click", () => chooseMusicMode(false));
