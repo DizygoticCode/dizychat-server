@@ -16,7 +16,7 @@ const makeWindow = (native, origin = 'https://localhost') => ({
 
 test('browser media keeps its relative value and current-origin resolution, including localhost', () => {
   for (const origin of ['https://web.example', 'https://localhost']) {
-    for (const source of ['/uploads/picture.png', '/soundboards/clip.mp3', '/emojis/custom/reaction.gif']) {
+    for (const source of ['/uploads/picture.png', '/soundboards/clip.mp3', '/emojis/custom/reaction.gif', '/newmessage.wav']) {
       const resolved = runtime.resolveMediaUrl(source, makeWindow(false, origin));
       assert.equal(resolved, source);
       assert.equal(new URL(resolved, origin).origin, origin);
@@ -30,6 +30,7 @@ for (const source of [
   '/uploads/movie.mp4',
   '/soundboards/board/clip%20one.mp3',
   '/emojis/custom/reaction.gif',
+  '/newmessage.wav',
 ]) {
   test(`native media resolves ${source} using existing backend config`, () => {
     assert.equal(runtime.resolveMediaUrl(source, makeWindow(true)), backend + source);
@@ -42,6 +43,7 @@ test('native media also recovers app-origin media URLs already resolved against 
     'https://localhost/uploads/picture.png?version=2#preview',
     'https://localhost/soundboards/clip.mp3',
     'https://localhost/emojis/custom/cat-potatoes.gif',
+    'https://localhost/newmessage.wav',
   ]) {
     const parsed = new URL(source);
     assert.equal(
@@ -57,9 +59,11 @@ test('native media uses the existing backend override and preserves missing-conf
   win.localStorage = { getItem(key) { assert.equal(key, 'existing-backend-key'); return 'https://override.example/'; } };
   assert.equal(runtime.resolveMediaUrl('/uploads/a.png', win), 'https://override.example/uploads/a.png');
   assert.equal(runtime.resolveMediaUrl('/emojis/custom/a.gif', win), 'https://override.example/emojis/custom/a.gif');
+  assert.equal(runtime.resolveMediaUrl('/newmessage.wav', win), 'https://override.example/newmessage.wav');
   win.dizychatConfig = {};
   assert.equal(runtime.resolveMediaUrl('/uploads/a.png', win), '/uploads/a.png');
   assert.equal(runtime.resolveMediaUrl('/emojis/custom/a.gif', win), '/emojis/custom/a.gif');
+  assert.equal(runtime.resolveMediaUrl('/newmessage.wav', win), '/newmessage.wav');
 });
 
 test('absolute external, blob, data and unrelated packaged sources are untouched', () => {
@@ -84,6 +88,14 @@ test('every custom emoji DOM src assignment uses the shared native-aware media r
   ]) {
     assert.match(chat, pattern, `${message} must resolve /emojis/... against the configured native backend`);
   }
+});
+
+test('notification sound DOM source uses the shared native-aware media resolver', () => {
+  assert.match(
+    chat,
+    /new Audio\(resolveMediaSource\(NOTIFICATION_SOUND_SRC\)\)/,
+    'notification sound must resolve /newmessage.wav against the configured native backend',
+  );
 });
 
 const section = (start, end) => {
