@@ -125,7 +125,7 @@ public final class WebBundleStore {
             throw new IllegalStateException("No complete pending bundle to commit");
         }
         state.remove(KEY_PENDING);
-        cleanupOldBundles();
+        if (getPreviousVersion() != null) cleanupOldBundles();
     }
 
     public synchronized File prepareLaunch() throws IOException {
