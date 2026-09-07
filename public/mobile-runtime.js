@@ -69,7 +69,7 @@
   };
 
   const resolveMediaUrl = (value, win = {}) => {
-    if (typeof value !== 'string' || !/^\/(uploads|soundboards)\//.test(value)) return value;
+    if (typeof value !== 'string' || !/^\/(uploads|soundboards|emojis)\//.test(value)) return value;
     // A normal browser on localhost must retain current-origin media URLs.
     try {
       if (!win.Capacitor?.isNativePlatform?.()) return value;
