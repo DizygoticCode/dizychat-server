@@ -76,12 +76,12 @@ test("automatic curated backfill yields during transcript ingestion and profile 
   assert.doesNotMatch(backfill, /touched\.forEach/);
 });
 
-test("live curated records wait behind yielding history and imports await the same backfill", () => {
+test("live curated records wait behind the full hydration window and imports await the same backfill", () => {
   const record = between("function recordChatMessage(el, username, displayName, message)", "async function clearChatLog()");
   const backfill = between("async function backfillCuratedBurnsFromTranscript()", "function clearCuratedBurns(options = {})");
   assert.match(source, /let curatedBackfillInProgress = false;/);
   assert.match(source, /let pendingLiveCuratedRecords = \[\];/);
-  assert.match(record, /if \(curatedBackfillInProgress\)[\s\S]*?pendingLiveCuratedRecords\.push\(record\)[\s\S]*?else[\s\S]*?ingestCuratedRecord\(record\)/);
+  assert.match(record, /if \(settings\.curatedBurnsEnabled && \(chatStorageHydrating \|\| curatedBackfillInProgress\)\)[\s\S]*?pendingLiveCuratedRecords\.push\(record\)[\s\S]*?else[\s\S]*?ingestCuratedRecord\(record\)/);
   assert.match(backfill, /curatedBackfillInProgress = true;/);
   assert.match(backfill, /pendingLiveCuratedRecords\.splice\(0\)/);
   assert.match(backfill, /queuedLiveRecords\.sort\(\(a, b\) => \(Number\(a\.seq\) \|\| 0\) - \(Number\(b\.seq\) \|\| 0\)\)/);
