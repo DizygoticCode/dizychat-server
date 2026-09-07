@@ -27,22 +27,20 @@
     const runtime = window.dizychatMobileRuntime;
     if (!runtime) throw new Error('Mobile runtime is unavailable.');
     const isNative = runtime.isNativeRuntime(window);
+    const WebBundle = isNative ? window.Capacitor?.Plugins?.WebBundle : null;
 
     if (!isNative) {
       await loadScript('/iphone-install.js');
     }
 
-    if (isNative) {
-      const WebBundle = window.Capacitor?.Plugins?.WebBundle;
-      if (WebBundle?.syncAndActivate) {
-        try {
-          const updateResult = await WebBundle.syncAndActivate({
-            backendUrl: window.dizychatConfig?.defaultNativeBackendUrl
-          });
-          if (updateResult?.reloading) return;
-        } catch (error) {
-          console.warn('[DizyChat] web bundle update check failed', error);
-        }
+    if (WebBundle?.syncAndActivate) {
+      try {
+        const updateResult = await WebBundle.syncAndActivate({
+          backendUrl: window.dizychatConfig?.defaultNativeBackendUrl
+        });
+        if (updateResult?.reloading) return;
+      } catch (error) {
+        console.warn('[DizyChat] web bundle update check failed', error);
       }
     }
 
@@ -90,6 +88,7 @@
     await loadScript('/chat.js');
     await loadScript('/public-auth-ui.js');
     if (pushController) await pushController.onChatReady();
+    if (isNative && WebBundle?.markHealthy) await WebBundle.markHealthy();
   } catch (error) {
     console.error('[DizyChat] bootstrap failed', error);
     showBootstrapError(error);
