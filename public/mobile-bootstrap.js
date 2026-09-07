@@ -37,7 +37,7 @@
       if (WebBundle?.syncAndActivate) {
         try {
           const updateResult = await WebBundle.syncAndActivate({
-            backendUrl: window.dizychatConfig?.defaultNativeBackendUrl,
+            backendUrl: window.dizychatConfig?.defaultNativeBackendUrl
           });
           if (updateResult?.reloading) return;
         } catch (error) {
