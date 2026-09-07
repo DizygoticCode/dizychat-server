@@ -8,15 +8,10 @@ const manifestSource = fs.readFileSync(
   'utf8',
 );
 
-test('web bundle path decoding stays compatible with Android 10', () => {
+test('web bundle path decoding avoids URLDecoder on Android 10', () => {
   assert.doesNotMatch(
     manifestSource,
-    /URLDecoder\.decode\(value,\s*StandardCharsets\.UTF_8\)/,
-    'Charset URLDecoder overload is unavailable on Android 10',
-  );
-  assert.match(
-    manifestSource,
-    /URLDecoder\.decode\(value,\s*"UTF-8"\)/,
-    'use the legacy UTF-8 string overload supported by Android 10',
+    /\bURLDecoder\b/,
+    'URLDecoder is rewritten by D8 to a Charset overload that is unavailable on Android 10',
   );
 });
