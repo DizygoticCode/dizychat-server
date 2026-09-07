@@ -3,7 +3,6 @@ package com.chat.dizychat;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.net.URLDecoder;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -144,18 +143,31 @@ public final class WebBundleManifest {
         if (value == null || value.isEmpty() || value.startsWith("/") || value.contains("\\")) return false;
         if (!SAFE_PATH_CHARS.matcher(value).matches() || URI_SCHEME.matcher(value).matches()) return false;
 
-        final String decoded;
-        try {
-            decoded = URLDecoder.decode(value, "UTF-8");
-        } catch (IllegalArgumentException | java.io.UnsupportedEncodingException error) {
-            return false;
-        }
-        if (decoded.isEmpty() || decoded.startsWith("/") || decoded.contains("\\")) return false;
+        String decoded = decodePercentEscapes(value);
+        if (decoded == null || decoded.isEmpty() || decoded.startsWith("/") || decoded.contains("\\")) return false;
         if (!SAFE_DECODED_PATH_CHARS.matcher(decoded).matches() || URI_SCHEME.matcher(decoded).matches()) return false;
         for (String part : decoded.split("/", -1)) {
             if (part.isEmpty() || ".".equals(part) || "..".equals(part)) return false;
         }
         return true;
+    }
+
+    private static String decodePercentEscapes(String value) {
+        StringBuilder decoded = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char current = value.charAt(i);
+            if (current != '%') {
+                decoded.append(current);
+                continue;
+            }
+            if (i + 2 >= value.length()) return null;
+            int high = Character.digit(value.charAt(i + 1), 16);
+            int low = Character.digit(value.charAt(i + 2), 16);
+            if (high < 0 || low < 0) return null;
+            decoded.append((char) ((high << 4) | low));
+            i += 2;
+        }
+        return decoded.toString();
     }
 
     public static String sha256Hex(File file) throws IOException {
