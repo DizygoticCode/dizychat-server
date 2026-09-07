@@ -63,6 +63,19 @@ test("clear, export and curated rebuild operate on the full IndexedDB-backed his
   assert.doesNotMatch(backfill, /slice\(-5000\)/);
 });
 
+test("automatic curated backfill yields during transcript ingestion and profile finalization", () => {
+  const hydrate = between("async function initializeChatTranscriptStorage()", "let chatLogSaveTimer = null;");
+  const backfill = between("async function backfillCuratedBurnsFromTranscript()", "function clearCuratedBurns(options = {})");
+  assert.match(hydrate, /await backfillCuratedBurnsFromTranscript\(\);/);
+  assert.match(backfill, /const yieldEvery = 250;/);
+  assert.match(backfill, /for \(let index = 0; index < pending\.length; index \+= 1\)/);
+  assert.match(backfill, /\(index \+ 1\) % yieldEvery === 0[\s\S]*?setTimeout\(resolve, 0\)/);
+  assert.match(backfill, /for \(const username of touched\)/);
+  assert.match(backfill, /finalized % 50 === 0[\s\S]*?setTimeout\(resolve, 0\)/);
+  assert.doesNotMatch(backfill, /pending\.forEach/);
+  assert.doesNotMatch(backfill, /touched\.forEach/);
+});
+
 test("boot prepares IndexedDB sequence state without hydrating history and panel opens hydration", () => {
   assert.match(source, /id="chatStorageStatus"/);
   assert.match(source, /chatStorageSummaryText\(\)/);

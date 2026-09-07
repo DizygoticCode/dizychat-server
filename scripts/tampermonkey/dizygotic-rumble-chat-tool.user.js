@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dizygotic Rumble Chat Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.12.6
+// @version      1.12.7
 // @description  All-in-one chat tool for Rumble: private dm chat, user blocker + keyword filter + highlights + compact mode + timestamps + notifications + autoscroll lock + collapse long messages + stats + transcript recorder/export + automated curated burn memory + outgoing message styling + auto-burn + export/import + auto-backup. Non-flashing, persistent, draggable settings panel.
 // @author       Dizygotic
 // @match        https://rumble.com/*
@@ -330,7 +330,7 @@
                 chatTranscriptHydrated = true;
                 chatStorageMode = "indexeddb";
                 chatStorageLastError = "";
-                backfillCuratedBurnsFromTranscript();
+                await backfillCuratedBurnsFromTranscript();
                 return chatLog;
             } catch (err) {
                 chatStorageMode = "error";
@@ -1406,20 +1406,28 @@
         }
     }
 
-    function backfillCuratedBurnsFromTranscript() {
+    async function backfillCuratedBurnsFromTranscript() {
         if (!settings.curatedBurnsEnabled || !chatLog.length) return;
         const lastProcessed = Number(curatedBurnStore.lastProcessedSeq) || 0;
         const pending = chatLog.filter((record) => (Number(record.seq) || 0) > lastProcessed);
         if (!pending.length) return;
         const touched = new Set();
-        pending.forEach((record) => {
+        const yieldEvery = 250;
+        for (let index = 0; index < pending.length; index += 1) {
+            const record = pending[index];
             ingestCuratedRecord(record, { deferSave: true, deferCurate: true });
             if (record?.username) touched.add(String(record.username).toLowerCase());
-        });
-        touched.forEach((username) => {
+            if ((index + 1) % yieldEvery === 0) {
+                await new Promise((resolve) => setTimeout(resolve, 0));
+            }
+        }
+        let finalized = 0;
+        for (const username of touched) {
             const profile = curatedBurnStore.users[username];
             if (profile && profile.messageCount >= Math.max(3, Number(settings.curatedBurnMinMessages) || 8)) regenerateCuratedBurns(profile);
-        });
+            finalized += 1;
+            if (finalized % 50 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+        }
         saveCuratedBurnStore();
     }
 
