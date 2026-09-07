@@ -68,6 +68,7 @@
     }
 
     await loadScript('/chat.js');
+    await loadScript('/public-auth-ui.js');
     if (pushController) await pushController.onChatReady();
   } catch (error) {
     console.error('[DizyChat] bootstrap failed', error);
