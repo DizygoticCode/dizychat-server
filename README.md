@@ -69,13 +69,17 @@ See [`docs/android-private-apk.md`](docs/android-private-apk.md) for signing, CI
 ### Rumble companion userscript
 The companion userscript lives at [`scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js`](scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js).
 
-Current userscript version: **1.12.9**.
+The repository source is currently **v1.12.9**.
 
-Install/update page:
+Distribution/source links:
 
-- **Greasy Fork:** https://greasyfork.org/en/scripts/565816-dizygotic-rumble-chat-tool
+- **Greasy Fork listing:** https://greasyfork.org/en/scripts/565816-dizygotic-rumble-chat-tool
+- **Repository source:** [`scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js`](scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js)
+- **Raw userscript:** https://raw.githubusercontent.com/DizygoticCode/dizychat-server/main/scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js
 
 The **Dizygotic Rumble Chat Tool** currently provides blocking/highlighting, keyword filters, compact/timestamp controls, notifications, autoscroll controls, transcript recording/export, IndexedDB-backed transcript history, curated burn-memory tooling, selectable auto-burn engines, outgoing Unicode/font and colour styling, settings import/export/backup, and DizyChat handoff tools. Recent transcript work serializes/yields hydration and curated backfill work so overlapping history processing does not corrupt the in-memory/live record path.
+
+Install with Tampermonkey by installing the Tampermonkey browser extension, opening the Greasy Fork listing or raw `.user.js` source above, reviewing the Rumble-only match scope/dependencies, and accepting the userscript. The floating chat-settings control appears on supported Rumble chat pages once the chat DOM is available.
 
 The Rumble userscript is a companion to DizyChat, not part of the DizyChat server runtime. Its source and deterministic source-contract tests are kept in this repository.
 
@@ -225,17 +229,80 @@ npm test
 
 The repository also contains Android/native contract tests, browser UI tests, iPhone PWA install tests, LiveKit Music Mode tests, push/read-state tests and userscript source-contract tests. CI additionally builds/verifies the signed Android package when the required encrypted signing/Firebase material is available.
 
+## HTTP API highlights
+
+### `GET /version`
+Returns `{ version, build, time }` for client diagnostics.
+
+### `POST /upload`
+Accepts multipart form field `file`. Clean uploads return metadata including the public URL; rejected or antivirus-failed uploads are not promoted into the public upload store.
+
+### `GET /link-preview?url=...`
+Fetches and normalizes preview metadata for an absolute URL.
+
+### `GET /tenor-proxy?url=...`
+Resolves legacy Tenor share URLs to embeddable media through Tenor oEmbed.
+
+### `GET /giphy-search?q=...&limit=24&type=gifs|clips|stickers|emoji|text`
+Returns normalized GIPHY results for the composer picker. `GIPHY_SDK_KEY` stays server-side.
+
+### `GET /soundboard-clips`
+Returns locally curated soundboard clips from `data/soundboards`, with optional search/board filtering.
+
+### `GET /api/jam/status`
+Returns the configured external jam-provider choices.
+
+### `POST /api/jam/session`
+Accepts a provider/room request and returns launch instructions for JackTrip or SonoBus.
+
+## Socket.IO event highlights
+
+| Event | Direction | Purpose |
+| --- | --- | --- |
+| `join room` | Client → Server | Enter a room (optionally password-protected) and trigger history loading. |
+| `chat message` | Client → Server | Send sanitized text/file messages with optional reply snapshots. |
+| `load messages` / `older messages` | Server → Client | Deliver initial and paginated history chunks. |
+| `typing` / `stop typing` | Bidirectional | Broadcast/clear typing indicators with rate limiting. |
+| `message status` | Server → Client | Update delivery/read receipts. |
+| `pin message`, `star message`, `react message`, etc. | Bidirectional | Manage message metadata actions. |
+| `moderate` | Client → Server | Admin mute/block/ban/unban actions. |
+| `call:start`, `call:join`, `call:leave`, `call:end` | Bidirectional | Manage LiveKit-backed room-call lifecycle. |
+| `call:mute-user`, `call:kick-user`, `call:disable-video-user`, `call:enable-video-user` | Client → Server | Admin call moderation. |
+| `watch-party:w2g-create` | Client → Server | Create a Watch2Gether room using the server-side API key. |
+| `room list` | Server → Client | Broadcast public rooms and occupant counts. |
+
+## Soundboard catalog maintenance
+
+To import a curated 101Soundboards board into the local catalog:
+
+```bash
+node scripts/download-101-soundboard.js --board https://www.101soundboards.com/boards/<board-slug>
+```
+
+Metadata is kept in `data/soundboards`; downloaded binaries under `public/soundboards` are intentionally not part of the Git source history. If the source site requires a browser session cookie, the importer supports `SB_101SOUNDBOARDS_COOKIE`.
+
 ## Android release signing
 
 Release signing keys/passwords are never committed. CI reconstructs the keystore only on the ephemeral Actions runner from encrypted repository secrets and verifies the produced APK with Android `apksigner` before exposing the release artifact.
 
 See [`docs/android-private-apk.md`](docs/android-private-apk.md) for the full signing/build/install boundary.
 
+## Deployment notes
+
+- The canonical production deployment is self-hosted behind a reverse proxy; WebSocket upgrades must reach the Node/Socket.IO service.
+- Keep MongoDB, LiveKit, Firebase/FCM and other credentials in protected host/runtime configuration rather than the Git checkout.
+- Provision persistent storage for uploads if files must survive service redeploy/replacement.
+- The Android web-bundle endpoint is part of the production server contract, so deploy frontend assets atomically with the DizyChat service and retain the native client's hash verification/fallback boundary.
+- LiveKit remains a separate realtime-media service; see [`deploy/livekit/README.md`](deploy/livekit/README.md) for the self-hosted network/TLS boundary.
+
 ## Security notes
 
 - Do not commit `.env`, API keys, MongoDB credentials, Firebase service credentials or Android signing material.
 - Upload scanning fails closed: an infected file, scanner error or scan timeout is not promoted into the public upload store.
 - Server authorization remains authoritative for accounts, sessions, room access, moderation and notification actions.
+- User text/filenames are sanitized before persistence/broadcast.
+- Restrict Socket.IO CORS origins with `SOCKET_IO_CORS_ORIGINS` on public deployments.
+- Prefer hashed admin credentials over plaintext compatibility values.
 - Possessing the Android APK does not bypass DizyChat authentication.
 
 ## License
