@@ -1,0 +1,57 @@
+name: Temporary notification bell patch
+
+on:
+  push:
+    branches:
+      - fix/android10-push-priority-bell-state
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/android10-push-priority-bell-state
+      - name: Apply exact bell pressed-state CSS
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('public/chat.css')
+          text = path.read_text()
+          needle = '''.header-right button#toggle-sounds[aria-pressed="true"] {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
+            box-shadow: 0 10px 22px rgba(37, 211, 102, 0.3);
+          }
+          '''
+          addition = needle + '''
+          .header-right button#toggle-desktop-notifications[aria-pressed="true"] {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
+            box-shadow: 0 10px 22px rgba(37, 211, 102, 0.3);
+          }
+          '''
+          if 'button#toggle-desktop-notifications[aria-pressed="true"]' in text:
+              print('bell style already present')
+          else:
+              if text.count(needle) != 1:
+                  raise SystemExit(f'expected exactly one sound pressed-state block, found {text.count(needle)}')
+              path.write_text(text.replace(needle, addition, 1))
+      - name: Commit patch if needed
+        run: |
+          if git diff --quiet -- public/chat.css; then
+            echo "No CSS change needed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/chat.css
+          git commit -m "fix: show enabled notification bell state"
+          git push origin HEAD:fix/android10-push-priority-bell-state
