@@ -39,7 +39,11 @@ const createFcmTransport = ({ projectId = '', messagingFactory } = {}) => {
       if (!messaging || typeof messaging.send !== 'function') {
         throw new TypeError('Firebase messaging client with send() is required');
       }
-      return await messaging.send({ token: targetToken, data });
+      const message = { token: targetToken, data };
+      if (data.type === 'message') {
+        message.android = { priority: 'high' };
+      }
+      return await messaging.send(message);
     } catch (error) {
       const code = String(error?.code || 'messaging/internal-error');
       error.code = code;
