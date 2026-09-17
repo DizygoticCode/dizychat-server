@@ -2157,6 +2157,7 @@ app.post('/api/calls/token', express.json(), (req, res) => {
   const room = normaliseRoomName(req.body?.room);
   const username = normaliseUsername(req.body?.username, '');
   const musicMode = req.body?.musicMode === true;
+  const callSessionId = String(req.body?.callSessionId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48);
   if (!room || !username) {
     res.status(400).json({ error: 'room and username are required.' });
     return;
@@ -2165,7 +2166,7 @@ app.post('/api/calls/token', express.json(), (req, res) => {
   try {
     const token = createLivekitToken({
       room,
-      username,
+      username: callSessionId ? `${username}--${callSessionId}` : username,
       metadata: { room, username, issuedAt: new Date().toISOString(), supportsAudio: true, supportsVideo: true, musicMode },
     });
     const active = getActiveCallSnapshot(room);
@@ -2656,7 +2657,7 @@ const createLivekitToken = ({ room, username, metadata }) => {
       roomJoin: true,
       room,
       canPublish: true,
-      canPublishSources: ['microphone', 'camera'],
+      canPublishSources: ['microphone', 'camera', 'screen_share', 'screen_share_audio'],
       canSubscribe: true,
       canPublishData: true,
     },
