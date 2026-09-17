@@ -73,36 +73,35 @@ test('focus and chat controls stay hidden until visual media exists', () => {
   assert.match(source, /state\.chatButton\.hidden\s*=\s*!presentation\.hasVisuals/);
 });
 
-test('runtime includes focus chat overlays and native LiveKit screen sharing', () => {
+test('runtime includes focus chat overlays and bounded browser screen sharing', () => {
   const source = fs.readFileSync(runtimePath, 'utf8');
   assert.match(source, /dizy-call-message-overlays/);
   assert.match(source, /data-dizy-call-action=["']focus["']/);
   assert.match(source, /data-dizy-call-action=["']chat["']/);
   assert.match(source, /data-dizy-call-action=["']screen["']/);
   assert.match(source, /getDisplayMedia\.call/);
-  assert.match(source, /restrictOwnAudio:\s*true/);
-  assert.match(source, /suppressLocalAudioPlayback:\s*false/);
-  assert.doesNotMatch(source, /suppressLocalAudioPlayback:\s*true/);
-  assert.match(source, /shouldPublishDisplayAudio/);
   assert.match(source, /publishTrack/);
   assert.match(source, /dizy-screen-share/);
   assert.match(source, /source:\s*LK\.Track\.Source\.ScreenShare/);
-  assert.match(source, /source:\s*LK\.Track\.Source\.ScreenShareAudio/);
-  assert.match(source, /audio:\s*\{[^}]*restrictOwnAudio:\s*true/);
-  assert.match(source, /systemAudio:\s*['"]include['"]/);
+  assert.match(source, /audio:\s*false/);
+  assert.match(source, /frameRate:\s*\{\s*ideal:\s*30,\s*max:\s*30\s*\}/);
+  assert.match(source, /width:\s*\{\s*ideal:\s*1280,\s*max:\s*1920\s*\}/);
+  assert.match(source, /height:\s*\{\s*ideal:\s*720,\s*max:\s*1080\s*\}/);
+  assert.match(source, /simulcast:\s*false/);
   assert.match(source, /Capacitor/);
   assert.match(source, /MutationObserver/);
 });
 
-test('screen share previews immediately and does not block the UI on share-audio publication', () => {
+test('screen share previews immediately and publishes video without blocking the UI action', () => {
   const source = fs.readFileSync(runtimePath, 'utf8');
   const previewIndex = source.indexOf('renderLocalScreenTile(stream);');
-  const videoPublishIndex = source.indexOf('publishTrackWithTimeout(participant, videoMediaTrack');
+  const publishDispatchIndex = source.indexOf('void publishScreenVideo({ participant, LK, stream, videoMediaTrack });');
   assert.ok(previewIndex >= 0, 'local screen preview must be rendered');
-  assert.ok(videoPublishIndex > previewIndex, 'local preview must render before LiveKit video publication finishes');
-  assert.match(source, /publishTrackWithTimeout/);
-  assert.match(source, /void publishScreenAudio/);
-  assert.match(source, /publishTrackWithTimeout\(participant, audioMediaTrack/);
+  assert.ok(publishDispatchIndex > previewIndex, 'local preview must render before background LiveKit publication is dispatched');
+  assert.match(source, /state\.screenBusy = false;[\s\S]*void publishScreenVideo/);
+  assert.match(source, /publishTrackWithTimeout\(participant, videoMediaTrack/);
+  assert.doesNotMatch(source, /await publishScreenVideo/);
+  assert.doesNotMatch(source, /publishScreenAudio/);
   assert.doesNotMatch(source, /new LK\.LocalVideoTrack\(videoMediaTrack\)/);
   assert.doesNotMatch(source, /new LK\.LocalAudioTrack\(audioMediaTrack\)/);
 });
