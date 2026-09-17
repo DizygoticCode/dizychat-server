@@ -66,19 +66,41 @@ test('focus and chat controls stay hidden until visual media exists', () => {
   assert.match(source, /state\.chatButton\.hidden\s*=\s*!presentation\.hasVisuals/);
 });
 
-test('runtime includes focus chat overlays and browser display-track screen sharing', () => {
+test('runtime includes focus chat overlays and native LiveKit screen sharing', () => {
   const source = fs.readFileSync(runtimePath, 'utf8');
   assert.match(source, /dizy-call-message-overlays/);
   assert.match(source, /data-dizy-call-action=["']focus["']/);
   assert.match(source, /data-dizy-call-action=["']chat["']/);
   assert.match(source, /data-dizy-call-action=["']screen["']/);
-  assert.match(source, /getDisplayMedia/);
+  assert.match(source, /createLocalScreenTracks/);
   assert.match(source, /publishTrack/);
   assert.match(source, /dizy-screen-share/);
-  assert.match(source, /source:\s*LK\.Track\.Source\.Camera/);
-  assert.match(source, /audio:\s*false/);
+  assert.match(source, /source:\s*LK\.Track\.Source\.ScreenShare/);
+  assert.match(source, /source:\s*LK\.Track\.Source\.ScreenShareAudio/);
+  assert.match(source, /audio:\s*true/);
+  assert.match(source, /systemAudio:\s*['"]include['"]/);
   assert.match(source, /Capacitor/);
   assert.match(source, /MutationObserver/);
+});
+
+test('connected room lifecycle uses an explicit bridge instead of patching SDK internals', () => {
+  const source = fs.readFileSync(runtimePath, 'utf8');
+  const chat = fs.readFileSync(path.join(repoRoot, 'public', 'chat.js'), 'utf8');
+  assert.match(chat, /dizychat:call-room/);
+  assert.match(chat, /publishCallRoomState\(room, LK\)/);
+  assert.match(chat, /publishCallRoomState\(null\)/);
+  assert.match(source, /addEventListener\(['"]dizychat:call-room['"]/);
+  assert.match(source, /bridge\?\.room && bridge\?\.sdk/);
+  assert.doesNotMatch(source, /Room\.prototype\.connect/);
+});
+
+test('server grants native screen sources and uses a per-tab identity suffix', () => {
+  const server = fs.readFileSync(path.join(repoRoot, 'server-core.js'), 'utf8');
+  const chat = fs.readFileSync(path.join(repoRoot, 'public', 'chat.js'), 'utf8');
+  assert.match(server, /'screen_share', 'screen_share_audio'/);
+  assert.match(server, /username:\s*callSessionId \? `\$\{username\}--\$\{callSessionId\}` : username/);
+  assert.match(chat, /sessionStorage\?\.getItem\(key\)/);
+  assert.match(chat, /callSessionId:\s*getCallSessionId\(\)/);
 });
 
 test('bootstrap loads embedded call view immediately after chat client', () => {

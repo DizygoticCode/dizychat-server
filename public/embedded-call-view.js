@@ -109,6 +109,7 @@
       localScreenStream: null,
       localScreenMediaTrack: null,
       localScreenTrack: null,
+      localScreenAudioTrack: null,
       localScreenPublication: null,
       roomHandlersInstalled: false,
       screenBusy: false,
@@ -141,6 +142,10 @@
         screenShareCount: screenTiles.length,
       });
 
+      const chatMain = getChatMain();
+      chatMain?.classList.toggle('dizy-call-audio-only', !presentation.hasVisuals);
+      chatMain?.classList.toggle('dizy-call-has-visuals', presentation.hasVisuals);
+
       stage.dataset.presentation = presentation.mode;
       stage.classList.toggle('has-visuals', presentation.hasVisuals);
       stage.classList.toggle('has-screen-share', presentation.mode === 'screen-share');
@@ -163,11 +168,13 @@
       }
 
       if (state.focusButton) {
+        state.focusButton.hidden = !presentation.hasVisuals;
         state.focusButton.setAttribute('aria-pressed', state.focus ? 'true' : 'false');
         state.focusButton.textContent = state.focus ? 'Exit Focus' : 'Focus';
       }
 
       if (state.chatButton) {
+        state.chatButton.hidden = !presentation.hasVisuals;
         state.chatButton.setAttribute('aria-pressed', state.chatDrawerOpen ? 'true' : 'false');
       }
     };
@@ -387,16 +394,19 @@
       const room = state.room;
       const participant = room?.localParticipant;
       const publishedTrack = state.localScreenTrack;
+      const publishedAudioTrack = state.localScreenAudioTrack;
       const stream = state.localScreenStream;
 
       state.localScreenPublication = null;
       state.localScreenTrack = null;
+      state.localScreenAudioTrack = null;
       state.localScreenMediaTrack = null;
       state.localScreenStream = null;
 
       try {
         if (participant && publishedTrack && typeof participant.unpublishTrack === 'function') {
           await participant.unpublishTrack(publishedTrack, true);
+          if (publishedAudioTrack) await participant.unpublishTrack(publishedAudioTrack, true);
         }
       } catch (error) {
         console.warn('[DizyChat Call] screen unpublish failed', error);
@@ -413,7 +423,7 @@
 
     const startScreenShare = async () => {
       const native = isNativeRuntime(hostWindow);
-      const getDisplayMedia = hostWindow.navigator?.mediaDevices?.getDisplayMedia?.bind(hostWindow.navigator.mediaDevices);
+      const getDisplayMedia = hostWindow.navigator?.mediaDevices?.getDisplayMedia;
       if (!canShareScreen({ native, hasDisplayCapture: Boolean(getDisplayMedia) })) return;
       if (!state.room?.localParticipant || state.screenBusy) return;
 
@@ -421,38 +431,52 @@
       syncPresentation();
 
       let stream = null;
+      let captureTracks = [];
+      let videoTrack = null;
+      let audioTrack = null;
       try {
-        stream = await getDisplayMedia({
-          video: true,
-          audio: false,
+        const LK = state.sdk || hostWindow.LivekitClient || hostWindow.LiveKitClient;
+        if (!LK?.createLocalScreenTracks || !LK?.Track?.Source?.ScreenShare) {
+          throw new Error('LiveKit screen sharing is unavailable.');
+        }
+        captureTracks = await LK.createLocalScreenTracks({
+          audio: true,
+          contentHint: 'detail',
+          systemAudio: 'include',
         });
-        const mediaTrack = stream?.getVideoTracks?.()[0];
-        if (!mediaTrack) throw new Error('No display video track was selected.');
-        if ('contentHint' in mediaTrack) mediaTrack.contentHint = 'detail';
-
-        const LK = state.sdk || hostWindow.LivekitClient;
-        if (!LK?.Track?.Source?.Camera) throw new Error('LiveKit video publishing is unavailable.');
-
-        // The current DizyChat token deliberately permits microphone + camera only. Publish the
-        // display MediaStreamTrack through that existing video permission and tag it by name so
-        // DizyChat clients can present it as screen share without broadening server permissions.
-        const publication = await state.room.localParticipant.publishTrack(mediaTrack, {
-          source: LK.Track.Source.Camera,
-          name: SCREEN_SHARE_TRACK_NAME,
-          simulcast: true,
+        videoTrack = captureTracks.find((track) => track.kind === LK.Track.Kind.Video);
+        audioTrack = captureTracks.find((track) => track.kind === LK.Track.Kind.Audio);
+        if (!videoTrack) throw new Error('No display video track was selected.');
+        const publication = await state.room.localParticipant.publishTrack(videoTrack, {
+          source: LK.Track.Source.ScreenShare, name: SCREEN_SHARE_TRACK_NAME, simulcast: true,
         });
+        if (audioTrack) await state.room.localParticipant.publishTrack(audioTrack, {
+          source: LK.Track.Source.ScreenShareAudio,
+          name: `${SCREEN_SHARE_TRACK_NAME}-audio`,
+        });
+        stream = new hostWindow.MediaStream(captureTracks.map((track) => track.mediaStreamTrack));
 
         state.localScreenStream = stream;
-        state.localScreenMediaTrack = mediaTrack;
+        state.localScreenMediaTrack = videoTrack.mediaStreamTrack;
         state.localScreenPublication = publication;
-        state.localScreenTrack = publication?.track || mediaTrack;
-        mediaTrack.addEventListener?.('ended', () => {
+        state.localScreenTrack = videoTrack;
+        state.localScreenAudioTrack = audioTrack || null;
+        videoTrack.mediaStreamTrack?.addEventListener?.('ended', () => {
           void stopScreenShare({ fromTrackEnded: true });
         }, { once: true });
         renderLocalScreenTile(stream);
       } catch (error) {
+        if (videoTrack) {
+          try { await state.room?.localParticipant?.unpublishTrack?.(videoTrack, true); } catch (_error) { /* best effort rollback */ }
+        }
+        if (audioTrack) {
+          try { await state.room?.localParticipant?.unpublishTrack?.(audioTrack, true); } catch (_error) { /* best effort rollback */ }
+        }
         for (const mediaTrack of stream?.getTracks?.() || []) {
           try { mediaTrack.stop(); } catch (_error) { /* ignore */ }
+        }
+        for (const track of captureTracks) {
+          try { track.stop?.(); } catch (_error) { /* ignore */ }
         }
         if (error?.name !== 'NotAllowedError' && error?.name !== 'AbortError') {
           console.warn('[DizyChat Call] screen share failed', error);
@@ -493,51 +517,18 @@
       syncPresentation();
     };
 
-    const patchLiveKit = () => {
-      const LK = hostWindow.LivekitClient;
-      const Room = LK?.Room;
-      if (!Room?.prototype?.connect) return false;
-      if (Room.prototype.connect.__dizyEmbeddedCallPatched) return true;
-
-      const originalConnect = Room.prototype.connect;
-      const patchedConnect = async function dizyEmbeddedCallConnect(...args) {
-        const result = await originalConnect.apply(this, args);
-        installRoomHandlers(this, LK);
-        return result;
-      };
-      patchedConnect.__dizyEmbeddedCallPatched = true;
-      patchedConnect.__dizyEmbeddedCallOriginal = originalConnect;
-      Room.prototype.connect = patchedConnect;
-      state.sdk = LK;
-      return true;
-    };
-
-    const observeLiveKitLoad = () => {
-      if (patchLiveKit()) return;
-      if (typeof hostWindow.MutationObserver !== 'function') return;
-
-      const observer = new hostWindow.MutationObserver((mutations) => {
-        for (const mutation of mutations) {
-          for (const node of mutation.addedNodes || []) {
-            if (node?.tagName !== 'SCRIPT') continue;
-            const src = String(node.src || '');
-            if (!src.includes('livekit-client')) continue;
-            node.addEventListener('load', () => patchLiveKit(), { once: true });
-          }
-        }
-        if (patchLiveKit()) observer.disconnect();
-      });
-      observer.observe(doc.head, { childList: true });
-
-      let attempts = 0;
-      const timer = hostWindow.setInterval(() => {
-        attempts += 1;
-        if (patchLiveKit() || attempts >= 100) hostWindow.clearInterval(timer);
-      }, 100);
+    const syncRoomBridge = (bridge = hostWindow.dizyCallBridge) => {
+      if (bridge?.room && bridge?.sdk) installRoomHandlers(bridge.room, bridge.sdk);
+      else if (state.room) {
+        state.room = null;
+        setFocus(false);
+        syncPresentation();
+      }
     };
 
     loadStylesheet();
-    observeLiveKitLoad();
+    hostWindow.addEventListener('dizychat:call-room', (event) => syncRoomBridge(event.detail));
+    syncRoomBridge();
 
     if (!findAndAdoptPanel() && typeof hostWindow.MutationObserver === 'function') {
       state.bodyObserver = new hostWindow.MutationObserver(() => {

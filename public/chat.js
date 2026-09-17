@@ -8015,7 +8015,15 @@ if (voiceBtn) {
   const peersEl = panel.querySelector('[data-role="peers"]');
 
   const participantKey = (participant) => participant?.sid || participant?.identity || "";
-  const getDisplayName = (participant) => participant?.identity || "Participant";
+  const getDisplayName = (participant) => {
+    try {
+      const accountName = JSON.parse(participant?.metadata || "{}")?.username;
+      if (accountName) return accountName;
+    } catch (_error) {
+      // Older participants may not have JSON metadata.
+    }
+    return String(participant?.identity || "Participant").split("--")[0];
+  };
 
   const isCurrentCallTarget = (target) => Boolean(
     target && window.currentUser && String(target).trim().toLowerCase() === String(window.currentUser).trim().toLowerCase()
@@ -8645,12 +8653,34 @@ if (voiceBtn) {
       body: JSON.stringify({
         room: window.currentRoom,
         username: window.currentUser,
+        callSessionId: getCallSessionId(),
         musicMode: musicMode === true,
       }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(explainCallSetupError(data, `Token request failed (${res.status})`));
     return data;
+  };
+
+  const getCallSessionId = () => {
+    const key = "dizychat-call-session-id";
+    try {
+      let value = window.sessionStorage?.getItem(key);
+      if (!value) {
+        value = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        window.sessionStorage?.setItem(key, value);
+      }
+      return value;
+    } catch (_error) {
+      return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+  };
+
+  const publishCallRoomState = (room, sdk = getLiveKitClient()) => {
+    window.dizyCallBridge = { room: room || null, sdk: sdk || null };
+    window.dispatchEvent(new CustomEvent("dizychat:call-room", {
+      detail: window.dizyCallBridge,
+    }));
   };
 
   const toggleLocalMute = async () => {
@@ -8708,6 +8738,7 @@ if (voiceBtn) {
       if (callState.room) await callState.room.disconnect();
       callState.localTrack = null;
       callState.room = null;
+      publishCallRoomState(null);
       callState.joining = false;
       callState.muted = false;
       callState.cameraEnabled = false;
@@ -8787,6 +8818,9 @@ if (voiceBtn) {
     });
     setStatus("Connecting to LiveKit…");
     await room.connect(tokenPayload.url, tokenPayload.token, { autoSubscribe: true });
+    // Publish the connected room explicitly. The embedded view must not race SDK loading or
+    // monkey-patch Room.prototype.connect in order to discover call lifecycle state.
+    publishCallRoomState(room, LK);
     room.remoteParticipants?.forEach((participant) => updateParticipant(participant));
     renderPeers();
     if (typeof room.startAudio === "function") {

@@ -22,6 +22,19 @@
   grid-area: users;
 }
 
+#chat-main.dizy-call-layout.dizy-call-audio-only {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas: "call users" "chat users";
+}
+
+#chat-main.dizy-call-layout.dizy-call-audio-only > .dizy-call-stage {
+  border-right: 0;
+  border-bottom: 1px solid rgba(140, 105, 190, 0.28);
+}
+
+.dizy-call-stage .voice-call-drag-hint { display: none !important; }
+
 .dizy-call-stage {
   position: relative;
   display: flex;
