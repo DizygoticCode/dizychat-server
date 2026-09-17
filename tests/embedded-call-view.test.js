@@ -94,6 +94,19 @@ test('runtime includes focus chat overlays and native LiveKit screen sharing', (
   assert.match(source, /MutationObserver/);
 });
 
+test('screen share previews immediately and does not block the UI on share-audio publication', () => {
+  const source = fs.readFileSync(runtimePath, 'utf8');
+  const previewIndex = source.indexOf('renderLocalScreenTile(stream);');
+  const videoPublishIndex = source.indexOf('publishTrack(videoMediaTrack');
+  assert.ok(previewIndex >= 0, 'local screen preview must be rendered');
+  assert.ok(videoPublishIndex > previewIndex, 'local preview must render before LiveKit video publication finishes');
+  assert.match(source, /publishTrackWithTimeout/);
+  assert.match(source, /void publishScreenAudio/);
+  assert.match(source, /publishTrack\(audioMediaTrack/);
+  assert.doesNotMatch(source, /new LK\.LocalVideoTrack\(videoMediaTrack\)/);
+  assert.doesNotMatch(source, /new LK\.LocalAudioTrack\(audioMediaTrack\)/);
+});
+
 test('connected room lifecycle uses an explicit bridge instead of patching SDK internals', () => {
   const source = fs.readFileSync(runtimePath, 'utf8');
   const chat = fs.readFileSync(path.join(repoRoot, 'public', 'chat.js'), 'utf8');
