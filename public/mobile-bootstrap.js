@@ -87,6 +87,7 @@
     }
 
     await loadScript('/chat.js');
+    await loadScript('/embedded-call-view.js');
     await loadScript('/public-auth-ui.js');
     if (pushController) await pushController.onChatReady();
     if (isNative && WebBundle?.markHealthy) await WebBundle.markHealthy();
