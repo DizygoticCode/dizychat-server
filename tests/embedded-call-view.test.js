@@ -81,6 +81,8 @@ test('runtime includes focus chat overlays and native LiveKit screen sharing', (
   assert.match(source, /data-dizy-call-action=["']screen["']/);
   assert.match(source, /getDisplayMedia\.call/);
   assert.match(source, /restrictOwnAudio:\s*true/);
+  assert.match(source, /suppressLocalAudioPlayback:\s*false/);
+  assert.doesNotMatch(source, /suppressLocalAudioPlayback:\s*true/);
   assert.match(source, /shouldPublishDisplayAudio/);
   assert.match(source, /publishTrack/);
   assert.match(source, /dizy-screen-share/);
