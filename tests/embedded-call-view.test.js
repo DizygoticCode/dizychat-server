@@ -31,6 +31,7 @@ test('track source classification distinguishes screen share from camera', () =>
   assert.equal(runtime.classifyTrackSource({ source: 'screen_share' }), 'screen_share');
   assert.equal(runtime.classifyTrackSource({ source: 'screen_share_audio' }), 'screen_share');
   assert.equal(runtime.classifyTrackSource({ source: 'camera' }), 'camera');
+  assert.equal(runtime.classifyTrackSource({ trackName: 'dizy-screen-share' }), 'screen_share');
   assert.equal(runtime.classifyTrackSource({}, { source: 'screen_share' }), 'screen_share');
   assert.equal(runtime.classifyTrackSource({}, {}), 'camera');
 });
@@ -50,13 +51,17 @@ test('embedded call stylesheet preserves full media frame and removes fixed popu
   assert.doesNotMatch(css, /\.dizy-call-stage[^{]*\{[^}]*width:\s*420px/i);
 });
 
-test('runtime includes focus chat overlays and native-safe screen share controls', () => {
+test('runtime includes focus chat overlays and browser display-track screen sharing', () => {
   const source = fs.readFileSync(runtimePath, 'utf8');
   assert.match(source, /dizy-call-message-overlays/);
   assert.match(source, /data-dizy-call-action=["']focus["']/);
   assert.match(source, /data-dizy-call-action=["']chat["']/);
   assert.match(source, /data-dizy-call-action=["']screen["']/);
-  assert.match(source, /setScreenShareEnabled/);
+  assert.match(source, /getDisplayMedia/);
+  assert.match(source, /publishTrack/);
+  assert.match(source, /dizy-screen-share/);
+  assert.match(source, /source:\s*LK\.Track\.Source\.Camera/);
+  assert.match(source, /audio:\s*false/);
   assert.match(source, /Capacitor/);
   assert.match(source, /MutationObserver/);
 });
