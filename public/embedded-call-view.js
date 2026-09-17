@@ -451,7 +451,7 @@
         // LiveKit 2.22.x does not consistently forward this constraint.
         stream = await getDisplayMedia.call(hostWindow.navigator.mediaDevices, {
           video: { displaySurface: 'monitor' },
-          audio: { restrictOwnAudio: true, suppressLocalAudioPlayback: true },
+          audio: { restrictOwnAudio: true, suppressLocalAudioPlayback: false },
           systemAudio: 'include',
           selfBrowserSurface: 'exclude',
           surfaceSwitching: 'include',
