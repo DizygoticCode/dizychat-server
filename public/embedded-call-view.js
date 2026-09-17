@@ -159,8 +159,11 @@
       stage.classList.toggle('has-screen-share', presentation.mode === 'screen-share');
       stage.classList.toggle('audio-only', presentation.mode === 'audio');
 
-      for (const tile of screenTiles) tile.classList.add('dizy-primary-media');
-      for (const tile of cameraTiles) tile.classList.remove('dizy-primary-media');
+      // The grid observer watches these classes. add/remove enqueue an attribute
+      // mutation even if unchanged, endlessly retriggering this observer callback.
+      // Forced toggle is a no-op when the requested membership already matches.
+      for (const tile of screenTiles) tile.classList.toggle('dizy-primary-media', true);
+      for (const tile of cameraTiles) tile.classList.toggle('dizy-primary-media', false);
 
       if (state.screenButton) {
         const supported = canShareScreen({

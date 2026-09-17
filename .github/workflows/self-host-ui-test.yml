@@ -64,6 +64,13 @@ jobs:
           npm install --no-save --package-lock=false playwright
           npx playwright install --with-deps chromium
 
+      - name: Reproduce historical call observer loop and verify join/share regression
+        env:
+          DIZY_CALL_COMPARE_REFS: 61d9ac7e880acc7bdbd342a9361e8dd123af3996,71d5983b2c1d72dbe7bb2d389c65ef165c08fd0e
+        run: |
+          git fetch --no-tags --depth=1 origin 61d9ac7e880acc7bdbd342a9361e8dd123af3996 71d5983b2c1d72dbe7bb2d389c65ef165c08fd0e
+          node tests/embedded-call-browser-test.cjs
+
       - name: Start isolated local DizyChat
         env:
           NODE_ENV: test
