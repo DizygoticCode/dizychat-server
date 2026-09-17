@@ -97,12 +97,12 @@ test('runtime includes focus chat overlays and native LiveKit screen sharing', (
 test('screen share previews immediately and does not block the UI on share-audio publication', () => {
   const source = fs.readFileSync(runtimePath, 'utf8');
   const previewIndex = source.indexOf('renderLocalScreenTile(stream);');
-  const videoPublishIndex = source.indexOf('publishTrack(videoMediaTrack');
+  const videoPublishIndex = source.indexOf('publishTrackWithTimeout(participant, videoMediaTrack');
   assert.ok(previewIndex >= 0, 'local screen preview must be rendered');
   assert.ok(videoPublishIndex > previewIndex, 'local preview must render before LiveKit video publication finishes');
   assert.match(source, /publishTrackWithTimeout/);
   assert.match(source, /void publishScreenAudio/);
-  assert.match(source, /publishTrack\(audioMediaTrack/);
+  assert.match(source, /publishTrackWithTimeout\(participant, audioMediaTrack/);
   assert.doesNotMatch(source, /new LK\.LocalVideoTrack\(videoMediaTrack\)/);
   assert.doesNotMatch(source, /new LK\.LocalAudioTrack\(audioMediaTrack\)/);
 });
