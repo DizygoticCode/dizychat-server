@@ -7959,6 +7959,11 @@ if (voiceBtn) {
     remoteVideoElements: new Map(),
     musicModeEnabled: null,
   };
+  // This value deliberately lives only in this page's JS realm. sessionStorage is
+  // cloned when a tab is duplicated, so it cannot safely identify a LiveKit page
+  // instance even though it is otherwise tab-scoped.
+  const callSessionId = window.crypto?.randomUUID?.()
+    || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   const panel = document.createElement("div");
   panel.className = "voice-call-panel";
@@ -8064,20 +8069,22 @@ if (voiceBtn) {
     local: true,
   });
 
-  const syncRemoteAudioVolume = (sid) => {
-    const entry = callState.remoteAudioElements.get(sid);
-    if (!entry?.element) return;
-    const participant = callState.participants.get(sid);
-    const participantVolume = clampVolume(participant?.volume ?? entry.volume ?? 1);
-    const participantMuted = Boolean(participant?.muted ?? entry.muted);
-    entry.volume = participantVolume;
-    entry.muted = participantMuted;
-    entry.element.volume = participantMuted ? 0 : clampVolume(participantVolume * callState.masterVolume);
-    entry.element.muted = participantMuted || callState.masterVolume <= 0;
+  const syncRemoteAudioVolume = (participantSid) => {
+    const participant = callState.participants.get(participantSid);
+    callState.remoteAudioElements.forEach((entry) => {
+      if (entry.participantSid !== participantSid || !entry.element) return;
+      const participantVolume = clampVolume(participant?.volume ?? entry.volume ?? 1);
+      const participantMuted = Boolean(participant?.muted ?? entry.muted);
+      entry.volume = participantVolume;
+      entry.muted = participantMuted;
+      entry.element.volume = participantMuted ? 0 : clampVolume(participantVolume * callState.masterVolume);
+      entry.element.muted = participantMuted || callState.masterVolume <= 0;
+    });
   };
 
   const syncAllRemoteAudioVolumes = () => {
-    Array.from(callState.remoteAudioElements.keys()).forEach(syncRemoteAudioVolume);
+    Array.from(new Set(Array.from(callState.remoteAudioElements.values(), (entry) => entry.participantSid)))
+      .forEach(syncRemoteAudioVolume);
   };
 
   const updatePeerMeters = () => {
@@ -8460,31 +8467,38 @@ if (voiceBtn) {
     return next;
   };
 
-  const attachRemoteAudioTrack = (track, participant) => {
+  const attachRemoteAudioTrack = (track, publication, participant) => {
     if (!track?.attach || !remoteAudioContainer) return;
-    const key = participantKey(participant) || track.sid || String(Date.now());
-    detachRemoteAudioTrack(track, participant);
-    const participantEntry = updateParticipant(participant, { sid: key });
+    const participantSid = participantKey(participant) || publication?.participantSid || "remote";
+    const trackSid = publication?.trackSid || track.sid || String(Date.now());
+    const key = `${participantSid}:${trackSid}`;
+    detachRemoteAudioTrack(track, publication, participant);
+    const participantEntry = updateParticipant(participant, { sid: participantSid });
     const element = track.attach();
     element.autoplay = true;
     element.playsInline = true;
     element.dataset.participant = participant?.identity || key;
     callState.remoteAudioElements.set(key, {
+      participantSid,
       track,
       element,
       muted: Boolean(participantEntry?.muted),
       volume: clampVolume(participantEntry?.volume ?? 1),
     });
     remoteAudioContainer.appendChild(element);
-    syncRemoteAudioVolume(key);
+    syncRemoteAudioVolume(participantSid);
     renderPeers();
   };
 
-  const detachRemoteAudioTrack = (track, participant) => {
-    const key = participantKey(participant) || track?.sid;
-    const entries = key
-      ? [[key, callState.remoteAudioElements.get(key)]].filter(([, entry]) => entry)
-      : Array.from(callState.remoteAudioElements.entries()).filter(([, entry]) => !track || entry.track === track);
+  const detachRemoteAudioTrack = (track, publication, participant) => {
+    const participantSid = participantKey(participant) || publication?.participantSid || "";
+    const trackSid = publication?.trackSid || track?.sid || "";
+    const fullKey = participantSid && trackSid ? `${participantSid}:${trackSid}` : "";
+    const entries = Array.from(callState.remoteAudioElements.entries()).filter(([key, entry]) => {
+      if (fullKey && key === fullKey) return true;
+      if (track && entry.track === track) return true;
+      return participantSid && entry.participantSid === participantSid && !trackSid;
+    });
     entries.forEach(([entryKey, entry]) => {
       if (entry?.track?.detach) {
         entry.track.detach(entry.element);
@@ -8555,9 +8569,13 @@ if (voiceBtn) {
     const element = track.attach();
     const tile = createVideoTile({
       key,
-      label: getDisplayName(participant),
+      label: `${getDisplayName(participant)}${publication?.source === "screen_share" ? " · Screen" : ""}`,
       element,
     });
+    if (publication?.source === "screen_share") {
+      tile.classList.add("dizy-screen-share-tile");
+      tile.dataset.dizyTrackSource = "screen_share";
+    }
     callState.remoteVideoElements.set(key, {
       participantSid,
       track,
@@ -8662,19 +8680,7 @@ if (voiceBtn) {
     return data;
   };
 
-  const getCallSessionId = () => {
-    const key = "dizychat-call-session-id";
-    try {
-      let value = window.sessionStorage?.getItem(key);
-      if (!value) {
-        value = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        window.sessionStorage?.setItem(key, value);
-      }
-      return value;
-    } catch (_error) {
-      return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    }
-  };
+  const getCallSessionId = () => callSessionId;
 
   const publishCallRoomState = (room, sdk = getLiveKitClient()) => {
     window.dizyCallBridge = { room: room || null, sdk: sdk || null };
@@ -8789,7 +8795,7 @@ if (voiceBtn) {
     });
     room.on(LK.RoomEvent.TrackSubscribed, (track, publication, participant) => {
       if (track?.kind === LK.Track?.Kind?.Audio) {
-        attachRemoteAudioTrack(track, participant);
+        attachRemoteAudioTrack(track, publication, participant);
       }
       if (track?.kind === LK.Track?.Kind?.Video) {
         attachRemoteVideoTrack(track, publication, participant);
@@ -8797,7 +8803,7 @@ if (voiceBtn) {
     });
     room.on(LK.RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
       if (track?.kind === LK.Track?.Kind?.Audio) {
-        detachRemoteAudioTrack(track, participant);
+        detachRemoteAudioTrack(track, publication, participant);
       }
       if (track?.kind === LK.Track?.Kind?.Video) {
         detachRemoteVideoTrack(track, publication, participant);
@@ -8808,7 +8814,7 @@ if (voiceBtn) {
       renderPeers();
     });
     room.on(LK.RoomEvent.ParticipantDisconnected, (participant) => {
-      detachRemoteAudioTrack(null, participant);
+      detachRemoteAudioTrack(null, null, participant);
       detachRemoteVideoTrack(null, null, participant);
       const sid = participantKey(participant);
       if (sid) {

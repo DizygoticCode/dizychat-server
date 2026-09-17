@@ -74,6 +74,14 @@
   const canShareScreen = ({ native = false, hasDisplayCapture = false } = {}) =>
     !native && Boolean(hasDisplayCapture);
 
+  // Full-display audio can contain this app's own call playback on Chromium.
+  // Because browsers do not expose whether restrictOwnAudio was honored, only
+  // publish audio for a non-monitor capture surface.
+  const shouldPublishDisplayAudio = (videoMediaTrack) => {
+    const surface = String(videoMediaTrack?.getSettings?.().displaySurface || '').toLowerCase();
+    return surface === 'window' || surface === 'browser' || surface === 'tab';
+  };
+
   const isNativeRuntime = (hostWindow) => {
     try {
       if (hostWindow?.Capacitor?.isNativePlatform?.()) return true;
@@ -436,16 +444,25 @@
       let audioTrack = null;
       try {
         const LK = state.sdk || hostWindow.LivekitClient || hostWindow.LiveKitClient;
-        if (!LK?.createLocalScreenTracks || !LK?.Track?.Source?.ScreenShare) {
+        if (!LK?.LocalVideoTrack || !LK?.LocalAudioTrack || !LK?.Track?.Source?.ScreenShare) {
           throw new Error('LiveKit screen sharing is unavailable.');
         }
-        captureTracks = await LK.createLocalScreenTracks({
-          audio: true,
-          contentHint: 'detail',
+        // Capture directly so Chromium receives its own-audio exclusion hint;
+        // LiveKit 2.22.x does not consistently forward this constraint.
+        stream = await getDisplayMedia.call(hostWindow.navigator.mediaDevices, {
+          video: { displaySurface: 'monitor' },
+          audio: { restrictOwnAudio: true, suppressLocalAudioPlayback: true },
           systemAudio: 'include',
+          selfBrowserSurface: 'exclude',
+          surfaceSwitching: 'include',
         });
-        videoTrack = captureTracks.find((track) => track.kind === LK.Track.Kind.Video);
-        audioTrack = captureTracks.find((track) => track.kind === LK.Track.Kind.Audio);
+        const videoMediaTrack = stream.getVideoTracks()[0];
+        const audioMediaTrack = stream.getAudioTracks()[0];
+        if (videoMediaTrack) videoMediaTrack.contentHint = 'detail';
+        videoTrack = videoMediaTrack ? new LK.LocalVideoTrack(videoMediaTrack) : null;
+        audioTrack = audioMediaTrack && shouldPublishDisplayAudio(videoMediaTrack)
+          ? new LK.LocalAudioTrack(audioMediaTrack)
+          : null;
         if (!videoTrack) throw new Error('No display video track was selected.');
         const publication = await state.room.localParticipant.publishTrack(videoTrack, {
           source: LK.Track.Source.ScreenShare, name: SCREEN_SHARE_TRACK_NAME, simulcast: true,
@@ -454,8 +471,6 @@
           source: LK.Track.Source.ScreenShareAudio,
           name: `${SCREEN_SHARE_TRACK_NAME}-audio`,
         });
-        stream = new hostWindow.MediaStream(captureTracks.map((track) => track.mediaStreamTrack));
-
         state.localScreenStream = stream;
         state.localScreenMediaTrack = videoTrack.mediaStreamTrack;
         state.localScreenPublication = publication;
@@ -514,6 +529,15 @@
       room.on?.(LK.RoomEvent?.TrackUnsubscribed, onTrackUnsubscribed);
       room.on?.(LK.RoomEvent?.Disconnected, onDisconnected);
       state.roomHandlersInstalled = true;
+      // TrackSubscribed may have fired while room.connect() was resolving. Walk
+      // current publications so late joiners classify an existing share too.
+      room.remoteParticipants?.forEach?.((participant) => {
+        const publications = participant.trackPublications || participant.videoTrackPublications;
+        publications?.forEach?.((publication) => {
+          const track = publication.track;
+          if (track?.kind === LK.Track?.Kind?.Video) tagRemoteTile(track, publication, participant);
+        });
+      });
       syncPresentation();
     };
 
@@ -555,5 +579,6 @@
     canShareScreen,
     classifyTrackSource,
     derivePresentationState,
+    shouldPublishDisplayAudio,
   };
 });
