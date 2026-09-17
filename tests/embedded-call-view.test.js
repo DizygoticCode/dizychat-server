@@ -51,6 +51,21 @@ test('embedded call stylesheet preserves full media frame and removes fixed popu
   assert.doesNotMatch(css, /\.dizy-call-stage[^{]*\{[^}]*width:\s*420px/i);
 });
 
+test('audio-only calls use a compact row instead of reserving a visual-media column', () => {
+  const source = fs.readFileSync(runtimePath, 'utf8');
+  const css = fs.readFileSync(cssPath, 'utf8');
+  assert.match(source, /dizy-call-audio-only/);
+  assert.match(source, /dizy-call-has-visuals/);
+  assert.match(css, /#chat-main\.dizy-call-layout\.dizy-call-audio-only[\s\S]*grid-template-areas:\s*"call users"\s*"chat users"/i);
+  assert.match(css, /\.dizy-call-stage\s+\.voice-call-drag-hint[\s\S]*display:\s*none\s*!important/i);
+});
+
+test('focus and chat controls stay hidden until visual media exists', () => {
+  const source = fs.readFileSync(runtimePath, 'utf8');
+  assert.match(source, /state\.focusButton\.hidden\s*=\s*!presentation\.hasVisuals/);
+  assert.match(source, /state\.chatButton\.hidden\s*=\s*!presentation\.hasVisuals/);
+});
+
 test('runtime includes focus chat overlays and browser display-track screen sharing', () => {
   const source = fs.readFileSync(runtimePath, 'utf8');
   assert.match(source, /dizy-call-message-overlays/);
