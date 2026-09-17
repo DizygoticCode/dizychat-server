@@ -81,6 +81,8 @@ test('runtime includes focus chat overlays and native LiveKit screen sharing', (
   assert.match(source, /data-dizy-call-action=["']screen["']/);
   assert.match(source, /getDisplayMedia\.call/);
   assert.match(source, /restrictOwnAudio:\s*true/);
+  assert.match(source, /suppressLocalAudioPlayback:\s*false/);
+  assert.doesNotMatch(source, /suppressLocalAudioPlayback:\s*true/);
   assert.match(source, /shouldPublishDisplayAudio/);
   assert.match(source, /publishTrack/);
   assert.match(source, /dizy-screen-share/);
@@ -90,6 +92,19 @@ test('runtime includes focus chat overlays and native LiveKit screen sharing', (
   assert.match(source, /systemAudio:\s*['"]include['"]/);
   assert.match(source, /Capacitor/);
   assert.match(source, /MutationObserver/);
+});
+
+test('screen share previews immediately and does not block the UI on share-audio publication', () => {
+  const source = fs.readFileSync(runtimePath, 'utf8');
+  const previewIndex = source.indexOf('renderLocalScreenTile(stream);');
+  const videoPublishIndex = source.indexOf('publishTrackWithTimeout(participant, videoMediaTrack');
+  assert.ok(previewIndex >= 0, 'local screen preview must be rendered');
+  assert.ok(videoPublishIndex > previewIndex, 'local preview must render before LiveKit video publication finishes');
+  assert.match(source, /publishTrackWithTimeout/);
+  assert.match(source, /void publishScreenAudio/);
+  assert.match(source, /publishTrackWithTimeout\(participant, audioMediaTrack/);
+  assert.doesNotMatch(source, /new LK\.LocalVideoTrack\(videoMediaTrack\)/);
+  assert.doesNotMatch(source, /new LK\.LocalAudioTrack\(audioMediaTrack\)/);
 });
 
 test('connected room lifecycle uses an explicit bridge instead of patching SDK internals', () => {

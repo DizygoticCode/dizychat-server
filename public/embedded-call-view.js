@@ -429,6 +429,58 @@
       syncPresentation();
     };
 
+    const publishTrackWithTimeout = async (participant, mediaTrack, options, timeoutMs = 10000) => {
+      if (!participant?.publishTrack || !mediaTrack) throw new Error('Screen track publishing is unavailable.');
+      let timedOut = false;
+      let timer = null;
+      const publishPromise = Promise.resolve().then(() => participant.publishTrack(mediaTrack, options));
+
+      // If LiveKit completes only after our UI timeout, immediately remove the late publication
+      // so it cannot become a ghost track after the user has already recovered or stopped sharing.
+      publishPromise.then(async (publication) => {
+        if (!timedOut) return;
+        try { await participant.unpublishTrack?.(publication?.track || mediaTrack, true); } catch (_error) { /* best effort */ }
+      }).catch(() => {});
+
+      try {
+        return await Promise.race([
+          publishPromise,
+          new Promise((_, reject) => {
+            timer = hostWindow.setTimeout(() => {
+              timedOut = true;
+              reject(new Error('Screen track publication timed out.'));
+            }, timeoutMs);
+          }),
+        ]);
+      } finally {
+        if (timer !== null) hostWindow.clearTimeout(timer);
+      }
+    };
+
+    const publishScreenAudio = async ({ participant, LK, stream, videoMediaTrack, audioMediaTrack }) => {
+      if (!audioMediaTrack) return;
+      if (!shouldPublishDisplayAudio(videoMediaTrack)) {
+        try { audioMediaTrack.stop(); } catch (_error) { /* release unused system-audio capture */ }
+        return;
+      }
+
+      try {
+        const publication = await publishTrackWithTimeout(participant, audioMediaTrack, {
+          source: LK.Track.Source.ScreenShareAudio,
+          name: `${SCREEN_SHARE_TRACK_NAME}-audio`,
+        }, 8000);
+
+        if (state.localScreenStream !== stream || state.localScreenMediaTrack !== videoMediaTrack) {
+          try { await participant.unpublishTrack?.(publication?.track || audioMediaTrack, true); } catch (_error) { /* stopped meanwhile */ }
+          return;
+        }
+        state.localScreenAudioTrack = publication?.track || audioMediaTrack;
+      } catch (error) {
+        try { audioMediaTrack.stop(); } catch (_error) { /* release failed capture */ }
+        console.warn('[DizyChat Call] screen audio publish failed; continuing with video only', error);
+      }
+    };
+
     const startScreenShare = async () => {
       const native = isNativeRuntime(hostWindow);
       const getDisplayMedia = hostWindow.navigator?.mediaDevices?.getDisplayMedia;
@@ -439,59 +491,75 @@
       syncPresentation();
 
       let stream = null;
-      let captureTracks = [];
-      let videoTrack = null;
-      let audioTrack = null;
+      let videoMediaTrack = null;
+      let videoPublication = null;
       try {
         const LK = state.sdk || hostWindow.LivekitClient || hostWindow.LiveKitClient;
-        if (!LK?.LocalVideoTrack || !LK?.LocalAudioTrack || !LK?.Track?.Source?.ScreenShare) {
+        const participant = state.room?.localParticipant;
+        if (!LK?.Track?.Source?.ScreenShare || !participant?.publishTrack) {
           throw new Error('LiveKit screen sharing is unavailable.');
         }
-        // Capture directly so Chromium receives its own-audio exclusion hint;
-        // LiveKit 2.22.x does not consistently forward this constraint.
+
+        // Capture directly so Chromium receives its own-audio exclusion hint without asking
+        // Chrome to silence the application's existing local playback route.
         stream = await getDisplayMedia.call(hostWindow.navigator.mediaDevices, {
           video: { displaySurface: 'monitor' },
-          audio: { restrictOwnAudio: true, suppressLocalAudioPlayback: true },
+          audio: { restrictOwnAudio: true, suppressLocalAudioPlayback: false },
           systemAudio: 'include',
           selfBrowserSurface: 'exclude',
           surfaceSwitching: 'include',
         });
-        const videoMediaTrack = stream.getVideoTracks()[0];
-        const audioMediaTrack = stream.getAudioTracks()[0];
-        if (videoMediaTrack) videoMediaTrack.contentHint = 'detail';
-        videoTrack = videoMediaTrack ? new LK.LocalVideoTrack(videoMediaTrack) : null;
-        audioTrack = audioMediaTrack && shouldPublishDisplayAudio(videoMediaTrack)
-          ? new LK.LocalAudioTrack(audioMediaTrack)
-          : null;
-        if (!videoTrack) throw new Error('No display video track was selected.');
-        const publication = await state.room.localParticipant.publishTrack(videoTrack, {
-          source: LK.Track.Source.ScreenShare, name: SCREEN_SHARE_TRACK_NAME, simulcast: true,
-        });
-        if (audioTrack) await state.room.localParticipant.publishTrack(audioTrack, {
-          source: LK.Track.Source.ScreenShareAudio,
-          name: `${SCREEN_SHARE_TRACK_NAME}-audio`,
-        });
+        videoMediaTrack = stream.getVideoTracks()[0] || null;
+        const audioMediaTrack = stream.getAudioTracks()[0] || null;
+        if (!videoMediaTrack) throw new Error('No display video track was selected.');
+        if ('contentHint' in videoMediaTrack) videoMediaTrack.contentHint = 'detail';
+
+        // Commit the local capture immediately. The preview must not wait for LiveKit signalling
+        // or optional system-audio publication, otherwise a slow audio publication makes the
+        // whole screen-share UI appear frozen even though Chrome is already capturing.
         state.localScreenStream = stream;
-        state.localScreenMediaTrack = videoTrack.mediaStreamTrack;
-        state.localScreenPublication = publication;
-        state.localScreenTrack = videoTrack;
-        state.localScreenAudioTrack = audioTrack || null;
-        videoTrack.mediaStreamTrack?.addEventListener?.('ended', () => {
+        state.localScreenMediaTrack = videoMediaTrack;
+        state.localScreenPublication = null;
+        state.localScreenTrack = null;
+        state.localScreenAudioTrack = null;
+        videoMediaTrack.addEventListener?.('ended', () => {
           void stopScreenShare({ fromTrackEnded: true });
         }, { once: true });
         renderLocalScreenTile(stream);
-      } catch (error) {
-        if (videoTrack) {
-          try { await state.room?.localParticipant?.unpublishTrack?.(videoTrack, true); } catch (_error) { /* best effort rollback */ }
+
+        // LiveKit accepts a raw MediaStreamTrack and wraps it internally. Avoid constructing
+        // LocalVideoTrack/LocalAudioTrack ourselves at this boundary.
+        videoPublication = await publishTrackWithTimeout(participant, videoMediaTrack, {
+          source: LK.Track.Source.ScreenShare,
+          name: SCREEN_SHARE_TRACK_NAME,
+          simulcast: true,
+        }, 10000);
+
+        if (state.localScreenStream !== stream || state.localScreenMediaTrack !== videoMediaTrack) {
+          try { await participant.unpublishTrack?.(videoPublication?.track || videoMediaTrack, true); } catch (_error) { /* stopped meanwhile */ }
+          return;
         }
-        if (audioTrack) {
-          try { await state.room?.localParticipant?.unpublishTrack?.(audioTrack, true); } catch (_error) { /* best effort rollback */ }
+
+        state.localScreenPublication = videoPublication;
+        state.localScreenTrack = videoPublication?.track || videoMediaTrack;
+
+        // Audio is optional and must never hold the visible share or controls hostage.
+        void publishScreenAudio({ participant, LK, stream, videoMediaTrack, audioMediaTrack });
+      } catch (error) {
+        const participant = state.room?.localParticipant;
+        if (videoPublication) {
+          try { await participant?.unpublishTrack?.(videoPublication?.track || videoMediaTrack, true); } catch (_error) { /* best effort rollback */ }
+        }
+        if (state.localScreenStream === stream) {
+          state.localScreenPublication = null;
+          state.localScreenTrack = null;
+          state.localScreenAudioTrack = null;
+          state.localScreenMediaTrack = null;
+          state.localScreenStream = null;
+          removeLocalScreenTile();
         }
         for (const mediaTrack of stream?.getTracks?.() || []) {
           try { mediaTrack.stop(); } catch (_error) { /* ignore */ }
-        }
-        for (const track of captureTracks) {
-          try { track.stop?.(); } catch (_error) { /* ignore */ }
         }
         if (error?.name !== 'NotAllowedError' && error?.name !== 'AbortError') {
           console.warn('[DizyChat Call] screen share failed', error);
