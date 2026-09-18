@@ -2538,8 +2538,8 @@ body:not(.dark) #voice-btn.recording {
   right: 14px;
   bottom: 92px;
   z-index: 13001;
-  width: min(460px, calc(100vw - 24px));
-  max-height: min(78vh, 680px);
+  width: min(560px, calc(100vw - 24px));
+  max-height: min(82vh, 760px);
   overflow: auto;
   background: rgba(18, 22, 28, 0.96);
   border: 1px solid rgba(250, 204, 21, 0.32);
@@ -2674,6 +2674,109 @@ body:not(.dark) #voice-btn.recording {
   color: #1f2937;
   font-weight: 800;
   padding: 8px 10px;
+}
+
+
+.jam-session-steps {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.jam-session-step {
+  align-items: flex-start;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 11px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 30px minmax(0, 1fr);
+  padding: 10px;
+}
+
+.jam-session-step-number {
+  align-items: center;
+  background: #facc15;
+  border-radius: 50%;
+  color: #1f2937;
+  display: inline-flex;
+  font-size: 0.8rem;
+  font-weight: 900;
+  height: 28px;
+  justify-content: center;
+  width: 28px;
+}
+
+.jam-session-step strong,
+.jam-session-credentials > strong,
+.jam-session-device-note > strong {
+  font-size: 0.88rem;
+}
+
+.jam-session-step p,
+.jam-session-credentials p,
+.jam-session-device-note p,
+.jam-session-advanced p {
+  font-size: 0.78rem;
+  line-height: 1.4;
+  margin: 4px 0 7px;
+  opacity: 0.84;
+}
+
+.jam-session-command-card {
+  align-items: stretch;
+  display: grid;
+  gap: 7px;
+  margin-top: 7px;
+}
+
+.jam-session-command-card code {
+  background: rgba(0, 0, 0, 0.32);
+  border-radius: 8px;
+  display: block;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  padding: 8px;
+  white-space: normal;
+}
+
+.jam-session-command-card button {
+  justify-self: start;
+}
+
+.jam-session-credentials,
+.jam-session-device-note {
+  background: rgba(250, 204, 21, 0.08);
+  border: 1px solid rgba(250, 204, 21, 0.18);
+  border-radius: 11px;
+  margin-top: 12px;
+  padding: 10px;
+}
+
+.jam-session-advanced {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  margin-top: 12px;
+  padding-top: 10px;
+}
+
+.jam-session-advanced summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 750;
+  opacity: 0.86;
+}
+
+.jam-session-advanced[open] summary {
+  margin-bottom: 8px;
+}
+
+.jam-session-advanced .jam-session-code {
+  grid-template-columns: 78px 1fr auto;
+}
+
+.jam-session-advanced .jam-session-command {
+  grid-template-columns: 78px minmax(0, 1fr) auto;
 }
 
 .voice-peer-empty { opacity: 0.72; padding: 8px 4px 2px; }
