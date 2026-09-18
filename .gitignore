@@ -28,3 +28,7 @@ android/local.properties
 
 # Generated self-hosted LiveKit configuration contains API credentials.
 deploy/livekit/livekit.yaml
+
+
+# DizyJam generated TLS keys and ephemeral JackTrip credentials.
+ops/dizyjam/runtime/
