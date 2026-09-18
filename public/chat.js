@@ -9446,7 +9446,7 @@ if (voiceBtn) {
     const credentialRows = [
       session.username ? `<div class="jam-session-code"><span>JackTrip user</span><code>${escapeHtml(session.username)}</code><button type="button" data-copy="${escapeHtml(session.username)}">Copy</button></div>` : "",
       session.password ? `<div class="jam-session-code"><span>Password</span><code>${escapeHtml(session.password)}</code><button type="button" data-copy="${escapeHtml(session.password)}">Copy</button></div>` : "",
-      expiresLabel ? `<div class="jam-session-code"><span>Expires</span><code>${escapeHtml(expiresLabel)}</code></div>` : "",
+      expiresLabel ? `<div class="jam-session-code"><span>Credential expires</span><code>${escapeHtml(expiresLabel)}</code></div>` : "",
     ].filter(Boolean).join("");
 
     const advancedRows = [
