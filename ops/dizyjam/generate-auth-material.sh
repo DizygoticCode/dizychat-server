@@ -51,7 +51,16 @@ if ! chgrp "$auth_gid" "$runtime_dir" "$key_file" "$cert_file" "$creds_file" 2>/
   fi
 fi
 
-chmod 2750 "$runtime_dir"
+chmod 2750 "$runtime_dir" || true
+if [[ ! -g "$runtime_dir" ]]; then
+  if command -v sudo >/dev/null 2>&1; then
+    echo "Enabling setgid on DizyJam runtime directory (sudo may prompt)..."
+    sudo chmod 2750 "$runtime_dir"
+  else
+    echo "Unable to enable setgid on $runtime_dir." >&2
+    exit 1
+  fi
+fi
 chmod 640 "$key_file" "$creds_file"
 chmod 644 "$cert_file"
 
