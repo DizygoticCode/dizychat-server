@@ -9005,6 +9005,9 @@ if (voiceBtn) {
   if (leaveBtn) {
     leaveBtn.addEventListener("click", autoLeaveIfActive);
   }
+  for (const button of [accountLogoutBtn, lobbyAccountLogoutBtn]) {
+    button?.addEventListener("click", autoLeaveIfActive);
+  }
   if (joinBtn) {
     joinBtn.addEventListener("click", () => {
       const nextRoom = roomInput?.value.trim();
@@ -9013,6 +9016,7 @@ if (voiceBtn) {
       }
     });
   }
+  window.addEventListener("pagehide", autoLeaveIfActive);
   window.addEventListener("beforeunload", autoLeaveIfActive);
 })();
 
