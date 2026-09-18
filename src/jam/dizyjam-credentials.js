@@ -140,7 +140,10 @@ class DizyJamCredentialStore {
 
   writeFile() {
     const dir = path.dirname(this.credentialsFile);
-    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    // The deployment setup keeps this directory setgid to the JackTrip read group.
+    // Do not chmod an existing directory here: that would clear the deployment's
+    // setgid/group-sharing policy. New directories stay owner/group traversable.
+    fs.mkdirSync(dir, { recursive: true, mode: 0o750 });
 
     const lines = [...this.leases.values()]
       .sort((a, b) => a.username.localeCompare(b.username))
@@ -148,10 +151,13 @@ class DizyJamCredentialStore {
     const payload = lines.length ? `${lines.join('\n')}\n` : '';
 
     const tmp = `${this.credentialsFile}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
-    fs.writeFileSync(tmp, payload, { encoding: 'utf8', mode: 0o600 });
-    fs.chmodSync(tmp, 0o600);
+    // 0640 is intentional: DizyChat remains the owner/writer while the
+    // JackTrip service group receives read-only access. On the deployed
+    // setgid runtime directory, atomic replacement files inherit that group.
+    fs.writeFileSync(tmp, payload, { encoding: 'utf8', mode: 0o640 });
+    fs.chmodSync(tmp, 0o640);
     fs.renameSync(tmp, this.credentialsFile);
-    fs.chmodSync(this.credentialsFile, 0o600);
+    fs.chmodSync(this.credentialsFile, 0o640);
   }
 }
 
