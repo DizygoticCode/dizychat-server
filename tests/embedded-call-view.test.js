@@ -172,6 +172,14 @@ test('connected room lifecycle uses an explicit bridge instead of patching SDK i
   assert.doesNotMatch(source, /Room\.prototype\.connect/);
 });
 
+test('account sign-out and page exit explicitly disconnect an active LiveKit room', () => {
+  const chat = fs.readFileSync(path.join(repoRoot, 'public', 'chat.js'), 'utf8');
+  assert.match(chat, /for \(const button of \[accountLogoutBtn, lobbyAccountLogoutBtn\]\) \{\s*button\?\.addEventListener\(["']click["'], autoLeaveIfActive\);\s*\}/);
+  assert.match(chat, /window\.addEventListener\(["']pagehide["'], autoLeaveIfActive\)/);
+  assert.match(chat, /window\.addEventListener\(["']beforeunload["'], autoLeaveIfActive\)/);
+  assert.match(chat, /const autoLeaveIfActive = \(\) => \{\s*if \(!callState\.room\) return;\s*leaveCall\(true\)\.catch\(\(\) => \{\}\);\s*\}/);
+});
+
 test('server grants native screen sources and uses a per-tab identity suffix', () => {
   const server = fs.readFileSync(path.join(repoRoot, 'server-core.js'), 'utf8');
   const chat = fs.readFileSync(path.join(repoRoot, 'public', 'chat.js'), 'utf8');
