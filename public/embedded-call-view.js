@@ -75,13 +75,11 @@
   const canShareScreen = ({ native = false, hasDisplayCapture = false } = {}) =>
     !native && Boolean(hasDisplayCapture);
 
-  // Publish audio for the user-selected display surface when Chrome supplies it.
-  // The capture request asks Chromium to exclude this tab's own playback where supported,
-  // while windowAudio prefers the selected application's audio over a whole-system mix.
-  const shouldPublishDisplayAudio = (videoMediaTrack) => {
-    const surface = String(videoMediaTrack?.getSettings?.().displaySurface || '').toLowerCase();
-    return surface === 'window' || surface === 'browser' || surface === 'tab' || surface === 'monitor' || surface === 'screen';
-  };
+  // If getDisplayMedia returned a live audio track, publish it. Do not gate
+  // publication on displaySurface metadata: Chromium may omit that setting even
+  // while its sharing UI explicitly reports that window/system audio is captured.
+  const shouldPublishDisplayAudio = (audioMediaTrack) =>
+    Boolean(audioMediaTrack && audioMediaTrack.readyState !== 'ended');
 
   const isNativeRuntime = (hostWindow) => {
     try {
@@ -109,6 +107,7 @@
       screenButton: null,
       focusButton: null,
       chatButton: null,
+      screenAudioBadge: null,
       overlays: null,
       panelObserver: null,
       bodyObserver: null,
@@ -122,6 +121,7 @@
       localScreenPublication: null,
       roomHandlersInstalled: false,
       screenBusy: false,
+      screenAudioState: 'idle',
       expandedTile: null,
     };
 
@@ -241,6 +241,19 @@
         state.chatButton.hidden = !presentation.hasVisuals;
         state.chatButton.setAttribute('aria-pressed', state.chatDrawerOpen ? 'true' : 'false');
       }
+
+      if (state.screenAudioBadge) {
+        const activeShare = Boolean(state.localScreenMediaTrack);
+        state.screenAudioBadge.hidden = !activeShare;
+        const labels = {
+          captured: 'Screen audio: connecting…',
+          published: 'Screen audio: on',
+          unavailable: 'Screen audio: unavailable',
+          error: 'Screen audio: failed',
+        };
+        state.screenAudioBadge.textContent = labels[state.screenAudioState] || '';
+        state.screenAudioBadge.dataset.state = state.screenAudioState;
+      }
     };
 
     const setStageVisible = (visible) => {
@@ -321,6 +334,13 @@
       state.screenButton = toolbar.querySelector('[data-dizy-call-action="screen"]');
       state.focusButton = toolbar.querySelector('[data-dizy-call-action="focus"]');
       state.chatButton = toolbar.querySelector('[data-dizy-call-action="chat"]');
+
+      const screenAudioBadge = doc.createElement('span');
+      screenAudioBadge.className = 'dizy-screen-audio-status';
+      screenAudioBadge.hidden = true;
+      screenAudioBadge.setAttribute('aria-live', 'polite');
+      toolbar.appendChild(screenAudioBadge);
+      state.screenAudioBadge = screenAudioBadge;
 
       state.screenButton?.addEventListener('click', () => {
         void toggleScreenShare();
@@ -472,6 +492,7 @@
       state.localScreenAudioTrack = null;
       state.localScreenMediaTrack = null;
       state.localScreenStream = null;
+      state.screenAudioState = 'idle';
 
       try {
         if (participant && typeof participant.unpublishTrack === 'function') {
@@ -525,6 +546,7 @@
         const publication = await publishTrackWithTimeout(participant, audioMediaTrack, {
           source: LK.Track.Source.ScreenShareAudio,
           name: SCREEN_SHARE_AUDIO_TRACK_NAME,
+          stream: SCREEN_SHARE_TRACK_NAME,
           dtx: false,
           red: false,
           forceStereo: true,
@@ -535,8 +557,12 @@
           return;
         }
         state.localScreenAudioTrack = publication?.track || audioMediaTrack;
+        state.screenAudioState = 'published';
+        syncPresentation();
       } catch (error) {
         if (state.localScreenStream !== stream || !state.localScreenMediaTrack) return;
+        state.screenAudioState = 'error';
+        syncPresentation();
         console.warn('[DizyChat Call] screen audio publish failed', error);
       }
     };
@@ -546,6 +572,7 @@
         const publication = await publishTrackWithTimeout(participant, videoMediaTrack, {
           source: LK.Track.Source.ScreenShare,
           name: SCREEN_SHARE_TRACK_NAME,
+          stream: SCREEN_SHARE_TRACK_NAME,
           // A game/window capture at native refresh with simulcast can saturate the browser encoder.
           // Keep one bounded screen-share encoding for predictable desktop performance.
           simulcast: false,
@@ -616,6 +643,8 @@
         state.localScreenPublication = null;
         state.localScreenTrack = null;
         state.localScreenAudioTrack = null;
+        state.screenAudioState = shouldPublishDisplayAudio(audioMediaTrack) ? 'captured' : 'unavailable';
+        if (audioMediaTrack) audioMediaTrack.enabled = true;
         videoMediaTrack.addEventListener?.('ended', () => {
           void stopScreenShare({ fromTrackEnded: true });
         }, { once: true });
@@ -627,7 +656,7 @@
         // Never await LiveKit publication from the UI action. The local preview and Stop Screen
         // control remain usable even if WebRTC negotiation is temporarily slow.
         void publishScreenVideo({ participant, LK, stream, videoMediaTrack });
-        if (audioMediaTrack && shouldPublishDisplayAudio(videoMediaTrack)) {
+        if (shouldPublishDisplayAudio(audioMediaTrack)) {
           void publishScreenAudio({ participant, LK, stream, audioMediaTrack });
         }
         return;
