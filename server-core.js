@@ -3235,7 +3235,7 @@ io.on('connection', socket => {
         '-C', DIZYJAM_HOST,
         '-A',
         '--username', credential.username,
-        '--password', credential.password,
+        '--password',
         '-q', 'auto',
         '--bufstrategy', '4',
       ].join(' ');
