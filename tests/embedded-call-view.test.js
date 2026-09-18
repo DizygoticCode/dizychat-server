@@ -97,6 +97,8 @@ test('every media tile gets an in-chat expanded-view control with Escape exit', 
   assert.match(css, /\.call-video-tile\.dizy-media-expanded[\s\S]*position:\s*fixed\s*!important/i);
   assert.match(css, /\.call-video-tile\.dizy-media-expanded[\s\S]*height:\s*100dvh\s*!important/i);
   assert.match(css, /\.dizy-media-expanded[\s\S]*object-fit:\s*contain\s*!important/i);
+  assert.match(css, /safe-area-inset-top/);
+  assert.match(css, /safe-area-inset-right/);
 });
 
 test('runtime includes focus chat overlays and bounded browser screen sharing', () => {
