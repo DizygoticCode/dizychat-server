@@ -144,11 +144,13 @@ DizyChat displays the exact authenticated CLI equivalent after issuing the
 credential. It has this shape:
 
 ```bash
-jacktrip -C jam.example.com -A --username DizyUser-<session> --password <random-secret> -q auto --bufstrategy 4
+jacktrip -C jam.example.com -A --username DizyUser-<session> --password -q auto --bufstrategy 4
 ```
 
-Do not reuse or share that password. It is tied to the current admitted
-DizyChat socket and is removed from the hub credentials file when that socket
+JackTrip then prompts for the temporary password with terminal echo disabled,
+so the secret is not placed in shell history or the process command line. Do
+not reuse or share that password. It is tied to the current admitted DizyChat
+socket and is removed from the hub credentials file when that socket
 leaves/signs out/disconnects.
 
 DizyChat can remain open for cameras, text and screen sharing. While actively
