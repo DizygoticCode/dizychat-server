@@ -14,6 +14,17 @@ The first deployment intentionally provides one shared low-latency mix.
 Do not run unrelated DizyJam groups at the same time until per-room hub
 allocation is implemented.
 
+## Security boundary
+
+This first hub is self-hosted but is not yet authenticated against DizyChat
+accounts at the JackTrip protocol layer. Anyone who can reach the forwarded
+JackTrip ports can attempt to connect.
+
+For a private deployment, restrict source IPs at the firewall/router where
+practical. JackTrip supports hub authentication with `-A`, certificates and a
+credentials file; wire that in before treating the audio hub as an
+Internet-public multi-user service.
+
 ## 1. Public network requirements
 
 Use a public static IP or an FQDN that resolves to this server.
