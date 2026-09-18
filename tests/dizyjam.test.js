@@ -68,7 +68,7 @@ test('self-hosted hub uses the official JackTrip container without delayed self-
 test('deployment guide documents network ports and the unauthenticated first-slice boundary', () => {
   assert.match(readme, /TCP 4464/);
   assert.match(readme, /UDP 61002-61100/);
-  assert.match(readme, /not yet authenticated against DizyChat accounts/);
+  assert.match(readme, /not yet authenticated against DizyChat\s+accounts/);
   assert.match(readme, /JackTrip supports hub authentication/);
   assert.match(readme, /one shared low-latency mix/);
 });
