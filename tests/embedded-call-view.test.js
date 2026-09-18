@@ -49,6 +49,12 @@ test('any live display-audio track returned by the browser is publishable', () =
   assert.equal(runtime.shouldPublishDisplayAudio(null), false);
 });
 
+test('screen-share audio meter distinguishes silence from captured signal', () => {
+  assert.equal(runtime.calculateAudioLevel(new Uint8Array([128, 128, 128, 128])), 0);
+  assert.ok(runtime.calculateAudioLevel(new Uint8Array([118, 138, 118, 138])) > 0);
+  assert.equal(runtime.calculateAudioLevel(new Uint8Array([0, 255, 0, 255])), 1);
+});
+
 test('embedded call stylesheet keeps uncropped non-resizable media above chat', () => {
   const css = fs.readFileSync(cssPath, 'utf8');
   assert.match(css, /#chat-main\.dizy-call-layout[\s\S]*grid-template-areas:\s*"call users"\s*"chat users"/i);
@@ -100,6 +106,8 @@ test('every media tile gets an in-chat expanded-view control with Escape exit', 
   assert.match(css, /\.dizy-media-expanded[\s\S]*object-fit:\s*contain\s*!important/i);
   assert.match(css, /safe-area-inset-top/);
   assert.match(css, /safe-area-inset-right/);
+  assert.match(css, /\.dizy-screen-audio-meter/);
+  assert.match(css, /\.dizy-screen-audio-meter-fill/);
 });
 
 test('runtime includes focus chat overlays and bounded browser screen sharing', () => {
@@ -116,6 +124,10 @@ test('runtime includes focus chat overlays and bounded browser screen sharing', 
   assert.match(source, /stream:\s*SCREEN_SHARE_TRACK_NAME/);
   assert.match(source, /state\.screenAudioState = shouldPublishDisplayAudio\(audioMediaTrack\) \? ['"]captured['"] : ['"]unavailable['"]/);
   assert.match(source, /state\.screenAudioState = ['"]published['"]/);
+  assert.match(source, /startScreenAudioMeter\(audioMediaTrack\)/);
+  assert.match(source, /createMediaStreamSource\(new MediaStreamCtor\(\[audioMediaTrack\]\)\)/);
+  assert.match(source, /getByteTimeDomainData\(samples\)/);
+  assert.match(source, /state\.screenAudioLevel = calculateAudioLevel\(samples\)/);
   assert.match(source, /audio:\s*\{[\s\S]*suppressLocalAudioPlayback:\s*false[\s\S]*restrictOwnAudio:\s*true[\s\S]*\}/);
   assert.match(source, /systemAudio:\s*['"]include['"]/);
   assert.match(source, /windowAudio:\s*['"]window['"]/);
