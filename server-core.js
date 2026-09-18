@@ -2046,9 +2046,9 @@ app.get('/api/jam/status', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json({
     enabled: true,
-    recommendedProvider: DIZYJAM_ENABLED ? 'dizyjam' : 'music-call',
+    recommendedProvider: DIZYJAM_ENABLED() ? 'dizyjam' : 'music-call',
     dizyJam: {
-      configured: DIZYJAM_ENABLED,
+      configured: DIZYJAM_ENABLED(),
       host: DIZYJAM_ENABLED() ? DIZYJAM_HOST : '',
       tcpPort: DIZYJAM_TCP_PORT,
       udpBasePort: DIZYJAM_UDP_BASE_PORT,
