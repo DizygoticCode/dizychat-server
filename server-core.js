@@ -35,6 +35,7 @@ const { createRoomPasswordService } = require('./src/rooms/room-password-service
 const soundboardStore = require('./src/utils/soundboard');
 const { scanFileWithClamAv } = require('./src/uploads/clamav-scanner');
 const { normalizeVoiceMessageUpload } = require('./src/uploads/voice-message-normalizer');
+const { DizyJamCredentialStore } = require('./src/jam/dizyjam-credentials');
 
 const nodeFetchModulePromise = import('node-fetch');
 const fetch = (...args) =>
@@ -259,10 +260,43 @@ const DIZYJAM_SAMPLE_RATE = parsePositiveIntegerEnv('DIZYJAM_SAMPLE_RATE', 48000
 const DIZYJAM_BUFFER_SIZE = parsePositiveIntegerEnv('DIZYJAM_BUFFER_SIZE', 128, { min: 16, max: 4096 });
 const DIZYJAM_CLIENT_INSTALL_URL = String(process.env.DIZYJAM_CLIENT_INSTALL_URL || 'https://jacktrip.github.io/jacktrip/Install/').trim();
 const DIZYJAM_DISABLED = ['false', '0', 'no', 'off', 'disabled'].includes(String(process.env.ENABLE_DIZYJAM || '').trim().toLowerCase());
-const DIZYJAM_ENABLED = !DIZYJAM_DISABLED && Boolean(DIZYJAM_HOST);
+const DIZYJAM_AUTH_DIR = path.resolve(String(process.env.DIZYJAM_AUTH_DIR || path.join(__dirname, 'ops', 'dizyjam', 'runtime')).trim());
+const DIZYJAM_AUTH_CERT_FILE = path.resolve(String(process.env.DIZYJAM_AUTH_CERT_FILE || path.join(DIZYJAM_AUTH_DIR, 'jacktrip.crt')).trim());
+const DIZYJAM_AUTH_KEY_FILE = path.resolve(String(process.env.DIZYJAM_AUTH_KEY_FILE || path.join(DIZYJAM_AUTH_DIR, 'jacktrip.key')).trim());
+const DIZYJAM_AUTH_CREDS_FILE = path.resolve(String(process.env.DIZYJAM_AUTH_CREDS_FILE || path.join(DIZYJAM_AUTH_DIR, 'auth')).trim());
+const DIZYJAM_CREDENTIAL_TTL_SECONDS = parsePositiveIntegerEnv('DIZYJAM_CREDENTIAL_TTL_SECONDS', 7200, { min: 300, max: 86400 });
+const DIZYJAM_AUTH_FILES_READY = () =>
+  fs.existsSync(DIZYJAM_AUTH_CERT_FILE) && fs.existsSync(DIZYJAM_AUTH_KEY_FILE);
+const DIZYJAM_ENABLED = () => !DIZYJAM_DISABLED && Boolean(DIZYJAM_HOST) && DIZYJAM_AUTH_FILES_READY();
 const SONOBUS_DOWNLOAD_URL = String(process.env.SONOBUS_DOWNLOAD_URL || 'https://sonobus.net/index.html').trim();
 const JAM_SESSION_EVENT_WINDOW_MS = 60 * 1000;
 const JAM_SESSION_MAX_CREATES_PER_WINDOW = 12;
+
+const dizyJamCredentialStore = new DizyJamCredentialStore({
+  credentialsFile: DIZYJAM_AUTH_CREDS_FILE,
+  ttlSeconds: DIZYJAM_CREDENTIAL_TTL_SECONDS,
+});
+try {
+  // Credentials are intentionally ephemeral. A DizyChat restart invalidates all
+  // previously issued JackTrip passwords instead of leaving stale hub access behind.
+  dizyJamCredentialStore.initialiseEmpty();
+} catch (error) {
+  console.error('[DizyJam] Unable to initialise credential store:', error?.message || error);
+}
+const dizyJamCredentialPruneTimer = setInterval(() => {
+  try {
+    dizyJamCredentialStore.pruneExpired();
+  } catch (error) {
+    console.error('[DizyJam] Failed to prune expired credentials:', error?.message || error);
+  }
+}, 60 * 1000);
+dizyJamCredentialPruneTimer.unref?.();
+
+const getDizyJamMissingConfig = () => [
+  !DIZYJAM_HOST ? 'DIZYJAM_HOST' : '',
+  !fs.existsSync(DIZYJAM_AUTH_CERT_FILE) ? 'DIZYJAM_AUTH_CERT_FILE' : '',
+  !fs.existsSync(DIZYJAM_AUTH_KEY_FILE) ? 'DIZYJAM_AUTH_KEY_FILE' : '',
+].filter(Boolean);
 
 const SCRYPT_HASH_PREFIX = 'scrypt';
 
