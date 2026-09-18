@@ -300,7 +300,10 @@
       overlays.setAttribute('aria-live', 'polite');
       overlays.setAttribute('aria-atomic', 'false');
 
-      stage.append(toolbar, panel, overlays);
+      const callHeader = panel.querySelector('.voice-call-header');
+      if (callHeader) callHeader.appendChild(toolbar);
+      else stage.appendChild(toolbar);
+      stage.append(panel, overlays);
       chatMain.insertBefore(stage, chatMain.firstChild);
       state.stage = stage;
       state.toolbar = toolbar;
