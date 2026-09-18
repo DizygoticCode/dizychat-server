@@ -73,7 +73,7 @@ credentials file before opening any router ports:
 ```bash
 cd ~/DizyChat/ops/dizyjam
 cp .env.example .env
-./generate-auth-material.sh
+bash ./generate-auth-material.sh
 ls -la runtime
 ```
 
