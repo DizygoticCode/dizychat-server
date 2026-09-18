@@ -319,6 +319,12 @@
         state.chatButton.setAttribute('aria-pressed', state.chatDrawerOpen ? 'true' : 'false');
       }
 
+      if (state.restoreHiddenButton) {
+        const hiddenCount = state.hiddenTileKeys.size;
+        state.restoreHiddenButton.hidden = hiddenCount === 0;
+        state.restoreHiddenButton.textContent = hiddenCount ? 'Show hidden media (' + hiddenCount + ')' : 'Show hidden media';
+      }
+
       if (state.screenAudioBadge) {
         const activeShare = Boolean(state.localScreenMediaTrack);
         state.screenAudioBadge.hidden = !activeShare;
