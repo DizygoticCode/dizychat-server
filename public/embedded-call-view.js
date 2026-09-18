@@ -81,6 +81,16 @@
   const shouldPublishDisplayAudio = (audioMediaTrack) =>
     Boolean(audioMediaTrack && audioMediaTrack.readyState !== 'ended');
 
+  const calculateAudioLevel = (samples = []) => {
+    if (!samples.length) return 0;
+    let sum = 0;
+    for (const sample of samples) {
+      const centered = (Number(sample) - 128) / 128;
+      sum += centered * centered;
+    }
+    return Math.min(1, Math.sqrt(sum / samples.length) * 5);
+  };
+
   const isNativeRuntime = (hostWindow) => {
     try {
       if (hostWindow?.Capacitor?.isNativePlatform?.()) return true;
@@ -108,6 +118,11 @@
       focusButton: null,
       chatButton: null,
       screenAudioBadge: null,
+      screenAudioMeter: null,
+      screenAudioMeterFill: null,
+      screenAudioMeterValue: null,
+      screenAudioMeterRuntime: null,
+      screenAudioLevel: 0,
       overlays: null,
       panelObserver: null,
       bodyObserver: null,
@@ -254,6 +269,15 @@
         state.screenAudioBadge.textContent = labels[state.screenAudioState] || '';
         state.screenAudioBadge.dataset.state = state.screenAudioState;
       }
+
+      if (state.screenAudioMeter) {
+        const activeShare = Boolean(state.localScreenMediaTrack);
+        state.screenAudioMeter.hidden = !activeShare;
+        const percent = Math.round(state.screenAudioLevel * 100);
+        if (state.screenAudioMeterFill) state.screenAudioMeterFill.style.width = `${percent}%`;
+        if (state.screenAudioMeterValue) state.screenAudioMeterValue.textContent = `${percent}%`;
+        state.screenAudioMeter.dataset.active = percent > 0 ? 'true' : 'false';
+      }
     };
 
     const setStageVisible = (visible) => {
@@ -341,6 +365,21 @@
       screenAudioBadge.setAttribute('aria-live', 'polite');
       toolbar.appendChild(screenAudioBadge);
       state.screenAudioBadge = screenAudioBadge;
+
+      const screenAudioMeter = doc.createElement('span');
+      screenAudioMeter.className = 'dizy-screen-audio-meter';
+      screenAudioMeter.hidden = true;
+      screenAudioMeter.setAttribute('aria-label', 'Captured screen audio level');
+      screenAudioMeter.innerHTML = `
+        <span class="dizy-screen-audio-meter-track" aria-hidden="true">
+          <span class="dizy-screen-audio-meter-fill"></span>
+        </span>
+        <span class="dizy-screen-audio-meter-value">0%</span>
+      `;
+      toolbar.appendChild(screenAudioMeter);
+      state.screenAudioMeter = screenAudioMeter;
+      state.screenAudioMeterFill = screenAudioMeter.querySelector('.dizy-screen-audio-meter-fill');
+      state.screenAudioMeterValue = screenAudioMeter.querySelector('.dizy-screen-audio-meter-value');
 
       state.screenButton?.addEventListener('click', () => {
         void toggleScreenShare();
@@ -476,6 +515,57 @@
       syncPresentation();
     };
 
+    const stopScreenAudioMeter = () => {
+      const runtime = state.screenAudioMeterRuntime;
+      if (runtime?.frame) {
+        if (typeof hostWindow.cancelAnimationFrame === 'function') hostWindow.cancelAnimationFrame(runtime.frame);
+        else hostWindow.clearTimeout?.(runtime.frame);
+      }
+      try { runtime?.source?.disconnect?.(); } catch (_error) { /* best effort */ }
+      try { runtime?.analyser?.disconnect?.(); } catch (_error) { /* best effort */ }
+      try {
+        if (runtime?.context?.state !== 'closed') runtime?.context?.close?.().catch?.(() => {});
+      } catch (_error) { /* best effort */ }
+      state.screenAudioMeterRuntime = null;
+      state.screenAudioLevel = 0;
+      syncPresentation();
+    };
+
+    const startScreenAudioMeter = (audioMediaTrack) => {
+      stopScreenAudioMeter();
+      const AudioContextCtor = hostWindow.AudioContext || hostWindow.webkitAudioContext;
+      const MediaStreamCtor = hostWindow.MediaStream;
+      if (!audioMediaTrack || !AudioContextCtor || !MediaStreamCtor) return;
+
+      try {
+        const context = new AudioContextCtor();
+        context.resume?.().catch?.(() => {});
+        const analyser = context.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.72;
+        const source = context.createMediaStreamSource(new MediaStreamCtor([audioMediaTrack]));
+        source.connect(analyser);
+        const samples = new Uint8Array(analyser.fftSize);
+        const schedule = typeof hostWindow.requestAnimationFrame === 'function'
+          ? (callback) => hostWindow.requestAnimationFrame(callback)
+          : (callback) => hostWindow.setTimeout(callback, 50);
+
+        const runtime = { context, analyser, source, frame: null };
+        const tick = () => {
+          if (state.screenAudioMeterRuntime !== runtime || audioMediaTrack.readyState === 'ended') return;
+          analyser.getByteTimeDomainData(samples);
+          state.screenAudioLevel = calculateAudioLevel(samples);
+          syncPresentation();
+          runtime.frame = schedule(tick);
+        };
+
+        state.screenAudioMeterRuntime = runtime;
+        runtime.frame = schedule(tick);
+      } catch (error) {
+        console.warn('[DizyChat Call] screen audio meter unavailable', error);
+      }
+    };
+
     const stopScreenShare = async ({ fromTrackEnded = false } = {}) => {
       if (state.screenBusy && !fromTrackEnded) return;
       state.screenBusy = true;
@@ -487,6 +577,7 @@
       const publishedAudioTrack = state.localScreenAudioTrack;
       const stream = state.localScreenStream;
 
+      stopScreenAudioMeter();
       state.localScreenPublication = null;
       state.localScreenTrack = null;
       state.localScreenAudioTrack = null;
@@ -644,7 +735,11 @@
         state.localScreenTrack = null;
         state.localScreenAudioTrack = null;
         state.screenAudioState = shouldPublishDisplayAudio(audioMediaTrack) ? 'captured' : 'unavailable';
-        if (audioMediaTrack) audioMediaTrack.enabled = true;
+        if (audioMediaTrack) {
+          audioMediaTrack.enabled = true;
+          startScreenAudioMeter(audioMediaTrack);
+          audioMediaTrack.addEventListener?.('ended', stopScreenAudioMeter, { once: true });
+        }
         videoMediaTrack.addEventListener?.('ended', () => {
           void stopScreenShare({ fromTrackEnded: true });
         }, { once: true });
@@ -753,5 +848,6 @@
     classifyTrackSource,
     derivePresentationState,
     shouldPublishDisplayAudio,
+    calculateAudioLevel,
   };
 });
