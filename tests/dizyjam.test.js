@@ -11,8 +11,9 @@ const chat = fs.readFileSync(path.join(repoRoot, 'public', 'chat.js'), 'utf8');
 const css = fs.readFileSync(path.join(repoRoot, 'public', 'chat.css'), 'utf8');
 const compose = fs.readFileSync(path.join(repoRoot, 'ops', 'dizyjam', 'docker-compose.yml'), 'utf8');
 const readme = fs.readFileSync(path.join(repoRoot, 'ops', 'dizyjam', 'README.md'), 'utf8');
+const generator = fs.readFileSync(path.join(repoRoot, 'ops', 'dizyjam', 'generate-auth-material.sh'), 'utf8');
 
-test('Guitar Jam exposes Music Call, self-hosted DizyJam, and SonoBus fallback only', () => {
+test('Guitar Jam exposes Music Call, authenticated self-hosted DizyJam, and SonoBus fallback only', () => {
   assert.match(server, /id:\s*['"]music-call['"]/);
   assert.match(server, /id:\s*['"]dizyjam['"]/);
   assert.match(server, /id:\s*['"]sonobus['"]/);
@@ -21,6 +22,7 @@ test('Guitar Jam exposes Music Call, self-hosted DizyJam, and SonoBus fallback o
   assert.match(chat, /Start Music Call/);
   assert.match(chat, /Start DizyJam/);
   assert.match(chat, /Use SonoBus fallback/);
+  assert.match(server, /Self-hosted · authenticated/);
 });
 
 test('Music Call launches the existing LiveKit call with Music mode selected', () => {
@@ -30,46 +32,77 @@ test('Music Call launches the existing LiveKit call with Music mode selected', (
   assert.match(chat, /window\.dispatchEvent\(new CustomEvent\(["']dizychat:start-music-call["']\)\)/);
 });
 
-test('DizyJam server configuration is explicit and disabled until a public host is configured', () => {
+test('DizyJam is unavailable until host plus TLS auth material exist', () => {
   assert.match(server, /DIZYJAM_HOST/);
-  assert.match(server, /ENABLE_DIZYJAM/);
-  assert.match(server, /DIZYJAM_TCP_PORT/);
-  assert.match(server, /DIZYJAM_UDP_BASE_PORT/);
-  assert.match(server, /DIZYJAM_UDP_END_PORT/);
-  assert.match(server, /DIZYJAM_SAMPLE_RATE/);
-  assert.match(server, /DIZYJAM_BUFFER_SIZE/);
-  assert.match(server, /const DIZYJAM_ENABLED = !DIZYJAM_DISABLED && Boolean\(DIZYJAM_HOST\)/);
-  assert.match(server, /missingRequiredEnv:\s*DIZYJAM_HOST \? \[\] : \[['"]DIZYJAM_HOST['"]\]/);
+  assert.match(server, /DIZYJAM_AUTH_CERT_FILE/);
+  assert.match(server, /DIZYJAM_AUTH_KEY_FILE/);
+  assert.match(server, /DIZYJAM_AUTH_CREDS_FILE/);
+  assert.match(server, /DIZYJAM_CREDENTIAL_TTL_SECONDS/);
+  assert.match(server, /const DIZYJAM_AUTH_FILES_READY = \(\) =>/);
+  assert.match(server, /const DIZYJAM_ENABLED = \(\) => !DIZYJAM_DISABLED && Boolean\(DIZYJAM_HOST\) && DIZYJAM_AUTH_FILES_READY\(\)/);
+  assert.match(server, /getDizyJamMissingConfig/);
 });
 
-test('DizyJam session returns self-hosted hub details and keeps one shared mix explicit', () => {
-  assert.match(server, /session\.host = DIZYJAM_HOST/);
-  assert.match(server, /session\.tcpPort = DIZYJAM_TCP_PORT/);
-  assert.match(server, /session\.udpBasePort = DIZYJAM_UDP_BASE_PORT/);
-  assert.match(server, /session\.udpEndPort = DIZYJAM_UDP_END_PORT/);
-  assert.match(server, /session\.sampleRate = DIZYJAM_SAMPLE_RATE/);
-  assert.match(server, /session\.bufferSize = DIZYJAM_BUFFER_SIZE/);
-  assert.match(server, /session\.oneSharedMix = true/);
-  assert.match(server, /jacktrip -C \$\{DIZYJAM_HOST\} -q auto --bufstrategy 4/);
-  assert.match(chat, /Keep DizyChat open for camera\/chat/);
+test('DizyJam credentials are issued only over an admitted DizyChat socket', () => {
+  assert.match(server, /socket\.on\(['"]jam:dizyjam-credentials['"]/);
+  assert.match(server, /normaliseRoomName\(socket\.currentRoom\)/);
+  assert.match(server, /\['account', 'guest'\]\.includes\(identityKind\)/);
+  assert.match(server, /dizyJamCredentialStore\.issue\(/);
+  assert.match(server, /DIZYJAM_ROOM_REQUIRED/);
+  assert.match(server, /DIZYJAM_IDENTITY_REQUIRED/);
+  assert.match(server, /DIZYJAM_BUSY/);
+  assert.match(server, /DIZYJAM_RATE_LIMITED/);
+  assert.match(server, /DIZYJAM_SOCKET_AUTH_REQUIRED/);
+  assert.doesNotMatch(server, /else if \(provider\.id === 'dizyjam'\) \{[\s\S]{0,1200}session\.password =/);
 });
 
-test('self-hosted hub uses the official JackTrip container without delayed self-loop', () => {
+test('DizyJam credentials are revoked on room leave, sign-out, and disconnect', () => {
+  const revokeMatches = server.match(/dizyJamCredentialStore\.revokeSocket\(socket\.id\)/g) || [];
+  assert.ok(revokeMatches.length >= 3, 'expected room/sign-out/disconnect credential revocation');
+  assert.match(server, /const removeSocketFromRoom = \(socket, targetRoom\) => \{[\s\S]{0,500}dizyJamCredentialStore\.revokeSocket\(socket\.id\)/);
+  assert.match(server, /socket\.on\(['"]account logout['"][\s\S]{0,500}dizyJamCredentialStore\.revokeSocket\(socket\.id\)/);
+  assert.match(server, /socket\.on\(['"]disconnect['"][\s\S]{0,500}dizyJamCredentialStore\.revokeSocket\(socket\.id\)/);
+});
+
+test('DizyJam client requests credentials over Socket.IO and renders authenticated details', () => {
+  assert.match(chat, /socket\.emit\(["']jam:dizyjam-credentials["']/);
+  assert.match(chat, /requestDizyJamSession/);
+  assert.match(chat, /session\.username/);
+  assert.match(chat, /JackTrip user/);
+  assert.match(chat, /Credential expires/);
+  assert.match(chat, /provider === ["']dizyjam["'][\s\S]{0,160}requestDizyJamSession\(\)/);
+});
+
+test('self-hosted hub requires JackTrip authentication and avoids delayed self-loop', () => {
   assert.match(compose, /jacktrip\/jacktrip:latest/);
   assert.match(compose, /network_mode:\s*host/);
   assert.match(compose, /privileged:\s*true/);
+  assert.match(compose, /-A/);
+  assert.match(compose, /--certfile \/dizyjam-auth\/jacktrip\.crt/);
+  assert.match(compose, /--keyfile \/dizyjam-auth\/jacktrip\.key/);
+  assert.match(compose, /--credsfile \/dizyjam-auth\/auth/);
+  assert.match(compose, /\.\/runtime:\/dizyjam-auth:ro/);
   assert.match(compose, /--hubpatch 2/);
   assert.match(compose, /--bufstrategy 4/);
   assert.match(compose, /-q auto/);
   assert.match(compose, /-U \$\{DIZYJAM_UDP_BASE_PORT:-61002\}/);
-  assert.doesNotMatch(compose, /^\s*-\s+-t\s*$/m);
 });
 
-test('deployment guide documents network ports and the unauthenticated first-slice boundary', () => {
+test('auth material generator protects private runtime files', () => {
+  assert.match(generator, /openssl req/);
+  assert.match(generator, /rsa:3072/);
+  assert.match(generator, /chmod 700 ["']?\$runtime_dir/);
+  assert.match(generator, /chmod 600 ["']?\$key_file["']? ["']?\$creds_file/);
+  assert.doesNotMatch(generator, /echo .*password/i);
+});
+
+test('deployment guide documents authenticated admission and upstream certificate-verification limitation', () => {
   assert.match(readme, /TCP 4464/);
   assert.match(readme, /UDP 61002-61100/);
-  assert.match(readme, /not yet authenticated against DizyChat\s+accounts/);
-  assert.match(readme, /JackTrip supports hub authentication/);
+  assert.match(readme, /authenticated by default/);
+  assert.match(readme, /random per-socket JackTrip password/);
+  assert.match(readme, /password is never derived from the username/i);
+  assert.match(readme, /does not verify the server certificate/i);
   assert.match(readme, /one shared low-latency mix/);
 });
 
