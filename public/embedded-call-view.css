@@ -123,6 +123,48 @@
   color: #ffb4b4;
 }
 
+.dizy-screen-audio-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.dizy-screen-audio-meter-track {
+  position: relative;
+  width: 64px;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 18%, transparent);
+}
+
+.dizy-screen-audio-meter-fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 70ms linear;
+}
+
+.dizy-screen-audio-meter[data-active="true"] {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border-color));
+  color: var(--text-primary);
+}
+
+.dizy-screen-audio-meter-value {
+  min-width: 2.4em;
+  text-align: right;
+}
+
 .dizy-call-stage .voice-call-panel {
   position: static !important;
   inset: auto !important;
