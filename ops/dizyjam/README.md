@@ -104,6 +104,8 @@ The logs should show the JackTrip hub waiting for client connections.
 
 The Compose service uses host networking and privileged mode because JackTrip's
 official container runs JACK with realtime scheduling and locked shared memory.
+The JACK base image currently requires a 384 MB `/dev/shm`; smaller values can
+make `jackd` crash with `SIGBUS` before JackTrip starts.
 
 ## 4. Configure DizyChat
 

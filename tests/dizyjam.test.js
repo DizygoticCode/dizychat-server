@@ -83,6 +83,7 @@ test('self-hosted hub requires JackTrip authentication and avoids delayed self-l
   assert.match(compose, /jacktrip\/jacktrip:latest/);
   assert.match(compose, /network_mode:\s*host/);
   assert.match(compose, /privileged:\s*true/);
+  assert.match(compose, /shm_size:\s*384m/);
   assert.match(compose, /-A/);
   assert.match(compose, /--certfile \/dizyjam-auth\/jacktrip\.crt/);
   assert.match(compose, /--keyfile \/dizyjam-auth\/jacktrip\.key/);
