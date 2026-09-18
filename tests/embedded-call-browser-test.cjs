@@ -106,8 +106,11 @@ async function mediaCase(browser, source, mode) {
       const result=await page.evaluate(()=>({guard:window.observerDiagnostic.guard,captures:window.captureRequests}));
       assert.equal(result.guard,false);
       assert.equal(result.captures.length,1);
-      assert.equal(result.captures[0].audio,false);
-      console.log('PASS: connected bridge -> Share Screen -> Stop Screen -> disconnect -> rejoin; video-only capture');
+      assert.equal(result.captures[0].audio.suppressLocalAudioPlayback,false);
+      assert.equal(result.captures[0].audio.restrictOwnAudio,true);
+      assert.equal(result.captures[0].systemAudio,'include');
+      assert.equal(result.captures[0].windowAudio,'window');
+      console.log('PASS: connected bridge -> Share Screen -> Stop Screen -> disconnect -> rejoin; bounded video with optional display audio');
     } finally {await page.close();}
   } finally {await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
