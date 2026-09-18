@@ -17,7 +17,7 @@ const safeAuthUsername = (displayName, socketId) => {
   const base = String(displayName || 'guest')
     .normalize('NFKD')
     .replace(/[^a-zA-Z0-9_.-]+/g, '_')
-    .replace(/^[_-.]+|[_-.]+$/g, '')
+    .replace(/^[_.-]+|[_.-]+$/g, '')
     .slice(0, 40) || 'guest';
   const suffix = crypto.createHash('sha256').update(String(socketId || '')).digest('hex').slice(0, 12);
   return `${base}-${suffix}`.slice(0, AUTH_USERNAME_MAX);
