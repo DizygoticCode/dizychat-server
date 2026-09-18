@@ -2507,6 +2507,12 @@ const removeSocketFromRoom = (socket, targetRoom) => {
   const room = normaliseRoomName(targetRoom || socket.currentRoom);
   if (!room) return;
 
+  try {
+    dizyJamCredentialStore.revokeSocket(socket.id);
+  } catch (error) {
+    console.error('[DizyJam] Failed to revoke room credential:', error?.message || error);
+  }
+
   const members = roomMembers.get(room);
   if (members) {
     members.delete(socket.id);
@@ -2928,6 +2934,11 @@ io.on('connection', socket => {
   socket.on('account logout', async (payload = {}, ack) => {
     try {
       const mobileSessionId = socket.mobileSessionId;
+      try {
+        dizyJamCredentialStore.revokeSocket(socket.id);
+      } catch (error) {
+        console.error('[DizyJam] Failed to revoke logout credential:', error?.message || error);
+      }
       if (socket.accountSessionToken) {
         await revokeAccountSessionToken(socket.accountSessionToken);
       }
@@ -3144,6 +3155,140 @@ io.on('connection', socket => {
     }
     removeSocketFromRoom(socket, target);
     emitRoomListUpdate();
+  });
+
+  socket.on('jam:dizyjam-credentials', (payload = {}, ack) => {
+    const respond = (body) => {
+      if (typeof ack === 'function') ack(body);
+    };
+
+    try {
+      if (!DIZYJAM_ENABLED()) {
+        respond({
+          ok: false,
+          error: 'DizyJam is not fully configured on this server yet.',
+          code: 'DIZYJAM_NOT_CONFIGURED',
+          missingRequiredEnv: getDizyJamMissingConfig(),
+        });
+        return;
+      }
+
+      const roomName = normaliseRoomName(socket.currentRoom);
+      const requestedRoom = normaliseRoomName(payload?.room);
+      if (!roomName || (requestedRoom && requestedRoom !== roomName)) {
+        respond({
+          ok: false,
+          error: 'Join the DizyChat room before requesting DizyJam access.',
+          code: 'DIZYJAM_ROOM_REQUIRED',
+        });
+        return;
+      }
+
+      const displayName = normaliseUsername(socket.username, '');
+      const identityKind = String(socket.identityKind || socket.principal?.kind || '');
+      if (!displayName || !['account', 'guest'].includes(identityKind)) {
+        respond({
+          ok: false,
+          error: 'A registered DizyChat account or admitted guest identity is required.',
+          code: 'DIZYJAM_IDENTITY_REQUIRED',
+        });
+        return;
+      }
+
+      if (isUserBlocked(roomName, displayName)) {
+        respond({
+          ok: false,
+          error: 'DizyJam access is unavailable while you are blocked in this room.',
+          code: 'DIZYJAM_BLOCKED',
+        });
+        return;
+      }
+
+      if (!canCreateJamSession(socket.id)) {
+        respond({
+          ok: false,
+          error: 'Too many DizyJam credential requests. Please wait a minute and try again.',
+          code: 'DIZYJAM_RATE_LIMITED',
+        });
+        return;
+      }
+
+      const activeRooms = dizyJamCredentialStore.getActiveRooms();
+      if (activeRooms.some((activeRoom) => activeRoom !== roomName)) {
+        respond({
+          ok: false,
+          error: 'The low-latency DizyJam hub is currently in use by another DizyChat room.',
+          code: 'DIZYJAM_BUSY',
+        });
+        return;
+      }
+
+      const credential = dizyJamCredentialStore.issue({
+        socketId: socket.id,
+        displayName,
+        room: roomName,
+        identityKind,
+      });
+
+      const command = [
+        'jacktrip',
+        '-C', DIZYJAM_HOST,
+        '-A',
+        '--username', credential.username,
+        '--password', credential.password,
+        '-q', 'auto',
+        '--bufstrategy', '4',
+      ].join(' ');
+
+      logSecurityEvent('dizyjam_credential_issued', {
+        room: roomName,
+        username: displayName,
+        identityKind,
+        socketId: socket.id,
+        expiresAt: credential.expiresAt,
+      });
+
+      respond({
+        ok: true,
+        session: {
+          provider: 'dizyjam',
+          providerName: 'DizyJam Low Latency',
+          room: roomName,
+          title: `${roomName} Jam`,
+          badge: 'Self-hosted · authenticated',
+          mode: 'self-hosted-jacktrip',
+          host: DIZYJAM_HOST,
+          tcpPort: DIZYJAM_TCP_PORT,
+          udpBasePort: DIZYJAM_UDP_BASE_PORT,
+          udpEndPort: DIZYJAM_UDP_END_PORT,
+          sampleRate: DIZYJAM_SAMPLE_RATE,
+          bufferSize: DIZYJAM_BUFFER_SIZE,
+          clientInstallUrl: DIZYJAM_CLIENT_INSTALL_URL,
+          authRequired: true,
+          username: credential.username,
+          password: credential.password,
+          displayName: credential.displayName,
+          identityKind: credential.identityKind,
+          expiresAt: credential.expiresAt,
+          clientCommand: command,
+          oneSharedMix: true,
+          instructions: [
+            'These JackTrip credentials were minted for your current DizyChat session and are not derived from your public username.',
+            'Connect in authenticated Hub Client mode; the credential is removed when you leave/sign out and also expires automatically.',
+            `The DizyJam server runs at ${DIZYJAM_SAMPLE_RATE} Hz with a ${DIZYJAM_BUFFER_SIZE}-frame JACK buffer.`,
+            'Keep DizyChat open for camera, chat and screen sharing. Mute DizyChat call audio while actively jamming to avoid doubled/echoed instruments.',
+            'Use wired Ethernet, headphones and an ASIO interface on Windows where possible.',
+          ],
+        },
+      });
+    } catch (error) {
+      console.error('[DizyJam] Credential issue failed:', error?.message || error);
+      respond({
+        ok: false,
+        error: 'Unable to issue DizyJam credentials right now.',
+        code: 'DIZYJAM_CREDENTIAL_FAILURE',
+      });
+    }
   });
 
   socket.on('request rooms', () => {
@@ -3775,6 +3920,11 @@ io.on('connection', socket => {
   // ----- Disconnect -----
   socket.on('disconnect', () => {
     console.log('[Socket] Disconnected', socket.id);
+    try {
+      dizyJamCredentialStore.revokeSocket(socket.id);
+    } catch (error) {
+      console.error('[DizyJam] Failed to revoke disconnected credential:', error?.message || error);
+    }
     const lastRoom = socket.currentRoom;
     if (lastRoom) {
       removeSocketFromRoom(socket, lastRoom);
