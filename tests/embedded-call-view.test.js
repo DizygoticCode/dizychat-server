@@ -57,6 +57,8 @@ test('embedded call stylesheet keeps uncropped non-resizable media above chat', 
   assert.match(css, /\.dizy-call-stage[\s\S]*\.call-video-element[\s\S]*height:\s*auto/i);
   assert.match(css, /\.dizy-call-stage[\s\S]*\.voice-call-panel[\s\S]*position:\s*static\s*!important/i);
   assert.match(css, /\.voice-call-panel[\s\S]*resize:\s*none\s*!important/i);
+  assert.match(css, /background:\s*var\(--surface\)/i);
+  assert.match(css, /border-color:\s*var\(--accent\)/i);
   assert.match(css, /@media\s*\(max-width:\s*768px\)/i);
   assert.match(css, /\.dizy-call-stage\.is-focus/i);
   assert.doesNotMatch(css, /grid-template-areas:\s*"call chat users"/i);
@@ -70,6 +72,12 @@ test('audio-only calls use a compact row instead of reserving a visual-media col
   assert.match(source, /dizy-call-has-visuals/);
   assert.match(css, /#chat-main\.dizy-call-layout\.dizy-call-audio-only[\s\S]*grid-template-areas:\s*"call users"\s*"chat users"/i);
   assert.match(css, /\.dizy-call-stage\s+\.voice-call-drag-hint[\s\S]*display:\s*none\s*!important/i);
+});
+
+test('media actions are integrated into the native call header', () => {
+  const source = fs.readFileSync(runtimePath, 'utf8');
+  assert.match(source, /const callHeader = panel\.querySelector\(['"]\.voice-call-header['"]\)/);
+  assert.match(source, /callHeader\.appendChild\(toolbar\)/);
 });
 
 test('focus and chat controls stay hidden until visual media exists', () => {
