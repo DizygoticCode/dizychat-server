@@ -8895,6 +8895,26 @@ if (voiceBtn) {
     if (!callState.room && panel.hidden) resetMusicModeChoice();
     panel.hidden = !panel.hidden;
   });
+
+  window.addEventListener("dizychat:start-music-call", async () => {
+    panel.hidden = false;
+    if (callState.room || callState.joining) {
+      if (callState.room) showToast("Music Call is already connected.", "info");
+      return;
+    }
+    try {
+      chooseMusicMode(true);
+      await joinCall();
+      showToast("Music Call connected", "success");
+    } catch (error) {
+      console.error("[LiveCall] Music Call launch failed", error);
+      await leaveCall(true);
+      const message = normalizeCallError(error);
+      showToast(message, "error");
+      setStatus(message);
+      setCallUiState({ inCall: false, muted: false, cameraBlocked: false });
+    }
+  });
   musicModeOffControl?.addEventListener("click", () => chooseMusicMode(false));
   musicModeOnControl?.addEventListener("click", () => chooseMusicMode(true));
   joinControl.addEventListener("click", async () => {
@@ -9265,7 +9285,7 @@ if (voiceBtn) {
   });
 })();
 
-// ------------------- Jam Session Launcher -------------------
+// ------------------- Guitar Jam Launcher -------------------
 (() => {
   if (!jamSessionBtn) return;
 
@@ -9275,10 +9295,10 @@ if (voiceBtn) {
   panel.innerHTML = `
     <div class="jam-session-header">
       <div>
-        <div class="jam-session-title">Jam Session</div>
-        <div class="jam-session-status" data-role="status">Checking pro-audio options…</div>
+        <div class="jam-session-title">Guitar Jam</div>
+        <div class="jam-session-status" data-role="status">Choose how you want to play together.</div>
       </div>
-      <button type="button" class="jam-session-close" data-role="close" aria-label="Close jam session panel">✕</button>
+      <button type="button" class="jam-session-close" data-role="close" aria-label="Close Guitar Jam panel">✕</button>
     </div>
     <div class="jam-session-providers" data-role="providers"></div>
     <div class="jam-session-output" data-role="output" hidden></div>
@@ -9326,51 +9346,65 @@ if (voiceBtn) {
   const renderSession = (session) => {
     if (!outputEl || !session) return;
     const instructions = Array.isArray(session.instructions) ? session.instructions : session.setupTips || [];
+    const connectionRows = [
+      session.host ? `<div class="jam-session-code"><span>Host</span><code>${escapeHtml(session.host)}</code><button type="button" data-copy="${escapeHtml(session.host)}">Copy</button></div>` : "",
+      session.tcpPort ? `<div class="jam-session-code"><span>Hub port</span><code>${escapeHtml(String(session.tcpPort))}</code></div>` : "",
+      session.sampleRate ? `<div class="jam-session-code"><span>Sample rate</span><code>${escapeHtml(String(session.sampleRate))} Hz</code></div>` : "",
+      session.bufferSize ? `<div class="jam-session-code"><span>Server buffer</span><code>${escapeHtml(String(session.bufferSize))} frames</code></div>` : "",
+      session.groupName ? `<div class="jam-session-code"><span>Group</span><code>${escapeHtml(session.groupName)}</code><button type="button" data-copy="${escapeHtml(session.groupName)}">Copy</button></div>` : "",
+      session.password ? `<div class="jam-session-code"><span>Password</span><code>${escapeHtml(session.password)}</code><button type="button" data-copy="${escapeHtml(session.password)}">Copy</button></div>` : "",
+      session.clientCommand ? `<div class="jam-session-code jam-session-command"><span>CLI</span><code>${escapeHtml(session.clientCommand)}</code><button type="button" data-copy="${escapeHtml(session.clientCommand)}">Copy</button></div>` : "",
+    ].filter(Boolean).join("");
+
     outputEl.hidden = false;
     outputEl.innerHTML = `
       <div class="jam-session-result-title">${escapeHtml(session.providerName || session.provider)} ready</div>
       <div class="jam-session-result-meta">${escapeHtml(session.title || session.room || "DizyChat Jam")}</div>
-      ${session.groupName ? `<div class="jam-session-code"><span>Group</span><code>${escapeHtml(session.groupName)}</code><button type="button" data-copy="${escapeHtml(session.groupName)}">Copy</button></div>` : ""}
-      ${session.password ? `<div class="jam-session-code"><span>Password</span><code>${escapeHtml(session.password)}</code><button type="button" data-copy="${escapeHtml(session.password)}">Copy</button></div>` : ""}
+      ${connectionRows}
       <ul>${instructions.map((tip) => `<li>${escapeHtml(tip)}</li>`).join("")}</ul>
+      ${session.clientInstallUrl ? `<a class="jam-session-open" href="${escapeHtml(session.clientInstallUrl)}" target="_blank" rel="noopener noreferrer">Install JackTrip client</a>` : ""}
       ${session.url ? `<a class="jam-session-open" href="${escapeHtml(session.url)}" target="_blank" rel="noopener noreferrer">Open ${escapeHtml(session.providerName || "jam provider")}</a>` : ""}
     `;
-    const link = outputEl.querySelector(".jam-session-open");
-    if (link && session.provider === "jacktrip") {
-      window.open(session.url, "_blank", "noopener,noreferrer");
-    }
   };
 
   const renderProviders = (providers = []) => {
     if (!providersEl) return;
-    providersEl.innerHTML = providers.map((provider) => `
-      <article class="jam-provider-card" data-provider="${escapeHtml(provider.id)}">
-        <div class="jam-provider-head">
-          <strong>${escapeHtml(provider.name)}</strong>
-          <span>${escapeHtml(provider.badge || "")}</span>
-        </div>
-        <p>${escapeHtml(provider.bestFor || "")}</p>
-        <ul>
-          ${(provider.setupTips || []).slice(0, 3).map((tip) => `<li>${escapeHtml(tip)}</li>`).join("")}
-        </ul>
-        <button type="button" data-provider-action="${escapeHtml(provider.id)}">
-          ${provider.id === "jacktrip" ? "Try JackTrip free" : `Use ${escapeHtml(provider.name)}`}
-        </button>
-      </article>
-    `).join("");
+    providersEl.innerHTML = providers.map((provider) => {
+      const available = provider.available !== false;
+      const actionLabel = provider.id === "music-call"
+        ? "Start Music Call"
+        : provider.id === "dizyjam"
+          ? (available ? "Start DizyJam" : "Server setup required")
+          : "Use SonoBus fallback";
+      return `
+        <article class="jam-provider-card${available ? "" : " is-unavailable"}" data-provider="${escapeHtml(provider.id)}">
+          <div class="jam-provider-head">
+            <strong>${escapeHtml(provider.name)}</strong>
+            <span>${escapeHtml(provider.badge || "")}</span>
+          </div>
+          <p>${escapeHtml(provider.bestFor || "")}</p>
+          <ul>
+            ${(provider.setupTips || []).slice(0, 3).map((tip) => `<li>${escapeHtml(tip)}</li>`).join("")}
+          </ul>
+          <button type="button" data-provider-action="${escapeHtml(provider.id)}" ${available ? "" : "disabled"}>
+            ${escapeHtml(actionLabel)}
+          </button>
+        </article>
+      `;
+    }).join("");
   };
 
   const openPanel = async () => {
     panel.hidden = false;
+    outputEl.hidden = true;
     if (!jamStatus) {
-      setJamStatus("Checking free jam providers…");
+      setJamStatus("Checking DizyChat music options…");
       jamStatus = await fetchJamStatus();
       renderProviders(jamStatus.providers || []);
     }
-    const jacktrip = (jamStatus.providers || []).find((provider) => provider.id === "jacktrip");
-    setJamStatus(jacktrip?.freeTier
-      ? "JackTrip has a free test tier: up to 5 musicians for 30 minutes."
-      : "Choose a free external jam provider.");
+    setJamStatus(jamStatus?.dizyJam?.configured
+      ? "DizyJam is online for low-latency playing; Music Call remains built in for camera, lessons and screen sharing."
+      : "Music Call is ready. DizyJam will appear once the self-hosted JackTrip hub is configured.");
   };
 
   jamSessionBtn.hidden = false;
@@ -9378,15 +9412,12 @@ if (voiceBtn) {
 
   jamSessionBtn.addEventListener("click", async () => {
     try {
-      if (panel.hidden) {
-        await openPanel();
-      } else {
-        panel.hidden = true;
-      }
+      if (panel.hidden) await openPanel();
+      else panel.hidden = true;
     } catch (error) {
       console.error("[JamSession] status failed", error);
-      showToast(error?.message || "Unable to load jam providers.", "error");
-      setJamStatus(error?.message || "Unable to load jam providers.");
+      showToast(error?.message || "Unable to load Guitar Jam options.", "error");
+      setJamStatus(error?.message || "Unable to load Guitar Jam options.");
     }
   });
 
@@ -9396,19 +9427,29 @@ if (voiceBtn) {
 
   providersEl?.addEventListener("click", async (event) => {
     const button = event.target.closest("button[data-provider-action]");
-    if (!button) return;
+    if (!button || button.disabled) return;
     const provider = button.dataset.providerAction;
+
+    if (!window.currentRoom) {
+      showToast("Join a chat room before starting a jam session.", "warn");
+      return;
+    }
+
+    if (provider === "music-call") {
+      panel.hidden = true;
+      window.dispatchEvent(new CustomEvent("dizychat:start-music-call"));
+      return;
+    }
+
     try {
-      if (!window.currentRoom) {
-        showToast("Join a chat room before starting a jam session.", "warn");
-        return;
-      }
       button.disabled = true;
-      setJamStatus(`Preparing ${provider} jam…`);
+      setJamStatus(provider === "dizyjam" ? "Preparing DizyJam connection details…" : "Preparing SonoBus fallback…");
       const session = await requestJamSession(provider);
       renderSession(session);
-      setJamStatus(provider === "jacktrip" ? "JackTrip opened. Share its studio invite back in chat." : "Jam handoff generated.");
-      showToast(provider === "jacktrip" ? "JackTrip free test opened" : "Jam session details ready", "success");
+      setJamStatus(provider === "dizyjam"
+        ? "DizyJam details ready. Keep DizyChat open for camera/chat and use JackTrip for the low-latency instrument path."
+        : "SonoBus fallback details ready.");
+      showToast(provider === "dizyjam" ? "DizyJam ready" : "SonoBus fallback ready", "success");
     } catch (error) {
       console.error("[JamSession] launch failed", error);
       showToast(error?.message || "Unable to start jam session.", "error");
