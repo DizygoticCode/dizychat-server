@@ -74,7 +74,8 @@ test('join first, share video plus application audio, stop, disconnect, and rejo
   h.flush();
   assert.equal(captures,1);
   assert.ok(published.some(({track,options})=>track===videoTrack&&options.source==='screen_share'));
-  assert.ok(published.some(({track,options})=>track===audioTrack&&options.source==='screen_share_audio'));
+  assert.ok(published.some(({track,options})=>track===audioTrack&&options.source==='screen_share_audio'&&options.stream==='dizy-screen-share'));
+  assert.equal(h.api.state.screenAudioState,'published');
   assert.equal(h.api.state.stage.dataset.presentation,'screen-share');
   assert.equal(h.api.state.screenButton.textContent,'Stop Screen');
   await h.api.stopScreenShare();h.flush();
