@@ -13,6 +13,7 @@
   }
 })(function createEmbeddedCallModule() {
   const SCREEN_SHARE_TRACK_NAME = 'dizy-screen-share';
+  const SCREEN_SHARE_AUDIO_TRACK_NAME = 'dizy-screen-share-audio';
   const MAX_MESSAGE_OVERLAYS = 3;
   const MESSAGE_OVERLAY_TTL_MS = 4600;
 
@@ -74,12 +75,12 @@
   const canShareScreen = ({ native = false, hasDisplayCapture = false } = {}) =>
     !native && Boolean(hasDisplayCapture);
 
-  // Full-display audio can contain this app's own call playback on Chromium.
-  // Because browsers do not expose whether restrictOwnAudio was honored, only
-  // publish audio for a non-monitor capture surface.
+  // Publish audio for the user-selected display surface when Chrome supplies it.
+  // The capture request asks Chromium to exclude this tab's own playback where supported,
+  // while windowAudio prefers the selected application's audio over a whole-system mix.
   const shouldPublishDisplayAudio = (videoMediaTrack) => {
     const surface = String(videoMediaTrack?.getSettings?.().displaySurface || '').toLowerCase();
-    return surface === 'window' || surface === 'browser' || surface === 'tab';
+    return surface === 'window' || surface === 'browser' || surface === 'tab' || surface === 'monitor' || surface === 'screen';
   };
 
   const isNativeRuntime = (hostWindow) => {
@@ -415,8 +416,8 @@
       state.localScreenStream = null;
 
       try {
-        if (participant && publishedTrack && typeof participant.unpublishTrack === 'function') {
-          await participant.unpublishTrack(publishedTrack, true);
+        if (participant && typeof participant.unpublishTrack === 'function') {
+          if (publishedTrack) await participant.unpublishTrack(publishedTrack, true);
           if (publishedAudioTrack) await participant.unpublishTrack(publishedAudioTrack, true);
         }
       } catch (error) {
@@ -457,6 +458,28 @@
         ]);
       } finally {
         if (timer !== null) hostWindow.clearTimeout(timer);
+      }
+    };
+
+    const publishScreenAudio = async ({ participant, LK, stream, audioMediaTrack }) => {
+      if (!audioMediaTrack || !LK?.Track?.Source?.ScreenShareAudio) return;
+      try {
+        const publication = await publishTrackWithTimeout(participant, audioMediaTrack, {
+          source: LK.Track.Source.ScreenShareAudio,
+          name: SCREEN_SHARE_AUDIO_TRACK_NAME,
+          dtx: false,
+          red: false,
+          forceStereo: true,
+        }, 8000);
+
+        if (state.localScreenStream !== stream || !state.localScreenMediaTrack) {
+          try { await participant.unpublishTrack?.(publication?.track || audioMediaTrack, true); } catch (_error) { /* stopped meanwhile */ }
+          return;
+        }
+        state.localScreenAudioTrack = publication?.track || audioMediaTrack;
+      } catch (error) {
+        if (state.localScreenStream !== stream || !state.localScreenMediaTrack) return;
+        console.warn('[DizyChat Call] screen audio publish failed', error);
       }
     };
 
@@ -503,9 +526,9 @@
           throw new Error('LiveKit screen sharing is unavailable.');
         }
 
-        // Browser screen audio is deliberately disabled here. Window/system audio capture is
-        // browser/OS dependent and was destabilising Rocksmith's existing LONTIUM playback path.
-        // Exact program-audio capture belongs in the dedicated Windows WASAPI-loopback helper.
+        // Ask Chromium for the selected application's audio first, with system audio available
+        // when the user shares a full display. Keep local playback enabled for Rocksmith/LONTIUM,
+        // and request filtering of this DizyChat tab's own output to reduce feedback risk.
         // Bound video resolution and frame rate so sharing a 60/120/144 Hz game window cannot
         // overload Chrome's encoder and freeze the DizyChat page.
         stream = await getDisplayMedia.call(hostWindow.navigator.mediaDevices, {
@@ -515,12 +538,18 @@
             height: { ideal: 720, max: 1080 },
             frameRate: { ideal: 30, max: 30 },
           },
-          audio: false,
+          audio: {
+            suppressLocalAudioPlayback: false,
+            restrictOwnAudio: true,
+          },
           selfBrowserSurface: 'exclude',
           surfaceSwitching: 'include',
+          systemAudio: 'include',
+          windowAudio: 'window',
         });
 
         const videoMediaTrack = stream.getVideoTracks()[0] || null;
+        const audioMediaTrack = stream.getAudioTracks?.()[0] || null;
         if (!videoMediaTrack) throw new Error('No display video track was selected.');
         if ('contentHint' in videoMediaTrack) videoMediaTrack.contentHint = 'detail';
 
@@ -540,6 +569,9 @@
         // Never await LiveKit publication from the UI action. The local preview and Stop Screen
         // control remain usable even if WebRTC negotiation is temporarily slow.
         void publishScreenVideo({ participant, LK, stream, videoMediaTrack });
+        if (audioMediaTrack && shouldPublishDisplayAudio(videoMediaTrack)) {
+          void publishScreenAudio({ participant, LK, stream, audioMediaTrack });
+        }
         return;
       } catch (error) {
         for (const mediaTrack of stream?.getTracks?.() || []) {
