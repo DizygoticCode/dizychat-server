@@ -2029,10 +2029,21 @@ app.post('/api/jam/session', express.json(), (req, res) => {
   }
 
   const providers = getJamProviders();
-  const providerId = String(req.body?.provider || 'jacktrip').trim().toLowerCase();
+  const providerId = String(req.body?.provider || (DIZYJAM_ENABLED ? 'dizyjam' : 'music-call')).trim().toLowerCase();
   const provider = providers.find((entry) => entry.id === providerId);
   if (!provider) {
     res.status(400).json({ error: 'Unsupported jam provider.', providers });
+    return;
+  }
+  if (provider.available === false) {
+    const missing = provider.id === 'dizyjam' && !DIZYJAM_HOST ? ['DIZYJAM_HOST'] : [];
+    res.status(503).json({
+      error: provider.id === 'dizyjam'
+        ? 'DizyJam is not configured on this server yet.'
+        : 'This jam option is not currently available.',
+      provider,
+      missingRequiredEnv: missing,
+    });
     return;
   }
 
@@ -2048,19 +2059,35 @@ app.post('/api/jam/session', express.json(), (req, res) => {
     sessionId,
     title: `${room} Jam`,
     url: provider.url,
-    freeTier: provider.freeTier,
     badge: provider.badge,
     mode: provider.mode,
     setupTips: provider.setupTips,
   };
 
-  if (provider.id === 'jacktrip') {
-    session.freeSessionMinutes = provider.freeSessionMinutes;
-    session.maxFreeMusicians = provider.maxFreeMusicians;
+  if (provider.id === 'music-call') {
     session.instructions = [
-      'JackTrip has a free hosted-studio test path: up to 5 musicians for 30 minutes.',
-      'Open JackTrip, create/start a studio, then paste the JackTrip studio invite back into this DizyChat room.',
-      'For the best ASIO/audio-interface path, join through the JackTrip desktop app instead of only the browser.',
+      'DizyChat will open the existing Live Call panel with Music mode selected.',
+      'Use this for lessons, Rocksmith, screen sharing, talking and casual playing.',
+      'For the tightest instrument timing, switch to DizyJam Low Latency.',
+    ];
+  } else if (provider.id === 'dizyjam') {
+    session.host = DIZYJAM_HOST;
+    session.tcpPort = DIZYJAM_TCP_PORT;
+    session.udpBasePort = DIZYJAM_UDP_BASE_PORT;
+    session.udpEndPort = DIZYJAM_UDP_END_PORT;
+    session.sampleRate = DIZYJAM_SAMPLE_RATE;
+    session.bufferSize = DIZYJAM_BUFFER_SIZE;
+    session.clientInstallUrl = DIZYJAM_CLIENT_INSTALL_URL;
+    session.clientCommand = DIZYJAM_TCP_PORT === 4464
+      ? `jacktrip -C ${DIZYJAM_HOST} -q auto --bufstrategy 4`
+      : '';
+    session.oneSharedMix = true;
+    session.instructions = [
+      `Connect the JackTrip desktop client to ${DIZYJAM_HOST} in Hub Client mode.`,
+      `Use 48 kHz-compatible settings; the DizyJam server currently runs at ${DIZYJAM_SAMPLE_RATE} Hz with a ${DIZYJAM_BUFFER_SIZE}-frame JACK buffer.`,
+      'Keep DizyChat open for camera, chat and screen sharing. Mute DizyChat call audio while actively jamming to avoid doubled/echoed audio.',
+      'Use wired Ethernet, headphones and an ASIO interface on Windows where possible.',
+      'This first DizyJam deployment is one shared private mix, so use one active low-latency jam group at a time.',
     ];
   } else if (provider.id === 'sonobus') {
     session.groupName = sessionId;
@@ -2068,7 +2095,7 @@ app.post('/api/jam/session', express.json(), (req, res) => {
     session.instructions = [
       `Open SonoBus and join group ${sessionId}.`,
       `Use password ${password} if you want a private group.`,
-      'Use headphones and wired Ethernet; SonoBus does not currently encrypt audio/data communication.',
+      'Use headphones and wired Ethernet. SonoBus remains the optional peer-to-peer fallback.',
     ];
   }
 
