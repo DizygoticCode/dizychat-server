@@ -257,9 +257,22 @@
 
       const tiles = [...stage.querySelectorAll('.call-video-tile')];
       if (state.expandedTile && !tiles.includes(state.expandedTile)) setExpandedTile(null);
-      for (const tile of tiles) ensureTileFullscreenControl(tile);
-      const screenTiles = tiles.filter((tile) => tile.classList.contains('dizy-screen-share-tile'));
-      const cameraTiles = tiles.filter((tile) => !tile.classList.contains('dizy-screen-share-tile'));
+
+      const currentKeys = new Set();
+      for (const tile of tiles) {
+        ensureTileFullscreenControl(tile);
+        ensureTileHideControl(tile);
+        const key = getTileKey(tile);
+        if (key) currentKeys.add(key);
+        tile.hidden = state.hiddenTileKeys.has(key);
+      }
+      for (const key of [...state.hiddenTileKeys]) {
+        if (!currentKeys.has(key)) state.hiddenTileKeys.delete(key);
+      }
+
+      const visibleTiles = tiles.filter((tile) => !tile.hidden);
+      const screenTiles = visibleTiles.filter((tile) => tile.classList.contains('dizy-screen-share-tile'));
+      const cameraTiles = visibleTiles.filter((tile) => !tile.classList.contains('dizy-screen-share-tile'));
       const presentation = derivePresentationState({
         connected: Boolean(state.room),
         focus: state.focus,
