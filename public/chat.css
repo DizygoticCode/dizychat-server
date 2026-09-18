@@ -2589,6 +2589,15 @@ body:not(.dark) #voice-btn.recording {
   padding: 10px;
 }
 
+.jam-provider-card.is-unavailable {
+  opacity: 0.58;
+}
+
+.jam-provider-card button:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
 .jam-provider-head strong { font-size: 0.95rem; }
 .jam-provider-head span {
   background: rgba(250, 204, 21, 0.18);
@@ -2651,6 +2660,12 @@ body:not(.dark) #voice-btn.recording {
   padding: 6px 8px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.jam-session-command code {
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .jam-session-open {
