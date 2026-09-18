@@ -9364,32 +9364,152 @@ if (voiceBtn) {
     }
   };
 
+  const detectDizyJamPlatform = () => {
+    const nav = typeof navigator === "object" && navigator ? navigator : {};
+    const raw = [
+      nav.userAgentData?.platform,
+      nav.platform,
+      nav.userAgent,
+    ].filter(Boolean).join(" ").toLowerCase();
+
+    if (/android|iphone|ipad|ipod/.test(raw)) {
+      return { id: "mobile", label: "mobile device", installHash: "" };
+    }
+    if (/win/.test(raw)) {
+      return { id: "windows", label: "Windows", installHash: "#windows" };
+    }
+    if (/mac/.test(raw)) {
+      return { id: "macos", label: "macOS", installHash: "#macos" };
+    }
+    if (/linux|x11/.test(raw)) {
+      return { id: "linux", label: "Linux", installHash: "#linux" };
+    }
+    return { id: "desktop", label: "your computer", installHash: "" };
+  };
+
+  const quoteShell = (value) => `'${String(value || "").replace(/'/g, "'\\''")}'`;
+  const quotePowerShell = (value) => `'${String(value || "").replace(/'/g, "''")}'`;
+
+  const buildDizyJamClientCommand = (session, platform) => {
+    const host = String(session?.host || "").trim();
+    const username = String(session?.username || "").trim();
+    if (!host || !username) return String(session?.clientCommand || "").trim();
+
+    if (platform.id === "windows") {
+      return [
+        "& 'C:\\Program Files\\JackTrip\\jacktrip.exe'",
+        "-R",
+        "-C", quotePowerShell(host),
+        "-A",
+        "--username", quotePowerShell(username),
+        "--password",
+        "-q auto",
+        "--bufstrategy 4",
+      ].join(" ");
+    }
+
+    if (platform.id === "macos") {
+      return [
+        "jacktrip -R",
+        "-C", quoteShell(host),
+        "-A",
+        "--username", quoteShell(username),
+        "--password",
+        "-q auto",
+        "--bufstrategy 4",
+      ].join(" ");
+    }
+
+    return String(session?.clientCommand || [
+      "jacktrip",
+      "-C", host,
+      "-A",
+      "--username", username,
+      "--password",
+      "-q auto",
+      "--bufstrategy 4",
+    ].join(" ")).trim();
+  };
+
   const renderSession = (session) => {
     if (!outputEl || !session) return;
-    const instructions = Array.isArray(session.instructions) ? session.instructions : session.setupTips || [];
+
+    const platform = detectDizyJamPlatform();
     const expiresLabel = session.expiresAt
       ? new Date(Number(session.expiresAt)).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
       : "";
-    const connectionRows = [
+    const installBase = String(session.clientInstallUrl || "https://jacktrip.github.io/jacktrip/Install/").replace(/#.*$/, "");
+    const installUrl = `${installBase}${platform.installHash}`;
+    const clientCommand = buildDizyJamClientCommand(session, platform);
+    const isMobile = platform.id === "mobile";
+
+    const credentialRows = [
+      session.username ? `<div class="jam-session-code"><span>Username</span><code>${escapeHtml(session.username)}</code><button type="button" data-copy="${escapeHtml(session.username)}">Copy</button></div>` : "",
+      session.password ? `<div class="jam-session-code"><span>Password</span><code>${escapeHtml(session.password)}</code><button type="button" data-copy="${escapeHtml(session.password)}">Copy</button></div>` : "",
+      expiresLabel ? `<div class="jam-session-code"><span>Expires</span><code>${escapeHtml(expiresLabel)}</code></div>` : "",
+    ].filter(Boolean).join("");
+
+    const advancedRows = [
       session.host ? `<div class="jam-session-code"><span>Host</span><code>${escapeHtml(session.host)}</code><button type="button" data-copy="${escapeHtml(session.host)}">Copy</button></div>` : "",
       session.tcpPort ? `<div class="jam-session-code"><span>Hub port</span><code>${escapeHtml(String(session.tcpPort))}</code></div>` : "",
-      session.username ? `<div class="jam-session-code"><span>JackTrip user</span><code>${escapeHtml(session.username)}</code><button type="button" data-copy="${escapeHtml(session.username)}">Copy</button></div>` : "",
-      session.sampleRate ? `<div class="jam-session-code"><span>Sample rate</span><code>${escapeHtml(String(session.sampleRate))} Hz</code></div>` : "",
-      session.bufferSize ? `<div class="jam-session-code"><span>Server buffer</span><code>${escapeHtml(String(session.bufferSize))} frames</code></div>` : "",
-      session.groupName ? `<div class="jam-session-code"><span>Group</span><code>${escapeHtml(session.groupName)}</code><button type="button" data-copy="${escapeHtml(session.groupName)}">Copy</button></div>` : "",
-      session.password ? `<div class="jam-session-code"><span>Password</span><code>${escapeHtml(session.password)}</code><button type="button" data-copy="${escapeHtml(session.password)}">Copy</button></div>` : "",
-      expiresLabel ? `<div class="jam-session-code"><span>Credential expires</span><code>${escapeHtml(expiresLabel)}</code></div>` : "",
-      session.clientCommand ? `<div class="jam-session-code jam-session-command"><span>CLI</span><code>${escapeHtml(session.clientCommand)}</code><button type="button" data-copy="${escapeHtml(session.clientCommand)}">Copy</button></div>` : "",
+      session.udpBasePort && session.udpEndPort ? `<div class="jam-session-code"><span>UDP</span><code>${escapeHtml(String(session.udpBasePort))}–${escapeHtml(String(session.udpEndPort))}</code></div>` : "",
+      session.sampleRate ? `<div class="jam-session-code"><span>Rate</span><code>${escapeHtml(String(session.sampleRate))} Hz</code></div>` : "",
+      session.bufferSize ? `<div class="jam-session-code"><span>Buffer</span><code>${escapeHtml(String(session.bufferSize))} frames</code></div>` : "",
+      session.clientCommand ? `<div class="jam-session-code jam-session-command"><span>Generic CLI</span><code>${escapeHtml(session.clientCommand)}</code><button type="button" data-copy="${escapeHtml(session.clientCommand)}">Copy</button></div>` : "",
     ].filter(Boolean).join("");
+
+    const desktopFlow = `
+      <div class="jam-session-steps">
+        <div class="jam-session-step">
+          <span class="jam-session-step-number">1</span>
+          <div>
+            <strong>Install JackTrip for ${escapeHtml(platform.label)}</strong>
+            <p>Use the official JackTrip installer, then return here. You only need to install it once.</p>
+            <a class="jam-session-open" href="${escapeHtml(installUrl)}" target="_blank" rel="noopener noreferrer">Install JackTrip for ${escapeHtml(platform.label)}</a>
+          </div>
+        </div>
+        <div class="jam-session-step">
+          <span class="jam-session-step-number">2</span>
+          <div>
+            <strong>Copy the DizyJam connection command</strong>
+            <p>Run this on the computer carrying your instrument or DAW audio. JackTrip will ask for the temporary password below.</p>
+            <div class="jam-session-command-card">
+              <code>${escapeHtml(clientCommand)}</code>
+              <button type="button" data-copy="${escapeHtml(clientCommand)}">Copy command</button>
+            </div>
+          </div>
+        </div>
+        <div class="jam-session-step">
+          <span class="jam-session-step-number">3</span>
+          <div>
+            <strong>Choose your audio path and play</strong>
+            <p>Use your interface, microphone, keyboard or DAW routing. Keep DizyChat open for camera, chat and screen sharing, but avoid sending the same instrument through the LiveKit call as well.</p>
+          </div>
+        </div>
+      </div>`;
+
+    const mobileFlow = `
+      <div class="jam-session-device-note">
+        <strong>DizyJam audio runs on a computer.</strong>
+        <p>Keep DizyChat open on this device for chat/camera if you like, then open this room on a Windows, macOS or Linux computer to install JackTrip and connect your instrument audio.</p>
+        <a class="jam-session-open" href="${escapeHtml(installUrl)}" target="_blank" rel="noopener noreferrer">JackTrip installation options</a>
+      </div>`;
 
     outputEl.hidden = false;
     outputEl.innerHTML = `
       <div class="jam-session-result-title">${escapeHtml(session.providerName || session.provider)} ready</div>
-      <div class="jam-session-result-meta">${escapeHtml(session.title || session.room || "DizyChat Jam")}</div>
-      ${connectionRows}
-      <ul>${instructions.map((tip) => `<li>${escapeHtml(tip)}</li>`).join("")}</ul>
-      ${session.clientInstallUrl ? `<a class="jam-session-open" href="${escapeHtml(session.clientInstallUrl)}" target="_blank" rel="noopener noreferrer">Install JackTrip client</a>` : ""}
-      ${session.url ? `<a class="jam-session-open" href="${escapeHtml(session.url)}" target="_blank" rel="noopener noreferrer">Open ${escapeHtml(session.providerName || "jam provider")}</a>` : ""}
+      <div class="jam-session-result-meta">${escapeHtml(session.title || session.room || "DizyChat Jam")} · detected ${escapeHtml(platform.label)}</div>
+      ${isMobile ? mobileFlow : desktopFlow}
+      <div class="jam-session-credentials">
+        <strong>Temporary room credentials</strong>
+        <p>These belong to this DizyChat room session. They stop working when you leave/sign out and expire automatically.</p>
+        ${credentialRows}
+      </div>
+      <details class="jam-session-advanced">
+        <summary>Advanced connection details</summary>
+        ${advancedRows}
+        <p>For DAWs, ASIO/CoreAudio, VoiceMeeter, JACK or other custom routing, choose the audio devices locally in JackTrip or your normal audio chain. DizyJam only transports the finished audio stream.</p>
+      </details>
     `;
   };
 
