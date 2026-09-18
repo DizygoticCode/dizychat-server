@@ -421,11 +421,13 @@
         <button type="button" data-dizy-call-action="screen" aria-pressed="false">Share Screen</button>
         <button type="button" data-dizy-call-action="focus" aria-pressed="false">Focus</button>
         <button type="button" data-dizy-call-action="chat" aria-pressed="false">Chat</button>
+        <button type="button" data-dizy-call-action="restore-hidden" hidden>Show hidden media</button>
       `;
 
       state.screenButton = toolbar.querySelector('[data-dizy-call-action="screen"]');
       state.focusButton = toolbar.querySelector('[data-dizy-call-action="focus"]');
       state.chatButton = toolbar.querySelector('[data-dizy-call-action="chat"]');
+      state.restoreHiddenButton = toolbar.querySelector('[data-dizy-call-action="restore-hidden"]');
 
       const screenAudioBadge = doc.createElement('span');
       screenAudioBadge.className = 'dizy-screen-audio-status';
@@ -457,6 +459,7 @@
         if (!state.focus) setFocus(true);
         setChatDrawer(!state.chatDrawerOpen);
       });
+      state.restoreHiddenButton?.addEventListener('click', restoreHiddenTiles);
 
       return toolbar;
     };
