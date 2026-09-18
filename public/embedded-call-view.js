@@ -184,6 +184,36 @@
       }
     };
 
+    const getTileKey = (tile) => {
+      if (!tile) return '';
+      let key = String(tile.dataset?.videoKey || '').trim();
+      if (!key) {
+        key = 'dizy-media-' + state.nextAnonymousTileId++;
+        tile.dataset.videoKey = key;
+      }
+      return key;
+    };
+
+    const setTileHidden = (tile, hidden) => {
+      if (!tile) return;
+      const key = getTileKey(tile);
+      if (!key) return;
+      if (hidden) {
+        state.hiddenTileKeys.add(key);
+        if (state.expandedTile === tile) setExpandedTile(null);
+      } else {
+        state.hiddenTileKeys.delete(key);
+      }
+      tile.hidden = Boolean(hidden);
+      syncPresentation();
+    };
+
+    const restoreHiddenTiles = () => {
+      state.hiddenTileKeys.clear();
+      for (const tile of state.stage?.querySelectorAll?.('.call-video-tile') || []) tile.hidden = false;
+      syncPresentation();
+    };
+
     const ensureTileFullscreenControl = (tile) => {
       if (!tile || tile.querySelector?.('[data-dizy-media-action="fullscreen"]')) return;
       const button = doc.createElement('button');
