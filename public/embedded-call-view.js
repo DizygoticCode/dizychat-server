@@ -231,6 +231,22 @@
       tile.appendChild(button);
     };
 
+    const ensureTileHideControl = (tile) => {
+      if (!tile || tile.querySelector?.('[data-dizy-media-action="hide"]')) return;
+      const button = doc.createElement('button');
+      button.type = 'button';
+      button.className = 'dizy-media-hide-button';
+      button.dataset.dizyMediaAction = 'hide';
+      button.setAttribute('aria-label', 'Hide media locally');
+      button.title = 'Hide media locally';
+      button.textContent = '×';
+      button.addEventListener('click', (event) => {
+        event.stopPropagation?.();
+        setTileHidden(tile, true);
+      });
+      tile.appendChild(button);
+    };
+
     hostWindow.addEventListener('keydown', (event) => {
       if (event?.key === 'Escape' && state.expandedTile) setExpandedTile(null);
     });
