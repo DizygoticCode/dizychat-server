@@ -101,6 +101,8 @@ test('auth material generator protects private runtime files', () => {
   assert.match(generator, /auth_gid=.*DIZYJAM_AUTH_GID/);
   assert.match(generator, /chgrp ["']?\$auth_gid/);
   assert.match(generator, /chmod 2750 ["']?\$runtime_dir/);
+  assert.match(generator, /\[\[ ! -g ["']?\$runtime_dir["']? \]\]/);
+  assert.match(generator, /sudo chmod 2750 ["']?\$runtime_dir/);
   assert.match(generator, /chmod 640 ["']?\$key_file["']? ["']?\$creds_file/);
   assert.doesNotMatch(generator, /echo[^\n]*\$\{?password\}?/i);
 });
