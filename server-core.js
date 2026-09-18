@@ -251,8 +251,15 @@ const W2G_REQUEST_TIMEOUT_MS = parsePositiveIntegerEnv('W2G_REQUEST_TIMEOUT_MS',
 const WATCH_PARTY_EVENT_WINDOW_MS = 60 * 1000;
 const WATCH_PARTY_MAX_CREATES_PER_WINDOW = 3;
 
-const JACKTRIP_STUDIO_CREATE_URL = String(process.env.JACKTRIP_STUDIO_CREATE_URL || 'https://app.jacktrip.org/studios/create').trim();
-const JACKTRIP_STUDIO_INVITE_URL = String(process.env.JACKTRIP_STUDIO_INVITE_URL || '').trim();
+const DIZYJAM_HOST = String(process.env.DIZYJAM_HOST || '').trim();
+const DIZYJAM_TCP_PORT = parsePositiveIntegerEnv('DIZYJAM_TCP_PORT', 4464, { min: 1, max: 65535 });
+const DIZYJAM_UDP_BASE_PORT = parsePositiveIntegerEnv('DIZYJAM_UDP_BASE_PORT', 61002, { min: 1024, max: 65535 });
+const DIZYJAM_UDP_END_PORT = parsePositiveIntegerEnv('DIZYJAM_UDP_END_PORT', 61100, { min: 1024, max: 65535 });
+const DIZYJAM_SAMPLE_RATE = parsePositiveIntegerEnv('DIZYJAM_SAMPLE_RATE', 48000, { min: 8000, max: 192000 });
+const DIZYJAM_BUFFER_SIZE = parsePositiveIntegerEnv('DIZYJAM_BUFFER_SIZE', 128, { min: 16, max: 4096 });
+const DIZYJAM_CLIENT_INSTALL_URL = String(process.env.DIZYJAM_CLIENT_INSTALL_URL || 'https://jacktrip.github.io/jacktrip/Install/').trim();
+const DIZYJAM_DISABLED = ['false', '0', 'no', 'off', 'disabled'].includes(String(process.env.ENABLE_DIZYJAM || '').trim().toLowerCase());
+const DIZYJAM_ENABLED = !DIZYJAM_DISABLED && Boolean(DIZYJAM_HOST);
 const SONOBUS_DOWNLOAD_URL = String(process.env.SONOBUS_DOWNLOAD_URL || 'https://sonobus.net/index.html').trim();
 const JAM_SESSION_EVENT_WINDOW_MS = 60 * 1000;
 const JAM_SESSION_MAX_CREATES_PER_WINDOW = 12;
@@ -1940,39 +1947,56 @@ const safeJamSlug = (value) => {
 
 const getJamProviders = () => [
   {
-    id: 'jacktrip',
-    name: 'JackTrip',
-    badge: 'Free test available',
-    bestFor: 'Highest-quality low-latency musician sessions with the JackTrip desktop app or browser studio.',
-    mode: JACKTRIP_STUDIO_INVITE_URL ? 'configured-link' : 'create-studio',
-    freeTier: true,
-    maxFreeMusicians: 5,
-    freeSessionMinutes: 30,
-    requiresInstallForBestAudio: true,
-    supportsBrowserJoin: true,
-    supportsAsioViaNativeApp: true,
-    url: JACKTRIP_STUDIO_INVITE_URL || JACKTRIP_STUDIO_CREATE_URL,
+    id: 'music-call',
+    name: 'Music Call',
+    badge: 'Built into DizyChat',
+    bestFor: 'Music-quality calls, lessons, Rocksmith, camera and screen sharing with no extra app.',
+    mode: 'livekit-music-call',
+    available: ENABLE_VOICE_CALLS && hasLivekitCredentials(),
+    requiresInstallForBestAudio: false,
     setupTips: [
-      'Create or open a free JackTrip Studio, then share its invite with the room.',
-      'Use the JackTrip desktop app for the best latency and audio-interface support.',
-      'Use wired Ethernet and headphones; avoid Wi-Fi and speakers for live instruments.',
+      'Starts the existing DizyChat call with Music mode enabled.',
+      'Use this for talking, lessons, screen sharing and casual playing.',
+      'For tightly synchronized playing, use DizyJam Low Latency instead.',
+    ],
+  },
+  {
+    id: 'dizyjam',
+    name: 'DizyJam Low Latency',
+    badge: DIZYJAM_ENABLED ? 'Self-hosted' : 'Server setup required',
+    bestFor: 'Lowest-latency instrument sessions using our private JackTrip hub while DizyChat handles camera, chat and screen sharing.',
+    mode: 'self-hosted-jacktrip',
+    available: DIZYJAM_ENABLED,
+    host: DIZYJAM_ENABLED ? DIZYJAM_HOST : '',
+    tcpPort: DIZYJAM_TCP_PORT,
+    udpBasePort: DIZYJAM_UDP_BASE_PORT,
+    udpEndPort: DIZYJAM_UDP_END_PORT,
+    sampleRate: DIZYJAM_SAMPLE_RATE,
+    bufferSize: DIZYJAM_BUFFER_SIZE,
+    requiresInstallForBestAudio: true,
+    supportsAsioViaNativeApp: true,
+    clientInstallUrl: DIZYJAM_CLIENT_INSTALL_URL,
+    setupTips: [
+      'Install the JackTrip desktop client and connect to the DizyJam host in Hub Client mode.',
+      'Use a wired Ethernet connection, headphones and your ASIO audio interface where possible.',
+      'The private hub is one shared low-latency mix; use one active DizyJam group at a time.',
     ],
   },
   {
     id: 'sonobus',
     name: 'SonoBus',
-    badge: 'Free fallback',
-    bestFor: 'Open-source peer-to-peer audio groups with ASIO support on Windows and DAW plugin options.',
+    badge: 'Optional fallback',
+    bestFor: 'Free peer-to-peer fallback when you do not want to use the DizyJam hub.',
     mode: 'external-app',
-    freeTier: true,
+    available: true,
     requiresInstallForBestAudio: true,
     supportsBrowserJoin: false,
     supportsAsioViaNativeApp: true,
     url: SONOBUS_DOWNLOAD_URL,
     setupTips: [
-      'Install SonoBus, choose the generated group name, and optionally set the generated password.',
-      'SonoBus does not use echo cancellation, so everyone should use headphones.',
-      'SonoBus notes that its audio/data communication is not currently encrypted.',
+      'Install SonoBus, choose the generated group name, and optionally use the generated password.',
+      'Use headphones and wired Ethernet for live instruments.',
+      'SonoBus remains a fallback; DizyJam is the primary low-latency path.',
     ],
   },
 ];
@@ -1981,7 +2005,18 @@ app.get('/api/jam/status', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json({
     enabled: true,
-    recommendedProvider: 'jacktrip',
+    recommendedProvider: DIZYJAM_ENABLED ? 'dizyjam' : 'music-call',
+    dizyJam: {
+      configured: DIZYJAM_ENABLED,
+      host: DIZYJAM_ENABLED ? DIZYJAM_HOST : '',
+      tcpPort: DIZYJAM_TCP_PORT,
+      udpBasePort: DIZYJAM_UDP_BASE_PORT,
+      udpEndPort: DIZYJAM_UDP_END_PORT,
+      sampleRate: DIZYJAM_SAMPLE_RATE,
+      bufferSize: DIZYJAM_BUFFER_SIZE,
+      missingRequiredEnv: DIZYJAM_HOST ? [] : ['DIZYJAM_HOST'],
+      oneSharedMix: true,
+    },
     providers: getJamProviders(),
   });
 });
@@ -1994,10 +2029,21 @@ app.post('/api/jam/session', express.json(), (req, res) => {
   }
 
   const providers = getJamProviders();
-  const providerId = String(req.body?.provider || 'jacktrip').trim().toLowerCase();
+  const providerId = String(req.body?.provider || (DIZYJAM_ENABLED ? 'dizyjam' : 'music-call')).trim().toLowerCase();
   const provider = providers.find((entry) => entry.id === providerId);
   if (!provider) {
     res.status(400).json({ error: 'Unsupported jam provider.', providers });
+    return;
+  }
+  if (provider.available === false) {
+    const missing = provider.id === 'dizyjam' && !DIZYJAM_HOST ? ['DIZYJAM_HOST'] : [];
+    res.status(503).json({
+      error: provider.id === 'dizyjam'
+        ? 'DizyJam is not configured on this server yet.'
+        : 'This jam option is not currently available.',
+      provider,
+      missingRequiredEnv: missing,
+    });
     return;
   }
 
@@ -2013,19 +2059,35 @@ app.post('/api/jam/session', express.json(), (req, res) => {
     sessionId,
     title: `${room} Jam`,
     url: provider.url,
-    freeTier: provider.freeTier,
     badge: provider.badge,
     mode: provider.mode,
     setupTips: provider.setupTips,
   };
 
-  if (provider.id === 'jacktrip') {
-    session.freeSessionMinutes = provider.freeSessionMinutes;
-    session.maxFreeMusicians = provider.maxFreeMusicians;
+  if (provider.id === 'music-call') {
     session.instructions = [
-      'JackTrip has a free hosted-studio test path: up to 5 musicians for 30 minutes.',
-      'Open JackTrip, create/start a studio, then paste the JackTrip studio invite back into this DizyChat room.',
-      'For the best ASIO/audio-interface path, join through the JackTrip desktop app instead of only the browser.',
+      'DizyChat will open the existing Live Call panel with Music mode selected.',
+      'Use this for lessons, Rocksmith, screen sharing, talking and casual playing.',
+      'For the tightest instrument timing, switch to DizyJam Low Latency.',
+    ];
+  } else if (provider.id === 'dizyjam') {
+    session.host = DIZYJAM_HOST;
+    session.tcpPort = DIZYJAM_TCP_PORT;
+    session.udpBasePort = DIZYJAM_UDP_BASE_PORT;
+    session.udpEndPort = DIZYJAM_UDP_END_PORT;
+    session.sampleRate = DIZYJAM_SAMPLE_RATE;
+    session.bufferSize = DIZYJAM_BUFFER_SIZE;
+    session.clientInstallUrl = DIZYJAM_CLIENT_INSTALL_URL;
+    session.clientCommand = DIZYJAM_TCP_PORT === 4464
+      ? `jacktrip -C ${DIZYJAM_HOST} -q auto --bufstrategy 4`
+      : '';
+    session.oneSharedMix = true;
+    session.instructions = [
+      `Connect the JackTrip desktop client to ${DIZYJAM_HOST} in Hub Client mode.`,
+      `Use 48 kHz-compatible settings; the DizyJam server currently runs at ${DIZYJAM_SAMPLE_RATE} Hz with a ${DIZYJAM_BUFFER_SIZE}-frame JACK buffer.`,
+      'Keep DizyChat open for camera, chat and screen sharing. Mute DizyChat call audio while actively jamming to avoid doubled/echoed audio.',
+      'Use wired Ethernet, headphones and an ASIO interface on Windows where possible.',
+      'This first DizyJam deployment is one shared private mix, so use one active low-latency jam group at a time.',
     ];
   } else if (provider.id === 'sonobus') {
     session.groupName = sessionId;
@@ -2033,7 +2095,7 @@ app.post('/api/jam/session', express.json(), (req, res) => {
     session.instructions = [
       `Open SonoBus and join group ${sessionId}.`,
       `Use password ${password} if you want a private group.`,
-      'Use headphones and wired Ethernet; SonoBus does not currently encrypt audio/data communication.',
+      'Use headphones and wired Ethernet. SonoBus remains the optional peer-to-peer fallback.',
     ];
   }
 

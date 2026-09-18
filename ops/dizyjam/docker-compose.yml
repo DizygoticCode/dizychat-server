@@ -1,0 +1,25 @@
+services:
+  jacktrip:
+    image: ${DIZYJAM_IMAGE:-jacktrip/jacktrip:latest}
+    container_name: dizyjam-jacktrip
+    network_mode: host
+    privileged: true
+    shm_size: 128m
+    restart: unless-stopped
+    ulimits:
+      memlock:
+        soft: 128000000
+        hard: 128000000
+      rtprio:
+        soft: 10
+        hard: 10
+    environment:
+      SAMPLE_RATE: ${DIZYJAM_SAMPLE_RATE:-48000}
+      BUFFER_SIZE: ${DIZYJAM_BUFFER_SIZE:-128}
+      JACKTRIP_OPTS: >-
+        -S
+        -z
+        --hubpatch 2
+        --bufstrategy 4
+        -q auto
+        -U ${DIZYJAM_UDP_BASE_PORT:-61002}
