@@ -16,14 +16,32 @@ allocation is implemented.
 
 ## Security boundary
 
-This first hub is self-hosted but is not yet authenticated against DizyChat
-accounts at the JackTrip protocol layer. Anyone who can reach the forwarded
-JackTrip ports can attempt to connect.
+The hub is **authenticated by default**. JackTrip starts with `-A` and reads a
+TLS certificate, private key and credentials file from `ops/dizyjam/runtime/`.
 
-For a private deployment, restrict source IPs at the firewall/router where
-practical. JackTrip supports hub authentication with `-A`, certificates and a
-credentials file; wire that in before treating the audio hub as an
-Internet-public multi-user service.
+DizyChat is the authority for who may obtain a JackTrip credential:
+
+- the socket must already have joined a DizyChat room successfully;
+- registered users keep their signed-in DizyChat identity;
+- guests only qualify after DizyChat has admitted their guest name;
+- a random per-socket JackTrip password is generated server-side;
+- only a salted SHA-512-crypt hash is written to the JackTrip credentials file;
+- credentials are revoked from the file on room leave, sign-out or socket
+  disconnect, and expire automatically as a safety net;
+- one shared-hub room lock prevents separate DizyChat rooms from being issued
+  credentials into the same audio mix concurrently.
+
+The JackTrip username contains a safe form of the visible DizyChat name plus a
+non-secret per-socket suffix. **The password is never derived from the username.**
+
+JackTrip's current authenticated client encrypts the credential exchange with
+TLS but does not verify the server certificate in its classic hub-client code.
+That protects against passive credential sniffing, while a fully active
+man-in-the-middle remains a limitation of upstream JackTrip. The random,
+short-lived credentials materially reduce replay exposure, but they are not a
+substitute for certificate pinning. For a higher-assurance deployment, add a
+trusted private tunnel such as WireGuard or a client build that verifies/pins
+the DizyJam certificate.
 
 ## 1. Public network requirements
 
@@ -45,25 +63,42 @@ JackTrip allocates hub worker UDP ports from the configured base port. The
 range above leaves capacity for a private group while avoiding the much larger
 default public range.
 
-## 2. Start the hub
+## 2. Create the authentication material
 
-Docker and the Compose plugin must already be installed.
+Docker, the Compose plugin and OpenSSL must already be installed.
+
+Create a dedicated JackTrip TLS key/certificate and an empty protected
+credentials file before opening any router ports:
 
 ```bash
 cd ~/DizyChat/ops/dizyjam
 cp .env.example .env
+./generate-auth-material.sh
+ls -la runtime
+```
+
+The private key and generated credentials file are runtime secrets and are
+ignored by Git.
+
+## 3. Start the authenticated hub
+
+```bash
+cd ~/DizyChat/ops/dizyjam
 docker compose pull
 docker compose up -d
 docker compose ps
 docker logs --tail=100 dizyjam-jacktrip
 ```
 
+The logs should say that JackTrip authentication is enabled before it waits for
+client connections.
+
 The logs should show the JackTrip hub waiting for client connections.
 
 The Compose service uses host networking and privileged mode because JackTrip's
 official container runs JACK with realtime scheduling and locked shared memory.
 
-## 3. Configure DizyChat
+## 4. Configure DizyChat
 
 Add these values to the environment used by `dizychat.service`:
 
@@ -75,6 +110,7 @@ DIZYJAM_UDP_BASE_PORT=61002
 DIZYJAM_UDP_END_PORT=61100
 DIZYJAM_SAMPLE_RATE=48000
 DIZYJAM_BUFFER_SIZE=128
+DIZYJAM_CREDENTIAL_TTL_SECONDS=7200
 ```
 
 Replace `jam.example.com` with the real public FQDN or static IP.
@@ -85,10 +121,12 @@ Restart DizyChat after changing its environment:
 sudo systemctl restart dizychat.service
 ```
 
-The Guitar Jam panel will then report **DizyJam Low Latency · Self-hosted**
-and provide the host plus a copyable JackTrip Hub Client command.
+The Guitar Jam panel will then report **DizyJam Low Latency · Self-hosted · authenticated**.
+When an admitted DizyChat user presses **Start DizyJam**, the server mints a
+short-lived JackTrip username/password for that socket and returns a copyable
+authenticated Hub Client command.
 
-## 4. Client setup
+## 5. Client setup
 
 Install the current JackTrip desktop client on each musician's computer.
 
@@ -102,17 +140,22 @@ Recommended Windows path:
 
 Connect in **Hub Client** mode to the DIZYJAM_HOST shown in DizyChat.
 
-The CLI equivalent for the default hub port is:
+DizyChat displays the exact authenticated CLI equivalent after issuing the
+credential. It has this shape:
 
 ```bash
-jacktrip -C jam.example.com -q auto --bufstrategy 4
+jacktrip -C jam.example.com -A --username DizyUser-<session> --password <random-secret> -q auto --bufstrategy 4
 ```
+
+Do not reuse or share that password. It is tied to the current admitted
+DizyChat socket and is removed from the hub credentials file when that socket
+leaves/signs out/disconnects.
 
 DizyChat can remain open for cameras, text and screen sharing. While actively
 playing over DizyJam, mute/turn down the LiveKit call audio to avoid hearing a
 second delayed copy of the instruments.
 
-## 5. SonoBus fallback
+## 6. SonoBus fallback
 
 SonoBus remains available from the Guitar Jam panel as an optional peer-to-peer
 fallback. It is not required for the primary DizyJam path.
