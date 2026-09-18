@@ -91,6 +91,20 @@ test('focus and chat controls stay hidden until visual media exists', () => {
   assert.match(source, /state\.chatButton\.hidden\s*=\s*!presentation\.hasVisuals/);
 });
 
+test('every media tile can be hidden locally and restored from the call header', () => {
+  const source = fs.readFileSync(runtimePath, 'utf8');
+  const css = fs.readFileSync(cssPath, 'utf8');
+  assert.match(source, /data-dizy-media-action=["']hide["']/);
+  assert.match(source, /setTileHidden\(tile, true\)/);
+  assert.match(source, /state\.hiddenTileKeys\.add\(key\)/);
+  assert.match(source, /const visibleTiles = tiles\.filter\(\(tile\) => !tile\.hidden\)/);
+  assert.match(source, /data-dizy-call-action=["']restore-hidden["']/);
+  assert.match(source, /Show hidden media \(/);
+  assert.match(source, /restoreHiddenTiles/);
+  assert.match(css, /\.dizy-media-hide-button/);
+  assert.match(css, /\.call-video-tile\[hidden\][\s\S]*display:\s*none\s*!important/i);
+});
+
 test('every media tile gets an in-chat expanded-view control with Escape exit', () => {
   const source = fs.readFileSync(runtimePath, 'utf8');
   const css = fs.readFileSync(cssPath, 'utf8');
