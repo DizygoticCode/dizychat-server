@@ -39,7 +39,7 @@ test('DizyJam is unavailable until host plus TLS auth material exist', () => {
   assert.match(server, /DIZYJAM_AUTH_CREDS_FILE/);
   assert.match(server, /DIZYJAM_CREDENTIAL_TTL_SECONDS/);
   assert.match(server, /const DIZYJAM_AUTH_FILES_READY = \(\) =>/);
-  assert.match(server, /const DIZYJAM_ENABLED = \(\) => !DIZYJAM_DISABLED && Boolean\(DIZYJAM_HOST\) && DIZYJAM_AUTH_FILES_READY\(\)/);
+  assert.match(server, /const DIZYJAM_ENABLED = \(\) =>[\s\S]{0,180}!DIZYJAM_DISABLED[\s\S]{0,180}DIZYJAM_AUTH_FILES_READY\(\)[\s\S]{0,180}dizyJamCredentialStoreReady/);
   assert.match(server, /getDizyJamMissingConfig/);
 });
 
@@ -53,6 +53,7 @@ test('DizyJam credentials are issued only over an admitted DizyChat socket', () 
   assert.match(server, /DIZYJAM_BUSY/);
   assert.match(server, /DIZYJAM_RATE_LIMITED/);
   assert.match(server, /DIZYJAM_SOCKET_AUTH_REQUIRED/);
+  assert.match(server, /dizyJamCredentialStoreReady = true/);
   assert.doesNotMatch(server, /else if \(provider\.id === 'dizyjam'\) \{[\s\S]{0,1200}session\.password =/);
 });
 
@@ -71,6 +72,8 @@ test('DizyJam client requests credentials over Socket.IO and renders authenticat
   assert.match(chat, /JackTrip user/);
   assert.match(chat, /Credential expires/);
   assert.match(chat, /provider === ["']dizyjam["'][\s\S]{0,160}requestDizyJamSession\(\)/);
+  assert.doesNotMatch(server, /['"]--password['"],\s*credential\.password/);
+  assert.match(server, /['"]--password['"],\s*['"]-q['"]/);
 });
 
 test('self-hosted hub requires JackTrip authentication and avoids delayed self-loop', () => {
