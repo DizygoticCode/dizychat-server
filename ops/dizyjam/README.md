@@ -85,7 +85,17 @@ ls -la runtime
 ```
 
 The private key and generated credentials file are runtime secrets and are
-ignored by Git.
+ignored by Git. The setup script keeps DizyChat as the owner/writer while
+granting the JackTrip container's auth-reader group read-only access. On the
+current official container image that group is numeric GID 63; the value is
+configured with `DIZYJAM_AUTH_GID` and can be verified inside the container
+with `id jacktrip`.
+
+The runtime directory is setgid (`2750`), and the private key/credentials are
+`0640`. This is required because DizyChat atomically replaces the credentials
+file as leases change; new files must inherit the same JackTrip-readable group.
+The generator may request `sudo` only for the group assignment if the invoking
+user is not already allowed to change to that GID.
 
 ## 3. Start the authenticated hub
 
