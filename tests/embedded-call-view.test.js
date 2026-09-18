@@ -42,12 +42,11 @@ test('screen sharing is disabled for native Capacitor and missing display captur
   assert.equal(runtime.canShareScreen({ native: false, hasDisplayCapture: true }), true);
 });
 
-test('display audio is publishable for window, tab, and full-display capture surfaces', () => {
-  assert.equal(runtime.shouldPublishDisplayAudio({ getSettings: () => ({ displaySurface: 'monitor' }) }), true);
-  assert.equal(runtime.shouldPublishDisplayAudio({ getSettings: () => ({ displaySurface: 'screen' }) }), true);
-  assert.equal(runtime.shouldPublishDisplayAudio({ getSettings: () => ({}) }), false);
-  assert.equal(runtime.shouldPublishDisplayAudio({ getSettings: () => ({ displaySurface: 'window' }) }), true);
-  assert.equal(runtime.shouldPublishDisplayAudio({ getSettings: () => ({ displaySurface: 'browser' }) }), true);
+test('any live display-audio track returned by the browser is publishable', () => {
+  assert.equal(runtime.shouldPublishDisplayAudio({ readyState: 'live' }), true);
+  assert.equal(runtime.shouldPublishDisplayAudio({}), true);
+  assert.equal(runtime.shouldPublishDisplayAudio({ readyState: 'ended' }), false);
+  assert.equal(runtime.shouldPublishDisplayAudio(null), false);
 });
 
 test('embedded call stylesheet keeps uncropped non-resizable media above chat', () => {
@@ -114,6 +113,9 @@ test('runtime includes focus chat overlays and bounded browser screen sharing', 
   assert.match(source, /dizy-screen-share/);
   assert.match(source, /source:\s*LK\.Track\.Source\.ScreenShare/);
   assert.match(source, /source:\s*LK\.Track\.Source\.ScreenShareAudio/);
+  assert.match(source, /stream:\s*SCREEN_SHARE_TRACK_NAME/);
+  assert.match(source, /state\.screenAudioState = shouldPublishDisplayAudio\(audioMediaTrack\) \? ['"]captured['"] : ['"]unavailable['"]/);
+  assert.match(source, /state\.screenAudioState = ['"]published['"]/);
   assert.match(source, /audio:\s*\{[\s\S]*suppressLocalAudioPlayback:\s*false[\s\S]*restrictOwnAudio:\s*true[\s\S]*\}/);
   assert.match(source, /systemAudio:\s*['"]include['"]/);
   assert.match(source, /windowAudio:\s*['"]window['"]/);
@@ -139,6 +141,8 @@ test('screen share previews immediately and publishes video without blocking the
   assert.match(source, /state\.screenBusy = false;[\s\S]*void publishScreenVideo/);
   assert.match(source, /publishTrackWithTimeout\(participant, videoMediaTrack/);
   assert.match(source, /publishTrackWithTimeout\(participant, audioMediaTrack/);
+  assert.match(source, /if \(shouldPublishDisplayAudio\(audioMediaTrack\)\) \{\s*void publishScreenAudio/);
+  assert.doesNotMatch(source, /displaySurface[\s\S]{0,220}publishScreenAudio/);
   assert.doesNotMatch(source, /await publishScreenVideo/);
   assert.doesNotMatch(source, /await publishScreenAudio/);
   assert.doesNotMatch(source, /new LK\.LocalVideoTrack\(videoMediaTrack\)/);
@@ -168,6 +172,7 @@ test('server grants native screen sources and uses a per-tab identity suffix', (
 
 test('remote microphone and screen audio use independent track keys and shared participant controls', () => {
   const chat = fs.readFileSync(path.join(repoRoot, 'public', 'chat.js'), 'utf8');
+  assert.match(chat, /if \(track\?\.kind === LK\.Track\?\.Kind\?\.Audio\) \{\s*attachRemoteAudioTrack\(track, publication, participant\);\s*\}/);
   assert.match(chat, /const key = `\$\{participantSid\}:\$\{trackSid\}`/);
   assert.match(chat, /entry\.participantSid !== participantSid/);
   assert.match(chat, /if \(track && entry\.track === track\) return true/);
