@@ -34,6 +34,13 @@ DizyChat is the authority for who may obtain a JackTrip credential:
 The JackTrip username contains a safe form of the visible DizyChat name plus a
 non-secret per-socket suffix. **The password is never derived from the username.**
 
+JackTrip checks these credentials during connection setup. Removing a credential
+immediately prevents new/reconnect attempts, but upstream JackTrip does not
+re-authenticate an already-established audio stream on every packet. A user
+leaving DizyChat should therefore close JackTrip as well; restarting the hub
+forcibly disconnects every active client. A future control-plane slice can add
+targeted live-client kick semantics if that becomes necessary.
+
 JackTrip's current authenticated client encrypts the credential exchange with
 TLS but does not verify the server certificate in its classic hub-client code.
 That protects against passive credential sniffing, while a fully active
