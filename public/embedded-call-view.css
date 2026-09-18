@@ -301,6 +301,75 @@
   background: color-mix(in srgb, var(--accent) 10%, var(--surface-alt));
 }
 
+.dizy-media-fullscreen-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 8;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 9px;
+  background: rgba(18, 18, 18, 0.76);
+  color: #fff;
+  font: inherit;
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+
+.dizy-media-fullscreen-button:hover,
+.dizy-media-fullscreen-button:focus-visible {
+  border-color: var(--accent);
+  background: rgba(18, 18, 18, 0.92);
+}
+
+body.dizy-call-media-expanded {
+  overflow: hidden !important;
+}
+
+.dizy-call-stage .call-video-tile.dizy-media-expanded {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 12040 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #050509;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dizy-call-stage .call-video-tile.dizy-media-expanded .call-video-element,
+.dizy-call-stage .call-video-tile.dizy-media-expanded video {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+  object-position: center !important;
+}
+
+.dizy-call-stage .call-video-tile.dizy-media-expanded .dizy-media-fullscreen-button {
+  top: calc(14px + env(safe-area-inset-top, 0px));
+  right: calc(14px + env(safe-area-inset-right, 0px));
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  font-size: 1.35rem;
+}
+
 .dizy-call-message-overlays {
   position: absolute;
   left: 18px;

@@ -86,6 +86,23 @@ test('focus and chat controls stay hidden until visual media exists', () => {
   assert.match(source, /state\.chatButton\.hidden\s*=\s*!presentation\.hasVisuals/);
 });
 
+test('every media tile gets an in-chat expanded-view control with Escape exit', () => {
+  const source = fs.readFileSync(runtimePath, 'utf8');
+  const css = fs.readFileSync(cssPath, 'utf8');
+  assert.match(source, /ensureTileFullscreenControl/);
+  assert.match(source, /data-dizy-media-action=["']fullscreen["']/);
+  assert.match(source, /control\.textContent = ['"]×['"]/);
+  assert.match(source, /control\.setAttribute\(['"]aria-label['"], ['"]Exit expanded media['"]\)/);
+  assert.match(source, /event\?\.key === ['"]Escape['"]/);
+  assert.match(source, /dizy-media-expanded/);
+  assert.match(css, /\.dizy-media-fullscreen-button/);
+  assert.match(css, /\.call-video-tile\.dizy-media-expanded[\s\S]*position:\s*fixed\s*!important/i);
+  assert.match(css, /\.call-video-tile\.dizy-media-expanded[\s\S]*height:\s*100dvh\s*!important/i);
+  assert.match(css, /\.dizy-media-expanded[\s\S]*object-fit:\s*contain\s*!important/i);
+  assert.match(css, /safe-area-inset-top/);
+  assert.match(css, /safe-area-inset-right/);
+});
+
 test('runtime includes focus chat overlays and bounded browser screen sharing', () => {
   const source = fs.readFileSync(runtimePath, 'utf8');
   assert.match(source, /dizy-call-message-overlays/);
