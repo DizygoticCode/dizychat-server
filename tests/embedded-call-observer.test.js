@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const runtime = require('../public/embedded-call-view.js');
 const { createHarness } = require('./helpers/embedded-call-dom.cjs');
 const { EventEmitter } = require('node:events');
-const LK = { Track: {Kind:{Video:'video'},Source:{ScreenShare:'screen_share'}}, RoomEvent: {TrackSubscribed:'trackSubscribed',TrackUnsubscribed:'trackUnsubscribed',Disconnected:'disconnected'} };
+const LK = { Track: {Kind:{Video:'video'},Source:{ScreenShare:'screen_share',ScreenShareAudio:'screen_share_audio'}}, RoomEvent: {TrackSubscribed:'trackSubscribed',TrackUnsubscribed:'trackUnsubscribed',Disconnected:'disconnected'} };
 function connect(h) {
   const room = new EventEmitter();
   room.remoteParticipants = new Map();
@@ -50,21 +50,35 @@ test('changing an existing tile between camera and screen share settles and upda
   assert.equal(tile.classList.contains('dizy-primary-media'),false);
   assert.equal(h.api.state.stage.dataset.presentation,'camera-grid');
 });
-test('join first, share video, stop, disconnect, and rejoin all settle', async()=>{
+test('join first, share video plus application audio, stop, disconnect, and rejoin all settle', async()=>{
   const h=createHarness(runtime);h.flush();
   let captures=0,stops=0;
-  const track={addEventListener(){},stop(){stops++;},contentHint:''};
-  const stream={getVideoTracks:()=>[track],getTracks:()=>[track]};
-  h.host.navigator.mediaDevices.getDisplayMedia=async options=>{captures++;assert.equal(options.audio,false);return stream;};
+  const published=[];
+  const videoTrack={addEventListener(){},stop(){stops++;},contentHint:'',getSettings(){return {displaySurface:'window'};}};
+  const audioTrack={stop(){stops++;}};
+  const stream={getVideoTracks:()=>[videoTrack],getAudioTracks:()=>[audioTrack],getTracks:()=>[videoTrack,audioTrack]};
+  h.host.navigator.mediaDevices.getDisplayMedia=async options=>{
+    captures++;
+    assert.equal(options.audio.suppressLocalAudioPlayback,false);
+    assert.equal(options.audio.restrictOwnAudio,true);
+    assert.equal(options.systemAudio,'include');
+    assert.equal(options.windowAudio,'window');
+    return stream;
+  };
   await h.api.startScreenShare();assert.equal(captures,0);
   const room=connect(h);
+  room.localParticipant.publishTrack=async (track,options)=>{published.push({track,options});return {track};};
   await h.api.startScreenShare();
+  await Promise.resolve();
+  await Promise.resolve();
   h.flush();
   assert.equal(captures,1);
+  assert.ok(published.some(({track,options})=>track===videoTrack&&options.source==='screen_share'));
+  assert.ok(published.some(({track,options})=>track===audioTrack&&options.source==='screen_share_audio'));
   assert.equal(h.api.state.stage.dataset.presentation,'screen-share');
   assert.equal(h.api.state.screenButton.textContent,'Stop Screen');
   await h.api.stopScreenShare();h.flush();
-  assert.equal(stops,1);
+  assert.equal(stops,2);
   assert.equal(h.api.state.stage.dataset.presentation,'audio');
   room.emit('disconnected');h.flush();
   assert.equal(h.api.state.room,null);

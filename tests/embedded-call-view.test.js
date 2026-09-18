@@ -42,19 +42,26 @@ test('screen sharing is disabled for native Capacitor and missing display captur
   assert.equal(runtime.canShareScreen({ native: false, hasDisplayCapture: true }), true);
 });
 
-test('full-display system audio is gated to prevent remote-call feedback', () => {
-  assert.equal(runtime.shouldPublishDisplayAudio({ getSettings: () => ({ displaySurface: 'monitor' }) }), false);
+test('display audio is publishable for window, tab, and full-display capture surfaces', () => {
+  assert.equal(runtime.shouldPublishDisplayAudio({ getSettings: () => ({ displaySurface: 'monitor' }) }), true);
+  assert.equal(runtime.shouldPublishDisplayAudio({ getSettings: () => ({ displaySurface: 'screen' }) }), true);
   assert.equal(runtime.shouldPublishDisplayAudio({ getSettings: () => ({}) }), false);
   assert.equal(runtime.shouldPublishDisplayAudio({ getSettings: () => ({ displaySurface: 'window' }) }), true);
   assert.equal(runtime.shouldPublishDisplayAudio({ getSettings: () => ({ displaySurface: 'browser' }) }), true);
 });
 
-test('embedded call stylesheet preserves full media frame and removes fixed popup geometry', () => {
+test('embedded call stylesheet keeps uncropped non-resizable media above chat', () => {
   const css = fs.readFileSync(cssPath, 'utf8');
+  assert.match(css, /#chat-main\.dizy-call-layout[\s\S]*grid-template-areas:\s*"call users"\s*"chat users"/i);
   assert.match(css, /\.dizy-call-stage[\s\S]*object-fit:\s*contain/i);
+  assert.match(css, /\.dizy-call-stage[\s\S]*\.call-video-element[\s\S]*height:\s*auto/i);
   assert.match(css, /\.dizy-call-stage[\s\S]*\.voice-call-panel[\s\S]*position:\s*static\s*!important/i);
+  assert.match(css, /\.voice-call-panel[\s\S]*resize:\s*none\s*!important/i);
+  assert.match(css, /background:\s*var\(--surface\)/i);
+  assert.match(css, /border-color:\s*var\(--accent\)/i);
   assert.match(css, /@media\s*\(max-width:\s*768px\)/i);
   assert.match(css, /\.dizy-call-stage\.is-focus/i);
+  assert.doesNotMatch(css, /grid-template-areas:\s*"call chat users"/i);
   assert.doesNotMatch(css, /\.dizy-call-stage[^{]*\{[^}]*width:\s*420px/i);
 });
 
@@ -65,6 +72,12 @@ test('audio-only calls use a compact row instead of reserving a visual-media col
   assert.match(source, /dizy-call-has-visuals/);
   assert.match(css, /#chat-main\.dizy-call-layout\.dizy-call-audio-only[\s\S]*grid-template-areas:\s*"call users"\s*"chat users"/i);
   assert.match(css, /\.dizy-call-stage\s+\.voice-call-drag-hint[\s\S]*display:\s*none\s*!important/i);
+});
+
+test('media actions are integrated into the native call header', () => {
+  const source = fs.readFileSync(runtimePath, 'utf8');
+  assert.match(source, /const callHeader = panel\.querySelector\(['"]\.voice-call-header['"]\)/);
+  assert.match(source, /callHeader\.appendChild\(toolbar\)/);
 });
 
 test('focus and chat controls stay hidden until visual media exists', () => {
@@ -83,7 +96,13 @@ test('runtime includes focus chat overlays and bounded browser screen sharing', 
   assert.match(source, /publishTrack/);
   assert.match(source, /dizy-screen-share/);
   assert.match(source, /source:\s*LK\.Track\.Source\.ScreenShare/);
-  assert.match(source, /audio:\s*false/);
+  assert.match(source, /source:\s*LK\.Track\.Source\.ScreenShareAudio/);
+  assert.match(source, /audio:\s*\{[\s\S]*suppressLocalAudioPlayback:\s*false[\s\S]*restrictOwnAudio:\s*true[\s\S]*\}/);
+  assert.match(source, /systemAudio:\s*['"]include['"]/);
+  assert.match(source, /windowAudio:\s*['"]window['"]/);
+  assert.match(source, /dtx:\s*false/);
+  assert.match(source, /red:\s*false/);
+  assert.match(source, /forceStereo:\s*true/);
   assert.match(source, /frameRate:\s*\{\s*ideal:\s*30,\s*max:\s*30\s*\}/);
   assert.match(source, /width:\s*\{\s*ideal:\s*1280,\s*max:\s*1920\s*\}/);
   assert.match(source, /height:\s*\{\s*ideal:\s*720,\s*max:\s*1080\s*\}/);
@@ -96,12 +115,15 @@ test('screen share previews immediately and publishes video without blocking the
   const source = fs.readFileSync(runtimePath, 'utf8');
   const previewIndex = source.indexOf('renderLocalScreenTile(stream);');
   const publishDispatchIndex = source.indexOf('void publishScreenVideo({ participant, LK, stream, videoMediaTrack });');
+  const audioPublishDispatchIndex = source.indexOf('void publishScreenAudio({ participant, LK, stream, audioMediaTrack });');
   assert.ok(previewIndex >= 0, 'local screen preview must be rendered');
-  assert.ok(publishDispatchIndex > previewIndex, 'local preview must render before background LiveKit publication is dispatched');
+  assert.ok(publishDispatchIndex > previewIndex, 'local preview must render before background LiveKit video publication is dispatched');
+  assert.ok(audioPublishDispatchIndex > previewIndex, 'local preview must render before background LiveKit audio publication is dispatched');
   assert.match(source, /state\.screenBusy = false;[\s\S]*void publishScreenVideo/);
   assert.match(source, /publishTrackWithTimeout\(participant, videoMediaTrack/);
+  assert.match(source, /publishTrackWithTimeout\(participant, audioMediaTrack/);
   assert.doesNotMatch(source, /await publishScreenVideo/);
-  assert.doesNotMatch(source, /publishScreenAudio/);
+  assert.doesNotMatch(source, /await publishScreenAudio/);
   assert.doesNotMatch(source, /new LK\.LocalVideoTrack\(videoMediaTrack\)/);
   assert.doesNotMatch(source, /new LK\.LocalAudioTrack\(audioMediaTrack\)/);
 });
