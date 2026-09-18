@@ -267,7 +267,12 @@ const DIZYJAM_AUTH_CREDS_FILE = path.resolve(String(process.env.DIZYJAM_AUTH_CRE
 const DIZYJAM_CREDENTIAL_TTL_SECONDS = parsePositiveIntegerEnv('DIZYJAM_CREDENTIAL_TTL_SECONDS', 7200, { min: 300, max: 86400 });
 const DIZYJAM_AUTH_FILES_READY = () =>
   fs.existsSync(DIZYJAM_AUTH_CERT_FILE) && fs.existsSync(DIZYJAM_AUTH_KEY_FILE);
-const DIZYJAM_ENABLED = () => !DIZYJAM_DISABLED && Boolean(DIZYJAM_HOST) && DIZYJAM_AUTH_FILES_READY();
+let dizyJamCredentialStoreReady = false;
+const DIZYJAM_ENABLED = () =>
+  !DIZYJAM_DISABLED &&
+  Boolean(DIZYJAM_HOST) &&
+  DIZYJAM_AUTH_FILES_READY() &&
+  dizyJamCredentialStoreReady;
 const SONOBUS_DOWNLOAD_URL = String(process.env.SONOBUS_DOWNLOAD_URL || 'https://sonobus.net/index.html').trim();
 const JAM_SESSION_EVENT_WINDOW_MS = 60 * 1000;
 const JAM_SESSION_MAX_CREATES_PER_WINDOW = 12;
@@ -280,6 +285,7 @@ try {
   // Credentials are intentionally ephemeral. A DizyChat restart invalidates all
   // previously issued JackTrip passwords instead of leaving stale hub access behind.
   dizyJamCredentialStore.initialiseEmpty();
+  dizyJamCredentialStoreReady = true;
 } catch (error) {
   console.error('[DizyJam] Unable to initialise credential store:', error?.message || error);
 }
@@ -296,6 +302,7 @@ const getDizyJamMissingConfig = () => [
   !DIZYJAM_HOST ? 'DIZYJAM_HOST' : '',
   !fs.existsSync(DIZYJAM_AUTH_CERT_FILE) ? 'DIZYJAM_AUTH_CERT_FILE' : '',
   !fs.existsSync(DIZYJAM_AUTH_KEY_FILE) ? 'DIZYJAM_AUTH_KEY_FILE' : '',
+  !dizyJamCredentialStoreReady ? 'DIZYJAM_AUTH_CREDS_FILE' : '',
 ].filter(Boolean);
 
 const SCRYPT_HASH_PREFIX = 'scrypt';
