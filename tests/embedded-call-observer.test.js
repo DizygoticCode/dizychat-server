@@ -40,6 +40,25 @@ for (const source of ['camera','screen_share']) {
     assert.equal(h.api.state.stage.dataset.presentation,'audio');
   });
 }
+test('local hide and restore media controls settle without touching the track',()=>{
+  const h=createHarness(runtime);h.flush();connect(h);
+  const tile=new h.Element();tile.className='call-video-tile';tile.dataset.videoKey='remote-camera-1';h.grid.append(tile);h.flush();
+  const hide=tile.querySelector('[data-dizy-media-action="hide"]');
+  assert.ok(hide,'hide control must be added to media tiles');
+  hide.listeners.get('click')({stopPropagation(){}});
+  h.flush();
+  assert.equal(tile.hidden,true);
+  assert.equal(h.api.state.stage.dataset.presentation,'audio');
+  assert.equal(h.api.state.hiddenTileKeys.has('remote-camera-1'),true);
+  assert.equal(h.api.state.restoreHiddenButton.hidden,false);
+  h.api.state.restoreHiddenButton.listeners.get('click')({stopPropagation(){}});
+  h.flush();
+  assert.equal(tile.hidden,false);
+  assert.equal(h.api.state.hiddenTileKeys.size,0);
+  assert.equal(h.api.state.stage.dataset.presentation,'camera-grid');
+  assert.equal(h.api.state.restoreHiddenButton.hidden,true);
+});
+
 test('changing an existing tile between camera and screen share settles and updates priority',()=>{
   const h=createHarness(runtime); h.flush(); connect(h);
   const tile=new h.Element();tile.className='call-video-tile';h.grid.append(tile);h.flush();
