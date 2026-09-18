@@ -82,7 +82,7 @@ class DizyJamCredentialStore {
 
     this.pruneExpired();
     const username = safeAuthUsername(cleanDisplayName, cleanSocketId);
-    const password = crypto.randomBytes(24).toString('base64url');
+    const password = `djt_${crypto.randomBytes(24).toString('base64url')}`;
     const passwordHash = sha512Crypt(password, { spawnSyncImpl: this.spawnSyncImpl });
     const expiresAt = this.now() + this.ttlMs;
 
