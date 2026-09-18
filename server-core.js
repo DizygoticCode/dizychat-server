@@ -251,8 +251,15 @@ const W2G_REQUEST_TIMEOUT_MS = parsePositiveIntegerEnv('W2G_REQUEST_TIMEOUT_MS',
 const WATCH_PARTY_EVENT_WINDOW_MS = 60 * 1000;
 const WATCH_PARTY_MAX_CREATES_PER_WINDOW = 3;
 
-const JACKTRIP_STUDIO_CREATE_URL = String(process.env.JACKTRIP_STUDIO_CREATE_URL || 'https://app.jacktrip.org/studios/create').trim();
-const JACKTRIP_STUDIO_INVITE_URL = String(process.env.JACKTRIP_STUDIO_INVITE_URL || '').trim();
+const DIZYJAM_HOST = String(process.env.DIZYJAM_HOST || '').trim();
+const DIZYJAM_TCP_PORT = parsePositiveIntegerEnv('DIZYJAM_TCP_PORT', 4464, { min: 1, max: 65535 });
+const DIZYJAM_UDP_BASE_PORT = parsePositiveIntegerEnv('DIZYJAM_UDP_BASE_PORT', 61002, { min: 1024, max: 65535 });
+const DIZYJAM_UDP_END_PORT = parsePositiveIntegerEnv('DIZYJAM_UDP_END_PORT', 61100, { min: 1024, max: 65535 });
+const DIZYJAM_SAMPLE_RATE = parsePositiveIntegerEnv('DIZYJAM_SAMPLE_RATE', 48000, { min: 8000, max: 192000 });
+const DIZYJAM_BUFFER_SIZE = parsePositiveIntegerEnv('DIZYJAM_BUFFER_SIZE', 128, { min: 16, max: 4096 });
+const DIZYJAM_CLIENT_INSTALL_URL = String(process.env.DIZYJAM_CLIENT_INSTALL_URL || 'https://jacktrip.github.io/jacktrip/Install/').trim();
+const DIZYJAM_DISABLED = ['false', '0', 'no', 'off', 'disabled'].includes(String(process.env.ENABLE_DIZYJAM || '').trim().toLowerCase());
+const DIZYJAM_ENABLED = !DIZYJAM_DISABLED && Boolean(DIZYJAM_HOST);
 const SONOBUS_DOWNLOAD_URL = String(process.env.SONOBUS_DOWNLOAD_URL || 'https://sonobus.net/index.html').trim();
 const JAM_SESSION_EVENT_WINDOW_MS = 60 * 1000;
 const JAM_SESSION_MAX_CREATES_PER_WINDOW = 12;
