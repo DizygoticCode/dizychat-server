@@ -4,7 +4,7 @@ services:
     container_name: dizyjam-jacktrip
     network_mode: host
     privileged: true
-    shm_size: 128m
+    shm_size: 384m
     restart: unless-stopped
     ulimits:
       memlock:
