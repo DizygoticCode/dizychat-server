@@ -362,8 +362,8 @@ body.dizy-call-media-expanded {
 }
 
 .dizy-call-stage .call-video-tile.dizy-media-expanded .dizy-media-fullscreen-button {
-  top: 14px;
-  right: 14px;
+  top: calc(14px + env(safe-area-inset-top, 0px));
+  right: calc(14px + env(safe-area-inset-right, 0px));
   width: 40px;
   height: 40px;
   border-radius: 999px;
