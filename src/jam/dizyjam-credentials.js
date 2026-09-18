@@ -115,6 +115,16 @@ class DizyJamCredentialStore {
     return removed;
   }
 
+  getActiveRooms() {
+    this.pruneExpired();
+    return [...new Set([...this.leases.values()].map((lease) => lease.room).filter(Boolean))];
+  }
+
+  getActiveLeaseCount() {
+    this.pruneExpired();
+    return this.leases.size;
+  }
+
   pruneExpired() {
     const now = this.now();
     let changed = false;
