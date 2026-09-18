@@ -94,7 +94,14 @@ const createChatMessageService = ({ io, pushCoordinator } = {}) => {
     void pushCoordinator.onMessageStored(
       newMsg.toJSON ? newMsg.toJSON() : newMsg,
       { senderCanonicalUsername: String(senderCanonicalUsername || '') },
-    ).catch((error) => {
+    ).then((result = {}) => {
+      console.info('[Push] message dispatch', {
+        room: roomName,
+        attempted: Number(result.attempted || 0),
+        sent: Number(result.sent || 0),
+        failed: Number(result.failed || 0),
+      });
+    }).catch((error) => {
       console.warn('[Push] post-message dispatch failed', { code: String(error?.code || 'unexpected') });
     });
 
