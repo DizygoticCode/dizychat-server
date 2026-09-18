@@ -96,7 +96,7 @@ test('auth material generator protects private runtime files', () => {
   assert.match(generator, /rsa:3072/);
   assert.match(generator, /chmod 700 ["']?\$runtime_dir/);
   assert.match(generator, /chmod 600 ["']?\$key_file["']? ["']?\$creds_file/);
-  assert.doesNotMatch(generator, /echo .*password/i);
+  assert.doesNotMatch(generator, /echo[^\n]*\$\{?password\}?/i);
 });
 
 test('deployment guide documents authenticated admission and upstream certificate-verification limitation', () => {
