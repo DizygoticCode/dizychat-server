@@ -69,8 +69,7 @@ test('join first, share video plus application audio, stop, disconnect, and rejo
   const room=connect(h);
   room.localParticipant.publishTrack=async (track,options)=>{published.push({track,options});return {track};};
   await h.api.startScreenShare();
-  await Promise.resolve();
-  await Promise.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
   h.flush();
   assert.equal(captures,1);
   assert.ok(published.some(({track,options})=>track===videoTrack&&options.source==='screen_share'));
