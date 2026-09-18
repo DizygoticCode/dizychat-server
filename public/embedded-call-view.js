@@ -122,6 +122,7 @@
       localScreenPublication: null,
       roomHandlersInstalled: false,
       screenBusy: false,
+      expandedTile: null,
     };
 
     const loadStylesheet = () => {
@@ -137,11 +138,62 @@
     const getChatContent = () => doc.getElementById('chat-content');
     const getMessages = () => doc.getElementById('messages');
 
+    const setExpandedTile = (tile = null) => {
+      const nextTile = tile && tile !== state.expandedTile ? tile : null;
+      if (state.expandedTile) {
+        state.expandedTile.classList.toggle('dizy-media-expanded', false);
+        const previousControl = state.expandedTile.querySelector?.('[data-dizy-media-action="fullscreen"]');
+        if (previousControl) {
+          previousControl.setAttribute('aria-pressed', 'false');
+          previousControl.setAttribute('aria-label', 'Expand media');
+          previousControl.title = 'Expand media';
+          previousControl.textContent = '⛶';
+        }
+      }
+
+      state.expandedTile = nextTile;
+      doc.body.classList.toggle('dizy-call-media-expanded', Boolean(nextTile));
+
+      if (nextTile) {
+        nextTile.classList.toggle('dizy-media-expanded', true);
+        const control = nextTile.querySelector?.('[data-dizy-media-action="fullscreen"]');
+        if (control) {
+          control.setAttribute('aria-pressed', 'true');
+          control.setAttribute('aria-label', 'Exit expanded media');
+          control.title = 'Exit expanded media';
+          control.textContent = '×';
+        }
+      }
+    };
+
+    const ensureTileFullscreenControl = (tile) => {
+      if (!tile || tile.querySelector?.('[data-dizy-media-action="fullscreen"]')) return;
+      const button = doc.createElement('button');
+      button.type = 'button';
+      button.className = 'dizy-media-fullscreen-button';
+      button.dataset.dizyMediaAction = 'fullscreen';
+      button.setAttribute('aria-label', 'Expand media');
+      button.setAttribute('aria-pressed', 'false');
+      button.title = 'Expand media';
+      button.textContent = '⛶';
+      button.addEventListener('click', (event) => {
+        event.stopPropagation?.();
+        setExpandedTile(tile);
+      });
+      tile.appendChild(button);
+    };
+
+    hostWindow.addEventListener('keydown', (event) => {
+      if (event?.key === 'Escape' && state.expandedTile) setExpandedTile(null);
+    });
+
     const syncPresentation = () => {
       const stage = state.stage;
       if (!stage) return;
 
       const tiles = [...stage.querySelectorAll('.call-video-tile')];
+      if (state.expandedTile && !tiles.includes(state.expandedTile)) setExpandedTile(null);
+      for (const tile of tiles) ensureTileFullscreenControl(tile);
       const screenTiles = tiles.filter((tile) => tile.classList.contains('dizy-screen-share-tile'));
       const cameraTiles = tiles.filter((tile) => !tile.classList.contains('dizy-screen-share-tile'));
       const presentation = derivePresentationState({
@@ -196,6 +248,7 @@
       state.stage.hidden = !visible;
       const chatMain = getChatMain();
       chatMain?.classList.toggle('dizy-call-layout', Boolean(visible));
+      if (!visible && state.expandedTile) setExpandedTile(null);
       if (!visible && state.focus) setFocus(false);
     };
 
@@ -370,7 +423,9 @@
     };
 
     const removeLocalScreenTile = () => {
-      state.videoGrid?.querySelector('[data-video-key="dizy-local-screen-share"]')?.remove();
+      const tile = state.videoGrid?.querySelector('[data-video-key="dizy-local-screen-share"]') || null;
+      if (tile && state.expandedTile === tile) setExpandedTile(null);
+      tile?.remove();
       syncPresentation();
     };
 
