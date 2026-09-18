@@ -860,6 +860,7 @@
         void stopScreenShare({ fromTrackEnded: true });
         state.room = null;
         state.roomHandlersInstalled = false;
+        restoreHiddenTiles();
         setFocus(false);
         syncPresentation();
       };
@@ -884,6 +885,7 @@
       if (bridge?.room && bridge?.sdk) installRoomHandlers(bridge.room, bridge.sdk);
       else if (state.room) {
         state.room = null;
+        restoreHiddenTiles();
         setFocus(false);
         syncPresentation();
       }
