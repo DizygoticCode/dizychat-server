@@ -8468,7 +8468,7 @@ if (voiceBtn) {
   };
 
   const attachRemoteAudioTrack = (track, publication, participant) => {
-    if (!track?.attach || !remoteAudioContainer) return;
+    if (participant?.isLocal || !track?.attach || !remoteAudioContainer) return;
     const participantSid = participantKey(participant) || publication?.participantSid || "remote";
     const trackSid = publication?.trackSid || track.sid || String(Date.now());
     const key = `${participantSid}:${trackSid}`;
@@ -8561,7 +8561,7 @@ if (voiceBtn) {
   };
 
   const attachRemoteVideoTrack = (track, publication, participant) => {
-    if (!track?.attach || !videoGrid) return;
+    if (participant?.isLocal || !track?.attach || !videoGrid) return;
     const participantSid = participantKey(participant) || publication?.participantSid || "remote";
     const key = `${participantSid}:${publication?.trackSid || track.sid || "camera"}`;
     detachRemoteVideoTrack(track, publication, participant);

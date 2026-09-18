@@ -99,6 +99,30 @@
   cursor: not-allowed;
 }
 
+.dizy-screen-audio-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 4px 9px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.dizy-screen-audio-status[data-state="published"] {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.dizy-screen-audio-status[data-state="error"] {
+  border-color: #d65b5b;
+  color: #ffb4b4;
+}
+
 .dizy-call-stage .voice-call-panel {
   position: static !important;
   inset: auto !important;
