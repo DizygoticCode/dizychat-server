@@ -54,7 +54,10 @@ test('DizyJam credentials are issued only over an admitted DizyChat socket', () 
   assert.match(server, /DIZYJAM_RATE_LIMITED/);
   assert.match(server, /DIZYJAM_SOCKET_AUTH_REQUIRED/);
   assert.match(server, /dizyJamCredentialStoreReady = true/);
-  assert.doesNotMatch(server, /else if \(provider\.id === 'dizyjam'\) \{[\s\S]{0,1200}session\.password =/);
+  assert.match(
+    server,
+    /else if \(provider\.id === 'dizyjam'\) \{\s*res\.status\(403\)\.json\(\{[\s\S]{0,350}DIZYJAM_SOCKET_AUTH_REQUIRED/,
+  );
 });
 
 test('DizyJam credentials are revoked on room leave, sign-out, and disconnect', () => {
