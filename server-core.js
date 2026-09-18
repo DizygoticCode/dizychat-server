@@ -2018,9 +2018,9 @@ const getJamProviders = () => [
     supportsAsioViaNativeApp: true,
     clientInstallUrl: DIZYJAM_CLIENT_INSTALL_URL,
     setupTips: [
-      'DizyChat issues a short-lived JackTrip username/password only after you join a chat room.',
-      'Install the JackTrip desktop client and connect to the DizyJam host in authenticated Hub Client mode.',
-      'Use wired Ethernet, headphones and your ASIO audio interface where possible.',
+      'DizyChat guides each musician through installing JackTrip and connecting to this room.',
+      'Connection credentials are temporary and tied to the current DizyChat room session.',
+      'Use your own interface, microphone, keyboard or DAW audio routing.',
     ],
   },
   {
