@@ -47,59 +47,11 @@ test('credential store writes only salted hashes and never plaintext passwords',
   });
 
   const onDisk = fs.readFileSync(file, 'utf8');
-  assert.ok(onDisk.startsWith(`${credential.username}:$6'use strict';
-
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-
-const {
-  DizyJamCredentialStore,
-  safeAuthUsername,
-} = require('../src/jam/dizyjam-credentials');
-
-const fakeSpawn = (_command, args) => {
-  const saltIndex = args.indexOf('-salt');
-  const salt = saltIndex >= 0 ? args[saltIndex + 1] : 'testsalt';
-  return {
-    status: 0,
-    stdout: `$6$${salt}$deterministic-test-hash\n`,
-    stderr: '',
-  };
-};
-
-test('safe DizyJam usernames keep visible identity without trusting raw guest input', () => {
-  const username = safeAuthUsername('  Guest: Rob / Guitar!!  ', 'socket-123');
-  assert.match(username, /^Guest_Rob_Guitar-[a-f0-9]{12}$/);
-  assert.ok(username.length <= 63);
-});
-
-test('credential store writes only salted hashes and never plaintext passwords', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dizyjam-auth-'));
-  const file = path.join(dir, 'auth');
-  let now = 1_000_000;
-  const store = new DizyJamCredentialStore({
-    credentialsFile: file,
-    ttlSeconds: 300,
-    now: () => now,
-    spawnSyncImpl: fakeSpawn,
-  });
-
-  store.initialiseEmpty();
-  const credential = store.issue({
-    socketId: 'socket-A',
-    displayName: 'Dizygotic',
-    room: 'General',
-    identityKind: 'account',
-  });
-
-  const onDisk = fs.readFileSync(file, 'utf8');
-));
+  assert.ok(onDisk.startsWith(`${credential.username}:$6$`));
   assert.equal(onDisk.includes(credential.password), false);
   assert.equal(credential.room, 'General');
   assert.equal(credential.identityKind, 'account');
+  assert.ok(credential.password.startsWith('djt_'));
   assert.ok(credential.password.length >= 32);
   assert.deepEqual(store.getActiveRooms(), ['General']);
   assert.equal(store.getActiveLeaseCount(), 1);
