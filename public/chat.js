@@ -9333,6 +9333,27 @@ if (voiceBtn) {
     return payload?.session;
   };
 
+  const requestDizyJamSession = () => new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      callback(value);
+    };
+    const timer = setTimeout(() => {
+      finish(reject, new Error("DizyJam credential request timed out."));
+    }, 10000);
+
+    socket.emit("jam:dizyjam-credentials", { room: window.currentRoom || "" }, (ack = {}) => {
+      if (!ack?.ok || !ack?.session) {
+        finish(reject, new Error(ack?.error || "DizyJam access was not granted."));
+        return;
+      }
+      finish(resolve, ack.session);
+    });
+  });
+
   const copyText = async (text) => {
     if (!text) return false;
     try {
@@ -9346,13 +9367,18 @@ if (voiceBtn) {
   const renderSession = (session) => {
     if (!outputEl || !session) return;
     const instructions = Array.isArray(session.instructions) ? session.instructions : session.setupTips || [];
+    const expiresLabel = session.expiresAt
+      ? new Date(Number(session.expiresAt)).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : "";
     const connectionRows = [
       session.host ? `<div class="jam-session-code"><span>Host</span><code>${escapeHtml(session.host)}</code><button type="button" data-copy="${escapeHtml(session.host)}">Copy</button></div>` : "",
       session.tcpPort ? `<div class="jam-session-code"><span>Hub port</span><code>${escapeHtml(String(session.tcpPort))}</code></div>` : "",
+      session.username ? `<div class="jam-session-code"><span>JackTrip user</span><code>${escapeHtml(session.username)}</code><button type="button" data-copy="${escapeHtml(session.username)}">Copy</button></div>` : "",
       session.sampleRate ? `<div class="jam-session-code"><span>Sample rate</span><code>${escapeHtml(String(session.sampleRate))} Hz</code></div>` : "",
       session.bufferSize ? `<div class="jam-session-code"><span>Server buffer</span><code>${escapeHtml(String(session.bufferSize))} frames</code></div>` : "",
       session.groupName ? `<div class="jam-session-code"><span>Group</span><code>${escapeHtml(session.groupName)}</code><button type="button" data-copy="${escapeHtml(session.groupName)}">Copy</button></div>` : "",
       session.password ? `<div class="jam-session-code"><span>Password</span><code>${escapeHtml(session.password)}</code><button type="button" data-copy="${escapeHtml(session.password)}">Copy</button></div>` : "",
+      expiresLabel ? `<div class="jam-session-code"><span>Credential expires</span><code>${escapeHtml(expiresLabel)}</code></div>` : "",
       session.clientCommand ? `<div class="jam-session-code jam-session-command"><span>CLI</span><code>${escapeHtml(session.clientCommand)}</code><button type="button" data-copy="${escapeHtml(session.clientCommand)}">Copy</button></div>` : "",
     ].filter(Boolean).join("");
 
@@ -9444,10 +9470,12 @@ if (voiceBtn) {
     try {
       button.disabled = true;
       setJamStatus(provider === "dizyjam" ? "Preparing DizyJam connection details…" : "Preparing SonoBus fallback…");
-      const session = await requestJamSession(provider);
+      const session = provider === "dizyjam"
+        ? await requestDizyJamSession()
+        : await requestJamSession(provider);
       renderSession(session);
       setJamStatus(provider === "dizyjam"
-        ? "DizyJam details ready. Keep DizyChat open for camera/chat and use JackTrip for the low-latency instrument path."
+        ? "Authenticated DizyJam details ready for your current DizyChat identity. Keep DizyChat open while you use JackTrip for the instrument path."
         : "SonoBus fallback details ready.");
       showToast(provider === "dizyjam" ? "DizyJam ready" : "SonoBus fallback ready", "success");
     } catch (error) {

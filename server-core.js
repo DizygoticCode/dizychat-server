@@ -35,6 +35,7 @@ const { createRoomPasswordService } = require('./src/rooms/room-password-service
 const soundboardStore = require('./src/utils/soundboard');
 const { scanFileWithClamAv } = require('./src/uploads/clamav-scanner');
 const { normalizeVoiceMessageUpload } = require('./src/uploads/voice-message-normalizer');
+const { DizyJamCredentialStore } = require('./src/jam/dizyjam-credentials');
 
 const nodeFetchModulePromise = import('node-fetch');
 const fetch = (...args) =>
@@ -259,10 +260,50 @@ const DIZYJAM_SAMPLE_RATE = parsePositiveIntegerEnv('DIZYJAM_SAMPLE_RATE', 48000
 const DIZYJAM_BUFFER_SIZE = parsePositiveIntegerEnv('DIZYJAM_BUFFER_SIZE', 128, { min: 16, max: 4096 });
 const DIZYJAM_CLIENT_INSTALL_URL = String(process.env.DIZYJAM_CLIENT_INSTALL_URL || 'https://jacktrip.github.io/jacktrip/Install/').trim();
 const DIZYJAM_DISABLED = ['false', '0', 'no', 'off', 'disabled'].includes(String(process.env.ENABLE_DIZYJAM || '').trim().toLowerCase());
-const DIZYJAM_ENABLED = !DIZYJAM_DISABLED && Boolean(DIZYJAM_HOST);
+const DIZYJAM_AUTH_DIR = path.resolve(String(process.env.DIZYJAM_AUTH_DIR || path.join(__dirname, 'ops', 'dizyjam', 'runtime')).trim());
+const DIZYJAM_AUTH_CERT_FILE = path.resolve(String(process.env.DIZYJAM_AUTH_CERT_FILE || path.join(DIZYJAM_AUTH_DIR, 'jacktrip.crt')).trim());
+const DIZYJAM_AUTH_KEY_FILE = path.resolve(String(process.env.DIZYJAM_AUTH_KEY_FILE || path.join(DIZYJAM_AUTH_DIR, 'jacktrip.key')).trim());
+const DIZYJAM_AUTH_CREDS_FILE = path.resolve(String(process.env.DIZYJAM_AUTH_CREDS_FILE || path.join(DIZYJAM_AUTH_DIR, 'auth')).trim());
+const DIZYJAM_CREDENTIAL_TTL_SECONDS = parsePositiveIntegerEnv('DIZYJAM_CREDENTIAL_TTL_SECONDS', 7200, { min: 300, max: 86400 });
+const DIZYJAM_AUTH_FILES_READY = () =>
+  fs.existsSync(DIZYJAM_AUTH_CERT_FILE) && fs.existsSync(DIZYJAM_AUTH_KEY_FILE);
+let dizyJamCredentialStoreReady = false;
+const DIZYJAM_ENABLED = () =>
+  !DIZYJAM_DISABLED &&
+  Boolean(DIZYJAM_HOST) &&
+  DIZYJAM_AUTH_FILES_READY() &&
+  dizyJamCredentialStoreReady;
 const SONOBUS_DOWNLOAD_URL = String(process.env.SONOBUS_DOWNLOAD_URL || 'https://sonobus.net/index.html').trim();
 const JAM_SESSION_EVENT_WINDOW_MS = 60 * 1000;
 const JAM_SESSION_MAX_CREATES_PER_WINDOW = 12;
+
+const dizyJamCredentialStore = new DizyJamCredentialStore({
+  credentialsFile: DIZYJAM_AUTH_CREDS_FILE,
+  ttlSeconds: DIZYJAM_CREDENTIAL_TTL_SECONDS,
+});
+try {
+  // Credentials are intentionally ephemeral. A DizyChat restart invalidates all
+  // previously issued JackTrip passwords instead of leaving stale hub access behind.
+  dizyJamCredentialStore.initialiseEmpty();
+  dizyJamCredentialStoreReady = true;
+} catch (error) {
+  console.error('[DizyJam] Unable to initialise credential store:', error?.message || error);
+}
+const dizyJamCredentialPruneTimer = setInterval(() => {
+  try {
+    dizyJamCredentialStore.pruneExpired();
+  } catch (error) {
+    console.error('[DizyJam] Failed to prune expired credentials:', error?.message || error);
+  }
+}, 60 * 1000);
+dizyJamCredentialPruneTimer.unref?.();
+
+const getDizyJamMissingConfig = () => [
+  !DIZYJAM_HOST ? 'DIZYJAM_HOST' : '',
+  !fs.existsSync(DIZYJAM_AUTH_CERT_FILE) ? 'DIZYJAM_AUTH_CERT_FILE' : '',
+  !fs.existsSync(DIZYJAM_AUTH_KEY_FILE) ? 'DIZYJAM_AUTH_KEY_FILE' : '',
+  !dizyJamCredentialStoreReady ? 'DIZYJAM_AUTH_CREDS_FILE' : '',
+].filter(Boolean);
 
 const SCRYPT_HASH_PREFIX = 'scrypt';
 
@@ -1963,11 +2004,11 @@ const getJamProviders = () => [
   {
     id: 'dizyjam',
     name: 'DizyJam Low Latency',
-    badge: DIZYJAM_ENABLED ? 'Self-hosted' : 'Server setup required',
+    badge: DIZYJAM_ENABLED() ? 'Self-hosted · authenticated' : 'Server setup required',
     bestFor: 'Lowest-latency instrument sessions using our private JackTrip hub while DizyChat handles camera, chat and screen sharing.',
     mode: 'self-hosted-jacktrip',
-    available: DIZYJAM_ENABLED,
-    host: DIZYJAM_ENABLED ? DIZYJAM_HOST : '',
+    available: DIZYJAM_ENABLED(),
+    host: DIZYJAM_ENABLED() ? DIZYJAM_HOST : '',
     tcpPort: DIZYJAM_TCP_PORT,
     udpBasePort: DIZYJAM_UDP_BASE_PORT,
     udpEndPort: DIZYJAM_UDP_END_PORT,
@@ -1977,9 +2018,9 @@ const getJamProviders = () => [
     supportsAsioViaNativeApp: true,
     clientInstallUrl: DIZYJAM_CLIENT_INSTALL_URL,
     setupTips: [
-      'Install the JackTrip desktop client and connect to the DizyJam host in Hub Client mode.',
-      'Use a wired Ethernet connection, headphones and your ASIO audio interface where possible.',
-      'The private hub is one shared low-latency mix; use one active DizyJam group at a time.',
+      'DizyChat issues a short-lived JackTrip username/password only after you join a chat room.',
+      'Install the JackTrip desktop client and connect to the DizyJam host in authenticated Hub Client mode.',
+      'Use wired Ethernet, headphones and your ASIO audio interface where possible.',
     ],
   },
   {
@@ -2005,16 +2046,18 @@ app.get('/api/jam/status', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json({
     enabled: true,
-    recommendedProvider: DIZYJAM_ENABLED ? 'dizyjam' : 'music-call',
+    recommendedProvider: DIZYJAM_ENABLED() ? 'dizyjam' : 'music-call',
     dizyJam: {
-      configured: DIZYJAM_ENABLED,
-      host: DIZYJAM_ENABLED ? DIZYJAM_HOST : '',
+      configured: DIZYJAM_ENABLED(),
+      host: DIZYJAM_ENABLED() ? DIZYJAM_HOST : '',
       tcpPort: DIZYJAM_TCP_PORT,
       udpBasePort: DIZYJAM_UDP_BASE_PORT,
       udpEndPort: DIZYJAM_UDP_END_PORT,
       sampleRate: DIZYJAM_SAMPLE_RATE,
       bufferSize: DIZYJAM_BUFFER_SIZE,
-      missingRequiredEnv: DIZYJAM_HOST ? [] : ['DIZYJAM_HOST'],
+      authRequired: true,
+      credentialTtlSeconds: DIZYJAM_CREDENTIAL_TTL_SECONDS,
+      missingRequiredEnv: getDizyJamMissingConfig(),
       oneSharedMix: true,
     },
     providers: getJamProviders(),
@@ -2029,7 +2072,7 @@ app.post('/api/jam/session', express.json(), (req, res) => {
   }
 
   const providers = getJamProviders();
-  const providerId = String(req.body?.provider || (DIZYJAM_ENABLED ? 'dizyjam' : 'music-call')).trim().toLowerCase();
+  const providerId = String(req.body?.provider || 'music-call').trim().toLowerCase();
   const provider = providers.find((entry) => entry.id === providerId);
   if (!provider) {
     res.status(400).json({ error: 'Unsupported jam provider.', providers });
@@ -2071,24 +2114,11 @@ app.post('/api/jam/session', express.json(), (req, res) => {
       'For the tightest instrument timing, switch to DizyJam Low Latency.',
     ];
   } else if (provider.id === 'dizyjam') {
-    session.host = DIZYJAM_HOST;
-    session.tcpPort = DIZYJAM_TCP_PORT;
-    session.udpBasePort = DIZYJAM_UDP_BASE_PORT;
-    session.udpEndPort = DIZYJAM_UDP_END_PORT;
-    session.sampleRate = DIZYJAM_SAMPLE_RATE;
-    session.bufferSize = DIZYJAM_BUFFER_SIZE;
-    session.clientInstallUrl = DIZYJAM_CLIENT_INSTALL_URL;
-    session.clientCommand = DIZYJAM_TCP_PORT === 4464
-      ? `jacktrip -C ${DIZYJAM_HOST} -q auto --bufstrategy 4`
-      : '';
-    session.oneSharedMix = true;
-    session.instructions = [
-      `Connect the JackTrip desktop client to ${DIZYJAM_HOST} in Hub Client mode.`,
-      `Use 48 kHz-compatible settings; the DizyJam server currently runs at ${DIZYJAM_SAMPLE_RATE} Hz with a ${DIZYJAM_BUFFER_SIZE}-frame JACK buffer.`,
-      'Keep DizyChat open for camera, chat and screen sharing. Mute DizyChat call audio while actively jamming to avoid doubled/echoed audio.',
-      'Use wired Ethernet, headphones and an ASIO interface on Windows where possible.',
-      'This first DizyJam deployment is one shared private mix, so use one active low-latency jam group at a time.',
-    ];
+    res.status(403).json({
+      error: 'DizyJam credentials are issued only to an admitted DizyChat room session.',
+      code: 'DIZYJAM_SOCKET_AUTH_REQUIRED',
+    });
+    return;
   } else if (provider.id === 'sonobus') {
     session.groupName = sessionId;
     session.password = password;
@@ -2485,6 +2515,12 @@ const emitRoomListUpdate = () => {
 const removeSocketFromRoom = (socket, targetRoom) => {
   const room = normaliseRoomName(targetRoom || socket.currentRoom);
   if (!room) return;
+
+  try {
+    dizyJamCredentialStore.revokeSocket(socket.id);
+  } catch (error) {
+    console.error('[DizyJam] Failed to revoke room credential:', error?.message || error);
+  }
 
   const members = roomMembers.get(room);
   if (members) {
@@ -2907,6 +2943,11 @@ io.on('connection', socket => {
   socket.on('account logout', async (payload = {}, ack) => {
     try {
       const mobileSessionId = socket.mobileSessionId;
+      try {
+        dizyJamCredentialStore.revokeSocket(socket.id);
+      } catch (error) {
+        console.error('[DizyJam] Failed to revoke logout credential:', error?.message || error);
+      }
       if (socket.accountSessionToken) {
         await revokeAccountSessionToken(socket.accountSessionToken);
       }
@@ -3123,6 +3164,140 @@ io.on('connection', socket => {
     }
     removeSocketFromRoom(socket, target);
     emitRoomListUpdate();
+  });
+
+  socket.on('jam:dizyjam-credentials', (payload = {}, ack) => {
+    const respond = (body) => {
+      if (typeof ack === 'function') ack(body);
+    };
+
+    try {
+      if (!DIZYJAM_ENABLED()) {
+        respond({
+          ok: false,
+          error: 'DizyJam is not fully configured on this server yet.',
+          code: 'DIZYJAM_NOT_CONFIGURED',
+          missingRequiredEnv: getDizyJamMissingConfig(),
+        });
+        return;
+      }
+
+      const roomName = normaliseRoomName(socket.currentRoom);
+      const requestedRoom = normaliseRoomName(payload?.room);
+      if (!roomName || (requestedRoom && requestedRoom !== roomName)) {
+        respond({
+          ok: false,
+          error: 'Join the DizyChat room before requesting DizyJam access.',
+          code: 'DIZYJAM_ROOM_REQUIRED',
+        });
+        return;
+      }
+
+      const displayName = normaliseUsername(socket.username, '');
+      const identityKind = String(socket.identityKind || socket.principal?.kind || '');
+      if (!displayName || !['account', 'guest'].includes(identityKind)) {
+        respond({
+          ok: false,
+          error: 'A registered DizyChat account or admitted guest identity is required.',
+          code: 'DIZYJAM_IDENTITY_REQUIRED',
+        });
+        return;
+      }
+
+      if (isUserBlocked(roomName, displayName)) {
+        respond({
+          ok: false,
+          error: 'DizyJam access is unavailable while you are blocked in this room.',
+          code: 'DIZYJAM_BLOCKED',
+        });
+        return;
+      }
+
+      if (!canCreateJamSession(socket.id)) {
+        respond({
+          ok: false,
+          error: 'Too many DizyJam credential requests. Please wait a minute and try again.',
+          code: 'DIZYJAM_RATE_LIMITED',
+        });
+        return;
+      }
+
+      const activeRooms = dizyJamCredentialStore.getActiveRooms();
+      if (activeRooms.some((activeRoom) => activeRoom !== roomName)) {
+        respond({
+          ok: false,
+          error: 'The low-latency DizyJam hub is currently in use by another DizyChat room.',
+          code: 'DIZYJAM_BUSY',
+        });
+        return;
+      }
+
+      const credential = dizyJamCredentialStore.issue({
+        socketId: socket.id,
+        displayName,
+        room: roomName,
+        identityKind,
+      });
+
+      const command = [
+        'jacktrip',
+        '-C', DIZYJAM_HOST,
+        '-A',
+        '--username', credential.username,
+        '--password',
+        '-q', 'auto',
+        '--bufstrategy', '4',
+      ].join(' ');
+
+      logSecurityEvent('dizyjam_credential_issued', {
+        room: roomName,
+        username: displayName,
+        identityKind,
+        socketId: socket.id,
+        expiresAt: credential.expiresAt,
+      });
+
+      respond({
+        ok: true,
+        session: {
+          provider: 'dizyjam',
+          providerName: 'DizyJam Low Latency',
+          room: roomName,
+          title: `${roomName} Jam`,
+          badge: 'Self-hosted · authenticated',
+          mode: 'self-hosted-jacktrip',
+          host: DIZYJAM_HOST,
+          tcpPort: DIZYJAM_TCP_PORT,
+          udpBasePort: DIZYJAM_UDP_BASE_PORT,
+          udpEndPort: DIZYJAM_UDP_END_PORT,
+          sampleRate: DIZYJAM_SAMPLE_RATE,
+          bufferSize: DIZYJAM_BUFFER_SIZE,
+          clientInstallUrl: DIZYJAM_CLIENT_INSTALL_URL,
+          authRequired: true,
+          username: credential.username,
+          password: credential.password,
+          displayName: credential.displayName,
+          identityKind: credential.identityKind,
+          expiresAt: credential.expiresAt,
+          clientCommand: command,
+          oneSharedMix: true,
+          instructions: [
+            'These JackTrip credentials were minted for your current DizyChat session and are not derived from your public username.',
+            'Connect in authenticated Hub Client mode; the credential is removed when you leave/sign out and also expires automatically.',
+            `The DizyJam server runs at ${DIZYJAM_SAMPLE_RATE} Hz with a ${DIZYJAM_BUFFER_SIZE}-frame JACK buffer.`,
+            'Keep DizyChat open for camera, chat and screen sharing. Mute DizyChat call audio while actively jamming to avoid doubled/echoed instruments.',
+            'Use wired Ethernet, headphones and an ASIO interface on Windows where possible.',
+          ],
+        },
+      });
+    } catch (error) {
+      console.error('[DizyJam] Credential issue failed:', error?.message || error);
+      respond({
+        ok: false,
+        error: 'Unable to issue DizyJam credentials right now.',
+        code: 'DIZYJAM_CREDENTIAL_FAILURE',
+      });
+    }
   });
 
   socket.on('request rooms', () => {
@@ -3754,6 +3929,11 @@ io.on('connection', socket => {
   // ----- Disconnect -----
   socket.on('disconnect', () => {
     console.log('[Socket] Disconnected', socket.id);
+    try {
+      dizyJamCredentialStore.revokeSocket(socket.id);
+    } catch (error) {
+      console.error('[DizyJam] Failed to revoke disconnected credential:', error?.message || error);
+    }
     const lastRoom = socket.currentRoom;
     if (lastRoom) {
       removeSocketFromRoom(socket, lastRoom);
