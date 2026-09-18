@@ -1997,11 +1997,11 @@ const getJamProviders = () => [
   {
     id: 'dizyjam',
     name: 'DizyJam Low Latency',
-    badge: DIZYJAM_ENABLED ? 'Self-hosted' : 'Server setup required',
+    badge: DIZYJAM_ENABLED() ? 'Self-hosted · authenticated' : 'Server setup required',
     bestFor: 'Lowest-latency instrument sessions using our private JackTrip hub while DizyChat handles camera, chat and screen sharing.',
     mode: 'self-hosted-jacktrip',
-    available: DIZYJAM_ENABLED,
-    host: DIZYJAM_ENABLED ? DIZYJAM_HOST : '',
+    available: DIZYJAM_ENABLED(),
+    host: DIZYJAM_ENABLED() ? DIZYJAM_HOST : '',
     tcpPort: DIZYJAM_TCP_PORT,
     udpBasePort: DIZYJAM_UDP_BASE_PORT,
     udpEndPort: DIZYJAM_UDP_END_PORT,
@@ -2011,9 +2011,9 @@ const getJamProviders = () => [
     supportsAsioViaNativeApp: true,
     clientInstallUrl: DIZYJAM_CLIENT_INSTALL_URL,
     setupTips: [
-      'Install the JackTrip desktop client and connect to the DizyJam host in Hub Client mode.',
-      'Use a wired Ethernet connection, headphones and your ASIO audio interface where possible.',
-      'The private hub is one shared low-latency mix; use one active DizyJam group at a time.',
+      'DizyChat issues a short-lived JackTrip username/password only after you join a chat room.',
+      'Install the JackTrip desktop client and connect to the DizyJam host in authenticated Hub Client mode.',
+      'Use wired Ethernet, headphones and your ASIO audio interface where possible.',
     ],
   },
   {
@@ -2042,7 +2042,7 @@ app.get('/api/jam/status', (_req, res) => {
     recommendedProvider: DIZYJAM_ENABLED ? 'dizyjam' : 'music-call',
     dizyJam: {
       configured: DIZYJAM_ENABLED,
-      host: DIZYJAM_ENABLED ? DIZYJAM_HOST : '',
+      host: DIZYJAM_ENABLED() ? DIZYJAM_HOST : '',
       tcpPort: DIZYJAM_TCP_PORT,
       udpBasePort: DIZYJAM_UDP_BASE_PORT,
       udpEndPort: DIZYJAM_UDP_END_PORT,
@@ -2063,7 +2063,7 @@ app.post('/api/jam/session', express.json(), (req, res) => {
   }
 
   const providers = getJamProviders();
-  const providerId = String(req.body?.provider || (DIZYJAM_ENABLED ? 'dizyjam' : 'music-call')).trim().toLowerCase();
+  const providerId = String(req.body?.provider || 'music-call').trim().toLowerCase();
   const provider = providers.find((entry) => entry.id === providerId);
   if (!provider) {
     res.status(400).json({ error: 'Unsupported jam provider.', providers });
@@ -2105,24 +2105,11 @@ app.post('/api/jam/session', express.json(), (req, res) => {
       'For the tightest instrument timing, switch to DizyJam Low Latency.',
     ];
   } else if (provider.id === 'dizyjam') {
-    session.host = DIZYJAM_HOST;
-    session.tcpPort = DIZYJAM_TCP_PORT;
-    session.udpBasePort = DIZYJAM_UDP_BASE_PORT;
-    session.udpEndPort = DIZYJAM_UDP_END_PORT;
-    session.sampleRate = DIZYJAM_SAMPLE_RATE;
-    session.bufferSize = DIZYJAM_BUFFER_SIZE;
-    session.clientInstallUrl = DIZYJAM_CLIENT_INSTALL_URL;
-    session.clientCommand = DIZYJAM_TCP_PORT === 4464
-      ? `jacktrip -C ${DIZYJAM_HOST} -q auto --bufstrategy 4`
-      : '';
-    session.oneSharedMix = true;
-    session.instructions = [
-      `Connect the JackTrip desktop client to ${DIZYJAM_HOST} in Hub Client mode.`,
-      `Use 48 kHz-compatible settings; the DizyJam server currently runs at ${DIZYJAM_SAMPLE_RATE} Hz with a ${DIZYJAM_BUFFER_SIZE}-frame JACK buffer.`,
-      'Keep DizyChat open for camera, chat and screen sharing. Mute DizyChat call audio while actively jamming to avoid doubled/echoed audio.',
-      'Use wired Ethernet, headphones and an ASIO interface on Windows where possible.',
-      'This first DizyJam deployment is one shared private mix, so use one active low-latency jam group at a time.',
-    ];
+    res.status(403).json({
+      error: 'DizyJam credentials are issued only to an admitted DizyChat room session.',
+      code: 'DIZYJAM_SOCKET_AUTH_REQUIRED',
+    });
+    return;
   } else if (provider.id === 'sonobus') {
     session.groupName = sessionId;
     session.password = password;
