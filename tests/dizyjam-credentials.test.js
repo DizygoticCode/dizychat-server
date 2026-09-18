@@ -47,6 +47,7 @@ test('credential store writes only salted hashes and never plaintext passwords',
   });
 
   const onDisk = fs.readFileSync(file, 'utf8');
+  assert.equal(fs.statSync(file).mode & 0o777, 0o640);
   assert.ok(onDisk.startsWith(`${credential.username}:$6$`));
   assert.equal(onDisk.includes(credential.password), false);
   assert.equal(credential.room, 'General');
