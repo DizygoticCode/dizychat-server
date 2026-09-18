@@ -172,6 +172,8 @@ test('remote microphone and screen audio use independent track keys and shared p
   assert.match(chat, /entry\.participantSid !== participantSid/);
   assert.match(chat, /if \(track && entry\.track === track\) return true/);
   assert.match(chat, /detachRemoteAudioTrack\(track, publication, participant\)/);
+  assert.match(chat, /const attachRemoteAudioTrack = \(track, publication, participant\) => \{\s*if \(participant\?\.isLocal \|\|/);
+  assert.match(chat, /const attachRemoteVideoTrack = \(track, publication, participant\) => \{\s*if \(participant\?\.isLocal \|\|/);
 });
 
 test('pre-existing remote screen publications are classified for late joiners', () => {
