@@ -117,6 +117,9 @@
       screenButton: null,
       focusButton: null,
       chatButton: null,
+      restoreHiddenButton: null,
+      hiddenTileKeys: new Set(),
+      nextAnonymousTileId: 1,
       screenAudioBadge: null,
       screenAudioMeter: null,
       screenAudioMeterFill: null,
@@ -181,6 +184,36 @@
       }
     };
 
+    const getTileKey = (tile) => {
+      if (!tile) return '';
+      let key = String(tile.dataset?.videoKey || '').trim();
+      if (!key) {
+        key = 'dizy-media-' + state.nextAnonymousTileId++;
+        tile.dataset.videoKey = key;
+      }
+      return key;
+    };
+
+    const setTileHidden = (tile, hidden) => {
+      if (!tile) return;
+      const key = getTileKey(tile);
+      if (!key) return;
+      if (hidden) {
+        state.hiddenTileKeys.add(key);
+        if (state.expandedTile === tile) setExpandedTile(null);
+      } else {
+        state.hiddenTileKeys.delete(key);
+      }
+      tile.hidden = Boolean(hidden);
+      syncPresentation();
+    };
+
+    const restoreHiddenTiles = () => {
+      state.hiddenTileKeys.clear();
+      for (const tile of state.stage?.querySelectorAll?.('.call-video-tile') || []) tile.hidden = false;
+      syncPresentation();
+    };
+
     const ensureTileFullscreenControl = (tile) => {
       if (!tile || tile.querySelector?.('[data-dizy-media-action="fullscreen"]')) return;
       const button = doc.createElement('button');
@@ -198,6 +231,22 @@
       tile.appendChild(button);
     };
 
+    const ensureTileHideControl = (tile) => {
+      if (!tile || tile.querySelector?.('[data-dizy-media-action="hide"]')) return;
+      const button = doc.createElement('button');
+      button.type = 'button';
+      button.className = 'dizy-media-hide-button';
+      button.dataset.dizyMediaAction = 'hide';
+      button.setAttribute('aria-label', 'Hide media locally');
+      button.title = 'Hide media locally';
+      button.textContent = '×';
+      button.addEventListener('click', (event) => {
+        event.stopPropagation?.();
+        setTileHidden(tile, true);
+      });
+      tile.appendChild(button);
+    };
+
     hostWindow.addEventListener('keydown', (event) => {
       if (event?.key === 'Escape' && state.expandedTile) setExpandedTile(null);
     });
@@ -208,9 +257,22 @@
 
       const tiles = [...stage.querySelectorAll('.call-video-tile')];
       if (state.expandedTile && !tiles.includes(state.expandedTile)) setExpandedTile(null);
-      for (const tile of tiles) ensureTileFullscreenControl(tile);
-      const screenTiles = tiles.filter((tile) => tile.classList.contains('dizy-screen-share-tile'));
-      const cameraTiles = tiles.filter((tile) => !tile.classList.contains('dizy-screen-share-tile'));
+
+      const currentKeys = new Set();
+      for (const tile of tiles) {
+        ensureTileFullscreenControl(tile);
+        ensureTileHideControl(tile);
+        const key = getTileKey(tile);
+        if (key) currentKeys.add(key);
+        tile.hidden = state.hiddenTileKeys.has(key);
+      }
+      for (const key of [...state.hiddenTileKeys]) {
+        if (!currentKeys.has(key)) state.hiddenTileKeys.delete(key);
+      }
+
+      const visibleTiles = tiles.filter((tile) => !tile.hidden);
+      const screenTiles = visibleTiles.filter((tile) => tile.classList.contains('dizy-screen-share-tile'));
+      const cameraTiles = visibleTiles.filter((tile) => !tile.classList.contains('dizy-screen-share-tile'));
       const presentation = derivePresentationState({
         connected: Boolean(state.room),
         focus: state.focus,
@@ -255,6 +317,12 @@
       if (state.chatButton) {
         state.chatButton.hidden = !presentation.hasVisuals;
         state.chatButton.setAttribute('aria-pressed', state.chatDrawerOpen ? 'true' : 'false');
+      }
+
+      if (state.restoreHiddenButton) {
+        const hiddenCount = state.hiddenTileKeys.size;
+        state.restoreHiddenButton.hidden = hiddenCount === 0;
+        state.restoreHiddenButton.textContent = hiddenCount ? 'Show hidden media (' + hiddenCount + ')' : 'Show hidden media';
       }
 
       if (state.screenAudioBadge) {
@@ -353,11 +421,13 @@
         <button type="button" data-dizy-call-action="screen" aria-pressed="false">Share Screen</button>
         <button type="button" data-dizy-call-action="focus" aria-pressed="false">Focus</button>
         <button type="button" data-dizy-call-action="chat" aria-pressed="false">Chat</button>
+        <button type="button" data-dizy-call-action="restore-hidden" hidden>Show hidden media</button>
       `;
 
       state.screenButton = toolbar.querySelector('[data-dizy-call-action="screen"]');
       state.focusButton = toolbar.querySelector('[data-dizy-call-action="focus"]');
       state.chatButton = toolbar.querySelector('[data-dizy-call-action="chat"]');
+      state.restoreHiddenButton = toolbar.querySelector('[data-dizy-call-action="restore-hidden"]');
 
       const screenAudioBadge = doc.createElement('span');
       screenAudioBadge.className = 'dizy-screen-audio-status';
@@ -389,6 +459,7 @@
         if (!state.focus) setFocus(true);
         setChatDrawer(!state.chatDrawerOpen);
       });
+      state.restoreHiddenButton?.addEventListener('click', restoreHiddenTiles);
 
       return toolbar;
     };
@@ -789,6 +860,7 @@
         void stopScreenShare({ fromTrackEnded: true });
         state.room = null;
         state.roomHandlersInstalled = false;
+        restoreHiddenTiles();
         setFocus(false);
         syncPresentation();
       };
@@ -813,6 +885,7 @@
       if (bridge?.room && bridge?.sdk) installRoomHandlers(bridge.room, bridge.sdk);
       else if (state.room) {
         state.room = null;
+        restoreHiddenTiles();
         setFocus(false);
         syncPresentation();
       }
