@@ -13,7 +13,7 @@ test('app compiles native FCM classes against the shared Firebase Messaging vers
   const appGradle = read('android/app/build.gradle');
   const capacitorPluginGradle = read('android/app/capacitor.build.gradle');
 
-  assert.match(variables, /firebaseMessagingVersion\s*=\s*['"]24\.1\.0['"]/);
+  assert.match(variables, /firebaseMessagingVersion\s*=\s*['"]25\.1\.3['"]/);
   assert.match(appGradle, /implementation\s+['"]com\.google\.firebase:firebase-messaging:\$firebaseMessagingVersion['"]/);
   assert.match(capacitorPluginGradle, /implementation project\(':capacitor-push-notifications'\)/);
 });
