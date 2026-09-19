@@ -9,8 +9,9 @@ const appRoot = path.join(iosRoot, 'App', 'App');
 const projectFile = path.join(iosRoot, 'App', 'App.xcodeproj', 'project.pbxproj');
 const storyboardFile = path.join(appRoot, 'Base.lproj', 'Main.storyboard');
 const plistFile = path.join(appRoot, 'Info.plist');
+const appDelegateFile = path.join(appRoot, 'AppDelegate.swift');
 
-const required = [projectFile, storyboardFile, plistFile];
+const required = [projectFile, storyboardFile, plistFile, appDelegateFile];
 for (const file of required) {
   if (!fs.existsSync(file)) {
     throw new Error(`Generated Capacitor iOS file not found: ${path.relative(root, file)}`);
@@ -62,6 +63,37 @@ if (!project.includes('DizyBridgeViewController.swift')) {
   if (!project.includes(sourceNeedle)) throw new Error('Unable to patch iOS Sources build phase');
   project = project.replace(sourceNeedle, sourceNeedle + sourceInsert);
   fs.writeFileSync(projectFile, project);
+}
+
+let appDelegate = fs.readFileSync(appDelegateFile, 'utf8');
+if (!appDelegate.includes('didRegisterForRemoteNotificationsWithDeviceToken')) {
+  appDelegate = appDelegate.replace(
+    'import Capacitor\n',
+    'import Capacitor\n\n#if canImport(FirebaseMessaging)\nimport FirebaseMessaging\n#endif\n',
+  );
+  const finalBrace = '\n}\n';
+  const methods = `
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        NotificationCenter.default.post(
+            name: .capacitorDidRegisterForRemoteNotifications,
+            object: deviceToken
+        )
+        #if canImport(FirebaseMessaging)
+        Messaging.messaging().apnsToken = deviceToken
+        #endif
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        NotificationCenter.default.post(
+            name: .capacitorDidFailToRegisterForRemoteNotifications,
+            object: error
+        )
+    }
+`;
+  const position = appDelegate.lastIndexOf(finalBrace);
+  if (position < 0) throw new Error('Unable to patch iOS AppDelegate push callbacks');
+  appDelegate = appDelegate.slice(0, position) + '\n' + methods + appDelegate.slice(position);
+  fs.writeFileSync(appDelegateFile, appDelegate);
 }
 
 let storyboard = fs.readFileSync(storyboardFile, 'utf8');
