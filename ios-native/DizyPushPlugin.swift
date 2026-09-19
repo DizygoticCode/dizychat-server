@@ -290,6 +290,14 @@ public final class DizyPushPlugin: CAPPlugin, CAPBridgedPlugin, UNUserNotificati
         }
     }
 
+    static func captureLaunchNotification(_ userInfo: [AnyHashable: Any]) {
+        guard cleanString(userInfo["type"]) == "message" else { return }
+        let room = cleanString(userInfo["room"])
+        let messageId = cleanString(userInfo["messageId"])
+        guard !room.isEmpty else { return }
+        storeRoute(room: room, messageId: messageId)
+    }
+
     static func handleRemoteNotification(
         _ userInfo: [AnyHashable: Any],
         completionHandler: @escaping (UIBackgroundFetchResult) -> Void
