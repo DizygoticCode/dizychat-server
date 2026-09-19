@@ -16,6 +16,9 @@ test('message action menu flips upward and stays inside the messages viewport', 
   assert.notEqual(end, -1, 'positionMessageActionsMenu must terminate before closeActiveMenu');
   const fn = source.slice(start, end);
 
+  assert.match(fn, /messageNode\?\.classList\.contains\("self"\)/);
+  assert.match(fn, /menu\.style\.left\s*=\s*isSelfMessage\s*\?\s*"auto"\s*:\s*"8px"/);
+  assert.match(fn, /menu\.style\.right\s*=\s*isSelfMessage\s*\?\s*"8px"\s*:\s*"auto"/);
   assert.match(fn, /menu\.closest\("#messages"\)/);
   assert.match(fn, /containerRect\?\.bottom/);
   assert.match(fn, /containerRect\?\.left/);
