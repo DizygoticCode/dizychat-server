@@ -8,7 +8,7 @@ on:
       - '.github/workflows/webpush-lock.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   generate-lockfile:
@@ -20,11 +20,13 @@ jobs:
         with:
           node-version: 22
       - run: npm install web-push@3.6.7 --save --package-lock-only
-      - uses: actions/upload-artifact@v4
-        with:
-          name: webpush-lockfile
-          path: |
-            package.json
-            package-lock.json
-          if-no-files-found: error
-          retention-days: 1
+      - name: Commit lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Add Web Push dependency"
+          git push origin HEAD:fix/android-notification-channel-bootstrap
