@@ -2903,10 +2903,14 @@ function toggleMenu(menu, toggle) {
 
 function positionMessageActionsMenu(menu) {
   if (!menu || menu === userContextMenu) return;
+
+  const messageNode = menu.closest(".message");
+  const isSelfMessage = Boolean(messageNode?.classList.contains("self"));
+
   menu.style.top = "";
   menu.style.bottom = "";
-  menu.style.left = "";
-  menu.style.right = "";
+  menu.style.left = isSelfMessage ? "auto" : "8px";
+  menu.style.right = isSelfMessage ? "8px" : "auto";
 
   const viewportPadding = 8;
   const preferredTop = 28;
@@ -2940,7 +2944,7 @@ function positionMessageActionsMenu(menu) {
 
     const flippedRect = menu.getBoundingClientRect();
     if (flippedRect.top < boundaryTop) {
-      const messageRect = menu.closest(".message")?.getBoundingClientRect();
+      const messageRect = messageNode?.getBoundingClientRect();
       menu.style.bottom = "";
       menu.style.top = `${Math.max(
         preferredTop,
@@ -2949,18 +2953,18 @@ function positionMessageActionsMenu(menu) {
     }
   }
 
-  const messageRect = menu.closest(".message")?.getBoundingClientRect();
+  const messageRect = messageNode?.getBoundingClientRect();
   const horizontalRect = menu.getBoundingClientRect();
   if (horizontalRect.left < boundaryLeft) {
     menu.style.right = "auto";
     menu.style.left = `${Math.max(
-      0,
+      8,
       boundaryLeft - (Number.isFinite(messageRect?.left) ? messageRect.left : 0)
     )}px`;
   } else if (horizontalRect.right > boundaryRight) {
     menu.style.left = "auto";
     menu.style.right = `${Math.max(
-      0,
+      8,
       (Number.isFinite(messageRect?.right) ? messageRect.right : boundaryRight) - boundaryRight
     )}px`;
   }
