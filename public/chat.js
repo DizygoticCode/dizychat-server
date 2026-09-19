@@ -2908,12 +2908,34 @@ function positionMessageActionsMenu(menu) {
 
   const viewportPadding = 8;
   const preferredTop = 28;
-  const rect = menu.getBoundingClientRect();
-  const overflowBottom = rect.bottom - (window.innerHeight - viewportPadding);
-  if (overflowBottom <= 0) return;
+  const scrollContainer = menu.closest("#messages");
+  const containerRect = scrollContainer?.getBoundingClientRect();
+  const boundaryTop = Math.max(
+    viewportPadding,
+    Number.isFinite(containerRect?.top) ? containerRect.top + viewportPadding : viewportPadding
+  );
+  const boundaryBottom = Math.min(
+    window.innerHeight - viewportPadding,
+    Number.isFinite(containerRect?.bottom)
+      ? containerRect.bottom - viewportPadding
+      : window.innerHeight - viewportPadding
+  );
 
-  const adjustedTop = Math.max(viewportPadding, preferredTop - overflowBottom);
-  menu.style.top = `${adjustedTop}px`;
+  const rect = menu.getBoundingClientRect();
+  if (rect.bottom <= boundaryBottom) return;
+
+  menu.style.top = "auto";
+  menu.style.bottom = `calc(100% - ${preferredTop}px)`;
+
+  const flippedRect = menu.getBoundingClientRect();
+  if (flippedRect.top >= boundaryTop) return;
+
+  const messageRect = menu.closest(".message")?.getBoundingClientRect();
+  menu.style.bottom = "";
+  menu.style.top = `${Math.max(
+    preferredTop,
+    boundaryTop - (Number.isFinite(messageRect?.top) ? messageRect.top : 0)
+  )}px`;
 }
 
 function closeActiveMenu(options = {}) {
