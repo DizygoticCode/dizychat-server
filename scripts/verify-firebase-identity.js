@@ -30,7 +30,10 @@ const validateResources = (xml, identity) => {
     google_app_id: 'firebaseAppId', gcm_defaultSenderId: 'senderId', project_id: 'projectId',
   })) {
     const match = xml.match(new RegExp(`<string\\b[^>]*\\bname="${resource}"[^>]*>([^<]*)<\\/string>`));
-    if (!match || match[1] !== identity[key]) throw Error('COMPILED_FIREBASE_IDENTITY_MISMATCH');
+    if (!match) throw Error(`COMPILED_FIREBASE_RESOURCE_MISSING:${resource}`);
+    if (match[1].trim() !== String(identity[key] || '').trim()) {
+      throw Error(`COMPILED_FIREBASE_IDENTITY_MISMATCH:${resource}`);
+    }
   }
   return identity;
 };
@@ -43,8 +46,10 @@ if (require.main === module) {
     const safeJson = JSON.stringify(identity, null, 2) + '\n';
     if (process.argv[3]) fs.writeFileSync(process.argv[3], safeJson);
     process.stdout.write(safeJson);
-  } catch {
-    console.error('Firebase identity validation failed (source or generated resources); no config contents logged.');
+  } catch (error) {
+    const code = String(error?.message || 'FIREBASE_IDENTITY_VALIDATION_FAILED')
+      .replace(/[^A-Z0-9_:-]/gi, '');
+    console.error(`Firebase identity validation failed: ${code}; no config contents logged.`);
     process.exitCode = 1;
   }
 }
