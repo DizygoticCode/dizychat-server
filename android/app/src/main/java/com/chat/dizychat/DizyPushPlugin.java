@@ -181,7 +181,13 @@ public class DizyPushPlugin extends Plugin {
     public static void handleIntent(Context context, Intent intent) {
         if (context == null || intent == null) return;
         String room = intent.getStringExtra(EXTRA_ROOM);
+        if (room == null || room.trim().isEmpty()) {
+            room = intent.getStringExtra("room");
+        }
         String messageId = intent.getStringExtra(EXTRA_MESSAGE_ID);
+        if (messageId == null || messageId.trim().isEmpty()) {
+            messageId = intent.getStringExtra("messageId");
+        }
         if (room == null || room.trim().isEmpty()) return;
         DizyPushStore.setLaunchRoute(context, room, messageId == null ? "" : messageId);
         DizyPushPlugin plugin = activePlugin.get();
