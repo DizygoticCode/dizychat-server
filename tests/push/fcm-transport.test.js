@@ -25,15 +25,28 @@ const readIntent = {
   timestamp: '2026-09-06T12:00:00.000Z',
 };
 
-test('disabled config returns null transport without creating Firebase messaging', async () => {
+test('disabled config returns explicit skipped transport without creating Firebase messaging', async () => {
   let created = 0;
+  const warnings = [];
   const config = readFcmConfig({ DIZYCHAT_FCM_ENABLED: 'false' });
   const transport = createConfiguredPushTransport({
     config,
+    logger: { warn: (...args) => warnings.push(args) },
     messagingFactory: () => { created += 1; return { send: async () => {} }; },
   });
-  await transport.send(intent, 'token');
+  assert.deepEqual(await transport.send(intent, 'token'), { skipped: true, reason: 'fcm-disabled' });
   assert.equal(created, 0);
+  assert.equal(warnings.some((entry) => String(entry[0]).includes('FCM disabled')), true);
+});
+
+test('enabled FCM without an explicit project id fails at startup', () => {
+  assert.throws(
+    () => createConfiguredPushTransport({
+      config: { enabled: true, projectId: '' },
+      messagingFactory: () => ({ send: async () => 'ok' }),
+    }),
+    /DIZYCHAT_FIREBASE_PROJECT_ID_REQUIRED/,
+  );
 });
 
 test('enabled transport serializes only allowlisted message data and token envelope', async () => {
