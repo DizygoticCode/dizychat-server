@@ -212,6 +212,8 @@ test('Android native boundary renders durable room notification with tap, Reply,
   assert.match(plugin, /consumeLaunchRoute/);
   assert.match(plugin, /listNotificationRooms/);
   assert.match(plugin, /applyReadCursor/);
+  assert.match(plugin, /getStringExtra\("room"\)/, 'system-rendered FCM taps must accept raw room data');
+  assert.match(plugin, /getStringExtra\("messageId"\)/, 'system-rendered FCM taps must accept raw message id data');
 
   const notification = read(notificationPath);
   assert.match(notification, /notificationKey/);
