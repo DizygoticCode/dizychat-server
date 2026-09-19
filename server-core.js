@@ -800,6 +800,7 @@ app.post('/api/mobile/push/register', pushApiJson, requireHttpMobileAccount, asy
       canonicalUsername: req.accountPrincipal.canonicalUsername,
       deviceId: req.body?.deviceId,
       fcmToken: req.body?.fcmToken,
+      platform: req.body?.platform,
       deviceLabel: req.body?.deviceLabel,
     });
     console.info('[Push] device registered', {

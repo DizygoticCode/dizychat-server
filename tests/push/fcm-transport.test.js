@@ -68,6 +68,10 @@ test('enabled transport serializes only allowlisted message data and token envel
     priority: 'high',
     notification: { channelId: 'dizychat_messages_v1', proxy: 'allow' },
   });
+  assert.deepEqual(payloads[0].apns, {
+    headers: { 'apns-priority': '10' },
+    payload: { aps: { sound: 'default', category: 'DIZYCHAT_MESSAGE' } },
+  });
   const serialized = JSON.stringify(payloads[0]);
   assert.equal(serialized.includes('NOPE'), false);
   assert.equal(serialized.includes('password'), false);
@@ -91,6 +95,17 @@ test('read-control transport is data-only, explicitly typed, and strips credenti
       preview: '',
       notificationKey: '0123456789abcdef01234567',
       timestamp: '2026-09-06T12:00:00.000Z',
+    },
+    apns: {
+      headers: {
+        'apns-priority': '5',
+        'apns-push-type': 'background',
+      },
+      payload: {
+        aps: {
+          contentAvailable: true,
+        },
+      },
     },
   });
   const serialized = JSON.stringify(payloads[0]);

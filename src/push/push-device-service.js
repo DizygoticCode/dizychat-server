@@ -91,6 +91,7 @@ const createPushDeviceService = ({
     canonicalUsername,
     deviceId,
     fcmToken,
+    platform = 'android',
     deviceLabel = 'Android',
   } = {}) => {
     const normalizedSessionId = cleanSessionId(sessionId);
@@ -98,6 +99,7 @@ const createPushDeviceService = ({
     const normalizedDeviceId = cleanDeviceId(deviceId);
     const token = String(fcmToken || '').trim();
     if (!token) throw serviceError('FCM_TOKEN_INVALID');
+    const normalizedPlatform = String(platform || '').trim().toLowerCase() === 'ios' ? 'ios' : 'android';
 
     await assertActiveSessionAccount({ sessionId: normalizedSessionId, canonicalUsername: canonical });
 
@@ -123,8 +125,8 @@ const createPushDeviceService = ({
         $set: {
           canonicalUsername: canonical,
           fcmToken: token,
-          deviceLabel: String(deviceLabel || 'Android').trim().slice(0, 120) || 'Android',
-          platform: 'android',
+          deviceLabel: String(deviceLabel || (normalizedPlatform === 'ios' ? 'iPhone' : 'Android')).trim().slice(0, 120) || (normalizedPlatform === 'ios' ? 'iPhone' : 'Android'),
+          platform: normalizedPlatform,
           tokenRegisteredAt: registeredAt,
           disabledAt: null,
           disabledReason: '',
