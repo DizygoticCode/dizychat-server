@@ -34,7 +34,7 @@ const pushDeviceSchema = new mongoose.Schema({
   },
   platform: {
     type: String,
-    enum: ['android'],
+    enum: ['android', 'ios'],
     default: 'android',
   },
   suppressionLeaseExpiresAt: {
