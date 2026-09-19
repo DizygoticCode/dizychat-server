@@ -224,6 +224,15 @@
 
     const mediaDevices = win?.navigator?.mediaDevices;
     if (!mediaDevices || typeof mediaDevices.getUserMedia !== 'function') return false;
+
+    // iOS/WKWebView owns its camera and microphone permission prompts. The
+    // Android bridge remains necessary because Android needs runtime aliases.
+    try {
+      if (String(win?.Capacitor?.getPlatform?.() || '').toLowerCase() === 'ios') return true;
+    } catch (_err) {
+      /* fall through to Android/native bridge behavior */
+    }
+
     if (mediaDevices.getUserMedia[MEDIA_PERMISSION_MARKER]) return true;
 
     const originalGetUserMedia = mediaDevices.getUserMedia.bind(mediaDevices);
