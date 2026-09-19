@@ -15,7 +15,10 @@ test('iOS Capacitor CI regenerates and compiles the native bridge on macOS', () 
   assert.match(workflow, /runs-on:\s*macos-latest/);
   assert.match(workflow, /@capacitor\/ios@7\.4\.4/);
   assert.match(workflow, /npx cap add ios/);
+  assert.match(workflow, /node scripts\/prepare-ios-firebase\.js/);
   assert.match(workflow, /node scripts\/prepare-ios-native\.js/);
+  assert.match(workflow, /DIZYCHAT_GOOGLE_SERVICE_INFO_PLIST_B64/);
+  assert.match(workflow, /generic\/platform=iOS/);
   assert.match(workflow, /xcodebuild/);
   assert.match(workflow, /CODE_SIGNING_ALLOWED=NO/);
 });
@@ -70,6 +73,19 @@ test('iOS verified WebBundle updater mirrors the Android manifest safety boundar
   assert.match(source, /bridge\.setServerBasePath/);
   assert.match(source, /healthyActiveBundle/);
   assert.doesNotMatch(source, /http:\/\//i, 'native updater must never downgrade its backend transport');
+});
+
+test('iOS push bridge keeps Firebase token rotation and Android-parity notification actions', () => {
+  const source = read('ios-native/DizyPushPlugin.swift');
+  assert.match(source, /MessagingDelegate/);
+  assert.match(source, /didReceiveRegistrationToken/);
+  assert.match(source, /DIZYCHAT_MESSAGE/);
+  assert.match(source, /DIZYCHAT_REPLY/);
+  assert.match(source, /DIZYCHAT_MARK_READ/);
+  assert.match(source, /UNTextInputNotificationAction/);
+  assert.match(source, /\/api\/mobile\/push\/reply/);
+  assert.match(source, /\/api\/read-state\/mark/);
+  assert.match(source, /SecureSessionPlugin\.readStoredToken/);
 });
 
 test('iOS WKWebView keeps native getUserMedia unwrapped so Apple owns camera/mic permission prompts', () => {
@@ -131,6 +147,53 @@ test('native push client registers an iPhone as ios while retaining the existing
     platform: 'ios',
     deviceLabel: 'iPhone',
   });
+});
+
+test('iOS asks Apple notification permission before first FCM registration', async () => {
+  const events = [];
+  const posts = [];
+  const plugin = {
+    configure: async () => { events.push('configure'); },
+    requestNotificationPermission: async () => {
+      events.push('permission');
+      return { state: 'granted' };
+    },
+    getRegistration: async () => {
+      events.push('registration');
+      return { deviceId: 'iphone-1', fcmToken: 'fcm-ios-1' };
+    },
+    isScreenOn: async () => ({ on: false }),
+    consumeLaunchRoute: async () => ({}),
+    addListener: async () => {},
+  };
+  const win = {
+    Capacitor: {
+      isNativePlatform: () => true,
+      getPlatform: () => 'ios',
+      Plugins: { DizyPush: plugin },
+    },
+    document: { visibilityState: 'hidden', addEventListener() {} },
+    fetch: async (url, init = {}) => {
+      posts.push({ url, body: init.body ? JSON.parse(init.body) : null });
+      return { ok: true, status: 200, json: async () => ({ ok: true }) };
+    },
+    console,
+  };
+  const controller = createPushController(win, {
+    backendOrigin: 'https://backend.example',
+    auth: { readToken: () => 'mobile-bearer' },
+    fetchImpl: win.fetch,
+    setIntervalImpl: () => 1,
+    clearIntervalImpl: () => {},
+  });
+
+  await controller.onChatReady();
+  assert.equal(events.includes('registration'), false, 'iOS must not pre-register before APNs permission');
+
+  await controller.onRoomJoined('General Chat');
+  assert.ok(events.indexOf('permission') >= 0);
+  assert.ok(events.indexOf('registration') > events.indexOf('permission'));
+  assert.equal(posts[0].body.platform, 'ios');
 });
 
 test('server native-device model accepts iOS without changing Android default', () => {
