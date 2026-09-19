@@ -268,3 +268,27 @@ test('Android source keeps Firebase/server credentials external and never hard-c
   assert.doesNotMatch(javaSources, /BEGIN PRIVATE KEY|firebase-adminsdk|MONGO_URI|METADEFENDER_API_KEY/);
   assert.doesNotMatch(javaSources, /https:\/\/dizychat\.com/i, 'existing app config is the only production backend source');
 });
+
+
+test('native registration performs a one-time FCM token refresh and startup re-registers immediately', async () => {
+  const plugin = read('android/app/src/main/java/com/chat/dizychat/DizyPushPlugin.java');
+  const store = read('android/app/src/main/java/com/chat/dizychat/DizyPushStore.java');
+  const runtime = read('public/mobile-push-runtime.js');
+
+  assert.match(plugin, /setAutoInitEnabled\(true\)/);
+  assert.match(plugin, /needsFcmTokenRefreshV2/);
+  assert.match(plugin, /deleteToken\(\)/);
+  assert.match(plugin, /markFcmTokenRefreshV2/);
+  assert.match(store, /KEY_FCM_REFRESH_V2/);
+  assert.match(runtime, /onChatReady[\s\S]*await register\(\)/);
+
+  const harness = createNativeHarness();
+  const controller = createPushController(harness.win, {
+    backendOrigin: 'https://backend.example',
+    auth: harness.win.dizychatAuthV2,
+  });
+  await controller.onChatReady();
+  const registrations = harness.fetchCalls.filter((call) => call.url.endsWith('/api/mobile/push/register'));
+  assert.equal(registrations.length, 1);
+  assert.equal(registrations[0].body.fcmToken, 'fcm-abc');
+});
