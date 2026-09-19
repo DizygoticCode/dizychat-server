@@ -271,6 +271,13 @@
       if (!native) return;
       await configure();
       await installListeners();
+      if (readBearer()) {
+        try {
+          await register();
+        } catch (error) {
+          win.console?.warn?.('[DizyChat] startup push registration failed', error);
+        }
+      }
       try {
         const route = await plugin.consumeLaunchRoute();
         if (route?.room) openRoute(route);
