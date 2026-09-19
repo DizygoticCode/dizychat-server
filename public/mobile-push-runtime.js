@@ -12,6 +12,14 @@
 
   const clean = (value) => String(value || '').trim();
 
+  const nativePlatform = (win = {}) => {
+    try {
+      return clean(win?.Capacitor?.getPlatform?.()).toLowerCase() === 'ios' ? 'ios' : 'android';
+    } catch (_err) {
+      return 'android';
+    }
+  };
+
   const isNative = (win = {}) => {
     try {
       return Boolean(win?.Capacitor?.isNativePlatform?.());
@@ -99,11 +107,12 @@
       const fcmToken = clean(replacementToken || next?.fcmToken || next?.notificationToken || next?.pushToken);
       if (!deviceId || !fcmToken) return null;
       registration = { deviceId, fcmToken };
+      const platform = nativePlatform(win);
       await post('/api/mobile/push/register', {
         deviceId,
         fcmToken,
-        platform: 'android',
-        deviceLabel: 'Android',
+        platform,
+        deviceLabel: platform === 'ios' ? 'iPhone' : 'Android',
       });
       return registration;
     };
