@@ -653,6 +653,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 const pushApiJson = express.json({ limit: '32kb' });
 const PRESENCE_LEASE_MAX_MS = 90_000;
 const PUSH_OBJECT_ID_PATTERN = /^[a-f0-9]{24}$/i;
+const pushTokenFingerprint = (token) => {
+  const clean = String(token || '').trim();
+  return clean ? crypto.createHash('sha256').update(clean).digest('hex').slice(0, 12) : '';
+};
 
 const readAccountSessionTokenFromRequest = (req) => {
   const authorization = String(req.headers.authorization || '');
@@ -797,6 +801,9 @@ app.post('/api/mobile/push/register', pushApiJson, requireHttpMobileAccount, asy
       deviceId: req.body?.deviceId,
       fcmToken: req.body?.fcmToken,
       deviceLabel: req.body?.deviceLabel,
+    });
+    console.info('[Push] device registered', {
+      tokenFingerprint: pushTokenFingerprint(req.body?.fcmToken),
     });
     return res.json({ ok: true });
   } catch (error) {
