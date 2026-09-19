@@ -5,6 +5,7 @@ on:
     branches:
       - feat/android-slice1-core
       - fix/android-relative-media-urls
+      - fix/android-notification-channel-bootstrap
       - main
   pull_request:
     paths:
