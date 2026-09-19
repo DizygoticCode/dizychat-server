@@ -45,7 +45,7 @@ public class MainActivity extends BridgeActivity {
         DizyNotificationManager.showMessageNotification(
                 this,
                 "Local Test",
-                "local-test-1",
+                "507f1f77bcf86cd799439099",
                 "DizyChat",
                 "Local Android notification path is working",
                 "0123456789abcdef01234567",
