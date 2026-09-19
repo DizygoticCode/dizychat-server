@@ -20,5 +20,5 @@ test('generated release resources must equal validated source identity', () => {
   const xml = `<resources><string name="google_app_id">${identity.firebaseAppId}</string><string name="gcm_defaultSenderId">${identity.senderId}</string><string name="project_id">dizychat</string></resources>`;
   assert.deepEqual(validateResources(xml, identity), identity);
   assert.throws(() => validateResources(xml.replace('682852424815</string>', '123</string>'), identity), /COMPILED_FIREBASE_IDENTITY_MISMATCH/);
-  assert.throws(() => validateResources('<resources/>', identity), /COMPILED_FIREBASE_IDENTITY_MISMATCH/);
+  assert.throws(() => validateResources('<resources/>', identity), /COMPILED_FIREBASE_RESOURCE_MISSING/);
 });
