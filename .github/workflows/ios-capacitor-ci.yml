@@ -56,6 +56,30 @@ jobs:
       - name: Sync Capacitor iOS project
         run: npx cap sync ios
 
+      - name: Provision Firebase iOS config when available
+        env:
+          DIZYCHAT_GOOGLE_SERVICE_INFO_PLIST_B64: ${{ secrets.DIZYCHAT_GOOGLE_SERVICE_INFO_PLIST_B64 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${DIZYCHAT_GOOGLE_SERVICE_INFO_PLIST_B64:-}" ]]; then
+            echo "Firebase iOS config not provisioned; compile-only validation will continue."
+            exit 0
+          fi
+
+          python3 -c 'import base64, os, pathlib; pathlib.Path("ios/App/App/GoogleService-Info.plist").write_bytes(base64.b64decode(os.environ["DIZYCHAT_GOOGLE_SERVICE_INFO_PLIST_B64"]))'
+          PROJECT_ID="$(/usr/libexec/PlistBuddy -c 'Print :PROJECT_ID' ios/App/App/GoogleService-Info.plist)"
+          BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :BUNDLE_ID' ios/App/App/GoogleService-Info.plist)"
+          if [[ "$PROJECT_ID" != "dizychat" ]]; then
+            echo "::error::Firebase iOS config must target project dizychat, got ${PROJECT_ID:-<missing>}."
+            exit 1
+          fi
+          if [[ "$BUNDLE_ID" != "com.chat.dizychat" ]]; then
+            echo "::error::Firebase iOS config must target bundle com.chat.dizychat, got ${BUNDLE_ID:-<missing>}."
+            exit 1
+          fi
+          echo "Firebase iOS config validated for project dizychat / com.chat.dizychat."
+
       - name: Apply DizyChat native iOS bridge
         run: node scripts/prepare-ios-native.js
 
@@ -70,10 +94,24 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
+      - name: Build unsigned iOS device target
+        run: |
+          xcodebuild \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "${RUNNER_TEMP}/dizychat-ios-device" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
       - name: Archive generated iOS project for port work
         uses: actions/upload-artifact@v4
         with:
           name: dizychat-ios-generated-project
-          path: ios
+          path: |
+            ios
+            !ios/App/App/GoogleService-Info.plist
           if-no-files-found: error
           retention-days: 7
