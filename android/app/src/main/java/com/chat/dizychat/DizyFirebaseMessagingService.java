@@ -7,6 +7,12 @@ import java.util.Map;
 
 public class DizyFirebaseMessagingService extends FirebaseMessagingService {
     @Override
+    public void onCreate() {
+        super.onCreate();
+        DizyNotificationManager.ensureChannel(this);
+    }
+
+    @Override
     public void onMessageReceived(RemoteMessage remoteMessage) {
         Map<String, String> data = remoteMessage.getData();
         if (data == null || data.isEmpty()) return;
