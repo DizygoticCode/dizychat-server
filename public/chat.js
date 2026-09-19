@@ -2905,6 +2905,8 @@ function positionMessageActionsMenu(menu) {
   if (!menu || menu === userContextMenu) return;
   menu.style.top = "";
   menu.style.bottom = "";
+  menu.style.left = "";
+  menu.style.right = "";
 
   const viewportPadding = 8;
   const preferredTop = 28;
@@ -2920,24 +2922,49 @@ function positionMessageActionsMenu(menu) {
       ? containerRect.bottom - viewportPadding
       : window.innerHeight - viewportPadding
   );
+  const boundaryLeft = Math.max(
+    viewportPadding,
+    Number.isFinite(containerRect?.left) ? containerRect.left + viewportPadding : viewportPadding
+  );
+  const boundaryRight = Math.min(
+    window.innerWidth - viewportPadding,
+    Number.isFinite(containerRect?.right)
+      ? containerRect.right - viewportPadding
+      : window.innerWidth - viewportPadding
+  );
 
   const rect = menu.getBoundingClientRect();
-  if (rect.bottom <= boundaryBottom) return;
+  if (rect.bottom > boundaryBottom) {
+    menu.style.top = "auto";
+    menu.style.bottom = `calc(100% - ${preferredTop}px)`;
 
-  menu.style.top = "auto";
-  menu.style.bottom = `calc(100% - ${preferredTop}px)`;
-
-  const flippedRect = menu.getBoundingClientRect();
-  if (flippedRect.top >= boundaryTop) return;
+    const flippedRect = menu.getBoundingClientRect();
+    if (flippedRect.top < boundaryTop) {
+      const messageRect = menu.closest(".message")?.getBoundingClientRect();
+      menu.style.bottom = "";
+      menu.style.top = `${Math.max(
+        preferredTop,
+        boundaryTop - (Number.isFinite(messageRect?.top) ? messageRect.top : 0)
+      )}px`;
+    }
+  }
 
   const messageRect = menu.closest(".message")?.getBoundingClientRect();
-  menu.style.bottom = "";
-  menu.style.top = `${Math.max(
-    preferredTop,
-    boundaryTop - (Number.isFinite(messageRect?.top) ? messageRect.top : 0)
-  )}px`;
+  const horizontalRect = menu.getBoundingClientRect();
+  if (horizontalRect.left < boundaryLeft) {
+    menu.style.right = "auto";
+    menu.style.left = `${Math.max(
+      0,
+      boundaryLeft - (Number.isFinite(messageRect?.left) ? messageRect.left : 0)
+    )}px`;
+  } else if (horizontalRect.right > boundaryRight) {
+    menu.style.left = "auto";
+    menu.style.right = `${Math.max(
+      0,
+      (Number.isFinite(messageRect?.right) ? messageRect.right : boundaryRight) - boundaryRight
+    )}px`;
+  }
 }
-
 function closeActiveMenu(options = {}) {
   if (!appState.activeMenu) return;
   const { restoreFocus = false } = options;
