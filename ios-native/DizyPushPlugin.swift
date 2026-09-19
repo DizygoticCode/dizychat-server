@@ -105,6 +105,24 @@ public final class DizyPushPlugin: CAPPlugin, CAPBridgedPlugin, UNUserNotificati
             return
         }
         Messaging.messaging().delegate = self
+        resolveRegistration(call, remainingApnsChecks: 24)
+    }
+
+    private func resolveRegistration(_ call: CAPPluginCall, remainingApnsChecks: Int) {
+        guard Messaging.messaging().apnsToken != nil else {
+            guard remainingApnsChecks > 0 else {
+                call.reject("APNs device token is not available yet")
+                return
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                self?.resolveRegistration(
+                    call,
+                    remainingApnsChecks: remainingApnsChecks - 1
+                )
+            }
+            return
+        }
+
         Messaging.messaging().token { token, error in
             if let error = error {
                 call.reject("Unable to obtain FCM token", nil, error)
