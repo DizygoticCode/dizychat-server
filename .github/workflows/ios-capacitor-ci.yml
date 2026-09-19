@@ -47,10 +47,14 @@ jobs:
       - name: Install matching Capacitor iOS platform
         run: npm install --no-save --package-lock=false @capacitor/ios@7.4.4
 
-      - name: Generate and sync Capacitor iOS project
-        run: |
-          npx cap add ios
-          npx cap sync ios
+      - name: Generate Capacitor iOS project
+        run: npx cap add ios
+
+      - name: Prepare Firebase Messaging dependencies
+        run: node scripts/prepare-ios-firebase.js
+
+      - name: Sync Capacitor iOS project
+        run: npx cap sync ios
 
       - name: Apply DizyChat native iOS bridge
         run: node scripts/prepare-ios-native.js
