@@ -19,11 +19,15 @@ const MobileSession = require('./src/models/mobile-session');
 const Room = require('./src/models/room');
 const PushDevice = require('./src/models/push-device');
 const PushRoomSubscription = require('./src/models/push-room-subscription');
+const WebPushSubscription = require('./src/models/web-push-subscription');
 const RoomReadCursor = require('./src/models/room-read-cursor');
 const { createAccountService } = require('./src/auth/account-service');
 const { createPushDeviceService } = require('./src/push/push-device-service');
 const { createReadStateService } = require('./src/push/read-state-service');
 const { createPushCoordinator } = require('./src/push/push-coordinator');
+const { createWebPushSubscriptionService } = require('./src/push/web-push-subscription-service');
+const { createWebPushCoordinator } = require('./src/push/web-push-coordinator');
+const { createConfiguredWebPushTransport } = require('./src/push/web-push-config');
 const { createReadStateCoordinator } = require('./src/push/read-state-coordinator');
 const { createChatMessageService } = require('./src/messages/chat-message-service');
 const { createConfiguredPushTransport } = require('./src/push/fcm-config');
@@ -420,11 +424,45 @@ const pushDeviceService = createPushDeviceService({
 });
 const readStateService = createReadStateService({ RoomReadCursorModel: RoomReadCursor });
 const pushTransport = createConfiguredPushTransport();
-const pushCoordinator = createPushCoordinator({
+const nativePushCoordinator = createPushCoordinator({
   pushDeviceService,
   readStateService,
   transport: pushTransport,
 });
+const webPushSubscriptionService = createWebPushSubscriptionService({
+  SubscriptionModel: WebPushSubscription,
+  UserModel: User,
+  logger: console,
+});
+const webPushTransport = createConfiguredWebPushTransport({ logger: console });
+const webPushCoordinator = createWebPushCoordinator({
+  subscriptionService: webPushSubscriptionService,
+  transport: webPushTransport,
+  logger: console,
+});
+const pushCoordinator = {
+  async onMessageStored(message, metadata = {}) {
+    const results = await Promise.allSettled([
+      nativePushCoordinator.onMessageStored(message, metadata),
+      webPushCoordinator.onMessageStored(message, metadata),
+    ]);
+    const combined = { attempted: 0, sent: 0, failed: 0 };
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        combined.failed += 1;
+        console.warn('[Push] coordinator unavailable', {
+          code: String(result.reason?.code || 'unexpected'),
+        });
+        continue;
+      }
+      combined.attempted += Number(result.value?.attempted || 0);
+      combined.sent += Number(result.value?.sent || 0);
+      combined.failed += Number(result.value?.failed || 0);
+    }
+    return combined;
+  },
+  sendRoomClear: (...args) => nativePushCoordinator.sendRoomClear(...args),
+};
 const readStateCoordinator = createReadStateCoordinator({
   readStateService,
   pushCoordinator,
@@ -681,6 +719,79 @@ const readCursorJson = (cursor) => cursor ? {
   messageId: String(cursor.messageId || ''),
   messageTimestamp: cursor.messageTimestamp,
 } : null;
+
+app.get('/api/web-push/config', (_req, res) => {
+  return res.json({
+    enabled: Boolean(webPushTransport.enabled),
+    publicKey: webPushTransport.enabled ? webPushTransport.publicKey : '',
+  });
+});
+
+app.post('/api/web-push/register', pushApiJson, requireHttpAccount, async (req, res) => {
+  try {
+    await webPushSubscriptionService.registerSubscription({
+      canonicalUsername: req.accountPrincipal.canonicalUsername,
+      subscription: req.body?.subscription,
+      deviceLabel: req.body?.deviceLabel,
+    });
+    return res.json({ ok: true });
+  } catch (error) {
+    console.warn('[WebPush] subscription registration failed', {
+      code: String(error?.code || 'unexpected'),
+    });
+    return res.status(400).json({ ok: false, code: String(error?.code || 'WEB_PUSH_REGISTER_FAILED') });
+  }
+});
+
+app.post('/api/web-push/room', pushApiJson, requireHttpAccount, async (req, res) => {
+  try {
+    await webPushSubscriptionService.setRoomSubscription({
+      canonicalUsername: req.accountPrincipal.canonicalUsername,
+      endpoint: req.body?.endpoint,
+      room: req.body?.room,
+      subscribed: req.body?.subscribed !== false,
+    });
+    return res.json({ ok: true });
+  } catch (error) {
+    console.warn('[WebPush] room subscription update failed', {
+      code: String(error?.code || 'unexpected'),
+    });
+    return res.status(400).json({ ok: false, code: String(error?.code || 'WEB_PUSH_ROOM_FAILED') });
+  }
+});
+
+app.post('/api/web-push/presence', pushApiJson, requireHttpAccount, async (req, res) => {
+  try {
+    const expiresAt = await webPushSubscriptionService.setPresence({
+      canonicalUsername: req.accountPrincipal.canonicalUsername,
+      endpoint: req.body?.endpoint,
+      interactive: req.body?.interactive === true,
+      ttlMs: req.body?.ttlMs,
+    });
+    return res.json({ ok: true, expiresAt });
+  } catch (error) {
+    console.warn('[WebPush] presence update failed', {
+      code: String(error?.code || 'unexpected'),
+    });
+    return res.status(400).json({ ok: false, code: String(error?.code || 'WEB_PUSH_PRESENCE_FAILED') });
+  }
+});
+
+app.post('/api/web-push/unregister', pushApiJson, requireHttpAccount, async (req, res) => {
+  try {
+    await webPushSubscriptionService.disableSubscription({
+      canonicalUsername: req.accountPrincipal.canonicalUsername,
+      endpoint: req.body?.endpoint,
+      reason: 'signed-out',
+    });
+    return res.json({ ok: true });
+  } catch (error) {
+    console.warn('[WebPush] unregister failed', {
+      code: String(error?.code || 'unexpected'),
+    });
+    return res.status(400).json({ ok: false, code: String(error?.code || 'WEB_PUSH_UNREGISTER_FAILED') });
+  }
+});
 
 app.post('/api/mobile/push/register', pushApiJson, requireHttpMobileAccount, async (req, res) => {
   try {

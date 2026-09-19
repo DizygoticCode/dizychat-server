@@ -39,3 +39,18 @@ test('WebBundle store persists only app-private versions and Capacitor local bas
   assert.match(source, /KEY_PENDING/);
   assert.match(source, /KEY_PREVIOUS/);
 });
+
+
+test('Android verified-bundle allowlist matches the server-published mobile core exactly', () => {
+  const { MOBILE_WEB_CORE_PATHS } = require('../src/mobile-web/bundle-manifest');
+  const source = read('android/app/src/main/java/com/chat/dizychat/WebBundleManifest.java');
+  const match = source.match(/REQUIRED_CORE_PATHS\s*=\s*Collections\.unmodifiableList\(Arrays\.asList\(([\s\S]*?)\)\);/);
+  assert.ok(match, 'Android REQUIRED_CORE_PATHS declaration must be readable by the regression test');
+
+  const androidCore = [...match[1].matchAll(/"([^"]+)"/g)].map((entry) => entry[1]).sort();
+  assert.deepEqual(
+    androidCore,
+    [...MOBILE_WEB_CORE_PATHS].sort(),
+    'fresh installs must accept every file published by the server manifest and no extras',
+  );
+});

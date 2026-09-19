@@ -178,15 +178,17 @@ test('Socket.IO decorator observes chat messages without changing the existing s
   assert.equal(h.notifications.length, 1);
 });
 
-test('login and bootstrap expose browser notifications without service-worker or Web Push background behavior', () => {
+test('login and bootstrap expose standards Web Push for supported browsers and Home Screen apps', () => {
   const login = read('public/login.html');
   const bootstrap = read('public/mobile-bootstrap.js');
   const runtimeSource = exists(runtimePath) ? read(runtimePath) : '';
 
   assert.match(login, /id="toggle-desktop-notifications"/);
-  assert.match(login, /Enable desktop notifications/);
+  assert.match(login, /Enable notifications/);
   const runtimeAt = bootstrap.indexOf("/browser-notifications.js");
   const chatAt = bootstrap.indexOf("/chat.js");
   assert.ok(runtimeAt >= 0 && chatAt > runtimeAt, 'notification runtime must decorate Socket.IO before chat.js creates the socket');
-  assert.doesNotMatch(runtimeSource, /serviceWorker|PushManager|pushManager|ServiceWorkerRegistration/);
+  assert.match(runtimeSource, /serviceWorker\.register\(['"]\/dizychat-sw\.js['"]\)/);
+  assert.match(runtimeSource, /pushManager\.subscribe/);
+  assert.match(runtimeSource, /\/api\/web-push\/register/);
 });

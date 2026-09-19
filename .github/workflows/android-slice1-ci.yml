@@ -5,6 +5,7 @@ on:
     branches:
       - feat/android-slice1-core
       - fix/android-relative-media-urls
+      - fix/android-notification-channel-bootstrap
       - main
   pull_request:
     paths:
@@ -88,6 +89,7 @@ jobs:
 
           console.log('Firebase Android config validated for project dizychat / com.chat.dizychat.');
           NODE
+          node scripts/verify-firebase-identity.js
 
       - name: Provision Android release signing material
         env:
@@ -145,6 +147,18 @@ jobs:
           DIZYCHAT_KEYSTORE_PASSWORD: ${{ secrets.DIZYCHAT_KEYSTORE_PASSWORD }}
           DIZYCHAT_KEY_PASSWORD: ${{ secrets.DIZYCHAT_KEY_PASSWORD }}
         run: ./gradlew assembleRelease --no-daemon
+
+      - name: Verify generated release Firebase identity
+        run: |
+          node scripts/verify-firebase-identity.js android/app/build/generated/res/processReleaseGoogleServices/values/values.xml firebase-identity.json
+
+      - name: Upload safe Firebase identity
+        uses: actions/upload-artifact@v4
+        with:
+          name: dizychat-firebase-identity
+          path: firebase-identity.json
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Verify signed release APK
         shell: bash

@@ -31,15 +31,27 @@ const createDefaultMessagingFactory = () => async ({ projectId = '' } = {}) => {
 const createConfiguredPushTransport = ({
   config = readFcmConfig(),
   messagingFactory,
+  logger = console,
 } = {}) => {
-  if (!config.enabled) return createNullTransport();
+  if (!config.enabled) {
+    logger.warn?.('[Push] FCM disabled; remote notifications will not be sent');
+    return createNullTransport();
+  }
+  if (!config.projectId) {
+    throw new Error('DIZYCHAT_FIREBASE_PROJECT_ID_REQUIRED');
+  }
+  if (!messagingFactory && !String(process.env.GOOGLE_APPLICATION_CREDENTIALS || '').trim()) {
+    logger.warn?.('[Push] GOOGLE_APPLICATION_CREDENTIALS unset; Firebase Admin will rely on ambient ADC');
+  }
   return createFcmTransport({
     projectId: config.projectId,
     messagingFactory: messagingFactory || createDefaultMessagingFactory(),
+    logger,
   });
 };
 
 module.exports = {
+  createDefaultMessagingFactory,
   createConfiguredPushTransport,
   readFcmConfig,
 };

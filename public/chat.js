@@ -183,6 +183,9 @@ function applyAccountSession(session) {
   if (token) socket.auth.sessionToken = token;
   else delete socket.auth.sessionToken;
   syncAccountUi();
+  if (token && window.dizychatBrowserNotificationController?.syncRegistration) {
+    void window.dizychatBrowserNotificationController.syncRegistration();
+  }
 }
 
 async function clearAccountSession({ persistent = false } = {}) {

@@ -8,6 +8,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
@@ -16,6 +17,7 @@ import androidx.core.app.RemoteInput;
 import androidx.core.content.ContextCompat;
 
 final class DizyNotificationManager {
+    private static final String TAG = "DizyPushTrace";
     static final String CHANNEL_ID = "dizychat_messages_v1";
     static final String EXTRA_NOTIFICATION_ID = "dizy_notification_id";
     static final String REMOTE_INPUT_KEY = "dizy_reply_text";
@@ -31,7 +33,11 @@ final class DizyNotificationManager {
             String notificationKey,
             String timestamp
     ) {
-        if (!canNotify(context)) return;
+        if (!canNotify(context)) {
+            Log.w(TAG, "showMessageNotification blocked: canNotify=false");
+            return;
+        }
+        Log.i(TAG, "showMessageNotification start room=" + room);
         try {
             DizyNotificationStateStore.RoomState state = DizyNotificationStateStore.recordMessage(
                     context,
@@ -42,9 +48,15 @@ final class DizyNotificationManager {
                     notificationKey,
                     timestamp
             );
-            if (state != null) renderState(context, state, true);
-        } catch (RuntimeException ignored) {
-            // Invalid/stale notification data fails safe without altering other room state.
+            if (state == null) {
+                Log.w(TAG, "recordMessage returned null");
+                return;
+            }
+            Log.i(TAG, "recordMessage ok notificationId=" + state.notificationId);
+            renderState(context, state, true);
+        } catch (RuntimeException error) {
+            Log.e(TAG, "showMessageNotification failed: " + error.getClass().getSimpleName()
+                    + ": " + String.valueOf(error.getMessage()));
         }
     }
 
@@ -90,7 +102,10 @@ final class DizyNotificationManager {
     ) {
         ensureChannel(context);
         DizyNotificationStateStore.Entry latest = latestEntry(state);
-        if (latest == null) return;
+        if (latest == null) {
+            Log.w(TAG, "renderState aborted: no latest entry");
+            return;
+        }
 
         int notificationId = state.notificationId;
         Intent tapIntent = new Intent(context, MainActivity.class)
@@ -175,7 +190,9 @@ final class DizyNotificationManager {
                 .addAction(replyAction)
                 .addAction(readAction);
 
+        Log.i(TAG, "notify start id=" + notificationId + " room=" + state.room);
         NotificationManagerCompat.from(context).notify(notificationId, builder.build());
+        Log.i(TAG, "notify complete id=" + notificationId);
     }
 
     private static DizyNotificationStateStore.Entry latestEntry(DizyNotificationStateStore.RoomState state) {
@@ -199,10 +216,17 @@ final class DizyNotificationManager {
                 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
     }
 
-    private static void ensureChannel(Context context) {
+    static void ensureChannel(Context context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationManager manager = context.getSystemService(NotificationManager.class);
-        if (manager == null || manager.getNotificationChannel(CHANNEL_ID) != null) return;
+        if (manager == null) {
+            Log.w(TAG, "ensureChannel: NotificationManager unavailable");
+            return;
+        }
+        if (manager.getNotificationChannel(CHANNEL_ID) != null) {
+            Log.i(TAG, "ensureChannel: existing " + CHANNEL_ID);
+            return;
+        }
         NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
                 "DizyChat messages",
@@ -210,5 +234,6 @@ final class DizyNotificationManager {
         );
         channel.setDescription("Messages from subscribed DizyChat rooms");
         manager.createNotificationChannel(channel);
+        Log.i(TAG, "ensureChannel: created " + CHANNEL_ID);
     }
 }
