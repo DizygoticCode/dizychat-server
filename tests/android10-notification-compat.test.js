@@ -39,5 +39,12 @@ test('chat message FCM payload requests high-priority Android delivery', async (
     timestamp: '2026-09-08T19:00:00.000Z',
   }, 'p30-token');
 
-  assert.deepEqual(payloads[0].android, { priority: 'high' });
+  assert.deepEqual(payloads[0].notification, {
+    title: 'Alice · General Chat',
+    body: 'hello',
+  });
+  assert.deepEqual(payloads[0].android, {
+    priority: 'high',
+    notification: { channelId: 'dizychat_messages_v1' },
+  });
 });
