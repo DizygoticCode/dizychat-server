@@ -32,3 +32,13 @@ deploy/livekit/livekit.yaml
 
 # DizyJam generated TLS keys and ephemeral JackTrip credentials.
 ops/dizyjam/runtime/
+
+# Generated Capacitor / Xcode iOS state and private Apple/Firebase material
+ios/
+DerivedData/
+*.xcarchive
+*.mobileprovision
+*.p12
+*.p8
+GoogleService-Info.plist
+
