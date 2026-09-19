@@ -103,6 +103,11 @@ if (!appDelegate.includes('didRegisterForRemoteNotificationsWithDeviceToken')) {
     'import Capacitor\n',
     'import Capacitor\n\n#if canImport(FirebaseMessaging)\nimport FirebaseMessaging\n#endif\n',
   );
+  const launchNeedle = '        // Override point for customization after application launch.\n        return true';
+  const launchReplacement = '        // Override point for customization after application launch.\n        if let remoteNotification = launchOptions?[.remoteNotification] as? [AnyHashable: Any] {\n            DizyPushPlugin.captureLaunchNotification(remoteNotification)\n        }\n        return true';
+  if (!appDelegate.includes(launchNeedle)) throw new Error('Unable to patch iOS cold-launch notification route');
+  appDelegate = appDelegate.replace(launchNeedle, launchReplacement);
+
   const finalBrace = '\n}\n';
   const methods = `
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
