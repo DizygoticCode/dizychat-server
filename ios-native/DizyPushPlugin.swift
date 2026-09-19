@@ -272,6 +272,41 @@ public final class DizyPushPlugin: CAPPlugin, CAPBridgedPlugin, UNUserNotificati
         }
     }
 
+    static func handleRemoteNotification(
+        _ userInfo: [AnyHashable: Any],
+        completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        guard cleanString(userInfo["type"]) == "read-control" else {
+            completionHandler(.noData)
+            return
+        }
+        let room = cleanString(userInfo["room"])
+        let cursorTimestamp = cleanString(userInfo["timestamp"])
+        guard !room.isEmpty else {
+            completionHandler(.noData)
+            return
+        }
+
+        let center = UNUserNotificationCenter.current()
+        center.getDeliveredNotifications { notifications in
+            let identifiers = notifications.compactMap { item -> String? in
+                let info = item.request.content.userInfo
+                guard cleanString(info["room"]) == room else { return nil }
+                let timestamp = cleanString(info["timestamp"])
+                if cursorTimestamp.isEmpty || timestamp.isEmpty || timestamp <= cursorTimestamp {
+                    return item.request.identifier
+                }
+                return nil
+            }
+            if !identifiers.isEmpty {
+                center.removeDeliveredNotifications(withIdentifiers: identifiers)
+                completionHandler(.newData)
+            } else {
+                completionHandler(.noData)
+            }
+        }
+    }
+
     private func postAuthenticated(
         path: String,
         body: [String: Any],
