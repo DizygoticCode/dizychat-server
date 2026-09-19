@@ -37,6 +37,8 @@ test('iOS native preparation keeps Android-independent secure/session and push b
   assert.match(prep, /UIBackgroundModes/);
   assert.match(prep, /remote-notification/);
   assert.match(prep, /didReceiveRemoteNotification/);
+  assert.match(prep, /launchOptions\?\[\.remoteNotification\]/);
+  assert.match(prep, /captureLaunchNotification/);
   assert.match(prep, /capacitorDidRegisterForRemoteNotifications/);
   assert.match(prep, /Messaging\.messaging\(\)\.apnsToken/);
   assert.doesNotMatch(prep, /BEGIN PRIVATE KEY|firebase-adminsdk|GOOGLE_APPLICATION_CREDENTIALS/);
@@ -91,6 +93,7 @@ test('iOS push bridge keeps Firebase token rotation and Android-parity notificat
   assert.match(source, /\/api\/mobile\/push\/reply/);
   assert.match(source, /\/api\/read-state\/mark/);
   assert.match(source, /SecureSessionPlugin\.readStoredToken/);
+  assert.match(source, /captureLaunchNotification/);
   assert.match(source, /handleRemoteNotification/);
   assert.match(source, /read-control/);
 });
