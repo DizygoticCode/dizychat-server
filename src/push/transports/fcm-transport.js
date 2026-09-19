@@ -52,6 +52,7 @@ const createFcmTransport = ({ projectId = '', messagingFactory } = {}) => {
           priority: 'high',
           notification: {
             channelId: 'dizychat_messages_v1',
+            proxy: 'allow',
           },
         };
       }
