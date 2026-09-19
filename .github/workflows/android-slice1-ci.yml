@@ -149,8 +149,17 @@ jobs:
         run: ./gradlew assembleRelease --no-daemon
 
       - name: Verify generated release Firebase identity
+        shell: bash
         run: |
-          node scripts/verify-firebase-identity.js android/app/build/generated/res/google-services/release/values/values.xml firebase-identity.json
+          set -euo pipefail
+          GENERATED_FIREBASE_VALUES="$(find android/app/build/generated/res -type f -path '*/google-services/*/values/values.xml' -print -quit)"
+          if [[ -z "$GENERATED_FIREBASE_VALUES" ]]; then
+            echo "::error::Generated Google Services values.xml was not found."
+            find android/app/build/generated/res -type f -name values.xml -print || true
+            exit 1
+          fi
+          echo "Verifying generated Firebase identity from: $GENERATED_FIREBASE_VALUES"
+          node scripts/verify-firebase-identity.js "$GENERATED_FIREBASE_VALUES" firebase-identity.json
 
       - name: Upload safe Firebase identity
         uses: actions/upload-artifact@v4
