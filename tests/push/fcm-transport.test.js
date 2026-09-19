@@ -53,7 +53,7 @@ test('enabled transport serializes only allowlisted message data and token envel
   });
   assert.deepEqual(payloads[0].android, {
     priority: 'high',
-    notification: { channelId: 'dizychat_messages_v1' },
+    notification: { channelId: 'dizychat_messages_v1', proxy: 'allow' },
   });
   const serialized = JSON.stringify(payloads[0]);
   assert.equal(serialized.includes('NOPE'), false);
