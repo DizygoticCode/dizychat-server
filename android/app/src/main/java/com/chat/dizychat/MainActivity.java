@@ -16,6 +16,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(NativePermissionsPlugin.class);
         registerPlugin(DizyPushPlugin.class);
         registerPlugin(WebBundlePlugin.class);
+        DizyNotificationManager.ensureChannel(this);
         DizyPushPlugin.handleIntent(this, getIntent());
 
         try {
