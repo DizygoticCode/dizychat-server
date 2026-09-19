@@ -1,0 +1,72 @@
+name: iOS Capacitor CI
+
+on:
+  push:
+    branches:
+      - feature/ios-capacitor-shell
+  pull_request:
+    paths:
+      - 'ios/**'
+      - 'android-shell/**'
+      - 'public/**'
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'capacitor.config.json'
+      - '.github/workflows/ios-capacitor-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  ios-simulator:
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run deterministic tests
+        run: npm test
+
+      - name: Prepare packaged mobile shell assets
+        run: npm run android:prepare
+
+      - name: Install matching Capacitor iOS platform
+        run: npm install --no-save --package-lock=false @capacitor/ios@7.4.4
+
+      - name: Generate and sync Capacitor iOS project
+        run: |
+          npx cap add ios
+          npx cap sync ios
+
+      - name: Build unsigned iOS Simulator app
+        run: |
+          xcodebuild \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Archive generated iOS project for port work
+        uses: actions/upload-artifact@v4
+        with:
+          name: dizychat-ios-generated-project
+          path: ios
+          if-no-files-found: error
+          retention-days: 7
