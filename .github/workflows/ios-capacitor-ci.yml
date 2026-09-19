@@ -52,6 +52,9 @@ jobs:
           npx cap add ios
           npx cap sync ios
 
+      - name: Apply DizyChat native iOS bridge
+        run: node scripts/prepare-ios-native.js
+
       - name: Build unsigned iOS Simulator app
         run: |
           xcodebuild \
