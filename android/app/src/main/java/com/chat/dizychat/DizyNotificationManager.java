@@ -199,7 +199,7 @@ final class DizyNotificationManager {
                 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
     }
 
-    private static void ensureChannel(Context context) {
+    static void ensureChannel(Context context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         if (manager == null || manager.getNotificationChannel(CHANNEL_ID) != null) return;
