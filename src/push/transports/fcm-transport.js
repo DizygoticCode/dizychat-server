@@ -41,7 +41,19 @@ const createFcmTransport = ({ projectId = '', messagingFactory } = {}) => {
       }
       const message = { token: targetToken, data };
       if (data.type === 'message') {
-        message.android = { priority: 'high' };
+        const sender = data.sender.trim() || 'DizyChat';
+        const room = data.room.trim();
+        const preview = data.preview.trim() || 'New message';
+        message.notification = {
+          title: room ? `${sender} · ${room}` : sender,
+          body: preview,
+        };
+        message.android = {
+          priority: 'high',
+          notification: {
+            channelId: 'dizychat_messages_v1',
+          },
+        };
       }
       return await messaging.send(message);
     } catch (error) {
