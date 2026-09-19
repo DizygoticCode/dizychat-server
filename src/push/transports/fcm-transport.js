@@ -58,6 +58,16 @@ const createFcmTransport = ({ projectId = '', messagingFactory, logger = console
             proxy: 'allow',
           },
         };
+        message.apns = {
+          headers: {
+            'apns-priority': '10',
+          },
+          payload: {
+            aps: {
+              sound: 'default',
+            },
+          },
+        };
       }
       trace(logger, 'send-attempt', identity);
       const firebaseMessageId = await messaging.send(message);
