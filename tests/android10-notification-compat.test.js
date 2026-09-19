@@ -45,6 +45,6 @@ test('chat message FCM payload requests high-priority Android delivery', async (
   });
   assert.deepEqual(payloads[0].android, {
     priority: 'high',
-    notification: { channelId: 'dizychat_messages_v1' },
+    notification: { channelId: 'dizychat_messages_v1', proxy: 'allow' },
   });
 });
