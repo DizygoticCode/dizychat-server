@@ -223,8 +223,13 @@
       joinedRoom = clean(room || win.currentRoom);
       if (!native || !joinedRoom) return;
       try {
+        const platform = nativePlatform(win);
+        if (platform === 'ios' && !permissionRequestedThisRuntime) {
+          permissionRequestedThisRuntime = true;
+          await plugin.requestNotificationPermission();
+        }
         await register();
-        if (!permissionRequestedThisRuntime) {
+        if (platform !== 'ios' && !permissionRequestedThisRuntime) {
           permissionRequestedThisRuntime = true;
           await plugin.requestNotificationPermission();
         }
@@ -280,7 +285,7 @@
       if (!native) return;
       await configure();
       await installListeners();
-      if (readBearer()) {
+      if (readBearer() && nativePlatform(win) !== 'ios') {
         try {
           await register();
         } catch (error) {
