@@ -65,6 +65,7 @@ const createFcmTransport = ({ projectId = '', messagingFactory, logger = console
           payload: {
             aps: {
               sound: 'default',
+              category: 'DIZYCHAT_MESSAGE',
             },
           },
         };
