@@ -82,6 +82,8 @@ test('iOS push bridge keeps Firebase token rotation and Android-parity notificat
   const source = read('ios-native/DizyPushPlugin.swift');
   assert.match(source, /MessagingDelegate/);
   assert.match(source, /didReceiveRegistrationToken/);
+  assert.match(source, /Messaging\.messaging\(\)\.apnsToken/);
+  assert.match(source, /remainingApnsChecks/);
   assert.match(source, /DIZYCHAT_MESSAGE/);
   assert.match(source, /DIZYCHAT_REPLY/);
   assert.match(source, /DIZYCHAT_MARK_READ/);
