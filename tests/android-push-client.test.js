@@ -240,6 +240,7 @@ test('Android native boundary renders durable room notification with tap, Reply,
   assert.match(activity, /dizy_local_notification_test/);
   assert.match(activity, /maybeShowLocalNotificationTest/);
   assert.match(activity, /DizyNotificationManager\.showMessageNotification/);
+  assert.match(activity, /"507f1f77bcf86cd799439099"/, 'local diagnostic must use a valid 24-hex message id');
 
   const manifest = read('android/app/src/main/AndroidManifest.xml');
   assert.match(manifest, /com\.capacitorjs\.plugins\.pushnotifications\.MessagingService[\s\S]*tools:node="remove"/);
