@@ -96,6 +96,17 @@ test('read-control transport is data-only, explicitly typed, and strips credenti
       notificationKey: '0123456789abcdef01234567',
       timestamp: '2026-09-06T12:00:00.000Z',
     },
+    apns: {
+      headers: {
+        'apns-priority': '5',
+        'apns-push-type': 'background',
+      },
+      payload: {
+        aps: {
+          contentAvailable: true,
+        },
+      },
+    },
   });
   const serialized = JSON.stringify(payloads[0]);
   assert.equal(serialized.includes('NOPE'), false);
