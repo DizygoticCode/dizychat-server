@@ -45,9 +45,11 @@ test('chat message FCM payload requests high-priority Android delivery', async (
 
 test('Android app creates the DizyChat message notification channel during startup', () => {
   const activity = read('android/app/src/main/java/com/chat/dizychat/MainActivity.java');
+  const service = read('android/app/src/main/java/com/chat/dizychat/DizyFirebaseMessagingService.java');
   const notifications = read('android/app/src/main/java/com/chat/dizychat/DizyNotificationManager.java');
 
   assert.match(activity, /DizyNotificationManager\.ensureChannel\(this\)/);
+  assert.match(service, /void onCreate\(\)[\s\S]*DizyNotificationManager\.ensureChannel\(this\)/);
   assert.match(notifications, /static void ensureChannel\(Context context\)/);
   assert.match(notifications, /CHANNEL_ID\s*=\s*"dizychat_messages_v1"/);
   assert.match(notifications, /new NotificationChannel\([\s\S]*CHANNEL_ID[\s\S]*"DizyChat messages"[\s\S]*NotificationManager\.IMPORTANCE_HIGH/);
