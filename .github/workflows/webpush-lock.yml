@@ -1,0 +1,30 @@
+name: Temporary Web Push Lockfile
+
+on:
+  push:
+    branches:
+      - fix/android-notification-channel-bootstrap
+    paths:
+      - '.github/workflows/webpush-lock.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  generate-lockfile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install web-push@3.6.7 --save --package-lock-only
+      - uses: actions/upload-artifact@v4
+        with:
+          name: webpush-lockfile
+          path: |
+            package.json
+            package-lock.json
+          if-no-files-found: error
+          retention-days: 1
