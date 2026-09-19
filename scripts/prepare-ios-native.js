@@ -121,6 +121,17 @@ if (!appDelegate.includes('didRegisterForRemoteNotificationsWithDeviceToken')) {
             object: error
         )
     }
+
+    func application(
+        _ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        DizyPushPlugin.handleRemoteNotification(
+            userInfo,
+            completionHandler: completionHandler
+        )
+    }
 `;
   const position = appDelegate.lastIndexOf(finalBrace);
   if (position < 0) throw new Error('Unable to patch iOS AppDelegate push callbacks');
@@ -138,7 +149,7 @@ fs.writeFileSync(storyboardFile, storyboard);
 let plist = fs.readFileSync(plistFile, 'utf8');
 if (!plist.includes('<key>NSCameraUsageDescription</key>')) {
   const needle = '\t<key>LSRequiresIPhoneOS</key>\n\t<true/>\n';
-  const permissions = '\t<key>NSCameraUsageDescription</key>\n\t<string>DizyChat uses the camera for video calls and camera sharing.</string>\n\t<key>NSMicrophoneUsageDescription</key>\n\t<string>DizyChat uses the microphone for voice messages and calls.</string>\n';
+  const permissions = '\t<key>NSCameraUsageDescription</key>\n\t<string>DizyChat uses the camera for video calls and camera sharing.</string>\n\t<key>NSMicrophoneUsageDescription</key>\n\t<string>DizyChat uses the microphone for voice messages and calls.</string>\n\t<key>UIBackgroundModes</key>\n\t<array>\n\t\t<string>remote-notification</string>\n\t</array>\n';
   if (!plist.includes(needle)) throw new Error('Unable to patch iOS Info.plist permissions');
   plist = plist.replace(needle, permissions + needle);
   fs.writeFileSync(plistFile, plist);
