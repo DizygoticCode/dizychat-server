@@ -67,7 +67,7 @@ const model = (seed = []) => {
 const session = (id, username = 'rob', revokedAt = null) => ({ _id: id, canonicalUsername: username, revokedAt });
 const user = (username = 'rob', state = 'active') => ({ canonicalUsername: username, state });
 
-function harness() {
+function harness(logger) {
   const PushDeviceModel = model();
   const SubscriptionModel = model();
   const MobileSessionModel = model([
@@ -77,6 +77,7 @@ function harness() {
   ]);
   const UserModel = model([user('rob'), user('nick')]);
   const service = createPushDeviceService({
+    logger,
     PushDeviceModel,
     SubscriptionModel,
     MobileSessionModel,
@@ -177,4 +178,21 @@ test('retireToken disables only matching active token and clears its lease', asy
   assert.ok(device.disabledAt instanceof Date);
   assert.equal(device.disabledReason, 'invalid-token');
   assert.equal(device.suppressionLeaseExpiresAt, null);
+});
+
+
+test('registration trace fingerprints the persisted token without exposing the token', async () => {
+  const logs = [];
+  const h = harness({ info: (...args) => logs.push(args) });
+  const saved = await register(h.service, { fcmToken: ' test-token ' });
+  assert.equal(saved.fcmToken, 'test-token');
+  assert.deepEqual(logs, [['[PushTrace] registered', { tokenFingerprint: '4c5dc9b77089' }]]);
+  assert.equal(JSON.stringify(logs).includes('test-token'), false);
+});
+
+test('failed registration does not claim token was registered', async () => {
+  const logs = [];
+  const h = harness({ info: (...args) => logs.push(args) });
+  await assert.rejects(register(h.service, { sessionId: '507f1f77bcf86cd799439099' }));
+  assert.equal(logs.length, 0);
 });

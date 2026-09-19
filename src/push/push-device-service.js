@@ -1,5 +1,7 @@
 'use strict';
 
+const { tokenFingerprint, trace } = require('./fcm-diagnostics');
+
 const { canonicalizeUsername } = require('../auth/identity');
 
 const OBJECT_ID_PATTERN = /^[a-f0-9]{24}$/i;
@@ -34,6 +36,7 @@ const createPushDeviceService = ({
   MobileSessionModel,
   UserModel,
   now = () => new Date(),
+  logger = console,
 } = {}) => {
   if (!PushDeviceModel || !SubscriptionModel || !MobileSessionModel || !UserModel) {
     throw new TypeError('push device models are required');
@@ -110,7 +113,7 @@ const createPushDeviceService = ({
       },
     );
 
-    return PushDeviceModel.findOneAndUpdate(
+    const registered = await PushDeviceModel.findOneAndUpdate(
       { sessionId: normalizedSessionId, deviceId: normalizedDeviceId },
       {
         $setOnInsert: {
@@ -130,6 +133,8 @@ const createPushDeviceService = ({
       },
       { new: true, upsert: true, setDefaultsOnInsert: true },
     );
+    trace(logger, 'registered', { tokenFingerprint: tokenFingerprint(registered?.fcmToken) });
+    return registered;
   };
 
   const findRegisteredDevice = async ({ sessionId, deviceId } = {}) => {

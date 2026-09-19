@@ -18,7 +18,10 @@ public class DizyFirebaseMessagingService extends FirebaseMessagingService {
 
     @Override
     public void onMessageReceived(RemoteMessage remoteMessage) {
-        Log.i(TAG, "onMessageReceived id=" + clean(remoteMessage.getMessageId()));
+        Log.i(TAG, "onMessageReceived id=" + clean(remoteMessage.getMessageId())
+                + " senderId=" + clean(remoteMessage.getFrom())
+                + " priority=" + remoteMessage.getPriority()
+                + " originalPriority=" + remoteMessage.getOriginalPriority());
         Map<String, String> data = remoteMessage.getData();
         if (data == null || data.isEmpty()) {
             Log.w(TAG, "drop: empty data payload");
@@ -71,7 +74,7 @@ public class DizyFirebaseMessagingService extends FirebaseMessagingService {
     @Override
     public void onNewToken(String token) {
         super.onNewToken(token);
-        Log.i(TAG, "onNewToken received");
+        DizyPushTrace.token("onNewToken", token);
         DizyPushPlugin.notifyTokenChanged(this, token);
     }
 

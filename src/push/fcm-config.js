@@ -40,6 +40,7 @@ const createConfiguredPushTransport = ({
 };
 
 module.exports = {
+  createDefaultMessagingFactory,
   createConfiguredPushTransport,
   readFcmConfig,
 };
