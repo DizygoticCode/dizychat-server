@@ -65,6 +65,34 @@ if (!project.includes('DizyBridgeViewController.swift')) {
   fs.writeFileSync(projectFile, project);
 }
 
+const firebasePlistFile = path.join(appRoot, 'GoogleService-Info.plist');
+if (fs.existsSync(firebasePlistFile) && !project.includes('GoogleService-Info.plist')) {
+  const firebaseFileRef = 'D1ZY00000000000000000006';
+  const firebaseBuildRef = 'D1ZY00000000000000000106';
+
+  const buildNeedle = '\t\t504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };\n';
+  const buildLine = `\t\t${firebaseBuildRef} /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = ${firebaseFileRef} /* GoogleService-Info.plist */; };\n`;
+  if (!project.includes(buildNeedle)) throw new Error('Unable to patch Firebase PBXBuildFile entry');
+  project = project.replace(buildNeedle, buildNeedle + buildLine);
+
+  const refNeedle = '\t\t504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };\n';
+  const refLine = `\t\t${firebaseFileRef} /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };\n`;
+  if (!project.includes(refNeedle)) throw new Error('Unable to patch Firebase PBXFileReference entry');
+  project = project.replace(refNeedle, refNeedle + refLine);
+
+  const groupNeedle = '\t\t\t\t504EC3071FED79650016851F /* AppDelegate.swift */,\n';
+  const groupLine = `\t\t\t\t${firebaseFileRef} /* GoogleService-Info.plist */,\n`;
+  if (!project.includes(groupNeedle)) throw new Error('Unable to patch Firebase App group entry');
+  project = project.replace(groupNeedle, groupNeedle + groupLine);
+
+  const resourcesNeedle = '\t\t\t\t504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */,\n';
+  const resourcesLine = `\t\t\t\t${firebaseBuildRef} /* GoogleService-Info.plist in Resources */,\n`;
+  if (!project.includes(resourcesNeedle)) throw new Error('Unable to patch Firebase Resources phase');
+  project = project.replace(resourcesNeedle, resourcesNeedle + resourcesLine);
+
+  fs.writeFileSync(projectFile, project);
+}
+
 let appDelegate = fs.readFileSync(appDelegateFile, 'utf8');
 if (!appDelegate.includes('didRegisterForRemoteNotificationsWithDeviceToken')) {
   appDelegate = appDelegate.replace(
