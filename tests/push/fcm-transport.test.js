@@ -68,6 +68,10 @@ test('enabled transport serializes only allowlisted message data and token envel
     priority: 'high',
     notification: { channelId: 'dizychat_messages_v1', proxy: 'allow' },
   });
+  assert.deepEqual(payloads[0].apns, {
+    headers: { 'apns-priority': '10' },
+    payload: { aps: { sound: 'default' } },
+  });
   const serialized = JSON.stringify(payloads[0]);
   assert.equal(serialized.includes('NOPE'), false);
   assert.equal(serialized.includes('password'), false);
