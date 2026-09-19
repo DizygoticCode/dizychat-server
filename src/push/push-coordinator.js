@@ -21,7 +21,13 @@ const createPushCoordinator = ({
     const token = String(device?.fcmToken || '');
     result.attempted += 1;
     try {
-      await transport.send(intent, token);
+      const delivery = await transport.send(intent, token);
+      if (delivery?.skipped === true) {
+        logger.warn?.('[Push] transport skipped send', {
+          reason: String(delivery.reason || 'skipped'),
+        });
+        return;
+      }
       result.sent += 1;
     } catch (error) {
       result.failed += 1;
