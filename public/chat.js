@@ -165,6 +165,7 @@ function syncAccountUi() {
   appState.isAdmin = accountRoleCanModerate();
   refreshActionMenus();
   renderUserSidebar(appState.users || []);
+  window.dizySoundboardImporterUi?.syncIdentity?.(identity);
 }
 
 function applyAccountSession(session) {
@@ -9702,6 +9703,14 @@ if (voiceBtn) {
   const panel = document.createElement("div");
   panel.id = "soundboard-picker";
   panel.innerHTML = `
+    <div class="soundboard-import" data-role="soundboard-import" hidden>
+      <div class="soundboard-import-title">Import 101Soundboards board</div>
+      <div class="soundboard-import-row">
+        <input id="soundboard-import-url" type="url" inputmode="url" placeholder="Paste https://www.101soundboards.com/boards/…" autocomplete="off" spellcheck="false" />
+        <button id="soundboard-import-btn" type="button">Import</button>
+      </div>
+      <div id="soundboard-import-status" class="soundboard-import-status" aria-live="polite"></div>
+    </div>
     <div class="soundboard-search">
       <input id="soundboard-search-input" type="search" placeholder="Search audio clips…" autocomplete="off" />
     </div>
@@ -9711,6 +9720,10 @@ if (voiceBtn) {
 
   const resultsEl = panel.querySelector("#soundboard-results");
   const searchInput = panel.querySelector("#soundboard-search-input");
+  const importWrap = panel.querySelector('[data-role="soundboard-import"]');
+  const importUrlInput = panel.querySelector("#soundboard-import-url");
+  const importBtn = panel.querySelector("#soundboard-import-btn");
+  const importStatus = panel.querySelector("#soundboard-import-status");
 
   const closePanel = () => {
     panel.style.display = "none";
@@ -9776,6 +9789,139 @@ if (voiceBtn) {
 
   let lastQuery = "";
   let isLoading = false;
+  let importPollTimer = null;
+
+  const isOwnerAccount = () => accountState.identity?.role === "owner";
+
+  const setImportStatus = (message = "", tone = "") => {
+    if (!importStatus) return;
+    importStatus.textContent = message;
+    importStatus.dataset.tone = tone;
+  };
+
+  const syncImporterIdentity = () => {
+    if (!importWrap) return;
+    const visible = isOwnerAccount();
+    importWrap.hidden = !visible;
+    if (!visible) {
+      setImportStatus("");
+      if (importPollTimer) {
+        clearTimeout(importPollTimer);
+        importPollTimer = null;
+      }
+    }
+  };
+
+  window.dizySoundboardImporterUi = {
+    syncIdentity: syncImporterIdentity,
+  };
+  syncImporterIdentity();
+
+  const authHeaders = (extra = {}) => {
+    const token = readAccountSessionToken();
+    return {
+      ...extra,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+  };
+
+  const pollImportJob = async (jobId) => {
+    if (!jobId || !isOwnerAccount()) return;
+    try {
+      const response = await fetch(`/api/soundboards/import/${encodeURIComponent(jobId)}`, {
+        headers: authHeaders(),
+        cache: "no-store",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.job) {
+        throw new Error(payload?.error || payload?.code || `Import status failed (${response.status}).`);
+      }
+
+      const job = payload.job;
+      const progress = job.progress || {};
+      const count = Number(progress.total || 0) > 0
+        ? ` ${Number(progress.current || 0)}/${Number(progress.total || 0)}`
+        : "";
+      setImportStatus(`${progress.message || "Importing…"}${count}`, job.status);
+
+      if (job.status === "complete") {
+        importBtn.disabled = false;
+        importUrlInput.disabled = false;
+        setImportStatus(progress.message || "Import complete.", "complete");
+        await loadClips("");
+        return;
+      }
+
+      if (job.status === "browser-approval-required") {
+        importBtn.disabled = false;
+        importUrlInput.disabled = false;
+        setImportStatus(
+          "101Soundboards asked for human/browser approval. Open that board normally in your browser, complete the check, then try again later.",
+          "warn",
+        );
+        return;
+      }
+
+      if (job.status === "error") {
+        importBtn.disabled = false;
+        importUrlInput.disabled = false;
+        setImportStatus(job.error || "Soundboard import failed.", "error");
+        return;
+      }
+
+      importPollTimer = setTimeout(() => {
+        importPollTimer = null;
+        void pollImportJob(jobId);
+      }, 1200);
+    } catch (error) {
+      importBtn.disabled = false;
+      importUrlInput.disabled = false;
+      setImportStatus(error?.message || "Could not read import status.", "error");
+    }
+  };
+
+  const startBoardImport = async () => {
+    if (!isOwnerAccount()) return;
+    const url = String(importUrlInput?.value || "").trim();
+    if (!url) {
+      setImportStatus("Paste a 101Soundboards board URL first.", "warn");
+      importUrlInput?.focus();
+      return;
+    }
+
+    importBtn.disabled = true;
+    importUrlInput.disabled = true;
+    setImportStatus("Starting import…", "loading");
+
+    try {
+      const response = await fetch("/api/soundboards/import", {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ url }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.job?.id) {
+        throw new Error(payload?.error || payload?.code || `Import request failed (${response.status}).`);
+      }
+      setImportStatus(payload.job.progress?.message || "Import queued…", "loading");
+      void pollImportJob(payload.job.id);
+    } catch (error) {
+      importBtn.disabled = false;
+      importUrlInput.disabled = false;
+      setImportStatus(error?.message || "Could not start soundboard import.", "error");
+    }
+  };
+
+  importBtn?.addEventListener("click", () => {
+    void startBoardImport();
+  });
+
+  importUrlInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void startBoardImport();
+    }
+  });
 
   const loadClips = async (query = "") => {
     if (!resultsEl || isLoading) return;
