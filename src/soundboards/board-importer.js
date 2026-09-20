@@ -9,10 +9,10 @@ const crypto = require('crypto');
 const DEFAULT_DATA_ROOT = path.join(__dirname, '..', '..', 'data', 'soundboards');
 const DEFAULT_PUBLIC_ROOT = path.join(__dirname, '..', '..', 'public', 'soundboards');
 const BOARD_HOSTS = new Set(['101soundboards.com', 'www.101soundboards.com']);
-const MAX_CLIPS = 500;
+const MAX_CLIPS = 10_000;
 const MAX_PAGE_BYTES = 2 * 1024 * 1024;
 const MAX_AUDIO_BYTES = 16 * 1024 * 1024;
-const MAX_TOTAL_AUDIO_BYTES = 256 * 1024 * 1024;
+const MAX_TOTAL_AUDIO_BYTES = 2 * 1024 * 1024 * 1024;
 
 const normalise = (value) => typeof value === 'string' ? value.trim() : '';
 
