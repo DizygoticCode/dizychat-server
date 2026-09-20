@@ -3,6 +3,7 @@
 const {
   buildPushIntent,
   buildReadControlIntent,
+  buildActivityIntent,
   isDevicePushEligible,
 } = require('./notification-policy');
 
@@ -87,6 +88,42 @@ const createPushCoordinator = ({
     return result;
   };
 
+  const onActivityStarted = async (activity, { senderCanonicalUsername = '' } = {}) => {
+    const room = String(activity?.room || '').trim();
+    if (!room) return { attempted: 0, sent: 0, failed: 0 };
+
+    const candidates = await pushDeviceService.listRoomDevices(room);
+    const result = { attempted: 0, sent: 0, failed: 0 };
+
+    for (const candidate of candidates || []) {
+      const device = candidate?.device;
+      const subscription = candidate?.subscription;
+      if (!device || !subscription) continue;
+
+      if (!isDevicePushEligible({
+        device,
+        subscription,
+        senderCanonicalUsername,
+        readCursor: null,
+        message: null,
+        now: now(),
+      })) continue;
+
+      let intent;
+      try {
+        intent = buildActivityIntent({ device, activity });
+      } catch (error) {
+        logger.warn?.('[Push] activity intent rejected', {
+          code: String(error?.code || error?.name || 'invalid-activity'),
+        });
+        continue;
+      }
+      await sendToDevice(intent, device, result);
+    }
+
+    return result;
+  };
+
   const sendRoomClear = async ({ canonicalUsername, room, cursor } = {}) => {
     const normalizedRoom = String(room || '').trim();
     if (!normalizedRoom || !cursor) return { attempted: 0, sent: 0, failed: 0 };
@@ -105,6 +142,7 @@ const createPushCoordinator = ({
 
   return {
     onMessageStored,
+    onActivityStarted,
     sendRoomClear,
   };
 };
