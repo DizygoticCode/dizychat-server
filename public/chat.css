@@ -59,7 +59,7 @@
   --scroll-to-latest-font-size: 0.9rem;
   --input-padding-y: 10px;
   --input-padding-x: 12px;
-  --input-field-padding-y: 7px;
+  --input-field-height: 36px;
   --input-field-padding-x: 14px;
   --input-font-size: 1em;
   --input-button-gap: 5px;
@@ -132,7 +132,7 @@ body.compact-mode {
   --scroll-to-latest-font-size: 0.85rem;
   --input-padding-y: 6px;
   --input-padding-x: 10px;
-  --input-field-padding-y: 6px;
+  --input-field-height: 34px;
   --input-field-padding-x: 12px;
   --input-font-size: 0.95em;
   --input-button-gap: 4px;
@@ -2348,12 +2348,15 @@ body:not(.dark) #quick-emoji-panel .quick-emoji-button {
   flex: 1;
   border: 1px solid var(--input-border);
   border-radius: 999px;
-  padding: var(--input-field-padding-y) calc(var(--input-field-padding-x) + 2px);
+  padding: 0 calc(var(--input-field-padding-x) + 2px);
+  box-sizing: border-box;
+  height: var(--input-field-height);
   font-size: var(--input-font-size);
   background: var(--input-bg);
   color: var(--text-primary);
   outline: none;
-  min-height: 36px;
+  min-height: var(--input-field-height);
+  line-height: 1.2;
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
@@ -3543,7 +3546,7 @@ body:not(.dark) #soundboard-btn {
 /* Compact chat-style audio cards for uploads, voice messages and soundboards. */
 .message.has-inline-media.has-inline-audio {
   min-width: 0;
-  max-width: min(450px, 96%);
+  max-width: min(490px, 96%);
 }
 
 .message.media-only.has-inline-video {
@@ -3551,11 +3554,11 @@ body:not(.dark) #soundboard-btn {
 }
 
 .message.media-only.has-inline-audio {
-  max-width: min(430px, 96%);
+  max-width: min(470px, 96%);
 }
 
 .message.has-inline-audio .inline-preview.inline-audio {
-  width: min(400px, 100%);
+  width: min(440px, 100%);
   margin-top: 4px;
   padding: 8px 10px;
   gap: 6px;
@@ -3580,7 +3583,7 @@ body:not(.dark) #soundboard-btn {
 
 @media (hover: hover) and (pointer: fine) {
   .inline-preview.inline-audio .preview-media {
-    padding-right: 34px;
+    padding-right: 76px;
   }
 }
 
@@ -3635,6 +3638,12 @@ body:not(.dark) #soundboard-btn {
   .audio-waveform[data-playing="1"] .audio-waveform-bar {
     animation: none;
   }
+}
+
+.message.has-soundboard-audio .text:not(:empty) {
+  display: block;
+  margin-bottom: 2px;
+  font-weight: 600;
 }
 
 .inline-preview.inline-audio .preview-actions {
