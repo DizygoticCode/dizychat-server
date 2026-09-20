@@ -30,6 +30,7 @@
     const WebBundle = isNative ? window.Capacitor?.Plugins?.WebBundle : null;
 
     if (!isNative) {
+      await loadScript('/pwa-runtime.js');
       await loadScript('/iphone-install.js');
     }
 
