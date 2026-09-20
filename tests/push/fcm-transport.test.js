@@ -58,7 +58,7 @@ test('enabled transport serializes only allowlisted message data and token envel
   await transport.send({ ...intent, authToken: 'NOPE', password: 'NOPE2', serverSecret: 'NOPE3' }, 'fcm-token');
   assert.equal(payloads.length, 1);
   assert.equal(payloads[0].token, 'fcm-token');
-  assert.deepEqual(Object.keys(payloads[0].data).sort(), ['messageId', 'notificationKey', 'preview', 'room', 'sender', 'timestamp', 'type'].sort());
+  assert.deepEqual(Object.keys(payloads[0].data).sort(), ['activityId', 'activityType', 'messageId', 'notificationKey', 'preview', 'room', 'sender', 'timestamp', 'type'].sort());
   assert.equal(payloads[0].data.type, 'message');
   assert.deepEqual(payloads[0].notification, {
     title: 'Rob · ShittyChat',
@@ -95,6 +95,8 @@ test('read-control transport is data-only, explicitly typed, and strips credenti
       preview: '',
       notificationKey: '0123456789abcdef01234567',
       timestamp: '2026-09-06T12:00:00.000Z',
+      activityType: '',
+      activityId: '',
     },
     apns: {
       headers: {
@@ -136,4 +138,33 @@ test('temporary Firebase errors are non-permanent', async () => {
 test('config parser requires explicit enable and preserves project id', () => {
   assert.deepEqual(readFcmConfig({ DIZYCHAT_FCM_ENABLED: 'yes', DIZYCHAT_FIREBASE_PROJECT_ID: ' abc ' }), { enabled: true, projectId: 'abc' });
   assert.equal(readFcmConfig({ DIZYCHAT_FCM_ENABLED: 'no' }).enabled, false);
+});
+
+
+test('activity transport is high-priority data-only with a short Android TTL', async () => {
+  const payloads = [];
+  const transport = createFcmTransport({
+    projectId: 'dizychat-test',
+    messagingFactory: () => ({ send: async (payload) => { payloads.push(payload); return 'ok'; } }),
+  });
+  await transport.send({
+    type: 'activity',
+    room: 'ShittyChat',
+    messageId: '',
+    sender: 'Rob',
+    preview: 'Started their webcam',
+    notificationKey: 'activity-key-123',
+    timestamp: '2026-09-20T02:30:00.000Z',
+    activityType: 'video',
+    activityId: 'call-1:rob:video',
+  }, 'phone-a');
+
+  assert.equal(payloads[0].notification, undefined);
+  assert.deepEqual(payloads[0].android, {
+    priority: 'high',
+    ttl: 120000,
+  });
+  assert.equal(payloads[0].data.type, 'activity');
+  assert.equal(payloads[0].data.activityType, 'video');
+  assert.equal(payloads[0].data.activityId, 'call-1:rob:video');
 });
