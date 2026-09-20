@@ -569,24 +569,31 @@ test('soundboard FFmpeg recipe trims only edge silence and normalizes level cons
   assert.ok(args.includes(FILTER_CHAIN));
 });
 
-test('server and client keep board import owner-only and separate from normal soundboard search', () => {
+test('live soundboard browsing is available to guests while imports stay owner-only', () => {
   const repoRoot = path.resolve(__dirname, '..');
   const server = fs.readFileSync(path.join(repoRoot, 'server-core.js'), 'utf8');
   const client = fs.readFileSync(path.join(repoRoot, 'public', 'chat.js'), 'utf8');
 
-  assert.match(server, /app\.post\('\/api\/soundboards\/import'/);
-  assert.match(server, /app\.post\('\/api\/soundboards\/rebuild-existing'/);
-  assert.match(server, /app\.post\('\/api\/soundboards\/import-clip'/);
-  assert.match(server, /app\.get\('\/api\/soundboards\/live-search'/);
-  assert.match(server, /app\.get\('\/api\/soundboards\/live-board'/);
-  assert.match(server, /app\.get\('\/api\/soundboards\/live-clip'/);
+  assert.match(server, /app\.post\('\/api\/soundboards\/import', soundboardImportJson, requireHttpAccount, requireHttpOwner/);
+  assert.match(server, /app\.post\('\/api\/soundboards\/rebuild-existing', soundboardImportJson, requireHttpAccount, requireHttpOwner/);
+  assert.match(server, /app\.post\('\/api\/soundboards\/import-clip', soundboardImportJson, requireHttpAccount, requireHttpOwner/);
+  assert.match(server, /app\.get\('\/api\/soundboards\/live-search', async/);
+  assert.match(server, /app\.get\('\/api\/soundboards\/live-board', async/);
+  assert.match(server, /app\.get\('\/api\/soundboards\/live-clip', async/);
+  assert.doesNotMatch(server, /app\.get\('\/api\/soundboards\/live-(?:search|board|clip)', requireHttpAccount/);
   assert.match(server, /replaceExisting:\s*true/);
-  assert.match(server, /requireHttpAccount, requireHttpOwner/);
   assert.match(server, /req\.accountPrincipal\?\.role !== 'owner'/);
   assert.match(server, /soundboardStore\.reload\(\)/);
 
   assert.match(client, /data-role="soundboard-import" hidden/);
   assert.match(client, /accountState\.identity\?\.role === "owner"/);
+  assert.match(client, /webModeBtn\.hidden = false/);
+  assert.match(client, /const next = mode === "web" \? "web" : "local"/);
+  assert.doesNotMatch(client, /loadLiveBoards[\s\S]{0,180}!isOwnerAccount\(\)/);
+  assert.doesNotMatch(client, /renderLiveBoard[\s\S]{0,180}!isOwnerAccount\(\)/);
+  assert.match(client, /if \(isOwnerAccount\(\)\) header\.appendChild\(importBoardBtn\)/);
+  assert.match(client, /if \(isOwnerAccount\(\)\) actions\.appendChild\(importClipBtn\)/);
+  assert.match(client, /if \(isOwnerAccount\(\)\) actions\.appendChild\(importBoardBtn\)/);
   assert.match(client, /\/api\/soundboards\/import/);
   assert.match(client, /\/api\/soundboards\/rebuild-existing/);
   assert.match(client, /Rebuild current 101 boards/);
