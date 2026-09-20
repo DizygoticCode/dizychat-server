@@ -3502,6 +3502,14 @@ body:not(.dark) #soundboard-btn {
   max-width: min(380px, 92%);
 }
 
+.message.media-only.has-inline-video {
+  max-width: min(460px, 94%);
+}
+
+.message.media-only.has-inline-audio {
+  max-width: min(360px, 92%);
+}
+
 .message.has-inline-audio .inline-preview.inline-audio {
   width: min(320px, 100%);
   margin-top: 4px;
