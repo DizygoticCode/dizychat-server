@@ -3543,7 +3543,7 @@ body:not(.dark) #soundboard-btn {
 /* Compact chat-style audio cards for uploads, voice messages and soundboards. */
 .message.has-inline-media.has-inline-audio {
   min-width: 0;
-  max-width: min(400px, 94%);
+  max-width: min(450px, 96%);
 }
 
 .message.media-only.has-inline-video {
@@ -3551,11 +3551,11 @@ body:not(.dark) #soundboard-btn {
 }
 
 .message.media-only.has-inline-audio {
-  max-width: min(380px, 94%);
+  max-width: min(430px, 96%);
 }
 
 .message.has-inline-audio .inline-preview.inline-audio {
-  width: min(350px, 100%);
+  width: min(400px, 100%);
   margin-top: 4px;
   padding: 8px 10px;
   gap: 6px;
@@ -3575,6 +3575,13 @@ body:not(.dark) #soundboard-btn {
   border-radius: 0;
   overflow: visible;
   background: transparent;
+  box-sizing: border-box;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .inline-preview.inline-audio .preview-media {
+    padding-right: 34px;
+  }
 }
 
 .inline-preview.inline-audio .preview-media audio {
