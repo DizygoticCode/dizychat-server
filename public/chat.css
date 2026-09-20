@@ -4155,7 +4155,8 @@ body:not(.dark) #soundboard-btn {
   font-size: 0.78rem;
 }
 
-#soundboard-import-btn {
+#soundboard-import-btn,
+#soundboard-rebuild-btn {
   flex: 0 0 auto;
   border: 1px solid rgba(187,134,252,0.45);
   border-radius: 8px;
@@ -4166,7 +4167,17 @@ body:not(.dark) #soundboard-btn {
   cursor: pointer;
 }
 
+.soundboard-import-row--secondary {
+  margin-top: 6px;
+}
+
+#soundboard-rebuild-btn {
+  width: 100%;
+  background: rgba(73,46,114,0.78);
+}
+
 #soundboard-import-btn:disabled,
+#soundboard-rebuild-btn:disabled,
 #soundboard-import-url:disabled {
   opacity: 0.55;
   cursor: wait;
