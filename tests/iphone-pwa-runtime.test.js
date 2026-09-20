@@ -59,7 +59,7 @@ test('long Home Screen suspension performs a clean chat reconnect without a fals
   const chat = read('public/chat.js');
 
   assert.match(chat, /let pwaResumeReconnect = false;/);
-  assert.match(chat, /addEventListener\("dizychat:pwa-resume"/);
+  assert.match(chat, /addEventListener\?\.\("dizychat:pwa-resume"/);
   assert.match(chat, /detail\.reconnectRecommended/);
   assert.match(chat, /if \(socket\.connected\) socket\.disconnect\(\);\s*socket\.connect\(\);/s);
   assert.match(chat, /if \(!pwaResumeReconnect\)\s*\{\s*showToast\("Disconnected — attempting to reconnect…"/s);
