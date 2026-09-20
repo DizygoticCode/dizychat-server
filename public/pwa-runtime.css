@@ -1,0 +1,82 @@
+body.pwa-standalone {
+  --toolbar-top-extra: env(safe-area-inset-top);
+}
+
+body.pwa-standalone #chat-container > header {
+  padding-left: max(var(--toolbar-padding-x), env(safe-area-inset-left));
+  padding-right: max(var(--toolbar-padding-x), env(safe-area-inset-right));
+}
+
+body.pwa-standalone #form {
+  padding-left: max(var(--input-padding-x), env(safe-area-inset-left));
+  padding-right: max(var(--input-padding-x), env(safe-area-inset-right));
+  padding-bottom: max(var(--input-padding-y), env(safe-area-inset-bottom));
+}
+
+body.pwa-standalone .iphone-install-shell {
+  display: none !important;
+}
+
+@supports (height: 100dvh) {
+  body.pwa-standalone #chat-container {
+    min-height: 100dvh;
+    height: 100dvh;
+  }
+}
+
+.pwa-runtime-banner {
+  position: fixed;
+  left: 50%;
+  bottom: calc(78px + env(safe-area-inset-bottom));
+  z-index: 5000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(380px, calc(100vw - 24px));
+  padding: 9px 10px 9px 12px;
+  transform: translateX(-50%);
+  border: 1px solid var(--border-color, rgba(187,134,252,0.28));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface, #151515) 94%, transparent);
+  color: var(--text-primary, #f5f0ff);
+  box-shadow: 0 12px 30px rgba(0,0,0,0.28);
+  backdrop-filter: blur(14px);
+  font: 600 0.8rem/1.3 Inter, "Segoe UI", system-ui, sans-serif;
+}
+
+.pwa-runtime-banner[hidden] {
+  display: none;
+}
+
+.pwa-runtime-banner[data-tone="offline"] {
+  border-color: rgba(255,193,7,0.38);
+}
+
+.pwa-runtime-banner[data-tone="update"] {
+  border-color: color-mix(in srgb, var(--accent, #7b2ff7) 55%, transparent);
+}
+
+.pwa-runtime-message {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pwa-runtime-action {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent, #7b2ff7);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (max-width: 480px) {
+  .pwa-runtime-banner {
+    bottom: calc(72px + env(safe-area-inset-bottom));
+    width: calc(100vw - 16px);
+    padding: 8px 9px 8px 10px;
+  }
+}
