@@ -1,8 +1,65 @@
-# DizyChat Server
+<p align="center">
+  <img src="public/logo.svg" alt="DizyChat logo" width="112" />
+</p>
 
-DizyChat is a self-hosted real-time chat platform built with Express, Socket.IO and MongoDB. It combines persistent rooms and messaging with media uploads, moderation, public accounts, browser Web Push, Android native push, an iPhone/iPad Home Screen app, a compiled Capacitor iOS native path, LiveKit audio/video calls, music-focused call mode, custom emoji/GIFs, soundboards, and a Rumble companion userscript.
+<h1 align="center">DizyChat</h1>
 
-Production: **https://dizychat.com**
+<p align="center"><strong>Home-hosted real-time chat, media, calls and community control — without a Big Tech social platform in the middle.</strong></p>
+
+<p align="center">
+  <a href="https://dizychat.com"><img alt="Live" src="https://img.shields.io/badge/live-dizychat.com-22c55e" /></a>
+  <a href="https://github.com/DizygoticCode/dizychat-server/actions/workflows/self-host-ui-test.yml"><img alt="Self-Host CI" src="https://github.com/DizygoticCode/dizychat-server/actions/workflows/self-host-ui-test.yml/badge.svg" /></a>
+  <a href="https://github.com/DizygoticCode/dizychat-server/actions/workflows/android-slice1-ci.yml"><img alt="Android CI" src="https://github.com/DizygoticCode/dizychat-server/actions/workflows/android-slice1-ci.yml/badge.svg" /></a>
+  <a href="https://github.com/DizygoticCode/dizychat-server/actions/workflows/ios-capacitor-ci.yml"><img alt="iOS CI" src="https://github.com/DizygoticCode/dizychat-server/actions/workflows/ios-capacitor-ci.yml/badge.svg" /></a>
+</p>
+
+<p align="center">
+  <img alt="JavaScript" src="https://img.shields.io/badge/JavaScript-ES2022-F7DF1E?logo=javascript&logoColor=000" />
+  <img alt="Node.js" src="https://img.shields.io/badge/Node.js-22%2B-339933?logo=nodedotjs&logoColor=fff" />
+  <img alt="Socket.IO" src="https://img.shields.io/badge/Socket.IO-4.8-010101?logo=socketdotio&logoColor=fff" />
+  <img alt="MongoDB" src="https://img.shields.io/badge/MongoDB-Mongoose-47A248?logo=mongodb&logoColor=fff" />
+  <img alt="Capacitor" src="https://img.shields.io/badge/Capacitor-7.4-119EFF?logo=capacitor&logoColor=fff" />
+  <img alt="Android" src="https://img.shields.io/badge/Android-signed_APK-3DDC84?logo=android&logoColor=fff" />
+  <img alt="iOS" src="https://img.shields.io/badge/iOS-native_path-000000?logo=apple&logoColor=fff" />
+  <img alt="LiveKit" src="https://img.shields.io/badge/LiveKit-self--hosted-111827" />
+</p>
+
+<p align="center">
+  <a href="https://dizychat.com">Live site</a> ·
+  <a href="https://github.com/DizygoticCode/dizychat-server/releases/tag/v1.0.0">Android APK</a> ·
+  <a href="#iphone--ipad-home-screen-web-app">iPhone / iPad install</a> ·
+  <a href="docs/ios-native.md">Native iOS</a> ·
+  <a href="deploy/livekit/README.md">Self-hosted LiveKit</a> ·
+  <a href="scripts/tampermonkey/dizygotic-rumble-chat-tool.user.js">Rumble companion</a>
+</p>
+
+DizyChat is a **home-hosted, self-managed real-time community platform** built with Express, Socket.IO and MongoDB. The deployed core runs on infrastructure controlled by the project rather than on a third-party chat or social platform: room/account authority, MongoDB state, message history, uploads and quarantine, media processing, moderation, and the realtime stack stay under DizyChat control.
+
+External providers are deliberately scoped integrations rather than the foundation of the product. Services such as mobile push delivery, GIPHY, Watch2Gether, Rumble embeds, or optional jam providers can extend a room, but they do not own the community's accounts, rooms, history, uploads, or moderation state.
+
+### Platform snapshot
+
+| Surface | Current status | Runtime / distribution |
+| --- | --- | --- |
+| **Core server** | Live | Home/self-hosted Express + Socket.IO + MongoDB, local ClamAV/FFmpeg media pipeline |
+| **Web app** | Live | https://dizychat.com with registered accounts, guest access, Web Push and server-managed frontend |
+| **iPhone / iPad** | Live | Safari **Add to Home Screen** standalone app with supported Web Push |
+| **Android** | Signed tester release | Thin Capacitor shell, signed sideload APK, server-managed SHA-256-verified web bundle |
+| **Native iOS** | Build-ready | Capacitor path validated in CI for Simulator and unsigned physical-device builds; not yet distributed as a signed IPA |
+| **Live calls** | Live/self-hosted path | Room-scoped LiveKit voice/video, screen sharing and Music Mode |
+
+### What is in the stack
+
+| Area | DizyChat capability |
+| --- | --- |
+| **Identity & rooms** | Registered accounts or confirmed guests first, then public/private room selection; account and room passwords remain separate |
+| **Messaging** | Persistent paginated history, replies, edits, deletes, reactions, pins, stars, search, typing and read/delivery state |
+| **Media safety** | Private upload quarantine, mandatory clean local ClamAV verdict before promotion, FFmpeg normalization and native-aware media URLs |
+| **Notifications** | Browser sounds, VAPID Web Push, Android FCM actions, and the native iOS Firebase/APNs path |
+| **Live communication** | Self-hosted LiveKit calls, voice/webcam, screen sharing, Normal/Music audio modes, plus optional JackTrip/SonoBus launchers |
+| **Community extras** | GIPHY, custom emoji, meme soundboards, Psybin Radio, inline previews, Rumble companion tools and Watch2Gether |
+
+> **UI verification:** relevant pull requests run the Self-Host browser suite, which captures current desktop/mobile screenshots and a Playwright video as GitHub Actions artifacts. See the [Self-Host CI workflow](https://github.com/DizygoticCode/dizychat-server/actions/workflows/self-host-ui-test.yml).
 
 ## Current platform
 
@@ -36,7 +93,7 @@ Production: **https://dizychat.com**
 
 ### LiveKit calls and Music Mode
 - DizyChat supports room-scoped LiveKit audio calls with optional camera video.
-- Production can use LiveKit Cloud or the self-hosted service documented in [`deploy/livekit/README.md`](deploy/livekit/README.md).
+- The current deployment uses the self-hosted LiveKit service documented in [`deploy/livekit/README.md`](deploy/livekit/README.md); cloud mode remains an optional deployment choice.
 - Normal voice mode uses browser voice processing such as echo cancellation, noise suppression and automatic gain control.
 - **Music Mode** is selected per connection before joining. While joining/connected the choice is locked; after disconnect it resets so the next call requires a fresh Normal/Music choice.
 - Music Mode requests **48 kHz stereo** capture with echo cancellation, noise suppression and automatic gain control disabled, uses a **510 kb/s Opus target/max**, forces stereo, and disables DTX and RED.

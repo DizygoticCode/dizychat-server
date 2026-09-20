@@ -6,7 +6,7 @@
     name="viewport"
     content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
   />
-  <title>DizyChat — Host unforgettable rooms</title>
+  <title>DizyChat — Home-hosted real-time communities</title>
   <script>
     try {
       if (window.Capacitor?.isNativePlatform?.()) {
@@ -454,68 +454,70 @@
 
     <main>
       <div>
-        <div class="hero-eyebrow">Curated real-time communities</div>
-        <h1>Spin up private or public rooms with serious vibes.</h1>
+        <div class="hero-eyebrow">Home-hosted • real-time • independent</div>
+        <h1>Your community, without Big Tech in the middle.</h1>
         <p class="lead">
-          DizyChat keeps the chaos organized with live moderation tools, secure media sharing,
-          room-aware presence, and broadcast companions. Give guests a polished front door before
-          they drop into the chat, radio room, watch party, or community lobby.
+          DizyChat is a home-hosted real-time community platform. Rooms, accounts, history,
+          uploads, moderation, and the core realtime stack run on infrastructure we control,
+          while optional integrations stay scoped to the jobs they perform. Chat from the web,
+          Android app, or iPhone/iPad Home Screen, then add calls, media, watch parties, radio,
+          and soundboards without handing the room to a social platform.
         </p>
         <div class="hero-actions">
           <button class="primary-btn" type="button" onclick="window.location.href='/login'">
-            Enter the chat lobby
+            Enter DizyChat
           </button>
           <button class="ghost-btn" type="button" onclick="document.getElementById('features').scrollIntoView({ behavior: 'smooth' });">
-            Explore features
+            Explore the platform
           </button>
         </div>
       </div>
 
       <div class="hero-card" aria-label="DizyChat highlights">
-        <h2>Why hosts use DizyChat</h2>
+        <h2>Independent by design</h2>
         <div class="stats">
           <div class="stat">
-            <div class="stat-value">No Big Tech</div>
-            <p>DizyChat runs wholly on its own servers—no outside trackers, no spying, just private infrastructure.</p>
+            <div class="stat-value">Home-hosted</div>
+            <p>The deployed DizyChat core runs from self-hosted infrastructure, including server, data, media, and realtime services.</p>
           </div>
           <div class="stat">
-            <div class="stat-value">24/7</div>
-            <p>Rooms stay live with resilient sockets, persisted history, and presence updates.</p>
+            <div class="stat-value">No Big Tech core</div>
+            <p>No third-party social network owns the rooms, accounts, message history, or moderation layer.</p>
           </div>
           <div class="stat">
-            <div class="stat-value">∞</div>
-            <p>Emoji, GIF, voice note, upload, and soundboard combos keep the energy up.</p>
+            <div class="stat-value">Web + native</div>
+            <p>Browser/PWA, signed Android, and the Capacitor iOS path share the same server-managed DizyChat frontend.</p>
           </div>
         </div>
       </div>
     </main>
 
     <div class="section-heading" id="features">
-      <div class="section-eyebrow">Everything in one room</div>
-      <h2>More than chat: DizyChat is a community control panel.</h2>
+      <div class="section-eyebrow">Everything in one self-hosted room</div>
+      <h2>Chat, media, calls, and community control on a stack you own.</h2>
       <p>
-        The landing page still keeps the original dark, glowing style, but now it introduces the
-        richer experience waiting behind the lobby: media-safe uploads, live entertainment tools,
-        searchable history, and host-grade moderation.
+        DizyChat combines identity-aware rooms, persistent history, fail-closed upload scanning,
+        rich media, notifications, realtime communication, and host-grade moderation without
+        outsourcing the community itself to a third-party chat platform.
       </p>
     </div>
 
     <section class="features" aria-label="Core DizyChat feature highlights">
       <article class="feature-card">
-        <h3>Instant onboarding</h3>
-        <p>Create a lobby, set a password (or keep it public), and share the invite link—all without touching a dashboard.</p>
+        <h3>Identity-first onboarding</h3>
+        <p>Sign in with a registered account or confirm a guest identity first; room selection unlocks only after identity is ready, and room passwords stay separate from account passwords.</p>
       </article>
       <article class="feature-card">
-        <h3>Broadcast ready</h3>
-        <p>Drop in live streams, Rumble embeds, Watch2Gether rooms, or the Psybin Radio player so everyone can vibe together.</p>
+        <h3>Home-hosted core</h3>
+        <p>Express, Socket.IO, MongoDB state, local upload quarantine and ClamAV, media processing, and self-hosted LiveKit run under project control.</p>
       </article>
       <article class="feature-card">
         <h3>Moderator superpowers</h3>
-        <p>Announce, pin, purge, mute, block, ban, or silence straight from chat. Role-aware tools keep chaos under control.</p>
+        <p>Announce, pin, purge, mute, block, ban, or silence straight from chat. Role-aware controls keep room authority on the server.</p>
       </article>
       <article class="feature-card">
-        <h3>Apps, desktop, mobile</h3>
-        <p>The login at <code>/login</code> works on every device—including native builds driven by this server.</p>
+        <h3>Web, PWA &amp; native</h3>
+        <p>Use DizyChat in the browser, install it to an iPhone/iPad Home Screen, sideload the signed Android app, or build the native Capacitor iOS path.</p>
       </article>
     </section>
 
@@ -523,52 +525,69 @@
       <article class="capability-card">
         <span class="capability-icon" aria-hidden="true">💬</span>
         <h3>Rich conversations</h3>
-        <p>Thread replies, edit or delete messages, react with emoji, star favorites, pin important posts, and search across history.</p>
+        <p>Thread replies, edit or delete messages, react with emoji, star favorites, pin important posts, and search across paginated history.</p>
       </article>
       <article class="capability-card">
         <span class="capability-icon" aria-hidden="true">🛡️</span>
-        <h3>Safer uploads</h3>
-        <p>Share images, audio, video, documents, archives, and voice notes with cleanup and optional antivirus scanning.</p>
+        <h3>Fail-closed uploads</h3>
+        <p>Uploads enter a private quarantine and must receive a clean local ClamAV verdict before promotion. Voice notes are normalized for broad playback compatibility.</p>
       </article>
       <article class="capability-card">
         <span class="capability-icon" aria-hidden="true">🎛️</span>
         <h3>Room energy tools</h3>
-        <p>Open the Tenor GIF browser, searchable meme soundboard, quick emoji panel, and persistent sound alerts from the composer.</p>
+        <p>Open the server-proxied GIPHY picker, searchable meme soundboard, quick emoji panel, custom emoji, and sound controls from the composer.</p>
+      </article>
+      <article class="capability-card">
+        <span class="capability-icon" aria-hidden="true">🔔</span>
+        <h3>Notifications that follow the room</h3>
+        <p>Browser and Home Screen Web Push sit alongside Android native notifications with Reply and Mark as read actions, plus the build-ready native iOS notification path.</p>
       </article>
       <article class="capability-card">
         <span class="capability-icon" aria-hidden="true">📻</span>
         <h3>Live listening</h3>
-        <p>Psybin Radio shows now-playing metadata with play, pause, mute, volume, and reconnect controls right inside its room.</p>
-      </article>
-      <article class="capability-card">
-        <span class="capability-icon" aria-hidden="true">🎨</span>
-        <h3>Personal comfort</h3>
-        <p>Visitors can keep light or dark mode, compact or comfortable density, notification preferences, and room choices across sessions.</p>
+        <p>Psybin Radio shows now-playing metadata with play, pause, mute, volume, and resilient reconnect controls right inside its room.</p>
       </article>
       <article class="capability-card">
         <span class="capability-icon" aria-hidden="true">🔗</span>
-        <h3>Preview-friendly links</h3>
-        <p>OpenGraph previews, direct GIF conversion, and responsive Rumble embeds make shared links useful before anyone clicks away.</p>
+        <h3>Inline media &amp; previews</h3>
+        <p>OpenGraph cards and responsive inline media keep supported links useful inside the conversation, including Rumble and other media-aware previews.</p>
       </article>
     </section>
 
     <div class="section-heading live-tools-heading" id="live-tools">
       <div class="section-eyebrow">Live together</div>
-      <h2>Jam, call, and watch without leaving the room.</h2>
+      <h2>Call, jam, share, and watch without leaving the room.</h2>
       <p>
-        DizyChat rooms double as a launchpad for live performance, webcam hangouts,
-        and synced watch parties while keeping the same dark, glowing landing-page style.
+        The realtime core stays under DizyChat control, including the self-hosted LiveKit path.
+        Optional jam and watch integrations extend the room without becoming the place where
+        your community identity or message history lives.
       </p>
     </div>
 
     <section class="live-tools" aria-label="Live room tools">
       <article class="live-tool-card">
+        <span class="capability-icon" aria-hidden="true">🎥</span>
+        <span class="pill-badge">Self-hosted LiveKit</span>
+        <h3>Room-scoped calls and screen sharing</h3>
+        <p>
+          Open the embedded room call, choose Normal or Music mode before joining, use voice
+          or webcam, and share a screen while call identity remains scoped to the current room.
+        </p>
+        <div class="info-pills" aria-label="LiveKit call highlights">
+          <span class="info-pill">Self-hosted LiveKit</span>
+          <span class="info-pill">Voice + webcam</span>
+          <span class="info-pill">Screen sharing</span>
+          <span class="info-pill">Music mode</span>
+        </div>
+      </article>
+
+      <article class="live-tool-card">
         <span class="capability-icon" aria-hidden="true">🎸</span>
         <span class="pill-badge">Jam band ready</span>
-        <h3>Low-latency live jam sessions</h3>
+        <h3>Low-latency jam launchers</h3>
         <p>
-          Launch room-based jam sessions with JackTrip for hosted musician studios or
-          SonoBus as a free peer-to-peer fallback, while keeping band coordination in chat.
+          Launch room-based jam sessions with JackTrip or SonoBus while keeping the band
+          coordination, room identity, and conversation in DizyChat.
         </p>
         <div class="info-pills" aria-label="Jam session highlights">
           <span class="info-pill">Room session names</span>
@@ -579,28 +598,12 @@
       </article>
 
       <article class="live-tool-card">
-        <span class="capability-icon" aria-hidden="true">🎥</span>
-        <span class="pill-badge">LiveKit calls</span>
-        <h3>Per-room voice and webcam conferencing</h3>
-        <p>
-          Start a LiveKit-powered call in the current room, add or stop webcam video,
-          and choose Music mode before joining for cleaner instrument and vocal audio.
-        </p>
-        <div class="info-pills" aria-label="LiveKit call highlights">
-          <span class="info-pill">Room-scoped tokens</span>
-          <span class="info-pill">Voice + webcam</span>
-          <span class="info-pill">Music mode toggle</span>
-          <span class="info-pill">Echo processing control</span>
-        </div>
-      </article>
-
-      <article class="live-tool-card">
         <span class="capability-icon" aria-hidden="true">🍿</span>
         <span class="pill-badge">Watch parties</span>
         <h3>Watch2Gether rooms from chat</h3>
         <p>
           Paste a video URL to create a synced Watch2Gether room, share the join card
-          with everyone in the DizyChat room, and clear it when the host wraps up.
+          with everyone in DizyChat, and clear it when the host wraps up.
         </p>
         <div class="info-pills" aria-label="Watch2Gether highlights">
           <span class="info-pill">Synced external room</span>
@@ -614,10 +617,10 @@
     <section class="quickstart" id="quickstart" aria-labelledby="quickstart-title">
       <div class="quickstart-intro">
         <div class="section-eyebrow">First visit?</div>
-        <h2 id="quickstart-title">Quick start for new users</h2>
+        <h2 id="quickstart-title">Identity first. Room second.</h2>
         <p>
-          DizyChat is designed to feel familiar in seconds. Pick a room, introduce yourself,
-          and use the composer tools as your community gets moving.
+          DizyChat now keeps account or guest identity separate from room access, so browser
+          password managers do not confuse account credentials with private-room passwords.
         </p>
         <div class="hero-actions">
           <button class="primary-btn" type="button" onclick="window.location.href='/login'">
@@ -627,43 +630,44 @@
       </div>
       <div class="quickstart-steps">
         <article class="quickstart-card">
-          <h3>Enter your name and room</h3>
-          <p>Head to <code>/login</code>, choose a display name, then join a public room or paste the room name your host shared.</p>
+          <h3>Choose your identity</h3>
+          <p>Sign in with a registered DizyChat account or confirm a guest name. Room controls stay locked until this step is complete.</p>
         </article>
         <article class="quickstart-card">
-          <h3>Set your vibe</h3>
-          <p>Toggle theme, density, and sound notifications so the chat feels right on desktop or mobile before the room gets busy.</p>
+          <h3>Choose or create a room</h3>
+          <p>Pick a public room or enter the room name your host shared. Add a room password only when the room itself is private.</p>
         </article>
         <article class="quickstart-card">
           <h3>Share more than text</h3>
           <ul>
-            <li>Attach files, images, clips, or push-to-talk voice notes.</li>
-            <li>Add GIFs, custom emoji, reactions, and soundboard hits.</li>
+            <li>Attach scanned files, images, clips, or voice notes.</li>
+            <li>Add GIPHY media, custom emoji, reactions, and soundboard hits.</li>
             <li>Paste links for rich previews and inline media where supported.</li>
           </ul>
         </article>
         <article class="quickstart-card">
-          <h3>Keep track of the good stuff</h3>
-          <p>Reply in threads, star messages for yourself, watch pinned posts from hosts, and use search filters when history grows.</p>
+          <h3>Stay connected</h3>
+          <p>Use search, pins, stars, room notifications, LiveKit calls, watch parties, and the mobile/PWA clients without changing communities.</p>
         </article>
       </div>
     </section>
 
     <section class="cta-panel">
-      <h2>Ready to open the doors?</h2>
+      <h2>Bring the room home.</h2>
       <p>
-        Let the marketing splash greet your guests, then drop them into the battle-tested chat
-        experience with live rooms, secure sharing, moderation controls, and community-ready extras.
+        DizyChat keeps the core community stack on infrastructure we control: identity, rooms,
+        message history, media safety, moderation, and realtime communication. External integrations
+        can add features without becoming the foundation of the community.
       </p>
       <div class="hero-actions center">
         <button class="primary-btn" type="button" onclick="window.location.href='/login'">
-          Join DizyChat
+          Open DizyChat
         </button>
       </div>
     </section>
 
     <footer>
-      © <span id="year"></span> DizyChat • Built for high-signal communities.
+      © <span id="year"></span> DizyChat • Home-hosted for independent communities.
     </footer>
   </div>
   <script>
