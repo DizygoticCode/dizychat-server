@@ -2525,7 +2525,36 @@ app.post('/api/soundboards/import-clip', soundboardImportJson, requireHttpAccoun
   }
 });
 
-app.get('/api/soundboards/live-search', async (req, res) => {
+const soundboardLiveAdmission = createPublicMediaAdmissionController({
+  maxStarts: parsePositiveIntegerEnv('SOUNDBOARD_LIVE_MAX_STARTS_PER_WINDOW', 60, { min: 10, max: 600 }),
+  maxConcurrent: parsePositiveIntegerEnv('SOUNDBOARD_LIVE_MAX_CONCURRENT_PER_IP', 4, { min: 1, max: 20 }),
+  windowMs: parsePositiveIntegerEnv('SOUNDBOARD_LIVE_RATE_WINDOW_SECONDS', 60, { min: 10, max: 60 * 60 }) * 1000,
+});
+
+const guardSoundboardLiveLookup = (req, res, next) => {
+  const admission = soundboardLiveAdmission.acquire(req.ip || req.socket?.remoteAddress || 'unknown');
+  if (!admission.ok) {
+    const retryAfterSeconds = Math.max(1, Math.ceil(admission.retryAfterMs / 1000));
+    res.setHeader('Retry-After', String(retryAfterSeconds));
+    logSecurityEvent('soundboard_live_lookup_rate_limited', {
+      code: admission.code,
+      ip: req.ip || req.socket?.remoteAddress || 'unknown',
+      path: req.path,
+    });
+    return res.status(429).json({
+      ok: false,
+      code: 'SOUNDBOARD_LIVE_RATE_LIMIT',
+      error: 'Too many live soundboard requests. Please wait and try again.',
+    });
+  }
+
+  const release = () => admission.release();
+  res.once('finish', release);
+  res.once('close', release);
+  next();
+};
+
+app.get('/api/soundboards/live-search', guardSoundboardLiveLookup, async (req, res) => {
   try {
     const result = await soundboardImporter.searchBoards({
       query: typeof req.query?.q === 'string' ? req.query.q : '',
@@ -2545,7 +2574,7 @@ app.get('/api/soundboards/live-search', async (req, res) => {
   }
 });
 
-app.get('/api/soundboards/live-board', async (req, res) => {
+app.get('/api/soundboards/live-board', guardSoundboardLiveLookup, async (req, res) => {
   try {
     const result = await soundboardImporter.browseBoard({
       boardUrl: typeof req.query?.url === 'string' ? req.query.url : '',
@@ -2564,7 +2593,7 @@ app.get('/api/soundboards/live-board', async (req, res) => {
   }
 });
 
-app.get('/api/soundboards/live-clip', async (req, res) => {
+app.get('/api/soundboards/live-clip', guardSoundboardLiveLookup, async (req, res) => {
   try {
     const result = await soundboardImporter.resolveClip({
       soundPageUrl: typeof req.query?.url === 'string' ? req.query.url : '',

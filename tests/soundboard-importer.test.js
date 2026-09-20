@@ -674,9 +674,9 @@ test('live soundboard browsing is available to guests while imports stay owner-o
   assert.match(server, /app\.post\('\/api\/soundboards\/import', soundboardImportJson, requireHttpAccount, requireHttpOwner/);
   assert.match(server, /app\.post\('\/api\/soundboards\/rebuild-existing', soundboardImportJson, requireHttpAccount, requireHttpOwner/);
   assert.match(server, /app\.post\('\/api\/soundboards\/import-clip', soundboardImportJson, requireHttpAccount, requireHttpOwner/);
-  assert.match(server, /app\.get\('\/api\/soundboards\/live-search', async/);
-  assert.match(server, /app\.get\('\/api\/soundboards\/live-board', async/);
-  assert.match(server, /app\.get\('\/api\/soundboards\/live-clip', async/);
+  assert.match(server, /app\.get\('\/api\/soundboards\/live-search', guardSoundboardLiveLookup, async/);
+  assert.match(server, /app\.get\('\/api\/soundboards\/live-board', guardSoundboardLiveLookup, async/);
+  assert.match(server, /app\.get\('\/api\/soundboards\/live-clip', guardSoundboardLiveLookup, async/);
   assert.doesNotMatch(server, /app\.get\('\/api\/soundboards\/live-(?:search|board|clip)', requireHttpAccount/);
   assert.match(server, /replaceExisting:\s*true/);
   assert.match(server, /req\.accountPrincipal\?\.role !== 'owner'/);
