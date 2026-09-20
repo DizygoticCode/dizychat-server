@@ -61,6 +61,28 @@ test('call token grant requires the exact admitted socket, room and nonce', () =
   }).code, 'CALL_GRANT_SOCKET_MISSING');
 });
 
+test('call token grant rejects incomplete HTTP grant data before socket lookup', () => {
+  const explodingIo = {
+    of() {
+      throw new Error('socket lookup should not run');
+    },
+  };
+
+  assert.equal(resolveCallTokenGrant({
+    io: explodingIo,
+    room: 'Private Room',
+    socketId: '',
+    nonce: 'nonce-1234567890',
+  }).code, 'CALL_GRANT_REQUIRED');
+
+  assert.equal(resolveCallTokenGrant({
+    io: explodingIo,
+    room: 'Private Room',
+    socketId: 'socket-1',
+    nonce: '',
+  }).code, 'CALL_GRANT_REQUIRED');
+});
+
 test('call token nonce comparison rejects empty or mismatched secrets', () => {
   assert.equal(safeSecretEqual('abc', 'abc'), true);
   assert.equal(safeSecretEqual('abc', 'abd'), false);
