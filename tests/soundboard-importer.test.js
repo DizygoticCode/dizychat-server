@@ -13,6 +13,10 @@ const {
   extractBoard,
   createSoundboardImporter,
 } = require('../src/soundboards/board-importer');
+const {
+  FILTER_CHAIN,
+  buildSoundboardFfmpegArgs,
+} = require('../src/soundboards/audio-normalizer');
 
 class FakeResponse {
   constructor({ url, body, status = 200, headers = {} }) {
@@ -134,13 +138,22 @@ test('board import is additive: existing board items and index entries survive w
     return response;
   };
 
-  const importer = createSoundboardImporter({ fetchImpl, dataRoot, publicRoot });
+  const normalizeCalls = [];
+  const normalizeAudioImpl = async ({ sourceBuffer, targetPath }) => {
+    normalizeCalls.push({ sourceBuffer: Buffer.from(sourceBuffer), targetPath });
+    await fsp.writeFile(targetPath, Buffer.concat([Buffer.from('CLEAN:'), sourceBuffer]));
+    return { path: targetPath, size: sourceBuffer.length + 6, mimeType: 'audio/mp4', extension: 'm4a' };
+  };
+
+  const importer = createSoundboardImporter({ fetchImpl, dataRoot, publicRoot, normalizeAudioImpl });
   const result = await importer.importBoard({ boardUrl });
 
   assert.equal(result.imported, 1);
   assert.equal(result.skipped, 1);
+  assert.equal(result.replaced, 0);
   assert.equal(result.failed, 0);
   assert.equal(result.totalItems, 2);
+  assert.equal(normalizeCalls.length, 1);
   assert.equal(requested.includes('https://www.101soundboards.com/sounds/100-existing-clip'), false);
 
   const index = JSON.parse(await fsp.readFile(path.join(dataRoot, 'index.json'), 'utf8'));
@@ -157,10 +170,164 @@ test('board import is additive: existing board items and index entries survive w
     (await fsp.readFile(path.join(publicRoot, '999-test-board', 'existing.mp3'))).toString(),
     'OLD',
   );
+  const newFile = path.basename(board.items[1].file);
+  assert.match(newFile, /^new-clip-[0-9a-f]{10}\.m4a$/);
   assert.equal(
-    (await fsp.readFile(path.join(publicRoot, '999-test-board', 'new-clip.mp3'))).toString(),
-    'NEW-AUDIO',
+    (await fsp.readFile(path.join(publicRoot, '999-test-board', newFile))).toString(),
+    'CLEAN:NEW-AUDIO',
   );
+});
+
+test('rebuild mode replaces a legacy clip only after normalized output succeeds', async (t) => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'dizychat-soundboard-rebuild-'));
+  t.after(() => fsp.rm(root, { recursive: true, force: true }));
+
+  const dataRoot = path.join(root, 'data');
+  const publicRoot = path.join(root, 'public');
+  const boardDir = path.join(publicRoot, '777-old-board');
+  await fsp.mkdir(dataRoot, { recursive: true });
+  await fsp.mkdir(boardDir, { recursive: true });
+
+  await fsp.writeFile(path.join(dataRoot, 'index.json'), JSON.stringify({ boards: ['777-old-board'] }));
+  await fsp.writeFile(path.join(dataRoot, '777-old-board.json'), JSON.stringify({
+    id: '777-old-board',
+    title: 'Old board',
+    source: '101soundboards',
+    items: [{
+      id: 'legacy-id',
+      title: 'Legacy Clip',
+      tags: ['old'],
+      duration: 1,
+      file: '777-old-board/legacy-clip.mp3',
+    }],
+  }));
+  await fsp.writeFile(path.join(boardDir, 'legacy-clip.mp3'), Buffer.from('LEGACY'));
+
+  const boardUrl = 'https://www.101soundboards.com/boards/777-old-board';
+  const soundUrl = 'https://www.101soundboards.com/sounds/501-legacy-clip';
+  const audioUrl = 'https://www.101soundboards.com/media/legacy-clean.mp3';
+  const responses = new Map([
+    [boardUrl, new FakeResponse({
+      url: boardUrl,
+      body: '<h1>Old board</h1><a href="/sounds/501-legacy-clip">Legacy Clip</a>',
+      headers: { 'content-type': 'text/html' },
+    })],
+    [soundUrl, new FakeResponse({
+      url: soundUrl,
+      body: '<h1>Legacy Clip</h1><audio src="/media/legacy-clean.mp3"></audio>Length 2 seconds',
+      headers: { 'content-type': 'text/html' },
+    })],
+    [audioUrl, new FakeResponse({
+      url: audioUrl,
+      body: Buffer.from('SOURCE-CLEAN'),
+      headers: { 'content-type': 'audio/mpeg' },
+    })],
+  ]);
+
+  const importer = createSoundboardImporter({
+    fetchImpl: async (url) => {
+      const response = responses.get(url);
+      if (!response) throw new Error(`Unexpected fetch: ${url}`);
+      return response;
+    },
+    dataRoot,
+    publicRoot,
+    normalizeAudioImpl: async ({ sourceBuffer, targetPath }) => {
+      await fsp.writeFile(targetPath, Buffer.concat([Buffer.from('NORMALIZED:'), sourceBuffer]));
+      return { path: targetPath, size: sourceBuffer.length + 11, mimeType: 'audio/mp4', extension: 'm4a' };
+    },
+  });
+
+  const result = await importer.importBoard({ boardUrl, replaceExisting: true });
+  assert.equal(result.imported, 0);
+  assert.equal(result.replaced, 1);
+  assert.equal(result.failed, 0);
+
+  const board = JSON.parse(await fsp.readFile(path.join(dataRoot, '777-old-board.json'), 'utf8'));
+  assert.equal(board.items.length, 1);
+  assert.equal(board.items[0].id, 'legacy-id');
+  assert.equal(board.items[0].title, 'Legacy Clip');
+  assert.equal(board.items[0].normalized, true);
+  assert.match(board.items[0].file, /^777-old-board\/legacy-clip-[0-9a-f]{10}\.m4a$/);
+  assert.equal(fs.existsSync(path.join(boardDir, 'legacy-clip.mp3')), false);
+  assert.equal(
+    (await fsp.readFile(path.join(publicRoot, board.items[0].file))).toString(),
+    'NORMALIZED:SOURCE-CLEAN',
+  );
+});
+
+test('failed normalization never removes the working legacy clip or rewrites its catalog entry', async (t) => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'dizychat-soundboard-fail-safe-'));
+  t.after(() => fsp.rm(root, { recursive: true, force: true }));
+
+  const dataRoot = path.join(root, 'data');
+  const publicRoot = path.join(root, 'public');
+  const boardDir = path.join(publicRoot, '888-safe-board');
+  await fsp.mkdir(dataRoot, { recursive: true });
+  await fsp.mkdir(boardDir, { recursive: true });
+
+  const legacy = {
+    id: 'legacy-safe',
+    title: 'Safe Clip',
+    tags: [],
+    duration: 1,
+    file: '888-safe-board/safe.mp3',
+  };
+  await fsp.writeFile(path.join(dataRoot, 'index.json'), JSON.stringify({ boards: ['888-safe-board'] }));
+  await fsp.writeFile(path.join(dataRoot, '888-safe-board.json'), JSON.stringify({
+    id: '888-safe-board',
+    title: 'Safe board',
+    source: '101soundboards',
+    items: [legacy],
+  }));
+  await fsp.writeFile(path.join(boardDir, 'safe.mp3'), Buffer.from('KEEP-ME'));
+
+  const boardUrl = 'https://www.101soundboards.com/boards/888-safe-board';
+  const soundUrl = 'https://www.101soundboards.com/sounds/601-safe-clip';
+  const audioUrl = 'https://www.101soundboards.com/media/safe.mp3';
+  const responses = new Map([
+    [boardUrl, new FakeResponse({ url: boardUrl, body: '<h1>Safe board</h1><a href="/sounds/601-safe-clip">Safe Clip</a>' })],
+    [soundUrl, new FakeResponse({ url: soundUrl, body: '<h1>Safe Clip</h1><audio src="/media/safe.mp3"></audio>' })],
+    [audioUrl, new FakeResponse({ url: audioUrl, body: Buffer.from('BROKEN-SOURCE'), headers: { 'content-type': 'audio/mpeg' } })],
+  ]);
+
+  const importer = createSoundboardImporter({
+    fetchImpl: async (url) => {
+      const response = responses.get(url);
+      if (!response) throw new Error(`Unexpected fetch: ${url}`);
+      return response;
+    },
+    dataRoot,
+    publicRoot,
+    normalizeAudioImpl: async () => {
+      throw new Error('ffmpeg failed');
+    },
+  });
+
+  const result = await importer.importBoard({ boardUrl, replaceExisting: true });
+  assert.equal(result.replaced, 0);
+  assert.equal(result.failed, 1);
+
+  const board = JSON.parse(await fsp.readFile(path.join(dataRoot, '888-safe-board.json'), 'utf8'));
+  assert.deepEqual(board.items, [legacy]);
+  assert.equal((await fsp.readFile(path.join(boardDir, 'safe.mp3'))).toString(), 'KEEP-ME');
+});
+
+test('soundboard FFmpeg recipe trims only edge silence and normalizes level consistently', () => {
+  assert.match(FILTER_CHAIN, /silenceremove=start_periods=1/);
+  assert.match(FILTER_CHAIN, /areverse/);
+  assert.match(FILTER_CHAIN, /loudnorm=I=-16:TP=-1\.5:LRA=7/);
+
+  const args = buildSoundboardFfmpegArgs('/tmp/in.audio', '/tmp/out.m4a');
+  assert.deepEqual(args.slice(-8), [
+    '-ar', '48000',
+    '-c:a', 'aac',
+    '-b:a', '128k',
+    '-movflags', '+faststart',
+    '/tmp/out.m4a',
+  ]);
+  assert.ok(args.includes('-af'));
+  assert.ok(args.includes(FILTER_CHAIN));
 });
 
 test('server and client keep board import owner-only and separate from normal soundboard search', () => {
@@ -169,6 +336,8 @@ test('server and client keep board import owner-only and separate from normal so
   const client = fs.readFileSync(path.join(repoRoot, 'public', 'chat.js'), 'utf8');
 
   assert.match(server, /app\.post\('\/api\/soundboards\/import'/);
+  assert.match(server, /app\.post\('\/api\/soundboards\/rebuild-existing'/);
+  assert.match(server, /replaceExisting:\s*true/);
   assert.match(server, /requireHttpAccount, requireHttpOwner/);
   assert.match(server, /req\.accountPrincipal\?\.role !== 'owner'/);
   assert.match(server, /soundboardStore\.reload\(\)/);
@@ -176,6 +345,8 @@ test('server and client keep board import owner-only and separate from normal so
   assert.match(client, /data-role="soundboard-import" hidden/);
   assert.match(client, /accountState\.identity\?\.role === "owner"/);
   assert.match(client, /\/api\/soundboards\/import/);
+  assert.match(client, /\/api\/soundboards\/rebuild-existing/);
+  assert.match(client, /Rebuild current 101 boards/);
   assert.match(client, /Authorization: `Bearer \$\{token\}`/);
   assert.match(client, /browser-approval-required/);
 });
