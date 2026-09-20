@@ -219,17 +219,30 @@ const readJson = async (filePath, fallback) => {
 };
 
 const fetchResponse = async (fetchImpl, rawUrl, { maxBytes, binary = false } = {}) => {
-  const url = ensureAllowed101Url(rawUrl, 'https://www.101soundboards.com/');
+  let url = ensureAllowed101Url(rawUrl, 'https://www.101soundboards.com/');
   if (!url) throw new Error('Blocked non-101Soundboards fetch target.');
 
-  const response = await fetchImpl(url.toString(), {
-    method: 'GET',
-    redirect: 'follow',
-    headers: {
-      'User-Agent': 'DizyChat Soundboard Importer/1.0',
-      Accept: binary ? 'audio/*,application/octet-stream;q=0.8,*/*;q=0.1' : 'text/html,application/xhtml+xml',
-    },
-  });
+  let response;
+  for (let redirects = 0; redirects <= 4; redirects += 1) {
+    response = await fetchImpl(url.toString(), {
+      method: 'GET',
+      redirect: 'manual',
+      headers: {
+        'User-Agent': 'DizyChat Soundboard Importer/1.0',
+        Accept: binary ? 'audio/*,application/octet-stream;q=0.8,*/*;q=0.1' : 'text/html,application/xhtml+xml',
+      },
+    });
+
+    if (response?.status >= 300 && response?.status < 400) {
+      const location = response.headers?.get?.('location');
+      const next = location ? ensureAllowed101Url(location, url.toString()) : null;
+      if (!next) throw new Error('101Soundboards redirect was blocked by the importer host boundary.');
+      if (redirects === 4) throw new Error('101Soundboards returned too many redirects.');
+      url = next;
+      continue;
+    }
+    break;
+  }
 
   if (!response?.ok) {
     const error = new Error(`101Soundboards request failed with HTTP ${response?.status || 0}.`);
@@ -238,7 +251,7 @@ const fetchResponse = async (fetchImpl, rawUrl, { maxBytes, binary = false } = {
   }
 
   const finalUrl = ensureAllowed101Url(response.url || url.toString(), url.toString());
-  if (!finalUrl) throw new Error('101Soundboards redirected outside its allowed host boundary.');
+  if (!finalUrl) throw new Error('101Soundboards response escaped its allowed host boundary.');
 
   const declared = Number(response.headers?.get?.('content-length') || 0);
   if (declared && maxBytes && declared > maxBytes) throw new Error('101Soundboards response exceeded the importer size limit.');
@@ -273,10 +286,10 @@ const createSoundboardImporter = ({
 
     const existingBoard = await readJson(boardFile, null);
     const existingItems = Array.isArray(existingBoard?.items) ? existingBoard.items.slice() : [];
-    const existingKeys = new Set(existingItems.map((item) =>
-      normalise(item?.sourceUrl)
-      || `${normalise(item?.title).toLowerCase()}::${normalise(item?.file)}`
-    ).filter(Boolean));
+    const existingKeys = new Set(existingItems.map((item) => normalise(item?.sourceUrl)).filter(Boolean));
+    const existingTitles = new Set(
+      existingItems.map((item) => normalise(item?.title).toLowerCase()).filter(Boolean)
+    );
 
     await fsp.mkdir(targetDir, { recursive: true });
     let imported = 0;
@@ -300,7 +313,8 @@ const createSoundboardImporter = ({
         total: board.clips.length,
       };
 
-      if (existingKeys.has(clipRef.soundPageUrl)) {
+      const clipLabelKey = normalise(clipRef.label).toLowerCase();
+      if (existingKeys.has(clipRef.soundPageUrl) || (clipLabelKey && existingTitles.has(clipLabelKey))) {
         skipped += 1;
         await onProgress({ ...progressBase, message: `Skipping existing clip ${index + 1}/${board.clips.length}.` });
         continue;
@@ -346,6 +360,7 @@ const createSoundboardImporter = ({
         };
         addedItems.push(item);
         existingKeys.add(clip.soundPageUrl);
+        existingTitles.add(normalise(clip.title).toLowerCase());
         imported += 1;
         await onProgress({ ...progressBase, message: `Imported ${clip.title}.` });
       } catch (error) {
