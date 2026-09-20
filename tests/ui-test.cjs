@@ -35,11 +35,16 @@ async function runPlaywrightTest() {
     await page.goto(SITE, { waitUntil: 'networkidle', timeout: 60000 });
     console.log('✅ Page loaded');
 
-    await page.waitForSelector('#guest-join-btn', { timeout: 30000 });
+    await page.waitForSelector('#guest-continue-btn', { timeout: 30000 });
     await page.fill('#guest-username', 'TesterBot');
+    await page.click('#guest-continue-btn');
+    await page.waitForFunction(() => {
+      const roomInput = document.querySelector('#room-input');
+      return roomInput && !roomInput.disabled;
+    }, { timeout: 10000 });
     await page.fill('#room-input', 'AutoTestRoom');
     await page.click('#guest-join-btn');
-    console.log('➡️ Join button clicked');
+    console.log('➡️ Guest identity confirmed and Join button clicked');
 
     const maxRetries = 10;
     const retryDelay = 3000;
