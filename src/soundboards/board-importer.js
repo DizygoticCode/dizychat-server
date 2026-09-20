@@ -149,7 +149,7 @@ const extractBoard = (html, boardUrl) => {
   return { title, clips: clips.slice(0, MAX_CLIPS), discovered: clips.length };
 };
 
-const extractSearchBoards = (html, searchUrl) => {
+const extractSearchBoards = (html, searchUrl, query = '') => {
   if (challengeDetected(html)) {
     const error = new Error('101Soundboards requires browser approval before live search can continue.');
     error.code = 'BROWSER_APPROVAL_REQUIRED';
@@ -158,7 +158,31 @@ const extractSearchBoards = (html, searchUrl) => {
 
   const $ = cheerio.load(String(html || ''));
   const boards = new Map();
+  const normaliseSearchText = (value) => normalise(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const searchNeedle = normaliseSearchText(query);
+  const searchTerms = searchNeedle.split(' ').filter((term) => term.length >= 2);
 
+  const relevanceScore = (title, boardId) => {
+    if (!searchTerms.length) return 1;
+    const haystack = normaliseSearchText(`${title} ${String(boardId || '').replace(/[-_]+/g, ' ')}`);
+    if (!haystack) return 0;
+
+    let score = haystack.includes(searchNeedle) ? 100 : 0;
+    let matched = 0;
+    searchTerms.forEach((term) => {
+      if (haystack.includes(term)) matched += 1;
+    });
+    if (!matched) return 0;
+    score += matched * 10;
+    if (matched === searchTerms.length) score += 25;
+    return score;
+  };
+
+  let order = 0;
   $('a[href*="/boards/"]').each((_, el) => {
     const rawHref = $(el).attr('href');
     const url = ensureAllowed101Url(rawHref, searchUrl);
@@ -173,17 +197,25 @@ const extractSearchBoards = (html, searchUrl) => {
 
     const rawTitle = normalise($(el).attr('title') || $(el).text()).replace(/\s+/g, ' ');
     if (!rawTitle) return;
-    if (!boards.has(parsed.url)) {
-      boards.set(parsed.url, {
-        provider: '101soundboards',
-        boardId: parsed.boardId,
-        title: rawTitle.slice(0, 180),
-        url: parsed.url,
-      });
+
+    const score = relevanceScore(rawTitle, parsed.boardId);
+    if (!score) return;
+
+    const candidate = {
+      provider: '101soundboards',
+      boardId: parsed.boardId,
+      title: rawTitle.slice(0, 180),
+      url: parsed.url,
+    };
+    const existing = boards.get(parsed.url);
+    if (!existing || score > existing.score) {
+      boards.set(parsed.url, { result: candidate, score, order: order++ });
     }
   });
 
-  return Array.from(boards.values());
+  return Array.from(boards.values())
+    .sort((a, b) => b.score - a.score || a.order - b.order)
+    .map((entry) => entry.result);
 };
 
 const cleanScriptUrl = (value) => normalise(value)
@@ -558,7 +590,7 @@ const createSoundboardImporter = ({
     const safeLimit = Math.min(Math.max(Number.parseInt(limit, 10) || 24, 1), 50);
     const searchUrl = `https://www.101soundboards.com/search/${encodeURIComponent(q)}`;
     const response = await fetchResponse(fetchImpl, searchUrl, { maxBytes: MAX_PAGE_BYTES });
-    const results = extractSearchBoards(response.buffer.toString('utf8'), response.url).slice(0, safeLimit);
+    const results = extractSearchBoards(response.buffer.toString('utf8'), response.url, q).slice(0, safeLimit);
     return { provider: '101soundboards', query: q, results };
   };
 
