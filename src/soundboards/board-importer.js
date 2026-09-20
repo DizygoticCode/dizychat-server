@@ -10,6 +10,8 @@ const { normalizeSoundboardAudio } = require('./audio-normalizer');
 const DEFAULT_DATA_ROOT = path.join(__dirname, '..', '..', 'data', 'soundboards');
 const DEFAULT_PUBLIC_ROOT = path.join(__dirname, '..', '..', 'public', 'soundboards');
 const BOARD_HOSTS = new Set(['101soundboards.com', 'www.101soundboards.com']);
+const MCP_SEARCH_URL = 'https://www.101soundboards.com/mcp/search';
+const MCP_PROTOCOL_VERSION = '2025-06-18';
 const MAX_CLIPS = 10_000;
 const MAX_PAGE_BYTES = 2 * 1024 * 1024;
 const MAX_AUDIO_BYTES = 16 * 1024 * 1024;
@@ -167,7 +169,10 @@ const extractSearchBoards = (html, searchUrl, query = '') => {
   const searchTerms = searchNeedle.split(' ').filter((term) => term.length >= 2);
   const promotionalBoards = new Set([
     'create-a-new-soundboard',
+    'create-new-soundboard',
+    'create-your-own-soundboard',
     'clone-my-voice',
+    'clone-your-voice',
     'free-song-maker',
   ]);
 
@@ -236,6 +241,264 @@ const extractSearchBoards = (html, searchUrl, query = '') => {
     .sort((a, b) => b.score - a.score || a.order - b.order)
     .map((entry) => entry.result);
 };
+
+const parseMcpMessage = (raw) => {
+  const text = String(raw || '').trim();
+  if (!text) return null;
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Streamable HTTP can return Server-Sent Events instead of plain JSON.
+  }
+
+  const messages = [];
+  for (const event of text.split(/\r?\n\r?\n/)) {
+    const data = event
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trimStart())
+      .join('\n')
+      .trim();
+    if (!data || data === '[DONE]') continue;
+    try {
+      messages.push(JSON.parse(data));
+    } catch {
+      // Ignore non-JSON SSE keepalive/progress events.
+    }
+  }
+
+  return messages.find((message) => message && (message.result !== undefined || message.error))
+    || messages.at(-1)
+    || null;
+};
+
+const extractMcpSearchBoards = (message, query = '') => {
+  const boards = new Map();
+  let order = 0;
+  const normaliseSearchText = (value) => normalise(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const searchNeedle = normaliseSearchText(query);
+  const searchTerms = searchNeedle.split(' ').filter((term) => term.length >= 2);
+  const promotionalBoards = new Set([
+    'create-a-new-soundboard',
+    'create-new-soundboard',
+    'create-your-own-soundboard',
+    'clone-my-voice',
+    'clone-your-voice',
+    'free-song-maker',
+  ]);
+
+  const isPromotionalBoard = (title, boardId) => {
+    const slug = String(boardId || '').replace(/^\d+-/, '');
+    if (promotionalBoards.has(slug)) return true;
+    const label = normaliseSearchText(title);
+    return promotionalBoards.has(label.replace(/\s+/g, '-'));
+  };
+
+  const relevanceScore = (title, boardId) => {
+    if (!searchTerms.length) return 1;
+    const haystack = normaliseSearchText(
+      String(title || '') + ' ' + String(boardId || '').replace(/[-_]+/g, ' ')
+    );
+    if (!haystack) return 0;
+    let score = haystack.includes(searchNeedle) ? 100 : 0;
+    let matched = 0;
+    searchTerms.forEach((term) => {
+      if (haystack.includes(term)) matched += 1;
+    });
+    score += matched * 10;
+    if (matched === searchTerms.length && matched > 0) score += 25;
+    return score;
+  };
+
+  const addBoard = (rawUrl, rawTitle = '') => {
+    let parsed;
+    try {
+      const url = ensureAllowed101Url(rawUrl, MCP_SEARCH_URL);
+      if (!url || !/^\/boards\/[^/]+\/?$/i.test(url.pathname)) return;
+      parsed = parseBoardUrl(url.toString());
+    } catch {
+      return;
+    }
+
+    const fallbackTitle = parsed.boardId
+      .replace(/^\d+-/, '')
+      .replace(/[-_]+/g, ' ')
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
+    const title = normalise(rawTitle).replace(/\s+/g, ' ') || fallbackTitle;
+    if (!title || isPromotionalBoard(title, parsed.boardId)) return;
+
+    const score = relevanceScore(title, parsed.boardId);
+    const existing = boards.get(parsed.url);
+    if (!existing || score > existing.score) {
+      boards.set(parsed.url, {
+        score,
+        order: order++,
+        result: {
+          provider: '101soundboards',
+          boardId: parsed.boardId,
+          title: title.slice(0, 180),
+          url: parsed.url,
+        },
+      });
+    }
+  };
+
+  const visit = (value) => {
+    if (value == null) return;
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+
+    if (typeof value === 'object') {
+      const rawUrl = [
+        value.url,
+        value.href,
+        value.boardUrl,
+        value.board_url,
+        value.link,
+      ].find((candidate) => typeof candidate === 'string' && candidate.includes('/boards/'));
+      const rawTitle = [
+        value.title,
+        value.name,
+        value.boardTitle,
+        value.board_title,
+        value.label,
+      ].find((candidate) => typeof candidate === 'string');
+      if (rawUrl) addBoard(rawUrl, rawTitle || '');
+
+      Object.values(value).forEach((child) => {
+        if (child !== rawUrl && child !== rawTitle) visit(child);
+      });
+      return;
+    }
+
+    if (typeof value !== 'string') return;
+    const text = value.trim();
+    if (!text) return;
+
+    if ((text.startsWith('{') && text.endsWith('}')) || (text.startsWith('[') && text.endsWith(']'))) {
+      try {
+        visit(JSON.parse(text));
+        return;
+      } catch {
+        // Fall through to URL discovery for human-readable MCP text.
+      }
+    }
+
+    const boardUrlRegex = /(?:https:\/\/(?:www\.)?101soundboards\.com)?\/boards\/[a-z0-9_%.-]+/gi;
+    let match;
+    while ((match = boardUrlRegex.exec(text))) addBoard(match[0], '');
+  };
+
+  visit(message && message.result !== undefined ? message.result : message);
+
+  return Array.from(boards.values())
+    .sort((a, b) => b.score - a.score || a.order - b.order)
+    .map((entry) => entry.result);
+};
+
+const postMcpMessage = async (fetchImpl, payload, sessionId = '') => {
+  const headers = {
+    'User-Agent': 'DizyChat Soundboard Importer/1.0',
+    Accept: 'application/json, text/event-stream',
+    'Content-Type': 'application/json',
+    'MCP-Protocol-Version': MCP_PROTOCOL_VERSION,
+  };
+  if (sessionId) headers['Mcp-Session-Id'] = sessionId;
+
+  const response = await fetchImpl(MCP_SEARCH_URL, {
+    method: 'POST',
+    redirect: 'manual',
+    headers,
+    body: JSON.stringify(payload),
+  });
+
+  if (!response || !response.ok) {
+    const error = new Error(
+      '101Soundboards MCP search failed with HTTP ' + String(response && response.status || 0) + '.'
+    );
+    error.code = response && (response.status === 403 || response.status === 429)
+      ? 'BROWSER_APPROVAL_REQUIRED'
+      : 'UPSTREAM_HTTP_ERROR';
+    throw error;
+  }
+
+  const declared = Number(response.headers && response.headers.get && response.headers.get('content-length') || 0);
+  if (declared && declared > MAX_PAGE_BYTES) {
+    throw new Error('101Soundboards MCP response exceeded the importer size limit.');
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.length > MAX_PAGE_BYTES) {
+    throw new Error('101Soundboards MCP response exceeded the importer size limit.');
+  }
+
+  const message = parseMcpMessage(buffer.toString('utf8'));
+  if (message && message.error) {
+    const error = new Error(
+      normalise(message.error && message.error.message) || '101Soundboards MCP search returned an error.'
+    );
+    error.code = 'UPSTREAM_MCP_ERROR';
+    throw error;
+  }
+
+  return {
+    message,
+    sessionId: normalise(response.headers && response.headers.get && response.headers.get('mcp-session-id')) || sessionId,
+  };
+};
+
+const searchBoardsViaMcp = async (fetchImpl, { query, limit }) => {
+  const initialized = await postMcpMessage(fetchImpl, {
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: {
+      protocolVersion: MCP_PROTOCOL_VERSION,
+      capabilities: {},
+      clientInfo: {
+        name: 'DizyChat',
+        version: '1.0',
+      },
+    },
+  });
+
+  if (!initialized.message || !initialized.message.result) {
+    const error = new Error('101Soundboards MCP search did not initialize correctly.');
+    error.code = 'UPSTREAM_MCP_ERROR';
+    throw error;
+  }
+
+  await postMcpMessage(fetchImpl, {
+    jsonrpc: '2.0',
+    method: 'notifications/initialized',
+    params: {},
+  }, initialized.sessionId);
+
+  const searched = await postMcpMessage(fetchImpl, {
+    jsonrpc: '2.0',
+    id: 2,
+    method: 'tools/call',
+    params: {
+      name: 'board-search-tool',
+      arguments: {
+        search_term: query,
+        limit,
+        only_tts: false,
+        record_source: 'dizychat',
+      },
+    },
+  }, initialized.sessionId);
+
+  return extractMcpSearchBoards(searched.message, query).slice(0, limit);
+};
+
 const cleanScriptUrl = (value) => normalise(value)
   .replace(/\\u002F/gi, '/')
   .replace(/\\\//g, '/')
@@ -603,10 +866,20 @@ const createSoundboardImporter = ({
 
   const searchBoards = async ({ query, limit = 24 } = {}) => {
     const q = normalise(query).replace(/\s+/g, ' ').slice(0, 120);
-    if (q.length < 2) return { provider: '101soundboards', query: q, results: [] };
+    if (q.length < 3) return { provider: '101soundboards', query: q, results: [] };
 
     const safeLimit = Math.min(Math.max(Number.parseInt(limit, 10) || 24, 1), 50);
-    const searchUrl = `https://www.101soundboards.com/search/${encodeURIComponent(q)}`;
+    try {
+      const results = await searchBoardsViaMcp(fetchImpl, { query: q, limit: safeLimit });
+      return { provider: '101soundboards', query: q, results };
+    } catch (error) {
+      if (error && error.code === 'BROWSER_APPROVAL_REQUIRED') throw error;
+      console.warn('[Soundboard Search] Official 101Soundboards search unavailable; using HTML fallback', {
+        error: error && error.message || error,
+      });
+    }
+
+    const searchUrl = 'https://www.101soundboards.com/search/' + encodeURIComponent(q);
     const response = await fetchResponse(fetchImpl, searchUrl, { maxBytes: MAX_PAGE_BYTES });
     const results = extractSearchBoards(response.buffer.toString('utf8'), response.url, q).slice(0, safeLimit);
     return { provider: '101soundboards', query: q, results };
@@ -663,6 +936,7 @@ module.exports = {
   challengeDetected,
   extractBoard,
   extractSearchBoards,
+  extractMcpSearchBoards,
   extractSound,
   createSoundboardImporter,
 };

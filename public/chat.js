@@ -9709,7 +9709,7 @@ if (voiceBtn) {
   panel.innerHTML = `
     <div class="soundboard-mode-tabs" role="tablist" aria-label="Soundboard source">
       <button type="button" class="soundboard-mode-tab active" data-soundboard-mode="local" role="tab" aria-selected="true">Local</button>
-      <button type="button" class="soundboard-mode-tab" data-soundboard-mode="web" role="tab" aria-selected="false" hidden>Web</button>
+      <button type="button" class="soundboard-mode-tab" data-soundboard-mode="web" role="tab" aria-selected="false">Web</button>
     </div>
     <div class="soundboard-import" data-role="soundboard-import" hidden>
       <div class="soundboard-import-title">101Soundboards web source</div>
@@ -9818,11 +9818,10 @@ if (voiceBtn) {
   };
 
   const syncImporterIdentity = () => {
-    const visible = isOwnerAccount();
-    if (webModeBtn) webModeBtn.hidden = !visible;
-    if (importWrap) importWrap.hidden = !(visible && pickerMode === "web");
-    if (!visible) {
-      if (pickerMode === "web") pickerMode = "local";
+    const owner = isOwnerAccount();
+    if (webModeBtn) webModeBtn.hidden = false;
+    if (importWrap) importWrap.hidden = !(owner && pickerMode === "web");
+    if (!owner) {
       setImportStatus("");
       if (importPollTimer) {
         clearTimeout(importPollTimer);
@@ -10044,7 +10043,7 @@ if (voiceBtn) {
   };
 
   const renderLiveBoard = async (boardSummary) => {
-    if (!resultsEl || !isOwnerAccount()) return;
+    if (!resultsEl) return;
     isLoading = true;
     renderStatus("Loading board from 101Soundboards…", "loading");
 
@@ -10086,7 +10085,8 @@ if (voiceBtn) {
         void startBoardImport();
       });
 
-      header.append(backBtn, heading, importBoardBtn);
+      header.append(backBtn, heading);
+      if (isOwnerAccount()) header.appendChild(importBoardBtn);
       resultsEl.appendChild(header);
 
       clips.forEach((clip) => {
@@ -10141,7 +10141,8 @@ if (voiceBtn) {
           void startClipImport(board.url, clip.soundPageUrl);
         });
 
-        actions.append(previewBtn, importClipBtn);
+        actions.appendChild(previewBtn);
+        if (isOwnerAccount()) actions.appendChild(importClipBtn);
         row.append(title, actions);
         resultsEl.appendChild(row);
       });
@@ -10161,11 +10162,11 @@ if (voiceBtn) {
   };
 
   const loadLiveBoards = async (query = "") => {
-    if (!resultsEl || isLoading || !isOwnerAccount()) return;
+    if (!resultsEl || isLoading) return;
     const q = String(query || "").trim();
     lastQuery = q;
-    if (q.length < 2) {
-      renderStatus("Type at least 2 characters to search 101Soundboards.", "info");
+    if (q.length < 3) {
+      renderStatus("Type at least 3 characters to search 101Soundboards.", "info");
       return;
     }
 
@@ -10214,7 +10215,8 @@ if (voiceBtn) {
           void startBoardImport();
         });
 
-        actions.append(browseBtn, importBoardBtn);
+        actions.appendChild(browseBtn);
+        if (isOwnerAccount()) actions.appendChild(importBoardBtn);
         row.append(content, actions);
         resultsEl.appendChild(row);
       });
@@ -10227,7 +10229,7 @@ if (voiceBtn) {
   };
 
   const setPickerMode = (mode) => {
-    const next = mode === "web" && isOwnerAccount() ? "web" : "local";
+    const next = mode === "web" ? "web" : "local";
     if (pickerMode === next) return;
     stopLivePreview();
     pickerMode = next;
@@ -10235,7 +10237,9 @@ if (voiceBtn) {
     if (searchInput) searchInput.value = "";
     syncImporterIdentity();
     if (pickerMode === "web") {
-      renderStatus("Search 101Soundboards, preview clips, then import one clip or the whole board.", "info");
+      renderStatus(isOwnerAccount()
+        ? "Search 101Soundboards, preview clips, then import one clip or the whole board."
+        : "Search 101Soundboards and preview clips.", "info");
     } else {
       void loadClips("");
     }
@@ -10366,14 +10370,18 @@ if (voiceBtn) {
     positionPanel();
     if (!panel.dataset.loaded) {
       if (pickerMode === "web") {
-        renderStatus("Search 101Soundboards, preview clips, then import one clip or the whole board.", "info");
+        renderStatus(isOwnerAccount()
+        ? "Search 101Soundboards, preview clips, then import one clip or the whole board."
+        : "Search 101Soundboards and preview clips.", "info");
       } else {
         loadClips();
       }
       panel.dataset.loaded = "1";
     } else if (!lastQuery) {
       if (pickerMode === "web") {
-        renderStatus("Search 101Soundboards, preview clips, then import one clip or the whole board.", "info");
+        renderStatus(isOwnerAccount()
+        ? "Search 101Soundboards, preview clips, then import one clip or the whole board."
+        : "Search 101Soundboards and preview clips.", "info");
       } else {
         loadClips("");
       }
@@ -10398,7 +10406,9 @@ if (voiceBtn) {
     if (!query && lastQuery) {
       if (pickerMode === "web") {
         lastQuery = "";
-        renderStatus("Search 101Soundboards, preview clips, then import one clip or the whole board.", "info");
+        renderStatus(isOwnerAccount()
+        ? "Search 101Soundboards, preview clips, then import one clip or the whole board."
+        : "Search 101Soundboards and preview clips.", "info");
       } else {
         loadClips("");
       }

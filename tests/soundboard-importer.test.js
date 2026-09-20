@@ -13,6 +13,7 @@ const {
   challengeDetected,
   extractBoard,
   extractSearchBoards,
+  extractMcpSearchBoards,
   createSoundboardImporter,
 } = require('../src/soundboards/board-importer');
 const {
@@ -134,6 +135,40 @@ test('live search keeps site-ranked non-exact board results while suppressing pr
   assert.equal(boards[2].title, 'No Text');
 });
 
+test('official 101Soundboards MCP results return real boards and suppress site promos', () => {
+  const boards = extractMcpSearchBoards({
+    jsonrpc: '2.0',
+    id: 2,
+    result: {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          results: [
+            {
+              title: 'Create Your Own Soundboard',
+              url: 'https://www.101soundboards.com/boards/900-create-your-own-soundboard',
+            },
+            {
+              title: 'Terminator Soundboard',
+              url: 'https://www.101soundboards.com/boards/84889-terminator-soundboard',
+            },
+            {
+              title: 'Arnold Schwarzenegger Soundboard: The Terminator',
+              url: 'https://www.101soundboards.com/boards/10138-arnold-schwarzenegger-soundboard-the-terminator',
+            },
+          ],
+        }),
+      }],
+    },
+  }, 'terminator');
+
+  assert.deepEqual(boards.map((board) => board.boardId), [
+    '84889-terminator-soundboard',
+    '10138-arnold-schwarzenegger-soundboard-the-terminator',
+  ]);
+});
+
+
 test('live source browser can search, browse, preview, and import only one selected clip', async (t) => {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'dizychat-live-soundboard-'));
   t.after(() => fsp.rm(root, { recursive: true, force: true }));
@@ -142,17 +177,12 @@ test('live source browser can search, browse, preview, and import only one selec
   const publicRoot = path.join(root, 'public');
   await fsp.mkdir(dataRoot, { recursive: true });
 
-  const searchUrl = 'https://www.101soundboards.com/search/duke';
+  const mcpSearchUrl = 'https://www.101soundboards.com/mcp/search';
   const boardUrl = 'https://www.101soundboards.com/boards/321-duke-board';
   const firstSoundUrl = 'https://www.101soundboards.com/sounds/901-first-clip';
   const secondSoundUrl = 'https://www.101soundboards.com/sounds/902-second-clip';
   const firstAudioUrl = 'https://www.101soundboards.com/media/first.mp3';
   const responses = new Map([
-    [searchUrl, new FakeResponse({
-      url: searchUrl,
-      body: '<a href="/boards/321-duke-board">Duke Board</a>',
-      headers: { 'content-type': 'text/html' },
-    })],
     [boardUrl, new FakeResponse({
       url: boardUrl,
       body: '<h1>Duke Board</h1><a href="/sounds/901-first-clip">First clip</a><a href="/sounds/902-second-clip">Second clip</a>',
@@ -172,8 +202,62 @@ test('live source browser can search, browse, preview, and import only one selec
 
   const requested = [];
   const importer = createSoundboardImporter({
-    fetchImpl: async (url) => {
+    fetchImpl: async (url, options = {}) => {
       requested.push(url);
+      if (url === mcpSearchUrl && options.method === 'POST') {
+        const payload = JSON.parse(options.body || '{}');
+        if (payload.method === 'initialize') {
+          return new FakeResponse({
+            url,
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: 1,
+              result: {
+                protocolVersion: '2025-06-18',
+                capabilities: {},
+                serverInfo: { name: 'Search', version: '0.0.1' },
+              },
+            }),
+            headers: {
+              'content-type': 'application/json',
+              'mcp-session-id': 'test-session',
+            },
+          });
+        }
+        if (payload.method === 'notifications/initialized') {
+          assert.equal(options.headers['Mcp-Session-Id'], 'test-session');
+          return new FakeResponse({
+            url,
+            status: 202,
+            body: '',
+            headers: { 'mcp-session-id': 'test-session' },
+          });
+        }
+        if (payload.method === 'tools/call') {
+          assert.equal(payload.params.name, 'board-search-tool');
+          assert.equal(payload.params.arguments.search_term, 'duke');
+          assert.equal(payload.params.arguments.only_tts, false);
+          assert.equal(options.headers['Mcp-Session-Id'], 'test-session');
+          return new FakeResponse({
+            url,
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: 2,
+              result: {
+                content: [{
+                  type: 'text',
+                  text: JSON.stringify({
+                    results: [{ title: 'Duke Board', url: boardUrl }],
+                  }),
+                }],
+              },
+            }),
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        throw new Error(`Unexpected MCP method: ${payload.method}`);
+      }
+
       const response = responses.get(url);
       if (!response) throw new Error(`Unexpected fetch: ${url}`);
       return response;
@@ -485,24 +569,31 @@ test('soundboard FFmpeg recipe trims only edge silence and normalizes level cons
   assert.ok(args.includes(FILTER_CHAIN));
 });
 
-test('server and client keep board import owner-only and separate from normal soundboard search', () => {
+test('live soundboard browsing is available to guests while imports stay owner-only', () => {
   const repoRoot = path.resolve(__dirname, '..');
   const server = fs.readFileSync(path.join(repoRoot, 'server-core.js'), 'utf8');
   const client = fs.readFileSync(path.join(repoRoot, 'public', 'chat.js'), 'utf8');
 
-  assert.match(server, /app\.post\('\/api\/soundboards\/import'/);
-  assert.match(server, /app\.post\('\/api\/soundboards\/rebuild-existing'/);
-  assert.match(server, /app\.post\('\/api\/soundboards\/import-clip'/);
-  assert.match(server, /app\.get\('\/api\/soundboards\/live-search'/);
-  assert.match(server, /app\.get\('\/api\/soundboards\/live-board'/);
-  assert.match(server, /app\.get\('\/api\/soundboards\/live-clip'/);
+  assert.match(server, /app\.post\('\/api\/soundboards\/import', soundboardImportJson, requireHttpAccount, requireHttpOwner/);
+  assert.match(server, /app\.post\('\/api\/soundboards\/rebuild-existing', soundboardImportJson, requireHttpAccount, requireHttpOwner/);
+  assert.match(server, /app\.post\('\/api\/soundboards\/import-clip', soundboardImportJson, requireHttpAccount, requireHttpOwner/);
+  assert.match(server, /app\.get\('\/api\/soundboards\/live-search', async/);
+  assert.match(server, /app\.get\('\/api\/soundboards\/live-board', async/);
+  assert.match(server, /app\.get\('\/api\/soundboards\/live-clip', async/);
+  assert.doesNotMatch(server, /app\.get\('\/api\/soundboards\/live-(?:search|board|clip)', requireHttpAccount/);
   assert.match(server, /replaceExisting:\s*true/);
-  assert.match(server, /requireHttpAccount, requireHttpOwner/);
   assert.match(server, /req\.accountPrincipal\?\.role !== 'owner'/);
   assert.match(server, /soundboardStore\.reload\(\)/);
 
   assert.match(client, /data-role="soundboard-import" hidden/);
   assert.match(client, /accountState\.identity\?\.role === "owner"/);
+  assert.match(client, /webModeBtn\.hidden = false/);
+  assert.match(client, /const next = mode === "web" \? "web" : "local"/);
+  assert.doesNotMatch(client, /loadLiveBoards[\s\S]{0,180}!isOwnerAccount\(\)/);
+  assert.doesNotMatch(client, /renderLiveBoard[\s\S]{0,180}!isOwnerAccount\(\)/);
+  assert.match(client, /if \(isOwnerAccount\(\)\) header\.appendChild\(importBoardBtn\)/);
+  assert.match(client, /if \(isOwnerAccount\(\)\) actions\.appendChild\(importClipBtn\)/);
+  assert.match(client, /if \(isOwnerAccount\(\)\) actions\.appendChild\(importBoardBtn\)/);
   assert.match(client, /\/api\/soundboards\/import/);
   assert.match(client, /\/api\/soundboards\/rebuild-existing/);
   assert.match(client, /Rebuild current 101 boards/);
