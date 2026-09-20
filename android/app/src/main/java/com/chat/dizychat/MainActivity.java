@@ -8,6 +8,7 @@ import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
     private static final String TAG = "DizyChat";
+    private static final String EXTRA_LOCAL_NOTIFICATION_TEST = "dizy_local_notification_test";
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -16,7 +17,9 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(NativePermissionsPlugin.class);
         registerPlugin(DizyPushPlugin.class);
         registerPlugin(WebBundlePlugin.class);
+        DizyNotificationManager.ensureChannel(this);
         DizyPushPlugin.handleIntent(this, getIntent());
+        maybeShowLocalNotificationTest(getIntent());
 
         try {
             WebBundleStore.prepareActivityLaunch(this);
@@ -33,6 +36,21 @@ public class MainActivity extends BridgeActivity {
         super.onNewIntent(intent);
         setIntent(intent);
         DizyPushPlugin.handleIntent(this, intent);
+        maybeShowLocalNotificationTest(intent);
+    }
+
+    private void maybeShowLocalNotificationTest(Intent intent) {
+        if (intent == null || !intent.getBooleanExtra(EXTRA_LOCAL_NOTIFICATION_TEST, false)) return;
+        intent.removeExtra(EXTRA_LOCAL_NOTIFICATION_TEST);
+        DizyNotificationManager.showMessageNotification(
+                this,
+                "Local Test",
+                "507f1f77bcf86cd799439099",
+                "DizyChat",
+                "Local Android notification path is working",
+                "0123456789abcdef01234567",
+                "2026-09-19T18:30:00.000Z"
+        );
     }
 
     @SuppressWarnings("deprecation")

@@ -212,6 +212,8 @@ test('Android native boundary renders durable room notification with tap, Reply,
   assert.match(plugin, /consumeLaunchRoute/);
   assert.match(plugin, /listNotificationRooms/);
   assert.match(plugin, /applyReadCursor/);
+  assert.match(plugin, /getStringExtra\("room"\)/, 'system-rendered FCM taps must accept raw room data');
+  assert.match(plugin, /getStringExtra\("messageId"\)/, 'system-rendered FCM taps must accept raw message id data');
 
   const notification = read(notificationPath);
   assert.match(notification, /notificationKey/);
@@ -235,6 +237,10 @@ test('Android native boundary renders durable room notification with tap, Reply,
   const activity = read('android/app/src/main/java/com/chat/dizychat/MainActivity.java');
   assert.match(activity, /registerPlugin\(DizyPushPlugin\.class\)/);
   assert.match(activity, /DizyPushPlugin\.handleIntent/);
+  assert.match(activity, /dizy_local_notification_test/);
+  assert.match(activity, /maybeShowLocalNotificationTest/);
+  assert.match(activity, /DizyNotificationManager\.showMessageNotification/);
+  assert.match(activity, /"507f1f77bcf86cd799439099"/, 'local diagnostic must use a valid 24-hex message id');
 
   const manifest = read('android/app/src/main/AndroidManifest.xml');
   assert.match(manifest, /com\.capacitorjs\.plugins\.pushnotifications\.MessagingService[\s\S]*tools:node="remove"/);
@@ -265,4 +271,28 @@ test('Android source keeps Firebase/server credentials external and never hard-c
     .join('\n');
   assert.doesNotMatch(javaSources, /BEGIN PRIVATE KEY|firebase-adminsdk|MONGO_URI|METADEFENDER_API_KEY/);
   assert.doesNotMatch(javaSources, /https:\/\/dizychat\.com/i, 'existing app config is the only production backend source');
+});
+
+
+test('native registration performs a one-time FCM token refresh and startup re-registers immediately', async () => {
+  const plugin = read('android/app/src/main/java/com/chat/dizychat/DizyPushPlugin.java');
+  const store = read('android/app/src/main/java/com/chat/dizychat/DizyPushStore.java');
+  const runtime = read('public/mobile-push-runtime.js');
+
+  assert.match(plugin, /setAutoInitEnabled\(true\)/);
+  assert.match(plugin, /needsFcmTokenRefreshV2/);
+  assert.match(plugin, /deleteToken\(\)/);
+  assert.match(plugin, /markFcmTokenRefreshV2/);
+  assert.match(store, /KEY_FCM_REFRESH_V2/);
+  assert.match(runtime, /onChatReady[\s\S]*await register\(\)/);
+
+  const harness = createNativeHarness();
+  const controller = createPushController(harness.win, {
+    backendOrigin: 'https://backend.example',
+    auth: harness.win.dizychatAuthV2,
+  });
+  await controller.onChatReady();
+  const registrations = harness.fetchCalls.filter((call) => call.url.endsWith('/api/mobile/push/register'));
+  assert.equal(registrations.length, 1);
+  assert.equal(registrations[0].body.fcmToken, 'fcm-abc');
 });

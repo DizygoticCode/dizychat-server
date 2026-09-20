@@ -11,6 +11,7 @@ final class DizyPushStore {
     private static final String PREFS = "dizychat_push_v1";
     private static final String KEY_DEVICE_ID = "device_id";
     private static final String KEY_FCM_TOKEN = "fcm_token";
+    private static final String KEY_FCM_REFRESH_V2 = "fcm_refresh_v2";
     private static final String KEY_BACKEND_ORIGIN = "backend_origin";
     private static final String KEY_PERMISSION_REQUESTED = "permission_requested";
     private static final String KEY_LAUNCH_ROUTE = "launch_route";
@@ -39,6 +40,14 @@ final class DizyPushStore {
     static String getFcmToken(Context context) {
         String token = preferences(context).getString(KEY_FCM_TOKEN, "");
         return token == null ? "" : token.trim();
+    }
+
+    static boolean needsFcmTokenRefreshV2(Context context) {
+        return !preferences(context).getBoolean(KEY_FCM_REFRESH_V2, false);
+    }
+
+    static void markFcmTokenRefreshV2(Context context) {
+        preferences(context).edit().putBoolean(KEY_FCM_REFRESH_V2, true).apply();
     }
 
     static void setBackendOrigin(Context context, String origin) {

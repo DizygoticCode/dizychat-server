@@ -51,6 +51,18 @@ test('same-account registered sender is excluded using explicit canonical identi
   assert.deepEqual(result, { attempted: 1, sent: 1, failed: 0 });
 });
 
+test('skipped transport response is never counted as sent', async () => {
+  const logs = [];
+  const coordinator = makeCoordinator({
+    devices: [candidate('nick', 'phone-a')],
+    logs,
+    send: async () => ({ skipped: true, reason: 'fcm-disabled' }),
+  });
+  const result = await coordinator.onMessageStored(message, { senderCanonicalUsername: 'rob' });
+  assert.deepEqual(result, { attempted: 1, sent: 0, failed: 0 });
+  assert.equal(logs.some((entry) => entry[0] === '[Push] transport skipped send'), true);
+});
+
 test('guest display name is not guessed into account identity', async () => {
   const sent = [];
   const coordinator = makeCoordinator({

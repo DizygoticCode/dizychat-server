@@ -1,6 +1,7 @@
 {
   "name": "DizyChat",
   "short_name": "DizyChat",
+  "id": "/login.html",
   "start_url": "/login.html",
   "scope": "/",
   "display": "standalone",

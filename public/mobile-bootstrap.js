@@ -62,11 +62,12 @@
       : '/socket.io/socket.io.js';
     await loadScript(socketClientUrl);
 
+    let browserNotificationController = null;
     if (!isNative) {
       await loadScript('/browser-notifications.js');
       const browserNotificationRuntime = window.dizychatBrowserNotifications;
       if (browserNotificationRuntime?.createBrowserNotificationController) {
-        const browserNotificationController = browserNotificationRuntime.createBrowserNotificationController(window);
+        browserNotificationController = browserNotificationRuntime.createBrowserNotificationController(window);
         window.dizychatBrowserNotificationController = browserNotificationController;
         browserNotificationRuntime.decorateIoFactory(window, browserNotificationController);
       }
@@ -87,8 +88,12 @@
     }
 
     await loadScript('/chat.js');
+    await loadScript('/embedded-call-view.js');
     await loadScript('/public-auth-ui.js');
     if (pushController) await pushController.onChatReady();
+    if (browserNotificationController?.onChatReady) {
+      await browserNotificationController.onChatReady();
+    }
     if (isNative && WebBundle?.markHealthy) await WebBundle.markHealthy();
   } catch (error) {
     console.error('[DizyChat] bootstrap failed', error);

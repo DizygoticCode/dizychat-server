@@ -1,5 +1,7 @@
 'use strict';
 
+const { tokenFingerprint, trace } = require('./fcm-diagnostics');
+
 const { canonicalizeUsername } = require('../auth/identity');
 
 const OBJECT_ID_PATTERN = /^[a-f0-9]{24}$/i;
@@ -34,6 +36,7 @@ const createPushDeviceService = ({
   MobileSessionModel,
   UserModel,
   now = () => new Date(),
+  logger = console,
 } = {}) => {
   if (!PushDeviceModel || !SubscriptionModel || !MobileSessionModel || !UserModel) {
     throw new TypeError('push device models are required');
@@ -88,6 +91,7 @@ const createPushDeviceService = ({
     canonicalUsername,
     deviceId,
     fcmToken,
+    platform = 'android',
     deviceLabel = 'Android',
   } = {}) => {
     const normalizedSessionId = cleanSessionId(sessionId);
@@ -95,6 +99,7 @@ const createPushDeviceService = ({
     const normalizedDeviceId = cleanDeviceId(deviceId);
     const token = String(fcmToken || '').trim();
     if (!token) throw serviceError('FCM_TOKEN_INVALID');
+    const normalizedPlatform = String(platform || '').trim().toLowerCase() === 'ios' ? 'ios' : 'android';
 
     await assertActiveSessionAccount({ sessionId: normalizedSessionId, canonicalUsername: canonical });
 
@@ -110,7 +115,7 @@ const createPushDeviceService = ({
       },
     );
 
-    return PushDeviceModel.findOneAndUpdate(
+    const registered = await PushDeviceModel.findOneAndUpdate(
       { sessionId: normalizedSessionId, deviceId: normalizedDeviceId },
       {
         $setOnInsert: {
@@ -120,8 +125,8 @@ const createPushDeviceService = ({
         $set: {
           canonicalUsername: canonical,
           fcmToken: token,
-          deviceLabel: String(deviceLabel || 'Android').trim().slice(0, 120) || 'Android',
-          platform: 'android',
+          deviceLabel: String(deviceLabel || (normalizedPlatform === 'ios' ? 'iPhone' : 'Android')).trim().slice(0, 120) || (normalizedPlatform === 'ios' ? 'iPhone' : 'Android'),
+          platform: normalizedPlatform,
           tokenRegisteredAt: registeredAt,
           disabledAt: null,
           disabledReason: '',
@@ -130,6 +135,8 @@ const createPushDeviceService = ({
       },
       { new: true, upsert: true, setDefaultsOnInsert: true },
     );
+    trace(logger, 'registered', { tokenFingerprint: tokenFingerprint(registered?.fcmToken) });
+    return registered;
   };
 
   const findRegisteredDevice = async ({ sessionId, deviceId } = {}) => {

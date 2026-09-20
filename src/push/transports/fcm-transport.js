@@ -1,5 +1,7 @@
 'use strict';
 
+const { tokenFingerprint, trace } = require('../fcm-diagnostics');
+
 const ALLOWED_DATA_KEYS = [
   'type',
   'room',
@@ -15,7 +17,7 @@ const PERMANENT_TOKEN_CODES = new Set([
   'messaging/invalid-registration-token',
 ]);
 
-const createFcmTransport = ({ projectId = '', messagingFactory } = {}) => {
+const createFcmTransport = ({ projectId = '', messagingFactory, logger = console } = {}) => {
   if (typeof messagingFactory !== 'function') {
     throw new TypeError('messagingFactory is required');
   }
@@ -34,6 +36,7 @@ const createFcmTransport = ({ projectId = '', messagingFactory } = {}) => {
       data[key] = String(intent[key] ?? '');
     }
 
+    const identity = { tokenFingerprint: tokenFingerprint(targetToken), projectId: String(projectId || '').trim(), type: data.type, messageId: data.messageId };
     try {
       const messaging = await messagingFactory({ projectId: String(projectId || '').trim() });
       if (!messaging || typeof messaging.send !== 'function') {
@@ -41,11 +44,51 @@ const createFcmTransport = ({ projectId = '', messagingFactory } = {}) => {
       }
       const message = { token: targetToken, data };
       if (data.type === 'message') {
-        message.android = { priority: 'high' };
+        const sender = data.sender.trim() || 'DizyChat';
+        const room = data.room.trim();
+        const preview = data.preview.trim() || 'New message';
+        message.notification = {
+          title: room ? `${sender} · ${room}` : sender,
+          body: preview,
+        };
+        message.android = {
+          priority: 'high',
+          notification: {
+            channelId: 'dizychat_messages_v1',
+            proxy: 'allow',
+          },
+        };
+        message.apns = {
+          headers: {
+            'apns-priority': '10',
+          },
+          payload: {
+            aps: {
+              sound: 'default',
+              category: 'DIZYCHAT_MESSAGE',
+            },
+          },
+        };
+      } else if (data.type === 'read-control') {
+        message.apns = {
+          headers: {
+            'apns-priority': '5',
+            'apns-push-type': 'background',
+          },
+          payload: {
+            aps: {
+              contentAvailable: true,
+            },
+          },
+        };
       }
-      return await messaging.send(message);
+      trace(logger, 'send-attempt', identity);
+      const firebaseMessageId = await messaging.send(message);
+      trace(logger, 'send-accepted', { ...identity, firebaseMessageId });
+      return firebaseMessageId;
     } catch (error) {
       const code = String(error?.code || 'messaging/internal-error');
+      trace(logger, 'send-failed', { ...identity, code });
       error.code = code;
       error.permanent = PERMANENT_TOKEN_CODES.has(code);
       throw error;

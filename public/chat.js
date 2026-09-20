@@ -183,6 +183,9 @@ function applyAccountSession(session) {
   if (token) socket.auth.sessionToken = token;
   else delete socket.auth.sessionToken;
   syncAccountUi();
+  if (token && window.dizychatBrowserNotificationController?.syncRegistration) {
+    void window.dizychatBrowserNotificationController.syncRegistration();
+  }
 }
 
 async function clearAccountSession({ persistent = false } = {}) {
@@ -2903,19 +2906,72 @@ function toggleMenu(menu, toggle) {
 
 function positionMessageActionsMenu(menu) {
   if (!menu || menu === userContextMenu) return;
+
+  const messageNode = menu.closest(".message");
+  const isSelfMessage = Boolean(messageNode?.classList.contains("self"));
+
   menu.style.top = "";
   menu.style.bottom = "";
+  menu.style.left = isSelfMessage ? "auto" : "8px";
+  menu.style.right = isSelfMessage ? "8px" : "auto";
 
   const viewportPadding = 8;
   const preferredTop = 28;
+  const scrollContainer = menu.closest("#messages");
+  const containerRect = scrollContainer?.getBoundingClientRect();
+  const boundaryTop = Math.max(
+    viewportPadding,
+    Number.isFinite(containerRect?.top) ? containerRect.top + viewportPadding : viewportPadding
+  );
+  const boundaryBottom = Math.min(
+    window.innerHeight - viewportPadding,
+    Number.isFinite(containerRect?.bottom)
+      ? containerRect.bottom - viewportPadding
+      : window.innerHeight - viewportPadding
+  );
+  const boundaryLeft = Math.max(
+    viewportPadding,
+    Number.isFinite(containerRect?.left) ? containerRect.left + viewportPadding : viewportPadding
+  );
+  const boundaryRight = Math.min(
+    window.innerWidth - viewportPadding,
+    Number.isFinite(containerRect?.right)
+      ? containerRect.right - viewportPadding
+      : window.innerWidth - viewportPadding
+  );
+
   const rect = menu.getBoundingClientRect();
-  const overflowBottom = rect.bottom - (window.innerHeight - viewportPadding);
-  if (overflowBottom <= 0) return;
+  if (rect.bottom > boundaryBottom) {
+    menu.style.top = "auto";
+    menu.style.bottom = `calc(100% - ${preferredTop}px)`;
 
-  const adjustedTop = Math.max(viewportPadding, preferredTop - overflowBottom);
-  menu.style.top = `${adjustedTop}px`;
+    const flippedRect = menu.getBoundingClientRect();
+    if (flippedRect.top < boundaryTop) {
+      const messageRect = messageNode?.getBoundingClientRect();
+      menu.style.bottom = "";
+      menu.style.top = `${Math.max(
+        preferredTop,
+        boundaryTop - (Number.isFinite(messageRect?.top) ? messageRect.top : 0)
+      )}px`;
+    }
+  }
+
+  const messageRect = messageNode?.getBoundingClientRect();
+  const horizontalRect = menu.getBoundingClientRect();
+  if (horizontalRect.left < boundaryLeft) {
+    menu.style.right = "auto";
+    menu.style.left = `${Math.max(
+      8,
+      boundaryLeft - (Number.isFinite(messageRect?.left) ? messageRect.left : 0)
+    )}px`;
+  } else if (horizontalRect.right > boundaryRight) {
+    menu.style.left = "auto";
+    menu.style.right = `${Math.max(
+      8,
+      (Number.isFinite(messageRect?.right) ? messageRect.right : boundaryRight) - boundaryRight
+    )}px`;
+  }
 }
-
 function closeActiveMenu(options = {}) {
   if (!appState.activeMenu) return;
   const { restoreFocus = false } = options;
@@ -7959,6 +8015,11 @@ if (voiceBtn) {
     remoteVideoElements: new Map(),
     musicModeEnabled: null,
   };
+  // This value deliberately lives only in this page's JS realm. sessionStorage is
+  // cloned when a tab is duplicated, so it cannot safely identify a LiveKit page
+  // instance even though it is otherwise tab-scoped.
+  const callSessionId = window.crypto?.randomUUID?.()
+    || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   const panel = document.createElement("div");
   panel.className = "voice-call-panel";
@@ -8015,7 +8076,15 @@ if (voiceBtn) {
   const peersEl = panel.querySelector('[data-role="peers"]');
 
   const participantKey = (participant) => participant?.sid || participant?.identity || "";
-  const getDisplayName = (participant) => participant?.identity || "Participant";
+  const getDisplayName = (participant) => {
+    try {
+      const accountName = JSON.parse(participant?.metadata || "{}")?.username;
+      if (accountName) return accountName;
+    } catch (_error) {
+      // Older participants may not have JSON metadata.
+    }
+    return String(participant?.identity || "Participant").split("--")[0];
+  };
 
   const isCurrentCallTarget = (target) => Boolean(
     target && window.currentUser && String(target).trim().toLowerCase() === String(window.currentUser).trim().toLowerCase()
@@ -8056,20 +8125,22 @@ if (voiceBtn) {
     local: true,
   });
 
-  const syncRemoteAudioVolume = (sid) => {
-    const entry = callState.remoteAudioElements.get(sid);
-    if (!entry?.element) return;
-    const participant = callState.participants.get(sid);
-    const participantVolume = clampVolume(participant?.volume ?? entry.volume ?? 1);
-    const participantMuted = Boolean(participant?.muted ?? entry.muted);
-    entry.volume = participantVolume;
-    entry.muted = participantMuted;
-    entry.element.volume = participantMuted ? 0 : clampVolume(participantVolume * callState.masterVolume);
-    entry.element.muted = participantMuted || callState.masterVolume <= 0;
+  const syncRemoteAudioVolume = (participantSid) => {
+    const participant = callState.participants.get(participantSid);
+    callState.remoteAudioElements.forEach((entry) => {
+      if (entry.participantSid !== participantSid || !entry.element) return;
+      const participantVolume = clampVolume(participant?.volume ?? entry.volume ?? 1);
+      const participantMuted = Boolean(participant?.muted ?? entry.muted);
+      entry.volume = participantVolume;
+      entry.muted = participantMuted;
+      entry.element.volume = participantMuted ? 0 : clampVolume(participantVolume * callState.masterVolume);
+      entry.element.muted = participantMuted || callState.masterVolume <= 0;
+    });
   };
 
   const syncAllRemoteAudioVolumes = () => {
-    Array.from(callState.remoteAudioElements.keys()).forEach(syncRemoteAudioVolume);
+    Array.from(new Set(Array.from(callState.remoteAudioElements.values(), (entry) => entry.participantSid)))
+      .forEach(syncRemoteAudioVolume);
   };
 
   const updatePeerMeters = () => {
@@ -8452,31 +8523,38 @@ if (voiceBtn) {
     return next;
   };
 
-  const attachRemoteAudioTrack = (track, participant) => {
-    if (!track?.attach || !remoteAudioContainer) return;
-    const key = participantKey(participant) || track.sid || String(Date.now());
-    detachRemoteAudioTrack(track, participant);
-    const participantEntry = updateParticipant(participant, { sid: key });
+  const attachRemoteAudioTrack = (track, publication, participant) => {
+    if (participant?.isLocal || !track?.attach || !remoteAudioContainer) return;
+    const participantSid = participantKey(participant) || publication?.participantSid || "remote";
+    const trackSid = publication?.trackSid || track.sid || String(Date.now());
+    const key = `${participantSid}:${trackSid}`;
+    detachRemoteAudioTrack(track, publication, participant);
+    const participantEntry = updateParticipant(participant, { sid: participantSid });
     const element = track.attach();
     element.autoplay = true;
     element.playsInline = true;
     element.dataset.participant = participant?.identity || key;
     callState.remoteAudioElements.set(key, {
+      participantSid,
       track,
       element,
       muted: Boolean(participantEntry?.muted),
       volume: clampVolume(participantEntry?.volume ?? 1),
     });
     remoteAudioContainer.appendChild(element);
-    syncRemoteAudioVolume(key);
+    syncRemoteAudioVolume(participantSid);
     renderPeers();
   };
 
-  const detachRemoteAudioTrack = (track, participant) => {
-    const key = participantKey(participant) || track?.sid;
-    const entries = key
-      ? [[key, callState.remoteAudioElements.get(key)]].filter(([, entry]) => entry)
-      : Array.from(callState.remoteAudioElements.entries()).filter(([, entry]) => !track || entry.track === track);
+  const detachRemoteAudioTrack = (track, publication, participant) => {
+    const participantSid = participantKey(participant) || publication?.participantSid || "";
+    const trackSid = publication?.trackSid || track?.sid || "";
+    const fullKey = participantSid && trackSid ? `${participantSid}:${trackSid}` : "";
+    const entries = Array.from(callState.remoteAudioElements.entries()).filter(([key, entry]) => {
+      if (fullKey && key === fullKey) return true;
+      if (track && entry.track === track) return true;
+      return participantSid && entry.participantSid === participantSid && !trackSid;
+    });
     entries.forEach(([entryKey, entry]) => {
       if (entry?.track?.detach) {
         entry.track.detach(entry.element);
@@ -8539,7 +8617,7 @@ if (voiceBtn) {
   };
 
   const attachRemoteVideoTrack = (track, publication, participant) => {
-    if (!track?.attach || !videoGrid) return;
+    if (participant?.isLocal || !track?.attach || !videoGrid) return;
     const participantSid = participantKey(participant) || publication?.participantSid || "remote";
     const key = `${participantSid}:${publication?.trackSid || track.sid || "camera"}`;
     detachRemoteVideoTrack(track, publication, participant);
@@ -8547,9 +8625,13 @@ if (voiceBtn) {
     const element = track.attach();
     const tile = createVideoTile({
       key,
-      label: getDisplayName(participant),
+      label: `${getDisplayName(participant)}${publication?.source === "screen_share" ? " · Screen" : ""}`,
       element,
     });
+    if (publication?.source === "screen_share") {
+      tile.classList.add("dizy-screen-share-tile");
+      tile.dataset.dizyTrackSource = "screen_share";
+    }
     callState.remoteVideoElements.set(key, {
       participantSid,
       track,
@@ -8645,12 +8727,22 @@ if (voiceBtn) {
       body: JSON.stringify({
         room: window.currentRoom,
         username: window.currentUser,
+        callSessionId: getCallSessionId(),
         musicMode: musicMode === true,
       }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(explainCallSetupError(data, `Token request failed (${res.status})`));
     return data;
+  };
+
+  const getCallSessionId = () => callSessionId;
+
+  const publishCallRoomState = (room, sdk = getLiveKitClient()) => {
+    window.dizyCallBridge = { room: room || null, sdk: sdk || null };
+    window.dispatchEvent(new CustomEvent("dizychat:call-room", {
+      detail: window.dizyCallBridge,
+    }));
   };
 
   const toggleLocalMute = async () => {
@@ -8708,6 +8800,7 @@ if (voiceBtn) {
       if (callState.room) await callState.room.disconnect();
       callState.localTrack = null;
       callState.room = null;
+      publishCallRoomState(null);
       callState.joining = false;
       callState.muted = false;
       callState.cameraEnabled = false;
@@ -8758,7 +8851,7 @@ if (voiceBtn) {
     });
     room.on(LK.RoomEvent.TrackSubscribed, (track, publication, participant) => {
       if (track?.kind === LK.Track?.Kind?.Audio) {
-        attachRemoteAudioTrack(track, participant);
+        attachRemoteAudioTrack(track, publication, participant);
       }
       if (track?.kind === LK.Track?.Kind?.Video) {
         attachRemoteVideoTrack(track, publication, participant);
@@ -8766,7 +8859,7 @@ if (voiceBtn) {
     });
     room.on(LK.RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
       if (track?.kind === LK.Track?.Kind?.Audio) {
-        detachRemoteAudioTrack(track, participant);
+        detachRemoteAudioTrack(track, publication, participant);
       }
       if (track?.kind === LK.Track?.Kind?.Video) {
         detachRemoteVideoTrack(track, publication, participant);
@@ -8777,7 +8870,7 @@ if (voiceBtn) {
       renderPeers();
     });
     room.on(LK.RoomEvent.ParticipantDisconnected, (participant) => {
-      detachRemoteAudioTrack(null, participant);
+      detachRemoteAudioTrack(null, null, participant);
       detachRemoteVideoTrack(null, null, participant);
       const sid = participantKey(participant);
       if (sid) {
@@ -8787,6 +8880,9 @@ if (voiceBtn) {
     });
     setStatus("Connecting to LiveKit…");
     await room.connect(tokenPayload.url, tokenPayload.token, { autoSubscribe: true });
+    // Publish the connected room explicitly. The embedded view must not race SDK loading or
+    // monkey-patch Room.prototype.connect in order to discover call lifecycle state.
+    publishCallRoomState(room, LK);
     room.remoteParticipants?.forEach((participant) => updateParticipant(participant));
     renderPeers();
     if (typeof room.startAudio === "function") {
@@ -8854,6 +8950,26 @@ if (voiceBtn) {
   voiceCallBtn.addEventListener("click", () => {
     if (!callState.room && panel.hidden) resetMusicModeChoice();
     panel.hidden = !panel.hidden;
+  });
+
+  window.addEventListener("dizychat:start-music-call", async () => {
+    panel.hidden = false;
+    if (callState.room || callState.joining) {
+      if (callState.room) showToast("Music Call is already connected.", "info");
+      return;
+    }
+    try {
+      chooseMusicMode(true);
+      await joinCall();
+      showToast("Music Call connected", "success");
+    } catch (error) {
+      console.error("[LiveCall] Music Call launch failed", error);
+      await leaveCall(true);
+      const message = normalizeCallError(error);
+      showToast(message, "error");
+      setStatus(message);
+      setCallUiState({ inCall: false, muted: false, cameraBlocked: false });
+    }
   });
   musicModeOffControl?.addEventListener("click", () => chooseMusicMode(false));
   musicModeOnControl?.addEventListener("click", () => chooseMusicMode(true));
@@ -8965,6 +9081,9 @@ if (voiceBtn) {
   if (leaveBtn) {
     leaveBtn.addEventListener("click", autoLeaveIfActive);
   }
+  for (const button of [accountLogoutBtn, lobbyAccountLogoutBtn]) {
+    button?.addEventListener("click", autoLeaveIfActive);
+  }
   if (joinBtn) {
     joinBtn.addEventListener("click", () => {
       const nextRoom = roomInput?.value.trim();
@@ -8973,6 +9092,7 @@ if (voiceBtn) {
       }
     });
   }
+  window.addEventListener("pagehide", autoLeaveIfActive);
   window.addEventListener("beforeunload", autoLeaveIfActive);
 })();
 
@@ -9221,7 +9341,7 @@ if (voiceBtn) {
   });
 })();
 
-// ------------------- Jam Session Launcher -------------------
+// ------------------- Guitar Jam Launcher -------------------
 (() => {
   if (!jamSessionBtn) return;
 
@@ -9231,10 +9351,10 @@ if (voiceBtn) {
   panel.innerHTML = `
     <div class="jam-session-header">
       <div>
-        <div class="jam-session-title">Jam Session</div>
-        <div class="jam-session-status" data-role="status">Checking pro-audio options…</div>
+        <div class="jam-session-title">Guitar Jam</div>
+        <div class="jam-session-status" data-role="status">Choose how you want to play together.</div>
       </div>
-      <button type="button" class="jam-session-close" data-role="close" aria-label="Close jam session panel">✕</button>
+      <button type="button" class="jam-session-close" data-role="close" aria-label="Close Guitar Jam panel">✕</button>
     </div>
     <div class="jam-session-providers" data-role="providers"></div>
     <div class="jam-session-output" data-role="output" hidden></div>
@@ -9269,6 +9389,27 @@ if (voiceBtn) {
     return payload?.session;
   };
 
+  const requestDizyJamSession = () => new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      callback(value);
+    };
+    const timer = setTimeout(() => {
+      finish(reject, new Error("DizyJam credential request timed out."));
+    }, 10000);
+
+    socket.emit("jam:dizyjam-credentials", { room: window.currentRoom || "" }, (ack = {}) => {
+      if (!ack?.ok || !ack?.session) {
+        finish(reject, new Error(ack?.error || "DizyJam access was not granted."));
+        return;
+      }
+      finish(resolve, ack.session);
+    });
+  });
+
   const copyText = async (text) => {
     if (!text) return false;
     try {
@@ -9279,54 +9420,193 @@ if (voiceBtn) {
     }
   };
 
+  const detectDizyJamPlatform = () => {
+    const nav = typeof navigator === "object" && navigator ? navigator : {};
+    const raw = [
+      nav.userAgentData?.platform,
+      nav.platform,
+      nav.userAgent,
+    ].filter(Boolean).join(" ").toLowerCase();
+
+    if (/android|iphone|ipad|ipod/.test(raw)) {
+      return { id: "mobile", label: "mobile device", installHash: "" };
+    }
+    if (/win/.test(raw)) {
+      return { id: "windows", label: "Windows", installHash: "#windows" };
+    }
+    if (/mac/.test(raw)) {
+      return { id: "macos", label: "macOS", installHash: "#macos" };
+    }
+    if (/linux|x11/.test(raw)) {
+      return { id: "linux", label: "Linux", installHash: "#linux" };
+    }
+    return { id: "desktop", label: "your computer", installHash: "" };
+  };
+
+  const quoteShell = (value) => `'${String(value || "").replace(/'/g, "'\\''")}'`;
+  const quotePowerShell = (value) => `'${String(value || "").replace(/'/g, "''")}'`;
+
+  const buildDizyJamClientCommand = (session, platform) => {
+    const host = String(session?.host || "").trim();
+    const username = String(session?.username || "").trim();
+    if (!host || !username) return String(session?.clientCommand || "").trim();
+
+    if (platform.id === "windows") {
+      return [
+        "& 'C:\\Program Files\\JackTrip\\jacktrip.exe'",
+        "-R",
+        "-C", quotePowerShell(host),
+        "-A",
+        "--username", quotePowerShell(username),
+        "--password",
+        "-q auto",
+        "--bufstrategy 4",
+      ].join(" ");
+    }
+
+    if (platform.id === "macos") {
+      return [
+        "jacktrip -R",
+        "-C", quoteShell(host),
+        "-A",
+        "--username", quoteShell(username),
+        "--password",
+        "-q auto",
+        "--bufstrategy 4",
+      ].join(" ");
+    }
+
+    return String(session?.clientCommand || [
+      "jacktrip",
+      "-C", host,
+      "-A",
+      "--username", username,
+      "--password",
+      "-q auto",
+      "--bufstrategy 4",
+    ].join(" ")).trim();
+  };
+
   const renderSession = (session) => {
     if (!outputEl || !session) return;
-    const instructions = Array.isArray(session.instructions) ? session.instructions : session.setupTips || [];
+
+    const platform = detectDizyJamPlatform();
+    const expiresLabel = session.expiresAt
+      ? new Date(Number(session.expiresAt)).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : "";
+    const installBase = String(session.clientInstallUrl || "https://jacktrip.github.io/jacktrip/Install/").replace(/#.*$/, "");
+    const installUrl = `${installBase}${platform.installHash}`;
+    const clientCommand = buildDizyJamClientCommand(session, platform);
+    const isMobile = platform.id === "mobile";
+
+    const credentialRows = [
+      session.username ? `<div class="jam-session-code"><span>JackTrip user</span><code>${escapeHtml(session.username)}</code><button type="button" data-copy="${escapeHtml(session.username)}">Copy</button></div>` : "",
+      session.password ? `<div class="jam-session-code"><span>Password</span><code>${escapeHtml(session.password)}</code><button type="button" data-copy="${escapeHtml(session.password)}">Copy</button></div>` : "",
+      expiresLabel ? `<div class="jam-session-code"><span>Credential expires</span><code>${escapeHtml(expiresLabel)}</code></div>` : "",
+    ].filter(Boolean).join("");
+
+    const advancedRows = [
+      session.host ? `<div class="jam-session-code"><span>Host</span><code>${escapeHtml(session.host)}</code><button type="button" data-copy="${escapeHtml(session.host)}">Copy</button></div>` : "",
+      session.tcpPort ? `<div class="jam-session-code"><span>Hub port</span><code>${escapeHtml(String(session.tcpPort))}</code></div>` : "",
+      session.udpBasePort && session.udpEndPort ? `<div class="jam-session-code"><span>UDP</span><code>${escapeHtml(String(session.udpBasePort))}–${escapeHtml(String(session.udpEndPort))}</code></div>` : "",
+      session.sampleRate ? `<div class="jam-session-code"><span>Rate</span><code>${escapeHtml(String(session.sampleRate))} Hz</code></div>` : "",
+      session.bufferSize ? `<div class="jam-session-code"><span>Buffer</span><code>${escapeHtml(String(session.bufferSize))} frames</code></div>` : "",
+      session.clientCommand ? `<div class="jam-session-code jam-session-command"><span>Generic CLI</span><code>${escapeHtml(session.clientCommand)}</code><button type="button" data-copy="${escapeHtml(session.clientCommand)}">Copy</button></div>` : "",
+    ].filter(Boolean).join("");
+
+    const desktopFlow = `
+      <div class="jam-session-steps">
+        <div class="jam-session-step">
+          <span class="jam-session-step-number">1</span>
+          <div>
+            <strong>Install JackTrip for ${escapeHtml(platform.label)}</strong>
+            <p>Use the official JackTrip installer, then return here. You only need to install it once.</p>
+            <a class="jam-session-open" href="${escapeHtml(installUrl)}" target="_blank" rel="noopener noreferrer">Install JackTrip for ${escapeHtml(platform.label)}</a>
+          </div>
+        </div>
+        <div class="jam-session-step">
+          <span class="jam-session-step-number">2</span>
+          <div>
+            <strong>Copy the DizyJam connection command</strong>
+            <p>Run this on the computer carrying your instrument or DAW audio. JackTrip will ask for the temporary password below.</p>
+            <div class="jam-session-command-card">
+              <code>${escapeHtml(clientCommand)}</code>
+              <button type="button" data-copy="${escapeHtml(clientCommand)}">Copy command</button>
+            </div>
+          </div>
+        </div>
+        <div class="jam-session-step">
+          <span class="jam-session-step-number">3</span>
+          <div>
+            <strong>Choose your audio path and play</strong>
+            <p>Use your interface, microphone, keyboard or DAW routing. Keep DizyChat open for camera, chat and screen sharing, but avoid sending the same instrument through the LiveKit call as well.</p>
+          </div>
+        </div>
+      </div>`;
+
+    const mobileFlow = `
+      <div class="jam-session-device-note">
+        <strong>DizyJam audio runs on a computer.</strong>
+        <p>Keep DizyChat open on this device for chat/camera if you like, then open this room on a Windows, macOS or Linux computer to install JackTrip and connect your instrument audio.</p>
+        <a class="jam-session-open" href="${escapeHtml(installUrl)}" target="_blank" rel="noopener noreferrer">JackTrip installation options</a>
+      </div>`;
+
     outputEl.hidden = false;
     outputEl.innerHTML = `
       <div class="jam-session-result-title">${escapeHtml(session.providerName || session.provider)} ready</div>
-      <div class="jam-session-result-meta">${escapeHtml(session.title || session.room || "DizyChat Jam")}</div>
-      ${session.groupName ? `<div class="jam-session-code"><span>Group</span><code>${escapeHtml(session.groupName)}</code><button type="button" data-copy="${escapeHtml(session.groupName)}">Copy</button></div>` : ""}
-      ${session.password ? `<div class="jam-session-code"><span>Password</span><code>${escapeHtml(session.password)}</code><button type="button" data-copy="${escapeHtml(session.password)}">Copy</button></div>` : ""}
-      <ul>${instructions.map((tip) => `<li>${escapeHtml(tip)}</li>`).join("")}</ul>
-      ${session.url ? `<a class="jam-session-open" href="${escapeHtml(session.url)}" target="_blank" rel="noopener noreferrer">Open ${escapeHtml(session.providerName || "jam provider")}</a>` : ""}
+      <div class="jam-session-result-meta">${escapeHtml(session.title || session.room || "DizyChat Jam")} · detected ${escapeHtml(platform.label)}</div>
+      ${isMobile ? mobileFlow : desktopFlow}
+      <div class="jam-session-credentials">
+        <strong>Temporary room credentials</strong>
+        <p>These belong to this DizyChat room session. They stop working when you leave/sign out and expire automatically.</p>
+        ${credentialRows}
+      </div>
+      <details class="jam-session-advanced">
+        <summary>Advanced connection details</summary>
+        ${advancedRows}
+        <p>For DAWs, ASIO/CoreAudio, VoiceMeeter, JACK or other custom routing, choose the audio devices locally in JackTrip or your normal audio chain. DizyJam only transports the finished audio stream.</p>
+      </details>
     `;
-    const link = outputEl.querySelector(".jam-session-open");
-    if (link && session.provider === "jacktrip") {
-      window.open(session.url, "_blank", "noopener,noreferrer");
-    }
   };
 
   const renderProviders = (providers = []) => {
     if (!providersEl) return;
-    providersEl.innerHTML = providers.map((provider) => `
-      <article class="jam-provider-card" data-provider="${escapeHtml(provider.id)}">
-        <div class="jam-provider-head">
-          <strong>${escapeHtml(provider.name)}</strong>
-          <span>${escapeHtml(provider.badge || "")}</span>
-        </div>
-        <p>${escapeHtml(provider.bestFor || "")}</p>
-        <ul>
-          ${(provider.setupTips || []).slice(0, 3).map((tip) => `<li>${escapeHtml(tip)}</li>`).join("")}
-        </ul>
-        <button type="button" data-provider-action="${escapeHtml(provider.id)}">
-          ${provider.id === "jacktrip" ? "Try JackTrip free" : `Use ${escapeHtml(provider.name)}`}
-        </button>
-      </article>
-    `).join("");
+    providersEl.innerHTML = providers.map((provider) => {
+      const available = provider.available !== false;
+      const actionLabel = provider.id === "music-call"
+        ? "Start Music Call"
+        : provider.id === "dizyjam"
+          ? (available ? "Start DizyJam" : "Server setup required")
+          : "Use SonoBus fallback";
+      return `
+        <article class="jam-provider-card${available ? "" : " is-unavailable"}" data-provider="${escapeHtml(provider.id)}">
+          <div class="jam-provider-head">
+            <strong>${escapeHtml(provider.name)}</strong>
+            <span>${escapeHtml(provider.badge || "")}</span>
+          </div>
+          <p>${escapeHtml(provider.bestFor || "")}</p>
+          <ul>
+            ${(provider.setupTips || []).slice(0, 3).map((tip) => `<li>${escapeHtml(tip)}</li>`).join("")}
+          </ul>
+          <button type="button" data-provider-action="${escapeHtml(provider.id)}" ${available ? "" : "disabled"}>
+            ${escapeHtml(actionLabel)}
+          </button>
+        </article>
+      `;
+    }).join("");
   };
 
   const openPanel = async () => {
     panel.hidden = false;
+    outputEl.hidden = true;
     if (!jamStatus) {
-      setJamStatus("Checking free jam providers…");
+      setJamStatus("Checking DizyChat music options…");
       jamStatus = await fetchJamStatus();
       renderProviders(jamStatus.providers || []);
     }
-    const jacktrip = (jamStatus.providers || []).find((provider) => provider.id === "jacktrip");
-    setJamStatus(jacktrip?.freeTier
-      ? "JackTrip has a free test tier: up to 5 musicians for 30 minutes."
-      : "Choose a free external jam provider.");
+    setJamStatus(jamStatus?.dizyJam?.configured
+      ? "DizyJam is online for low-latency playing; Music Call remains built in for camera, lessons and screen sharing."
+      : "Music Call is ready. DizyJam will appear once the self-hosted JackTrip hub is configured.");
   };
 
   jamSessionBtn.hidden = false;
@@ -9334,15 +9614,12 @@ if (voiceBtn) {
 
   jamSessionBtn.addEventListener("click", async () => {
     try {
-      if (panel.hidden) {
-        await openPanel();
-      } else {
-        panel.hidden = true;
-      }
+      if (panel.hidden) await openPanel();
+      else panel.hidden = true;
     } catch (error) {
       console.error("[JamSession] status failed", error);
-      showToast(error?.message || "Unable to load jam providers.", "error");
-      setJamStatus(error?.message || "Unable to load jam providers.");
+      showToast(error?.message || "Unable to load Guitar Jam options.", "error");
+      setJamStatus(error?.message || "Unable to load Guitar Jam options.");
     }
   });
 
@@ -9352,19 +9629,31 @@ if (voiceBtn) {
 
   providersEl?.addEventListener("click", async (event) => {
     const button = event.target.closest("button[data-provider-action]");
-    if (!button) return;
+    if (!button || button.disabled) return;
     const provider = button.dataset.providerAction;
+
+    if (!window.currentRoom) {
+      showToast("Join a chat room before starting a jam session.", "warn");
+      return;
+    }
+
+    if (provider === "music-call") {
+      panel.hidden = true;
+      window.dispatchEvent(new CustomEvent("dizychat:start-music-call"));
+      return;
+    }
+
     try {
-      if (!window.currentRoom) {
-        showToast("Join a chat room before starting a jam session.", "warn");
-        return;
-      }
       button.disabled = true;
-      setJamStatus(`Preparing ${provider} jam…`);
-      const session = await requestJamSession(provider);
+      setJamStatus(provider === "dizyjam" ? "Preparing DizyJam connection details…" : "Preparing SonoBus fallback…");
+      const session = provider === "dizyjam"
+        ? await requestDizyJamSession()
+        : await requestJamSession(provider);
       renderSession(session);
-      setJamStatus(provider === "jacktrip" ? "JackTrip opened. Share its studio invite back in chat." : "Jam handoff generated.");
-      showToast(provider === "jacktrip" ? "JackTrip free test opened" : "Jam session details ready", "success");
+      setJamStatus(provider === "dizyjam"
+        ? "Authenticated DizyJam details ready for your current DizyChat identity. Keep DizyChat open while you use JackTrip for the instrument path."
+        : "SonoBus fallback details ready.");
+      showToast(provider === "dizyjam" ? "DizyJam ready" : "SonoBus fallback ready", "success");
     } catch (error) {
       console.error("[JamSession] launch failed", error);
       showToast(error?.message || "Unable to start jam session.", "error");

@@ -1,6 +1,6 @@
 # DizyChat Server
 
-DizyChat is a self-hosted real-time chat platform built with Express, Socket.IO and MongoDB. It combines persistent rooms and messaging with media uploads, moderation, public accounts, Android push notifications, browser/iPhone access, LiveKit audio/video calls, music-focused call mode, custom emoji/GIFs, soundboards, and a Rumble companion userscript.
+DizyChat is a self-hosted real-time chat platform built with Express, Socket.IO and MongoDB. It combines persistent rooms and messaging with media uploads, moderation, public accounts, browser Web Push, Android native push, an iPhone/iPad Home Screen app, a compiled Capacitor iOS native path, LiveKit audio/video calls, music-focused call mode, custom emoji/GIFs, soundboards, and a Rumble companion userscript.
 
 Production: **https://dizychat.com**
 
@@ -16,21 +16,22 @@ Production: **https://dizychat.com**
 - Public users can create registered DizyChat accounts from the login UI.
 - Registered accounts use server-authoritative authentication rather than trusting a client-supplied username.
 - Recovery email and password-reset flows are supported without exposing mail-provider credentials to the browser.
-- The Android app uses a durable native session store so closing/reopening the app does not normally force another login; explicit logout and server-declared invalid/revoked sessions clear the stored native session.
+- Native mobile clients use durable secure session storage: Android uses its native secure-session boundary and the iOS path uses Keychain. Closing/reopening the app does not normally force another login; explicit logout and server-declared invalid/revoked sessions clear the stored native session.
 
 ### Messaging and media
 - Messages support editing, deletion, reactions, replies, pinning, starring and search.
 - Uploads use the existing `/upload` contract and are written to a private quarantine first.
 - Every completed upload must receive a clean local ClamAV verdict before it is atomically promoted into the public upload store.
 - Voice messages are normalized for broad browser/mobile playback compatibility.
-- Custom emoji/GIF assets, uploaded images/audio/video and soundboard audio work in normal browsers and in the Android Capacitor shell.
+- Custom emoji/GIF assets, uploaded images/audio/video and soundboard audio work in normal browsers and across the native Capacitor runtime boundaries.
 - The GIPHY picker is proxied through DizyChat so the GIPHY key stays server-side.
 - The searchable meme soundboard is backed by JSON catalogs under `data/soundboards` and `/soundboard-clips`.
 
 ### Notifications
 - Browser users can enable lightweight new-message sounds, with the preference stored locally.
-- The Android app supports FCM-backed room notifications with room/message tap routing.
-- Android notifications support inline **Reply** and **Mark as read** actions where the OS exposes them.
+- Supported browsers/Home Screen installs can also use Web Push through the DizyChat service worker and VAPID-backed subscription endpoints.
+- The Android app supports FCM-backed room notifications with room/message tap routing, inline **Reply** and **Mark as read** actions.
+- The native iOS path is wired for Firebase Messaging/APNs with room/message tap routing, token rotation, **Reply**, **Mark as read**, background read-control handling and cold-launch routing.
 - Notification state is reconciled per room so stale/out-of-order controls do not clear unread state by guessing.
 
 ### LiveKit calls and Music Mode
@@ -49,7 +50,22 @@ DizyChat does not require an App Store build on iPhone or iPad. Open **https://d
 2. Choose **Add to Home Screen**.
 3. Tap **Add**.
 
-The installed web app launches in standalone mode at the DizyChat login screen. The helper is shown only for eligible iPhone/iPad browser sessions and is hidden once DizyChat is already running standalone.
+The installed web app launches in standalone mode at the DizyChat login screen. The helper is shown only for eligible iPhone/iPad browser sessions and is hidden once DizyChat is already running standalone. On supported iOS versions, the Home Screen app can use Web Push after the user grants notification permission.
+
+### Native iOS app path
+DizyChat now also has a reproducible **Capacitor iOS native build path** using bundle ID `com.chat.dizychat`. CI generates the Xcode project, links Firebase Messaging, applies the DizyChat Swift/native bridges, and validates both an iOS Simulator build and an unsigned `iphoneos` device build.
+
+The native iOS path currently includes:
+
+- Keychain-backed durable session storage;
+- native external-link handling and iOS camera/microphone permission boundaries;
+- the same server-managed, SHA-256-verified web-bundle activation/fallback model used by Android;
+- Firebase Messaging/APNs registration and token rotation;
+- tap-to-open, **Reply** and **Mark as read** notification actions;
+- background read-control reconciliation; and
+- cold-launch notification routing.
+
+This is **build-ready but not yet distributed as a signed iPhone app**. The current user-facing iPhone option remains the Home Screen web app above. A distributable IPA still requires Apple signing/provisioning plus Firebase iOS/APNs configuration. See [`docs/ios-native.md`](docs/ios-native.md).
 
 ### Android app
 DizyChat also ships a signed, sideload-only Android app. The current architecture is a **thin Capacitor/native shell** rather than a hundreds-of-megabytes bundled web application.
@@ -59,7 +75,8 @@ The shell connects to the production backend at `https://dizychat.com`, download
 Current tester release:
 
 - **APK:** https://github.com/DizygoticCode/dizychat-server/releases/download/v1.0.0/dizychat-v1.apk
-- **SHA-256:** `26c47392baab81b2c5dee8dfc976c1c23fbba03769c41c102cbd755c75d0ab35`
+- **Size:** `4,693,459` bytes
+- **SHA-256:** `7a196bd500de09c545ea6ad5c1ce2ab3f9109ded1beb8903d41544fb3bb31f71`
 - **Package:** `com.chat.dizychat`
 
 Google Play Protect may offer to scan the sideloaded APK. For the current release, allowing the scan is the straightforward install path; after the scan completes, Android can continue with the normal installation.
@@ -95,8 +112,8 @@ index.js                         # Express/Socket.IO entry point
 server-core.js                   # Main server routes/socket wiring
 src/auth/                        # Accounts, sessions and password recovery
 src/messages/                    # Message service boundaries
-src/mobile-web/                  # Server-managed Android web-bundle manifest/assets
-src/push/                        # Push policy, FCM transport and read-state services
+src/mobile-web/                  # Server-managed native web-bundle manifest/assets
+src/push/                        # Native/Web Push policy, FCM transport and read-state services
 src/uploads/                     # ClamAV and voice-message normalization
 src/models/                      # MongoDB models
 public/                          # Browser UI and server-managed frontend assets
@@ -104,6 +121,8 @@ public/iphone-install.*          # iPhone/iPad Home Screen helper
 public/mobile-*.js               # Native/mobile web runtime integration
 android-shell/                   # Minimal native bootstrap web shell
 android/                         # Capacitor Android project and native plugins
+ios-native/                      # Tracked Swift bridges injected into generated iOS target
+scripts/prepare-ios-*.js         # Reproducible iOS/Firebase native-project preparation
 scripts/tampermonkey/            # Dizygotic Rumble Chat Tool userscript
 scripts/tests/                   # Userscript deterministic source tests
 tests/                           # Server/browser/native deterministic tests
@@ -116,7 +135,7 @@ deploy/livekit/                  # Self-hosted LiveKit Compose/runbook
 - **MongoDB** reachable through `MONGO_URI`.
 - **ClamAV daemon plus `clamdscan`** for uploads; scanning fails closed if unavailable.
 - LiveKit credentials only when live calls are enabled.
-- Firebase/FCM credentials only when Android push delivery is enabled.
+- Firebase/FCM credentials when native push delivery is enabled; browser Web Push additionally uses VAPID configuration. Apple signing/APNs configuration is only required for distributable native iOS builds.
 
 ## Installation
 
@@ -152,7 +171,11 @@ Create a local `.env` for development or configure the protected service environ
 | `LIVEKIT_API_KEY` | LiveKit API key used by DizyChat to issue room-scoped tokens. |
 | `LIVEKIT_API_SECRET` | Secret paired with `LIVEKIT_API_KEY`. |
 | `DIZYCHAT_FCM_ENABLED` | Enables the FCM push transport when set to `1`, `true`, `yes` or `on`. |
-| `DIZYCHAT_FIREBASE_PROJECT_ID` | Firebase project ID used by the server-side FCM transport. |
+| `DIZYCHAT_FIREBASE_PROJECT_ID` | Firebase project ID used by the server-side FCM transport for registered native devices. |
+| `DIZYCHAT_WEB_PUSH_ENABLED` | Enables browser/Home Screen Web Push when set to `1`, `true`, `yes` or `on`. |
+| `DIZYCHAT_WEB_PUSH_VAPID_PUBLIC_KEY` | Public VAPID key exposed to supported browser clients when Web Push is enabled. |
+| `DIZYCHAT_WEB_PUSH_VAPID_PRIVATE_KEY` | Private VAPID key; keep only in protected runtime configuration. |
+| `DIZYCHAT_WEB_PUSH_SUBJECT` | VAPID subject, normally a `mailto:` or HTTPS contact URI. |
 | `GIPHY_SDK_KEY` | Server-side GIPHY key used by the GIF picker proxy. |
 | `W2G_API_KEY` | Server-side Watch2Gether API key. Aliases `WATCH2GETHER_API_KEY` and `WATCH_2_GETHER_API_KEY` are accepted. |
 | `W2G_REQUEST_TIMEOUT_MS` | Watch2Gether request timeout; default 10000 ms. |
@@ -191,16 +214,16 @@ LIVEKIT_API_SECRET=<secret>
 
 Browser microphone/camera access requires HTTPS (or localhost for development). The same LiveKit room connection carries microphone audio and optional camera video.
 
-## Android server-managed web bundle
+## Native server-managed web bundle
 
-The production Android client is intentionally split into two layers:
+The native Android client and generated iOS path are intentionally split into two layers:
 
 1. **Native shell:** signing identity, Capacitor/native plugins, secure session, push notifications, native navigation/media boundaries and the bundle updater.
 2. **Server-managed web bundle:** DizyChat HTML/CSS/JS and related frontend assets published by the server.
 
-The app fetches a manifest for the current server bundle, downloads only declared assets, validates hashes before promotion and retains a previously verified bundle as fallback. A failed/partial update must not replace the known-good local bundle.
+The native updater fetches a manifest for the current server bundle, downloads only declared assets, validates paths, sizes and SHA-256 hashes before promotion, and retains a previously verified bundle as fallback. A failed/partial update must not replace the known-good local bundle.
 
-Because of that split, normal frontend changes under the server-managed bundle do not justify issuing another Android release. Rebuild the APK only when the native shell itself changes.
+Because of that split, normal frontend changes under the server-managed bundle do not justify issuing another native release. Rebuild/re-sign only when the relevant native shell itself changes.
 
 Native relative media URLs are resolved against the configured DizyChat backend inside Capacitor; ordinary browser relative URLs continue using the browser's own current origin.
 
@@ -226,7 +249,7 @@ Run the deterministic Node test gate:
 npm test
 ```
 
-The repository also contains Android/native contract tests, browser UI tests, iPhone PWA install tests, LiveKit Music Mode tests, push/read-state tests and userscript source-contract tests. CI additionally builds/verifies the signed Android package when the required encrypted signing/Firebase material is available.
+The repository also contains Android/native contract tests, native iOS contract tests, browser UI tests, iPhone PWA install tests, LiveKit Music Mode tests, push/read-state tests and userscript source-contract tests. CI additionally builds/verifies the signed Android package when encrypted signing/Firebase material is available, and generates/compiles the iOS Capacitor target for both Simulator and unsigned physical-device (`iphoneos`) architectures.
 
 ## HTTP API highlights
 
@@ -289,20 +312,20 @@ See [`docs/android-private-apk.md`](docs/android-private-apk.md) for the full si
 ## Deployment notes
 
 - The canonical production deployment is self-hosted behind a reverse proxy; WebSocket upgrades must reach the Node/Socket.IO service.
-- Keep MongoDB, LiveKit, Firebase/FCM and other credentials in protected host/runtime configuration rather than the Git checkout.
+- Keep MongoDB, LiveKit, Firebase/FCM, Web Push VAPID and Apple/APNs/signing credentials in protected host/runtime or CI configuration rather than the Git checkout.
 - Provision persistent storage for uploads if files must survive service redeploy/replacement.
-- The Android web-bundle endpoint is part of the production server contract, so deploy frontend assets atomically with the DizyChat service and retain the native client's hash verification/fallback boundary.
+- The native web-bundle endpoint is part of the production server contract, so deploy frontend assets atomically with the DizyChat service and retain the native clients' hash verification/fallback boundary.
 - LiveKit remains a separate realtime-media service; see [`deploy/livekit/README.md`](deploy/livekit/README.md) for the self-hosted network/TLS boundary.
 
 ## Security notes
 
-- Do not commit `.env`, API keys, MongoDB credentials, Firebase service credentials or Android signing material.
+- Do not commit `.env`, API keys, MongoDB credentials, Firebase service/client configuration, VAPID private keys, Apple APNs keys, provisioning profiles, certificates or Android/iOS signing material.
 - Upload scanning fails closed: an infected file, scanner error or scan timeout is not promoted into the public upload store.
 - Server authorization remains authoritative for accounts, sessions, room access, moderation and notification actions.
 - User text/filenames are sanitized before persistence/broadcast.
 - Restrict Socket.IO CORS origins with `SOCKET_IO_CORS_ORIGINS` on public deployments.
 - Prefer hashed admin credentials over plaintext compatibility values.
-- Possessing the Android APK does not bypass DizyChat authentication.
+- Possessing an Android APK or future signed iOS package does not bypass DizyChat authentication.
 
 ## License
 

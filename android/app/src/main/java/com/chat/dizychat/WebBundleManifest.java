@@ -29,6 +29,8 @@ public final class WebBundleManifest {
             "auth-v2-client.js",
             "chat.css",
             "chat.js",
+            "embedded-call-view.css",
+            "embedded-call-view.js",
             "emojis.json",
             "index.html",
             "login.html",

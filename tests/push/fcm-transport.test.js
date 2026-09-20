@@ -25,15 +25,28 @@ const readIntent = {
   timestamp: '2026-09-06T12:00:00.000Z',
 };
 
-test('disabled config returns null transport without creating Firebase messaging', async () => {
+test('disabled config returns explicit skipped transport without creating Firebase messaging', async () => {
   let created = 0;
+  const warnings = [];
   const config = readFcmConfig({ DIZYCHAT_FCM_ENABLED: 'false' });
   const transport = createConfiguredPushTransport({
     config,
+    logger: { warn: (...args) => warnings.push(args) },
     messagingFactory: () => { created += 1; return { send: async () => {} }; },
   });
-  await transport.send(intent, 'token');
+  assert.deepEqual(await transport.send(intent, 'token'), { skipped: true, reason: 'fcm-disabled' });
   assert.equal(created, 0);
+  assert.equal(warnings.some((entry) => String(entry[0]).includes('FCM disabled')), true);
+});
+
+test('enabled FCM without an explicit project id fails at startup', () => {
+  assert.throws(
+    () => createConfiguredPushTransport({
+      config: { enabled: true, projectId: '' },
+      messagingFactory: () => ({ send: async () => 'ok' }),
+    }),
+    /DIZYCHAT_FIREBASE_PROJECT_ID_REQUIRED/,
+  );
 });
 
 test('enabled transport serializes only allowlisted message data and token envelope', async () => {
@@ -47,6 +60,18 @@ test('enabled transport serializes only allowlisted message data and token envel
   assert.equal(payloads[0].token, 'fcm-token');
   assert.deepEqual(Object.keys(payloads[0].data).sort(), ['messageId', 'notificationKey', 'preview', 'room', 'sender', 'timestamp', 'type'].sort());
   assert.equal(payloads[0].data.type, 'message');
+  assert.deepEqual(payloads[0].notification, {
+    title: 'Rob · ShittyChat',
+    body: 'hello',
+  });
+  assert.deepEqual(payloads[0].android, {
+    priority: 'high',
+    notification: { channelId: 'dizychat_messages_v1', proxy: 'allow' },
+  });
+  assert.deepEqual(payloads[0].apns, {
+    headers: { 'apns-priority': '10' },
+    payload: { aps: { sound: 'default', category: 'DIZYCHAT_MESSAGE' } },
+  });
   const serialized = JSON.stringify(payloads[0]);
   assert.equal(serialized.includes('NOPE'), false);
   assert.equal(serialized.includes('password'), false);
@@ -70,6 +95,17 @@ test('read-control transport is data-only, explicitly typed, and strips credenti
       preview: '',
       notificationKey: '0123456789abcdef01234567',
       timestamp: '2026-09-06T12:00:00.000Z',
+    },
+    apns: {
+      headers: {
+        'apns-priority': '5',
+        'apns-push-type': 'background',
+      },
+      payload: {
+        aps: {
+          contentAvailable: true,
+        },
+      },
     },
   });
   const serialized = JSON.stringify(payloads[0]);

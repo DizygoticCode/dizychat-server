@@ -19,11 +19,15 @@ const MobileSession = require('./src/models/mobile-session');
 const Room = require('./src/models/room');
 const PushDevice = require('./src/models/push-device');
 const PushRoomSubscription = require('./src/models/push-room-subscription');
+const WebPushSubscription = require('./src/models/web-push-subscription');
 const RoomReadCursor = require('./src/models/room-read-cursor');
 const { createAccountService } = require('./src/auth/account-service');
 const { createPushDeviceService } = require('./src/push/push-device-service');
 const { createReadStateService } = require('./src/push/read-state-service');
 const { createPushCoordinator } = require('./src/push/push-coordinator');
+const { createWebPushSubscriptionService } = require('./src/push/web-push-subscription-service');
+const { createWebPushCoordinator } = require('./src/push/web-push-coordinator');
+const { createConfiguredWebPushTransport } = require('./src/push/web-push-config');
 const { createReadStateCoordinator } = require('./src/push/read-state-coordinator');
 const { createChatMessageService } = require('./src/messages/chat-message-service');
 const { createConfiguredPushTransport } = require('./src/push/fcm-config');
@@ -35,6 +39,7 @@ const { createRoomPasswordService } = require('./src/rooms/room-password-service
 const soundboardStore = require('./src/utils/soundboard');
 const { scanFileWithClamAv } = require('./src/uploads/clamav-scanner');
 const { normalizeVoiceMessageUpload } = require('./src/uploads/voice-message-normalizer');
+const { DizyJamCredentialStore } = require('./src/jam/dizyjam-credentials');
 
 const nodeFetchModulePromise = import('node-fetch');
 const fetch = (...args) =>
@@ -251,11 +256,58 @@ const W2G_REQUEST_TIMEOUT_MS = parsePositiveIntegerEnv('W2G_REQUEST_TIMEOUT_MS',
 const WATCH_PARTY_EVENT_WINDOW_MS = 60 * 1000;
 const WATCH_PARTY_MAX_CREATES_PER_WINDOW = 3;
 
-const JACKTRIP_STUDIO_CREATE_URL = String(process.env.JACKTRIP_STUDIO_CREATE_URL || 'https://app.jacktrip.org/studios/create').trim();
-const JACKTRIP_STUDIO_INVITE_URL = String(process.env.JACKTRIP_STUDIO_INVITE_URL || '').trim();
+const DIZYJAM_HOST = String(process.env.DIZYJAM_HOST || '').trim();
+const DIZYJAM_TCP_PORT = parsePositiveIntegerEnv('DIZYJAM_TCP_PORT', 4464, { min: 1, max: 65535 });
+const DIZYJAM_UDP_BASE_PORT = parsePositiveIntegerEnv('DIZYJAM_UDP_BASE_PORT', 61002, { min: 1024, max: 65535 });
+const DIZYJAM_UDP_END_PORT = parsePositiveIntegerEnv('DIZYJAM_UDP_END_PORT', 61100, { min: 1024, max: 65535 });
+const DIZYJAM_SAMPLE_RATE = parsePositiveIntegerEnv('DIZYJAM_SAMPLE_RATE', 48000, { min: 8000, max: 192000 });
+const DIZYJAM_BUFFER_SIZE = parsePositiveIntegerEnv('DIZYJAM_BUFFER_SIZE', 128, { min: 16, max: 4096 });
+const DIZYJAM_CLIENT_INSTALL_URL = String(process.env.DIZYJAM_CLIENT_INSTALL_URL || 'https://jacktrip.github.io/jacktrip/Install/').trim();
+const DIZYJAM_DISABLED = ['false', '0', 'no', 'off', 'disabled'].includes(String(process.env.ENABLE_DIZYJAM || '').trim().toLowerCase());
+const DIZYJAM_AUTH_DIR = path.resolve(String(process.env.DIZYJAM_AUTH_DIR || path.join(__dirname, 'ops', 'dizyjam', 'runtime')).trim());
+const DIZYJAM_AUTH_CERT_FILE = path.resolve(String(process.env.DIZYJAM_AUTH_CERT_FILE || path.join(DIZYJAM_AUTH_DIR, 'jacktrip.crt')).trim());
+const DIZYJAM_AUTH_KEY_FILE = path.resolve(String(process.env.DIZYJAM_AUTH_KEY_FILE || path.join(DIZYJAM_AUTH_DIR, 'jacktrip.key')).trim());
+const DIZYJAM_AUTH_CREDS_FILE = path.resolve(String(process.env.DIZYJAM_AUTH_CREDS_FILE || path.join(DIZYJAM_AUTH_DIR, 'auth')).trim());
+const DIZYJAM_CREDENTIAL_TTL_SECONDS = parsePositiveIntegerEnv('DIZYJAM_CREDENTIAL_TTL_SECONDS', 7200, { min: 300, max: 86400 });
+const DIZYJAM_AUTH_FILES_READY = () =>
+  fs.existsSync(DIZYJAM_AUTH_CERT_FILE) && fs.existsSync(DIZYJAM_AUTH_KEY_FILE);
+let dizyJamCredentialStoreReady = false;
+const DIZYJAM_ENABLED = () =>
+  !DIZYJAM_DISABLED &&
+  Boolean(DIZYJAM_HOST) &&
+  DIZYJAM_AUTH_FILES_READY() &&
+  dizyJamCredentialStoreReady;
 const SONOBUS_DOWNLOAD_URL = String(process.env.SONOBUS_DOWNLOAD_URL || 'https://sonobus.net/index.html').trim();
 const JAM_SESSION_EVENT_WINDOW_MS = 60 * 1000;
 const JAM_SESSION_MAX_CREATES_PER_WINDOW = 12;
+
+const dizyJamCredentialStore = new DizyJamCredentialStore({
+  credentialsFile: DIZYJAM_AUTH_CREDS_FILE,
+  ttlSeconds: DIZYJAM_CREDENTIAL_TTL_SECONDS,
+});
+try {
+  // Credentials are intentionally ephemeral. A DizyChat restart invalidates all
+  // previously issued JackTrip passwords instead of leaving stale hub access behind.
+  dizyJamCredentialStore.initialiseEmpty();
+  dizyJamCredentialStoreReady = true;
+} catch (error) {
+  console.error('[DizyJam] Unable to initialise credential store:', error?.message || error);
+}
+const dizyJamCredentialPruneTimer = setInterval(() => {
+  try {
+    dizyJamCredentialStore.pruneExpired();
+  } catch (error) {
+    console.error('[DizyJam] Failed to prune expired credentials:', error?.message || error);
+  }
+}, 60 * 1000);
+dizyJamCredentialPruneTimer.unref?.();
+
+const getDizyJamMissingConfig = () => [
+  !DIZYJAM_HOST ? 'DIZYJAM_HOST' : '',
+  !fs.existsSync(DIZYJAM_AUTH_CERT_FILE) ? 'DIZYJAM_AUTH_CERT_FILE' : '',
+  !fs.existsSync(DIZYJAM_AUTH_KEY_FILE) ? 'DIZYJAM_AUTH_KEY_FILE' : '',
+  !dizyJamCredentialStoreReady ? 'DIZYJAM_AUTH_CREDS_FILE' : '',
+].filter(Boolean);
 
 const SCRYPT_HASH_PREFIX = 'scrypt';
 
@@ -372,11 +424,45 @@ const pushDeviceService = createPushDeviceService({
 });
 const readStateService = createReadStateService({ RoomReadCursorModel: RoomReadCursor });
 const pushTransport = createConfiguredPushTransport();
-const pushCoordinator = createPushCoordinator({
+const nativePushCoordinator = createPushCoordinator({
   pushDeviceService,
   readStateService,
   transport: pushTransport,
 });
+const webPushSubscriptionService = createWebPushSubscriptionService({
+  SubscriptionModel: WebPushSubscription,
+  UserModel: User,
+  logger: console,
+});
+const webPushTransport = createConfiguredWebPushTransport({ logger: console });
+const webPushCoordinator = createWebPushCoordinator({
+  subscriptionService: webPushSubscriptionService,
+  transport: webPushTransport,
+  logger: console,
+});
+const pushCoordinator = {
+  async onMessageStored(message, metadata = {}) {
+    const results = await Promise.allSettled([
+      nativePushCoordinator.onMessageStored(message, metadata),
+      webPushCoordinator.onMessageStored(message, metadata),
+    ]);
+    const combined = { attempted: 0, sent: 0, failed: 0 };
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        combined.failed += 1;
+        console.warn('[Push] coordinator unavailable', {
+          code: String(result.reason?.code || 'unexpected'),
+        });
+        continue;
+      }
+      combined.attempted += Number(result.value?.attempted || 0);
+      combined.sent += Number(result.value?.sent || 0);
+      combined.failed += Number(result.value?.failed || 0);
+    }
+    return combined;
+  },
+  sendRoomClear: (...args) => nativePushCoordinator.sendRoomClear(...args),
+};
 const readStateCoordinator = createReadStateCoordinator({
   readStateService,
   pushCoordinator,
@@ -567,6 +653,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 const pushApiJson = express.json({ limit: '32kb' });
 const PRESENCE_LEASE_MAX_MS = 90_000;
 const PUSH_OBJECT_ID_PATTERN = /^[a-f0-9]{24}$/i;
+const pushTokenFingerprint = (token) => {
+  const clean = String(token || '').trim();
+  return clean ? crypto.createHash('sha256').update(clean).digest('hex').slice(0, 12) : '';
+};
 
 const readAccountSessionTokenFromRequest = (req) => {
   const authorization = String(req.headers.authorization || '');
@@ -630,6 +720,79 @@ const readCursorJson = (cursor) => cursor ? {
   messageTimestamp: cursor.messageTimestamp,
 } : null;
 
+app.get('/api/web-push/config', (_req, res) => {
+  return res.json({
+    enabled: Boolean(webPushTransport.enabled),
+    publicKey: webPushTransport.enabled ? webPushTransport.publicKey : '',
+  });
+});
+
+app.post('/api/web-push/register', pushApiJson, requireHttpAccount, async (req, res) => {
+  try {
+    await webPushSubscriptionService.registerSubscription({
+      canonicalUsername: req.accountPrincipal.canonicalUsername,
+      subscription: req.body?.subscription,
+      deviceLabel: req.body?.deviceLabel,
+    });
+    return res.json({ ok: true });
+  } catch (error) {
+    console.warn('[WebPush] subscription registration failed', {
+      code: String(error?.code || 'unexpected'),
+    });
+    return res.status(400).json({ ok: false, code: String(error?.code || 'WEB_PUSH_REGISTER_FAILED') });
+  }
+});
+
+app.post('/api/web-push/room', pushApiJson, requireHttpAccount, async (req, res) => {
+  try {
+    await webPushSubscriptionService.setRoomSubscription({
+      canonicalUsername: req.accountPrincipal.canonicalUsername,
+      endpoint: req.body?.endpoint,
+      room: req.body?.room,
+      subscribed: req.body?.subscribed !== false,
+    });
+    return res.json({ ok: true });
+  } catch (error) {
+    console.warn('[WebPush] room subscription update failed', {
+      code: String(error?.code || 'unexpected'),
+    });
+    return res.status(400).json({ ok: false, code: String(error?.code || 'WEB_PUSH_ROOM_FAILED') });
+  }
+});
+
+app.post('/api/web-push/presence', pushApiJson, requireHttpAccount, async (req, res) => {
+  try {
+    const expiresAt = await webPushSubscriptionService.setPresence({
+      canonicalUsername: req.accountPrincipal.canonicalUsername,
+      endpoint: req.body?.endpoint,
+      interactive: req.body?.interactive === true,
+      ttlMs: req.body?.ttlMs,
+    });
+    return res.json({ ok: true, expiresAt });
+  } catch (error) {
+    console.warn('[WebPush] presence update failed', {
+      code: String(error?.code || 'unexpected'),
+    });
+    return res.status(400).json({ ok: false, code: String(error?.code || 'WEB_PUSH_PRESENCE_FAILED') });
+  }
+});
+
+app.post('/api/web-push/unregister', pushApiJson, requireHttpAccount, async (req, res) => {
+  try {
+    await webPushSubscriptionService.disableSubscription({
+      canonicalUsername: req.accountPrincipal.canonicalUsername,
+      endpoint: req.body?.endpoint,
+      reason: 'signed-out',
+    });
+    return res.json({ ok: true });
+  } catch (error) {
+    console.warn('[WebPush] unregister failed', {
+      code: String(error?.code || 'unexpected'),
+    });
+    return res.status(400).json({ ok: false, code: String(error?.code || 'WEB_PUSH_UNREGISTER_FAILED') });
+  }
+});
+
 app.post('/api/mobile/push/register', pushApiJson, requireHttpMobileAccount, async (req, res) => {
   try {
     await pushDeviceService.registerDevice({
@@ -637,7 +800,11 @@ app.post('/api/mobile/push/register', pushApiJson, requireHttpMobileAccount, asy
       canonicalUsername: req.accountPrincipal.canonicalUsername,
       deviceId: req.body?.deviceId,
       fcmToken: req.body?.fcmToken,
+      platform: req.body?.platform,
       deviceLabel: req.body?.deviceLabel,
+    });
+    console.info('[Push] device registered', {
+      tokenFingerprint: pushTokenFingerprint(req.body?.fcmToken),
     });
     return res.json({ ok: true });
   } catch (error) {
@@ -1940,39 +2107,56 @@ const safeJamSlug = (value) => {
 
 const getJamProviders = () => [
   {
-    id: 'jacktrip',
-    name: 'JackTrip',
-    badge: 'Free test available',
-    bestFor: 'Highest-quality low-latency musician sessions with the JackTrip desktop app or browser studio.',
-    mode: JACKTRIP_STUDIO_INVITE_URL ? 'configured-link' : 'create-studio',
-    freeTier: true,
-    maxFreeMusicians: 5,
-    freeSessionMinutes: 30,
-    requiresInstallForBestAudio: true,
-    supportsBrowserJoin: true,
-    supportsAsioViaNativeApp: true,
-    url: JACKTRIP_STUDIO_INVITE_URL || JACKTRIP_STUDIO_CREATE_URL,
+    id: 'music-call',
+    name: 'Music Call',
+    badge: 'Built into DizyChat',
+    bestFor: 'Music-quality calls, lessons, Rocksmith, camera and screen sharing with no extra app.',
+    mode: 'livekit-music-call',
+    available: ENABLE_VOICE_CALLS && hasLivekitCredentials(),
+    requiresInstallForBestAudio: false,
     setupTips: [
-      'Create or open a free JackTrip Studio, then share its invite with the room.',
-      'Use the JackTrip desktop app for the best latency and audio-interface support.',
-      'Use wired Ethernet and headphones; avoid Wi-Fi and speakers for live instruments.',
+      'Starts the existing DizyChat call with Music mode enabled.',
+      'Use this for talking, lessons, screen sharing and casual playing.',
+      'For tightly synchronized playing, use DizyJam Low Latency instead.',
+    ],
+  },
+  {
+    id: 'dizyjam',
+    name: 'DizyJam Low Latency',
+    badge: DIZYJAM_ENABLED() ? 'Self-hosted · authenticated' : 'Server setup required',
+    bestFor: 'Lowest-latency instrument sessions using our private JackTrip hub while DizyChat handles camera, chat and screen sharing.',
+    mode: 'self-hosted-jacktrip',
+    available: DIZYJAM_ENABLED(),
+    host: DIZYJAM_ENABLED() ? DIZYJAM_HOST : '',
+    tcpPort: DIZYJAM_TCP_PORT,
+    udpBasePort: DIZYJAM_UDP_BASE_PORT,
+    udpEndPort: DIZYJAM_UDP_END_PORT,
+    sampleRate: DIZYJAM_SAMPLE_RATE,
+    bufferSize: DIZYJAM_BUFFER_SIZE,
+    requiresInstallForBestAudio: true,
+    supportsAsioViaNativeApp: true,
+    clientInstallUrl: DIZYJAM_CLIENT_INSTALL_URL,
+    setupTips: [
+      'DizyChat guides each musician through installing JackTrip and connecting to this room.',
+      'Connection credentials are temporary and tied to the current DizyChat room session.',
+      'Use your own interface, microphone, keyboard or DAW audio routing.',
     ],
   },
   {
     id: 'sonobus',
     name: 'SonoBus',
-    badge: 'Free fallback',
-    bestFor: 'Open-source peer-to-peer audio groups with ASIO support on Windows and DAW plugin options.',
+    badge: 'Optional fallback',
+    bestFor: 'Free peer-to-peer fallback when you do not want to use the DizyJam hub.',
     mode: 'external-app',
-    freeTier: true,
+    available: true,
     requiresInstallForBestAudio: true,
     supportsBrowserJoin: false,
     supportsAsioViaNativeApp: true,
     url: SONOBUS_DOWNLOAD_URL,
     setupTips: [
-      'Install SonoBus, choose the generated group name, and optionally set the generated password.',
-      'SonoBus does not use echo cancellation, so everyone should use headphones.',
-      'SonoBus notes that its audio/data communication is not currently encrypted.',
+      'Install SonoBus, choose the generated group name, and optionally use the generated password.',
+      'Use headphones and wired Ethernet for live instruments.',
+      'SonoBus remains a fallback; DizyJam is the primary low-latency path.',
     ],
   },
 ];
@@ -1981,7 +2165,20 @@ app.get('/api/jam/status', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json({
     enabled: true,
-    recommendedProvider: 'jacktrip',
+    recommendedProvider: DIZYJAM_ENABLED() ? 'dizyjam' : 'music-call',
+    dizyJam: {
+      configured: DIZYJAM_ENABLED(),
+      host: DIZYJAM_ENABLED() ? DIZYJAM_HOST : '',
+      tcpPort: DIZYJAM_TCP_PORT,
+      udpBasePort: DIZYJAM_UDP_BASE_PORT,
+      udpEndPort: DIZYJAM_UDP_END_PORT,
+      sampleRate: DIZYJAM_SAMPLE_RATE,
+      bufferSize: DIZYJAM_BUFFER_SIZE,
+      authRequired: true,
+      credentialTtlSeconds: DIZYJAM_CREDENTIAL_TTL_SECONDS,
+      missingRequiredEnv: getDizyJamMissingConfig(),
+      oneSharedMix: true,
+    },
     providers: getJamProviders(),
   });
 });
@@ -1994,10 +2191,21 @@ app.post('/api/jam/session', express.json(), (req, res) => {
   }
 
   const providers = getJamProviders();
-  const providerId = String(req.body?.provider || 'jacktrip').trim().toLowerCase();
+  const providerId = String(req.body?.provider || 'music-call').trim().toLowerCase();
   const provider = providers.find((entry) => entry.id === providerId);
   if (!provider) {
     res.status(400).json({ error: 'Unsupported jam provider.', providers });
+    return;
+  }
+  if (provider.available === false) {
+    const missing = provider.id === 'dizyjam' && !DIZYJAM_HOST ? ['DIZYJAM_HOST'] : [];
+    res.status(503).json({
+      error: provider.id === 'dizyjam'
+        ? 'DizyJam is not configured on this server yet.'
+        : 'This jam option is not currently available.',
+      provider,
+      missingRequiredEnv: missing,
+    });
     return;
   }
 
@@ -2013,27 +2221,30 @@ app.post('/api/jam/session', express.json(), (req, res) => {
     sessionId,
     title: `${room} Jam`,
     url: provider.url,
-    freeTier: provider.freeTier,
     badge: provider.badge,
     mode: provider.mode,
     setupTips: provider.setupTips,
   };
 
-  if (provider.id === 'jacktrip') {
-    session.freeSessionMinutes = provider.freeSessionMinutes;
-    session.maxFreeMusicians = provider.maxFreeMusicians;
+  if (provider.id === 'music-call') {
     session.instructions = [
-      'JackTrip has a free hosted-studio test path: up to 5 musicians for 30 minutes.',
-      'Open JackTrip, create/start a studio, then paste the JackTrip studio invite back into this DizyChat room.',
-      'For the best ASIO/audio-interface path, join through the JackTrip desktop app instead of only the browser.',
+      'DizyChat will open the existing Live Call panel with Music mode selected.',
+      'Use this for lessons, Rocksmith, screen sharing, talking and casual playing.',
+      'For the tightest instrument timing, switch to DizyJam Low Latency.',
     ];
+  } else if (provider.id === 'dizyjam') {
+    res.status(403).json({
+      error: 'DizyJam credentials are issued only to an admitted DizyChat room session.',
+      code: 'DIZYJAM_SOCKET_AUTH_REQUIRED',
+    });
+    return;
   } else if (provider.id === 'sonobus') {
     session.groupName = sessionId;
     session.password = password;
     session.instructions = [
       `Open SonoBus and join group ${sessionId}.`,
       `Use password ${password} if you want a private group.`,
-      'Use headphones and wired Ethernet; SonoBus does not currently encrypt audio/data communication.',
+      'Use headphones and wired Ethernet. SonoBus remains the optional peer-to-peer fallback.',
     ];
   }
 
@@ -2157,6 +2368,7 @@ app.post('/api/calls/token', express.json(), (req, res) => {
   const room = normaliseRoomName(req.body?.room);
   const username = normaliseUsername(req.body?.username, '');
   const musicMode = req.body?.musicMode === true;
+  const callSessionId = String(req.body?.callSessionId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48);
   if (!room || !username) {
     res.status(400).json({ error: 'room and username are required.' });
     return;
@@ -2165,7 +2377,7 @@ app.post('/api/calls/token', express.json(), (req, res) => {
   try {
     const token = createLivekitToken({
       room,
-      username,
+      username: callSessionId ? `${username}--${callSessionId}` : username,
       metadata: { room, username, issuedAt: new Date().toISOString(), supportsAudio: true, supportsVideo: true, musicMode },
     });
     const active = getActiveCallSnapshot(room);
@@ -2423,6 +2635,12 @@ const removeSocketFromRoom = (socket, targetRoom) => {
   const room = normaliseRoomName(targetRoom || socket.currentRoom);
   if (!room) return;
 
+  try {
+    dizyJamCredentialStore.revokeSocket(socket.id);
+  } catch (error) {
+    console.error('[DizyJam] Failed to revoke room credential:', error?.message || error);
+  }
+
   const members = roomMembers.get(room);
   if (members) {
     members.delete(socket.id);
@@ -2656,7 +2874,7 @@ const createLivekitToken = ({ room, username, metadata }) => {
       roomJoin: true,
       room,
       canPublish: true,
-      canPublishSources: ['microphone', 'camera'],
+      canPublishSources: ['microphone', 'camera', 'screen_share', 'screen_share_audio'],
       canSubscribe: true,
       canPublishData: true,
     },
@@ -2844,6 +3062,11 @@ io.on('connection', socket => {
   socket.on('account logout', async (payload = {}, ack) => {
     try {
       const mobileSessionId = socket.mobileSessionId;
+      try {
+        dizyJamCredentialStore.revokeSocket(socket.id);
+      } catch (error) {
+        console.error('[DizyJam] Failed to revoke logout credential:', error?.message || error);
+      }
       if (socket.accountSessionToken) {
         await revokeAccountSessionToken(socket.accountSessionToken);
       }
@@ -3060,6 +3283,140 @@ io.on('connection', socket => {
     }
     removeSocketFromRoom(socket, target);
     emitRoomListUpdate();
+  });
+
+  socket.on('jam:dizyjam-credentials', (payload = {}, ack) => {
+    const respond = (body) => {
+      if (typeof ack === 'function') ack(body);
+    };
+
+    try {
+      if (!DIZYJAM_ENABLED()) {
+        respond({
+          ok: false,
+          error: 'DizyJam is not fully configured on this server yet.',
+          code: 'DIZYJAM_NOT_CONFIGURED',
+          missingRequiredEnv: getDizyJamMissingConfig(),
+        });
+        return;
+      }
+
+      const roomName = normaliseRoomName(socket.currentRoom);
+      const requestedRoom = normaliseRoomName(payload?.room);
+      if (!roomName || (requestedRoom && requestedRoom !== roomName)) {
+        respond({
+          ok: false,
+          error: 'Join the DizyChat room before requesting DizyJam access.',
+          code: 'DIZYJAM_ROOM_REQUIRED',
+        });
+        return;
+      }
+
+      const displayName = normaliseUsername(socket.username, '');
+      const identityKind = String(socket.identityKind || socket.principal?.kind || '');
+      if (!displayName || !['account', 'guest'].includes(identityKind)) {
+        respond({
+          ok: false,
+          error: 'A registered DizyChat account or admitted guest identity is required.',
+          code: 'DIZYJAM_IDENTITY_REQUIRED',
+        });
+        return;
+      }
+
+      if (isUserBlocked(roomName, displayName)) {
+        respond({
+          ok: false,
+          error: 'DizyJam access is unavailable while you are blocked in this room.',
+          code: 'DIZYJAM_BLOCKED',
+        });
+        return;
+      }
+
+      if (!canCreateJamSession(socket.id)) {
+        respond({
+          ok: false,
+          error: 'Too many DizyJam credential requests. Please wait a minute and try again.',
+          code: 'DIZYJAM_RATE_LIMITED',
+        });
+        return;
+      }
+
+      const activeRooms = dizyJamCredentialStore.getActiveRooms();
+      if (activeRooms.some((activeRoom) => activeRoom !== roomName)) {
+        respond({
+          ok: false,
+          error: 'The low-latency DizyJam hub is currently in use by another DizyChat room.',
+          code: 'DIZYJAM_BUSY',
+        });
+        return;
+      }
+
+      const credential = dizyJamCredentialStore.issue({
+        socketId: socket.id,
+        displayName,
+        room: roomName,
+        identityKind,
+      });
+
+      const command = [
+        'jacktrip',
+        '-C', DIZYJAM_HOST,
+        '-A',
+        '--username', credential.username,
+        '--password',
+        '-q', 'auto',
+        '--bufstrategy', '4',
+      ].join(' ');
+
+      logSecurityEvent('dizyjam_credential_issued', {
+        room: roomName,
+        username: displayName,
+        identityKind,
+        socketId: socket.id,
+        expiresAt: credential.expiresAt,
+      });
+
+      respond({
+        ok: true,
+        session: {
+          provider: 'dizyjam',
+          providerName: 'DizyJam Low Latency',
+          room: roomName,
+          title: `${roomName} Jam`,
+          badge: 'Self-hosted · authenticated',
+          mode: 'self-hosted-jacktrip',
+          host: DIZYJAM_HOST,
+          tcpPort: DIZYJAM_TCP_PORT,
+          udpBasePort: DIZYJAM_UDP_BASE_PORT,
+          udpEndPort: DIZYJAM_UDP_END_PORT,
+          sampleRate: DIZYJAM_SAMPLE_RATE,
+          bufferSize: DIZYJAM_BUFFER_SIZE,
+          clientInstallUrl: DIZYJAM_CLIENT_INSTALL_URL,
+          authRequired: true,
+          username: credential.username,
+          password: credential.password,
+          displayName: credential.displayName,
+          identityKind: credential.identityKind,
+          expiresAt: credential.expiresAt,
+          clientCommand: command,
+          oneSharedMix: true,
+          instructions: [
+            'These JackTrip credentials were minted for your current DizyChat session and are not derived from your public username.',
+            'Connect in authenticated Hub Client mode; the credential is removed when you leave/sign out and also expires automatically.',
+            `The DizyJam server runs at ${DIZYJAM_SAMPLE_RATE} Hz with a ${DIZYJAM_BUFFER_SIZE}-frame JACK buffer.`,
+            'Keep DizyChat open for camera, chat and screen sharing. Mute DizyChat call audio while actively jamming to avoid doubled/echoed instruments.',
+            'Use wired Ethernet, headphones and an ASIO interface on Windows where possible.',
+          ],
+        },
+      });
+    } catch (error) {
+      console.error('[DizyJam] Credential issue failed:', error?.message || error);
+      respond({
+        ok: false,
+        error: 'Unable to issue DizyJam credentials right now.',
+        code: 'DIZYJAM_CREDENTIAL_FAILURE',
+      });
+    }
   });
 
   socket.on('request rooms', () => {
@@ -3691,6 +4048,11 @@ io.on('connection', socket => {
   // ----- Disconnect -----
   socket.on('disconnect', () => {
     console.log('[Socket] Disconnected', socket.id);
+    try {
+      dizyJamCredentialStore.revokeSocket(socket.id);
+    } catch (error) {
+      console.error('[DizyJam] Failed to revoke disconnected credential:', error?.message || error);
+    }
     const lastRoom = socket.currentRoom;
     if (lastRoom) {
       removeSocketFromRoom(socket, lastRoom);

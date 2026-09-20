@@ -37,6 +37,8 @@ public class DizyPushPlugin extends Plugin {
     @Override
     public void load() {
         activePlugin = new WeakReference<>(this);
+        DizyPushTrace.identity(getContext());
+        FirebaseMessaging.getInstance().setAutoInitEnabled(true);
     }
 
     @PluginMethod
@@ -61,23 +63,46 @@ public class DizyPushPlugin extends Plugin {
         }
 
         try {
-            FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
-                if (!task.isSuccessful() || task.getResult() == null || task.getResult().trim().isEmpty()) {
-                    Exception error = task.getException();
-                    if (error != null) call.reject("Unable to obtain FCM token", error);
-                    else call.reject("Unable to obtain FCM token");
-                    return;
-                }
-                String fcmToken = task.getResult().trim();
-                DizyPushStore.setFcmToken(getContext(), fcmToken);
-                JSObject result = new JSObject();
-                result.put("deviceId", deviceId);
-                result.put("fcmToken", fcmToken);
-                call.resolve(result);
-            });
+            FirebaseMessaging messaging = FirebaseMessaging.getInstance();
+            if (DizyPushStore.needsFcmTokenRefreshV2(getContext())) {
+                messaging.deleteToken().addOnCompleteListener(deleteTask -> {
+                    if (!deleteTask.isSuccessful()) {
+                        Exception error = deleteTask.getException();
+                        DizyPushTrace.failure("deleteToken", error);
+                        if (error != null) call.reject("Unable to refresh FCM token", error);
+                        else call.reject("Unable to refresh FCM token");
+                        return;
+                    }
+                    DizyPushStore.setFcmToken(getContext(), "");
+                    DizyPushStore.markFcmTokenRefreshV2(getContext());
+                    resolveRegistrationToken(call, deviceId, messaging);
+                });
+                return;
+            }
+            resolveRegistrationToken(call, deviceId, messaging);
         } catch (RuntimeException error) {
+            DizyPushTrace.failure("getRegistration", error);
             call.reject("Firebase messaging is not configured", error);
         }
+    }
+
+    private void resolveRegistrationToken(PluginCall call, String deviceId, FirebaseMessaging messaging) {
+        messaging.getToken().addOnCompleteListener(task -> {
+            if (!task.isSuccessful() || task.getResult() == null || task.getResult().trim().isEmpty()) {
+                Exception error = task.getException();
+                DizyPushTrace.failure("getToken", error);
+                if (error != null) call.reject("Unable to obtain FCM token", error);
+                else call.reject("Unable to obtain FCM token");
+                return;
+            }
+            String fcmToken = task.getResult().trim();
+            DizyPushTrace.token("getToken-success", fcmToken);
+            DizyPushStore.setFcmToken(getContext(), fcmToken);
+            JSObject result = new JSObject();
+            result.put("deviceId", deviceId);
+            result.put("fcmToken", fcmToken);
+            call.resolve(result);
+        });
     }
 
     @PluginMethod
@@ -181,7 +206,13 @@ public class DizyPushPlugin extends Plugin {
     public static void handleIntent(Context context, Intent intent) {
         if (context == null || intent == null) return;
         String room = intent.getStringExtra(EXTRA_ROOM);
+        if (room == null || room.trim().isEmpty()) {
+            room = intent.getStringExtra("room");
+        }
         String messageId = intent.getStringExtra(EXTRA_MESSAGE_ID);
+        if (messageId == null || messageId.trim().isEmpty()) {
+            messageId = intent.getStringExtra("messageId");
+        }
         if (room == null || room.trim().isEmpty()) return;
         DizyPushStore.setLaunchRoute(context, room, messageId == null ? "" : messageId);
         DizyPushPlugin plugin = activePlugin.get();
