@@ -57,7 +57,7 @@ External providers are deliberately scoped integrations rather than the foundati
 | **Media safety** | Private upload quarantine, mandatory clean local ClamAV verdict before promotion, FFmpeg normalization and native-aware media URLs |
 | **Notifications** | Browser sounds, VAPID Web Push, Android FCM actions, and the native iOS Firebase/APNs path |
 | **Live communication** | Self-hosted LiveKit calls, voice/webcam, screen sharing, Normal/Music audio modes, plus optional JackTrip/SonoBus launchers |
-| **Community extras** | GIPHY, custom emoji, meme soundboards, Psybin Radio, inline previews, Rumble companion tools and Watch2Gether |
+| **Community extras** | GIPHY, custom emoji, local soundboards plus live 101Soundboards search/preview/send, Psybin Radio, inline previews, Rumble companion tools and Watch2Gether |
 
 > **UI verification:** relevant pull requests run the Self-Host browser suite, which captures current desktop/mobile screenshots and a Playwright video as GitHub Actions artifacts. See the [Self-Host CI workflow](https://github.com/DizygoticCode/dizychat-server/actions/workflows/self-host-ui-test.yml).
 
@@ -82,7 +82,7 @@ External providers are deliberately scoped integrations rather than the foundati
 - Voice messages are normalized for broad browser/mobile playback compatibility.
 - Custom emoji/GIF assets, uploaded images/audio/video and soundboard audio work in normal browsers and across the native Capacitor runtime boundaries.
 - The GIPHY picker is proxied through DizyChat so the GIPHY key stays server-side.
-- The searchable meme soundboard is backed by JSON catalogs under `data/soundboards` and `/soundboard-clips`.
+- The soundboard picker has **Local** and **Web** modes: local clips come from JSON catalogs under `data/soundboards` via `/soundboard-clips`, while Web mode searches 101Soundboards from inside DizyChat, lets users browse matching boards, preview clips and send resolved clips directly into the current chat. Owner accounts can also import one clip or a whole board into the local catalog.
 
 ### Notifications
 - Browser users can enable lightweight new-message sounds, with the preference stored locally.
@@ -354,7 +354,9 @@ Accepts a provider/room request and returns launch instructions for JackTrip or 
 
 ## Soundboard catalog maintenance
 
-The signed-in **owner** can manage public 101Soundboards boards directly from the existing soundboard picker.
+The picker exposes separate **Local** and **Web** sources. **Web** mode makes the public 101Soundboards catalog directly searchable from inside DizyChat: enter at least three characters, browse matching boards, preview individual clips, and send a resolved clip straight into the current room without first importing it.
+
+Search/browse/preview/send are part of the normal soundboard UI. The signed-in **owner** additionally gets controls to import a single clip or a whole public 101Soundboards board into DizyChat's local catalog.
 
 ### Import a new board
 
