@@ -81,8 +81,9 @@ const normalizeSoundboardAudio = async ({
     throw new TypeError('Soundboard source audio buffer is required');
   }
 
-  const destination = path.resolve(String(targetPath || '').trim());
-  if (!destination) throw new TypeError('Soundboard target path is required');
+  const rawTarget = String(targetPath || '').trim();
+  if (!rawTarget) throw new TypeError('Soundboard target path is required');
+  const destination = path.resolve(rawTarget);
 
   await fsp.mkdir(path.dirname(destination), { recursive: true });
   const token = crypto.randomUUID();
@@ -99,7 +100,6 @@ const normalizeSoundboardAudio = async ({
       throw error;
     }
 
-    await removeIfPresent(destination);
     await fsp.rename(outputPath, destination);
     return {
       path: destination,
