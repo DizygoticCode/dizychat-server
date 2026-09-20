@@ -139,6 +139,7 @@ function syncLandingJoinFlow() {
   const guestName = String(window.__dizyLandingGuestName || "").trim();
   const guestReady = !accountReady && Boolean(guestName);
   const identityReady = accountReady || guestReady;
+  const roomReady = Boolean(String(roomInput?.value || "").trim());
 
   if (accountReady) window.__dizyLandingGuestName = "";
 
@@ -149,7 +150,7 @@ function syncLandingJoinFlow() {
   }
   if (roomInput) roomInput.disabled = !identityReady;
   if (passwordInput) passwordInput.disabled = !identityReady;
-  if (joinBtn) joinBtn.disabled = !identityReady || accountState.busy;
+  if (joinBtn) joinBtn.disabled = !identityReady || !roomReady || accountState.busy;
   if (roomStepLockCopy) {
     roomStepLockCopy.textContent = accountReady
       ? `Signed in as ${accountState.identity.username}. Now choose or create a room.`
@@ -5707,6 +5708,9 @@ if (guestContinueBtn) {
 }
 if (joinBtn) {
   joinBtn.addEventListener("click", emitJoinRequest);
+}
+if (roomInput) {
+  roomInput.addEventListener("input", syncLandingJoinFlow);
 }
 if (registeredJoinBtn) {
   registeredJoinBtn.addEventListener("click", emitRegisteredJoinRequest);
