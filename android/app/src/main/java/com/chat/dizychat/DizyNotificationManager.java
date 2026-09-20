@@ -18,7 +18,7 @@ import androidx.core.content.ContextCompat;
 
 final class DizyNotificationManager {
     private static final String TAG = "DizyPushTrace";
-    static final String CHANNEL_ID = "dizychat_messages_v1";
+    static final String CHANNEL_ID = "dizychat_messages_v2";
     static final String EXTRA_NOTIFICATION_ID = "dizy_notification_id";
     static final String REMOTE_INPUT_KEY = "dizy_reply_text";
 
@@ -233,6 +233,8 @@ final class DizyNotificationManager {
                 NotificationManager.IMPORTANCE_HIGH
         );
         channel.setDescription("Messages from subscribed DizyChat rooms");
+        channel.enableVibration(true);
+        channel.setVibrationPattern(new long[]{0, 180, 120, 180});
         manager.createNotificationChannel(channel);
         Log.i(TAG, "ensureChannel: created " + CHANNEL_ID);
     }
