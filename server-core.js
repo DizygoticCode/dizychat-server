@@ -37,7 +37,11 @@ const { createMobileSessionService } = require('./src/auth/mobile-session-servic
 const { requireModerator, requireOwner } = require('./src/auth/authorization');
 const { createRoomPasswordService } = require('./src/rooms/room-password-service');
 const soundboardStore = require('./src/utils/soundboard');
-const { createSoundboardImporter, parseBoardUrl: parseSoundboardImportUrl } = require('./src/soundboards/board-importer');
+const {
+  createSoundboardImporter,
+  parseBoardUrl: parseSoundboardImportUrl,
+  parseSoundPageUrl: parseSoundboardClipUrl,
+} = require('./src/soundboards/board-importer');
 const { scanFileWithClamAv } = require('./src/uploads/clamav-scanner');
 const { normalizeVoiceMessageUpload } = require('./src/uploads/voice-message-normalizer');
 const { DizyJamCredentialStore } = require('./src/jam/dizyjam-credentials');
@@ -67,6 +71,7 @@ const readSoundboardImportJob = (jobId) => {
     status: job.status,
     boardUrl: job.boardUrl,
     boardId: job.boardId,
+    soundPageUrl: job.soundPageUrl || '',
     progress: job.progress,
     result: job.result || null,
     error: job.error || '',
@@ -107,14 +112,23 @@ const readExisting101SoundboardTargets = async () => {
   return targets;
 };
 
-const startSoundboardImportJob = ({ boardUrl, requestedBy, replaceExisting = false }) => {
+const startSoundboardImportJob = ({
+  boardUrl,
+  soundPageUrl = '',
+  requestedBy,
+  replaceExisting = false,
+}) => {
   trimSoundboardImportJobs();
   const parsed = parseSoundboardImportUrl(boardUrl);
+  const parsedSound = soundPageUrl ? parseSoundboardClipUrl(soundPageUrl) : null;
 
   if (activeSoundboardImportJobId) {
     const active = soundboardImportJobs.get(activeSoundboardImportJobId);
     if (active && ['queued', 'running'].includes(active.status)) {
-      if (active.boardId === parsed.boardId) return readSoundboardImportJob(active.id);
+      if (
+        active.boardId === parsed.boardId
+        && String(active.soundPageUrl || '') === String(parsedSound?.url || '')
+      ) return readSoundboardImportJob(active.id);
       const error = new Error('Another soundboard import is already running.');
       error.code = 'SOUNDBOARD_IMPORT_BUSY';
       throw error;
@@ -128,6 +142,7 @@ const startSoundboardImportJob = ({ boardUrl, requestedBy, replaceExisting = fal
     status: 'queued',
     boardUrl: parsed.url,
     boardId: parsed.boardId,
+    soundPageUrl: parsedSound?.url || '',
     requestedBy: String(requestedBy || ''),
     progress: { phase: 'queued', message: 'Import queued…', current: 0, total: 0 },
     result: null,
@@ -146,6 +161,7 @@ const startSoundboardImportJob = ({ boardUrl, requestedBy, replaceExisting = fal
       const result = await soundboardImporter.importBoard({
         boardUrl: parsed.url,
         replaceExisting,
+        onlySoundPageUrl: parsedSound?.url || '',
         onProgress: async (progress) => {
           job.progress = {
             phase: String(progress?.phase || 'running'),
@@ -2338,6 +2354,82 @@ app.post('/api/soundboards/import', soundboardImportJson, requireHttpAccount, re
       ok: false,
       code,
       error: String(error?.message || 'Unable to start soundboard import.'),
+    });
+  }
+});
+
+app.post('/api/soundboards/import-clip', soundboardImportJson, requireHttpAccount, requireHttpOwner, (req, res) => {
+  try {
+    const job = startSoundboardImportJob({
+      boardUrl: req.body?.boardUrl,
+      soundPageUrl: req.body?.soundPageUrl,
+      requestedBy: req.accountPrincipal?.canonicalUsername || req.accountPrincipal?.username,
+    });
+    return res.status(job.status === 'queued' ? 202 : 200).json({ ok: true, job });
+  } catch (error) {
+    const code = String(error?.code || 'SOUNDBOARD_CLIP_IMPORT_INVALID');
+    const status = code === 'SOUNDBOARD_IMPORT_BUSY' ? 409 : 400;
+    return res.status(status).json({
+      ok: false,
+      code,
+      error: String(error?.message || 'Unable to start soundboard clip import.'),
+    });
+  }
+});
+
+app.get('/api/soundboards/live-search', requireHttpAccount, requireHttpOwner, async (req, res) => {
+  try {
+    const result = await soundboardImporter.searchBoards({
+      query: typeof req.query?.q === 'string' ? req.query.q : '',
+      limit: 24,
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ ok: true, ...result });
+  } catch (error) {
+    const code = String(error?.code || 'SOUNDBOARD_LIVE_SEARCH_FAILED');
+    const status = code === 'BROWSER_APPROVAL_REQUIRED' ? 409 : 502;
+    return res.status(status).json({
+      ok: false,
+      code,
+      error: String(error?.message || '101Soundboards live search failed.'),
+      results: [],
+    });
+  }
+});
+
+app.get('/api/soundboards/live-board', requireHttpAccount, requireHttpOwner, async (req, res) => {
+  try {
+    const result = await soundboardImporter.browseBoard({
+      boardUrl: typeof req.query?.url === 'string' ? req.query.url : '',
+      limit: 100,
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ ok: true, board: result });
+  } catch (error) {
+    const code = String(error?.code || 'SOUNDBOARD_LIVE_BOARD_FAILED');
+    const status = code === 'BROWSER_APPROVAL_REQUIRED' ? 409 : 502;
+    return res.status(status).json({
+      ok: false,
+      code,
+      error: String(error?.message || 'Could not browse that 101Soundboards board.'),
+    });
+  }
+});
+
+app.get('/api/soundboards/live-clip', requireHttpAccount, requireHttpOwner, async (req, res) => {
+  try {
+    const result = await soundboardImporter.resolveClip({
+      soundPageUrl: typeof req.query?.url === 'string' ? req.query.url : '',
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ ok: true, clip: result });
+  } catch (error) {
+    const code = String(error?.code || 'SOUNDBOARD_LIVE_CLIP_FAILED');
+    const status = code === 'BROWSER_APPROVAL_REQUIRED' ? 409 : 502;
+    return res.status(status).json({
+      ok: false,
+      code,
+      error: String(error?.message || 'Could not preview that 101Soundboards clip.'),
     });
   }
 });
