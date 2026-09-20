@@ -23,7 +23,7 @@ test('account credentials keep standard autofill semantics while room and guest 
   assert.match(html, /<input(?=[^>]*id="account-username")(?=[^>]*name="username")(?=[^>]*autocomplete="username")[^>]*>/);
   assert.match(html, /<input(?=[^>]*id="account-password")(?=[^>]*name="password")(?=[^>]*autocomplete="current-password")[^>]*>/);
 
-  const roomPassword = html.match(/<input[sS]*?id="room-password"[sS]*?/>/)?.[0] || '';
+  const roomPassword = html.match(/<input(?=[^>]*id="room-password")[^>]*>/)?.[0] || '';
   assert.match(roomPassword, /name="room-access-password"/);
   assert.match(roomPassword, /autocomplete="off"/);
   assert.match(roomPassword, /data-1p-ignore/);
@@ -31,7 +31,7 @@ test('account credentials keep standard autofill semantics while room and guest 
   assert.match(roomPassword, /data-bwignore="true"/);
   assert.doesNotMatch(roomPassword, /autocomplete="current-password"/);
 
-  const guest = html.match(/<input[sS]*?id="guest-username"[sS]*?/>/)?.[0] || '';
+  const guest = html.match(/<input(?=[^>]*id="guest-username")[^>]*>/)?.[0] || '';
   assert.match(guest, /name="guest-display-name"/);
   assert.match(guest, /autocomplete="off"/);
   assert.match(guest, /data-1p-ignore/);
