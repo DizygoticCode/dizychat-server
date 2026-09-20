@@ -58,11 +58,11 @@ test('standalone CSS protects iPhone safe areas and update/offline UI', () => {
 test('long Home Screen suspension performs a clean chat reconnect without a false disconnect warning', () => {
   const chat = read('public/chat.js');
 
-  assert.match(chat, /let pwaResumeReconnect = false;/);
+  assert.match(chat, /window\.__dizyPwaResumeReconnect/);
   assert.match(chat, /addEventListener\?\.\("dizychat:pwa-resume"/);
   assert.match(chat, /detail\.reconnectRecommended/);
   assert.match(chat, /if \(socket\.connected\) socket\.disconnect\(\);\s*socket\.connect\(\);/s);
-  assert.match(chat, /if \(!pwaResumeReconnect\)\s*\{\s*showToast\("Disconnected — attempting to reconnect…"/s);
+  assert.match(chat, /if \(window\.__dizyPwaResumeReconnect !== true\)\s*\{\s*showToast\("Disconnected — attempting to reconnect…"/s);
 });
 
 test('Web Push reuses the standalone worker and still labels Home Screen subscriptions', () => {
