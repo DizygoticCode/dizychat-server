@@ -47,3 +47,14 @@ test('login inputs have visible labels and staged UI styles', () => {
   assert.match(css, /\.room-entry-card\.is-unlocked\s*\{[^}]*border-color:/s);
   assert.match(css, /\.auth-entry-card\.is-selected\s*\{/);
 });
+
+test('room join action stays pill-shaped and enables only for a room name', () => {
+  const js = fs.readFileSync(path.join(root, 'public', 'chat.js'), 'utf8');
+
+  assert.match(js, /const roomReady = Boolean\(String\(roomInput\?\.value \|\| ""\)\.trim\(\)\);/);
+  assert.match(js, /joinBtn\.disabled = !identityReady \|\| !roomReady \|\| accountState\.busy;/);
+  assert.match(js, /roomInput\.addEventListener\("input", syncLandingJoinFlow\);/);
+
+  assert.match(css, /\.room-join-btn\s*\{[^}]*border-radius:\s*var\(--radius\);[^}]*background:\s*var\(--accent\);/s);
+  assert.match(css, /\.room-join-btn:disabled\s*\{[^}]*background:\s*color-mix\([^}]*cursor:\s*not-allowed;[^}]*opacity:\s*1;/s);
+});
