@@ -3155,6 +3155,8 @@ const canSendCallEvent = (socketId) => {
 
 const buildCallId = () => crypto.randomBytes(8).toString('hex');
 const buildWatchPartyId = () => crypto.randomBytes(8).toString('hex');
+const normaliseCallActivityMode = (value) =>
+  String(value || '').trim().toLowerCase() === 'jam' ? 'jam' : 'voice';
 
 const canCreateWatchParty = (socketId) => {
   const now = Date.now();
@@ -3299,6 +3301,7 @@ const getActiveCallSnapshot = (room) => {
     callId: state.callId,
     startedAt: state.startedAt,
     startedBy: state.startedBy,
+    mode: state.mode === 'jam' ? 'jam' : 'voice',
     voiceOnly: false,
     supportsAudio: true,
     supportsVideo: true,
@@ -3799,6 +3802,7 @@ io.on('connection', socket => {
       }
 
       const activeRooms = dizyJamCredentialStore.getActiveRooms();
+      const startingNewJam = !activeRooms.includes(roomName);
       if (activeRooms.some((activeRoom) => activeRoom !== roomName)) {
         respond({
           ok: false,
@@ -3832,6 +3836,15 @@ io.on('connection', socket => {
         socketId: socket.id,
         expiresAt: credential.expiresAt,
       });
+
+      if (startingNewJam) {
+        notifyRoomActivity({
+          room: roomName,
+          activityType: 'jam',
+          activityId: `dizyjam:${crypto.randomUUID()}`,
+          socket,
+        });
+      }
 
       respond({
         ok: true,
@@ -3922,6 +3935,12 @@ io.on('connection', socket => {
       };
       activeExternalWatchParties.set(roomName, payload);
       io.to(roomName).emit('watch-party:external-created', payload);
+      notifyRoomActivity({
+        room: roomName,
+        activityType: 'watch-party',
+        activityId: payload.sessionId,
+        socket,
+      });
     } catch (err) {
       const message = err?.code === 'W2G_NOT_CONFIGURED'
         ? 'Watch2Gether is not configured yet. Add W2G_API_KEY to the protected runtime environment.'
@@ -3946,7 +3965,7 @@ io.on('connection', socket => {
     io.to(roomName).emit('watch-party:external-cleared', { room: roomName, clearedBy: socket.username || 'Someone', sessionId: active.sessionId });
   });
 
-  socket.on('call:start', ({ room } = {}) => {
+  socket.on('call:start', ({ room, mode } = {}) => {
     if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id)) return;
     const roomName = normaliseRoomName(room || socket.currentRoom);
     if (!roomName || roomName !== socket.currentRoom) return;
@@ -3954,29 +3973,74 @@ io.on('connection', socket => {
       socket.emit('call:error', { room: roomName, message: 'A call is already active.' });
       return;
     }
-    activeRoomCalls.set(roomName, {
+    const activityType = normaliseCallActivityMode(mode);
+    const state = {
       callId: buildCallId(),
       startedAt: Date.now(),
       startedBy: socket.username || 'admin',
-    });
+      mode: activityType,
+      mediaAnnouncements: new Set(),
+    };
+    activeRoomCalls.set(roomName, state);
     io.to(roomName).emit('call:started', getActiveCallSnapshot(roomName));
+    notifyRoomActivity({
+      room: roomName,
+      activityType,
+      activityId: state.callId,
+      socket,
+    });
   });
 
-  socket.on('call:join', ({ room } = {}) => {
+  socket.on('call:join', ({ room, mode } = {}) => {
     if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id)) return;
     const roomName = normaliseRoomName(room || socket.currentRoom);
     if (!roomName || roomName !== socket.currentRoom) return;
     if (!activeRoomCalls.has(roomName)) {
-      activeRoomCalls.set(roomName, {
+      const activityType = normaliseCallActivityMode(mode);
+      const state = {
         callId: buildCallId(),
         startedAt: Date.now(),
         startedBy: socket.username || 'participant',
-      });
+        mode: activityType,
+        mediaAnnouncements: new Set(),
+      };
+      activeRoomCalls.set(roomName, state);
       io.to(roomName).emit('call:started', getActiveCallSnapshot(roomName));
+      notifyRoomActivity({
+        room: roomName,
+        activityType,
+        activityId: state.callId,
+        socket,
+      });
     }
     const active = getActiveCallSnapshot(roomName);
     socket.emit('call:joined', active);
     socket.to(roomName).emit('call:participant-joined', { room: roomName, username: socket.username });
+  });
+
+  socket.on('call:media-start', ({ room, kind } = {}) => {
+    if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id)) return;
+    const roomName = normaliseRoomName(room || socket.currentRoom);
+    if (!roomName || roomName !== socket.currentRoom) return;
+
+    const activityType = String(kind || '').trim().toLowerCase();
+    if (!['video', 'screen-share'].includes(activityType)) return;
+
+    const state = activeRoomCalls.get(roomName);
+    if (!state) return;
+    if (!(state.mediaAnnouncements instanceof Set)) state.mediaAnnouncements = new Set();
+
+    const actorKey = canonicalUsername(socket.username) || socket.id;
+    const dedupeKey = `${actorKey}:${activityType}`;
+    if (state.mediaAnnouncements.has(dedupeKey)) return;
+    state.mediaAnnouncements.add(dedupeKey);
+
+    notifyRoomActivity({
+      room: roomName,
+      activityType,
+      activityId: `${state.callId}:${dedupeKey}`,
+      socket,
+    });
   });
 
   socket.on('call:leave', ({ room } = {}) => {
