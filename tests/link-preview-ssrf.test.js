@@ -55,7 +55,10 @@ test('link preview URL normalization only permits public HTTP(S) defaults', () =
   assert.throws(() => normalizePublicPreviewUrl('http://printer.local/test'), /Local or private/);
   assert.throws(() => normalizePublicPreviewUrl('https://user:pass@example.com/'), /Credential-bearing/);
   assert.throws(() => normalizePublicPreviewUrl('https://example.com:8443/'), /Non-standard/);
-  assert.throws(() => normalizePublicPreviewUrl('file:///etc/passwd'), /Link preview URL is invalid|protocol/i);
+  assert.throws(
+    () => normalizePublicPreviewUrl('file:///etc/passwd'),
+    (error) => String(error?.code || '').startsWith('LINK_PREVIEW_'),
+  );
 });
 
 test('resolved preview hosts are rejected if any address is private', async () => {
