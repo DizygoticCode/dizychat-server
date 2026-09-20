@@ -50,6 +50,7 @@ const {
 const { scanFileWithClamAv } = require('./src/uploads/clamav-scanner');
 const { normalizeVoiceMessageUpload } = require('./src/uploads/voice-message-normalizer');
 const { DizyJamCredentialStore } = require('./src/jam/dizyjam-credentials');
+const { resolveBindHost, resolveTrustedRemoteAddress } = require('./src/config/network');
 const { fetchPublicHtmlPreview } = require('./src/security/public-http-fetch');
 
 const nodeFetchModulePromise = import('node-fetch');
@@ -381,6 +382,7 @@ const parseSocketCorsOrigins = () => {
 
 // ---------------- App Setup ----------------
 const app = express();
+app.set('trust proxy', 'loopback');
 const server = http.createServer(app);
 const SOCKET_IO_CORS_ORIGIN_CONFIG = parseSocketCorsOrigins();
 const SOCKET_IO_CORS_ORIGIN = Array.isArray(SOCKET_IO_CORS_ORIGIN_CONFIG)
@@ -393,6 +395,7 @@ const io = new Server(server, {
   cors: { origin: SOCKET_IO_CORS_ORIGIN, methods: ["GET", "POST"] }
 });
 const PORT = process.env.PORT || 10000;
+const BIND_HOST = resolveBindHost(process.env);
 const TRUSTED_SCRIPT_SOURCES = [
   "'self'",
   "'unsafe-inline'",
@@ -831,13 +834,11 @@ if (plaintextAdminCredentialCount > 0) {
 }
 const adminAuthFailures = new Map();
 
-const getSocketRemoteAddress = (socket) => {
-  const forwardedFor = socket?.handshake?.headers?.['x-forwarded-for'];
-  if (typeof forwardedFor === 'string' && forwardedFor.trim()) {
-    return forwardedFor.split(',')[0].trim();
-  }
-  return socket?.handshake?.address || socket?.conn?.remoteAddress || 'unknown';
-};
+const getSocketRemoteAddress = (socket) =>
+  resolveTrustedRemoteAddress({
+    peerAddress: socket?.handshake?.address || socket?.conn?.remoteAddress,
+    forwardedFor: socket?.handshake?.headers?.['x-forwarded-for'],
+  });
 
 const getAdminAuthAttemptKey = (socket, username) => {
   const remoteAddress = getSocketRemoteAddress(socket);
@@ -4610,11 +4611,11 @@ io.on('connection', socket => {
 });
 
 // ---------------- Start Server ----------------
-server.listen(PORT, () => {
+server.listen(PORT, BIND_HOST, () => {
   console.log("🎛️ DizyChat Fusion — Supernova Live 💜");
   console.log(`Version ${VERSION} (${BUILD})`);
   console.log(`Booted on ${new Date().toLocaleString()}`);
-  console.log(`[Server] Listening on ${PORT}`);
+  console.log(`[Server] Listening on ${BIND_HOST}:${PORT}`);
 });
 
 // ---------------- Dedicated Chat Route ----------------
