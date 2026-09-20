@@ -87,6 +87,11 @@ function assertShellOrder(state, label) {
   try {
     await page.goto(`${BASE_URL}/login.html`, { waitUntil: 'networkidle', timeout: 60000 });
     await page.fill('#guest-username', 'MobileShellBot');
+    await page.click('#guest-continue-btn');
+    await page.waitForFunction(() => {
+      const roomInput = document.querySelector('#room-input');
+      return roomInput && !roomInput.disabled;
+    }, null, { timeout: 10000 });
     await page.fill('#room-input', 'MobileShellRoom');
 
     // Reproduce the Android flow where the stacked landing view has already

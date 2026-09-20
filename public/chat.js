@@ -134,6 +134,39 @@ function accountRoleCanModerate() {
   return role === "owner" || role === "admin";
 }
 
+function syncLandingJoinFlow() {
+  const accountReady = Boolean(accountState.identity?.username);
+  const guestName = String(window.__dizyLandingGuestName || "").trim();
+  const guestReady = !accountReady && Boolean(guestName);
+  const identityReady = accountReady || guestReady;
+
+  if (accountReady) window.__dizyLandingGuestName = "";
+
+  if (roomEntryStep) {
+    roomEntryStep.classList.toggle("is-locked", !identityReady);
+    roomEntryStep.classList.toggle("is-unlocked", identityReady);
+    roomEntryStep.setAttribute("aria-disabled", identityReady ? "false" : "true");
+  }
+  if (roomInput) roomInput.disabled = !identityReady;
+  if (passwordInput) passwordInput.disabled = !identityReady;
+  if (joinBtn) joinBtn.disabled = !identityReady || accountState.busy;
+  if (roomStepLockCopy) {
+    roomStepLockCopy.textContent = accountReady
+      ? `Signed in as ${accountState.identity.username}. Now choose or create a room.`
+      : guestReady
+        ? `Joining as ${guestName}. Now choose or create a room.`
+        : "Complete Step 1 to unlock room selection.";
+  }
+  if (guestContinueBtn) guestContinueBtn.disabled = accountState.busy;
+  if (guestLoginStatus) {
+    guestLoginStatus.textContent = guestReady
+      ? `Guest name ready: ${guestName}`
+      : "";
+  }
+  registeredLogin?.classList?.toggle?.("is-selected", accountReady);
+  guestLogin?.classList?.toggle?.("is-selected", guestReady);
+}
+
 function syncAccountUi() {
   const identity = accountState.identity;
   if (accountIdentity) {
@@ -147,8 +180,11 @@ function syncAccountUi() {
   if (guestLogin) guestLogin.hidden = Boolean(identity);
   if (accountUsernameInput) accountUsernameInput.hidden = Boolean(identity);
   if (accountPasswordInput) accountPasswordInput.hidden = Boolean(identity);
+  if (accountUsernameField) accountUsernameField.hidden = Boolean(identity);
+  if (accountPasswordField) accountPasswordField.hidden = Boolean(identity);
   if (registeredJoinBtn) {
-    registeredJoinBtn.textContent = identity ? "Join room" : "Sign in to account";
+    registeredJoinBtn.textContent = "Sign in to account";
+    registeredJoinBtn.hidden = Boolean(identity);
     registeredJoinBtn.disabled = accountState.busy;
   }
   for (const button of [accountLogoutBtn, lobbyAccountLogoutBtn]) {
@@ -166,6 +202,7 @@ function syncAccountUi() {
   refreshActionMenus();
   renderUserSidebar(appState.users || []);
   window.dizySoundboardImporterUi?.syncIdentity?.(identity);
+  syncLandingJoinFlow();
 }
 
 function applyAccountSession(session) {
@@ -234,10 +271,17 @@ const siteLanding = document.getElementById("site-landing");
 const usernamePrompt = document.getElementById("username-prompt");
 const chatContainer = document.getElementById("chat-container");
 const registeredJoinBtn = document.getElementById("registered-join-btn");
+const guestContinueBtn = document.getElementById("guest-continue-btn");
 const guestJoinBtn = document.getElementById("guest-join-btn");
 const accountUsernameInput = document.getElementById("account-username");
 const accountPasswordInput = document.getElementById("account-password");
+const accountUsernameField = document.getElementById("account-username-field");
+const accountPasswordField = document.getElementById("account-password-field");
+const registeredLogin = document.getElementById("registered-login");
 const guestUsernameInput = document.getElementById("guest-username");
+const guestLoginStatus = document.getElementById("guest-login-status");
+const roomEntryStep = document.getElementById("room-entry-step");
+const roomStepLockCopy = roomEntryStep?.querySelector?.(".auth-step-lock-copy") || null;
 const roomInput = document.getElementById("room-input");
 const passwordInput = document.getElementById("room-password");
 const accountLoginStatus = document.getElementById("account-login-status");
@@ -3961,6 +4005,7 @@ function showLanding({ focusUsername = true } = {}) {
   if (roomInput) roomInput.value = lastRoomName || "";
   if (passwordInput) passwordInput.value = lastRoomPassword || "";
   if (usernameInput) usernameInput.value = "";
+  window.__dizyLandingGuestName = "";
   syncAccountUi();
   if (focusUsername) (accountState.identity ? roomInput : usernameInput)?.focus();
 
@@ -5527,6 +5572,19 @@ function emitRegisteredJoinRequest() {
   });
 }
 
+function confirmGuestIdentity() {
+  if (accountState.busy || accountState.identity) return;
+  const guestName = usernameInput?.value.trim() || "";
+  if (!guestName) {
+    showToast("Choose a guest name first.", "warn");
+    usernameInput?.focus();
+    return;
+  }
+  window.__dizyLandingGuestName = guestName;
+  syncLandingJoinFlow();
+  roomInput?.focus();
+}
+
 function emitJoinRequest() {
   if (accountState.busy) return;
   const username = usernameInput?.value.trim();
@@ -5543,9 +5601,17 @@ function emitJoinRequest() {
     return;
   }
 
-  if (!username || !room) {
-    showToast("Enter a guest username and room name.", "warn");
-    (!username ? usernameInput : roomInput)?.focus();
+  const confirmedGuest = String(window.__dizyLandingGuestName || "").trim();
+  if (!confirmedGuest || confirmedGuest !== username) {
+    showToast("Confirm your guest name in Step 1 first.", "warn");
+    window.__dizyLandingGuestName = "";
+    syncLandingJoinFlow();
+    usernameInput?.focus();
+    return;
+  }
+  if (!room) {
+    showToast("Choose or enter a room name.", "warn");
+    roomInput?.focus();
     return;
   }
 
@@ -5612,8 +5678,9 @@ function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
     item.classList.add("clickable");
     item.title = "Join this room";
     const attemptJoin = () => {
-      if (!accountState.identity && !usernameInput?.value.trim()) {
-        showToast("Enter your username first", "error");
+      const guestReady = String(window.__dizyLandingGuestName || "").trim();
+      if (!accountState.identity && !guestReady) {
+        showToast("Complete Step 1 before choosing a room.", "warn");
         usernameInput?.focus();
         return;
       }
@@ -5635,6 +5702,9 @@ function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
   });
 }
 
+if (guestContinueBtn) {
+  guestContinueBtn.addEventListener("click", confirmGuestIdentity);
+}
 if (joinBtn) {
   joinBtn.addEventListener("click", emitJoinRequest);
 }
@@ -5650,12 +5720,23 @@ if (registeredJoinBtn) {
         event.preventDefault();
         if (inputEl === accountUsernameInput || inputEl === accountPasswordInput) {
           emitRegisteredJoinRequest();
+        } else if (inputEl === usernameInput) {
+          confirmGuestIdentity();
         } else {
           emitJoinRequest();
         }
       }
     });
   });
+
+usernameInput?.addEventListener?.("input", () => {
+  if (!window.__dizyLandingGuestName) return;
+  if (usernameInput.value.trim() === String(window.__dizyLandingGuestName).trim()) return;
+  window.__dizyLandingGuestName = "";
+  syncLandingJoinFlow();
+});
+
+syncLandingJoinFlow();
 
 if (leaveBtn) {
   leaveBtn.addEventListener("click", () => {
