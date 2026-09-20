@@ -19,6 +19,12 @@ test('login flow identifies the user before exposing room selection', () => {
   assert.match(html, /<button(?=[^>]*id="guest-join-btn")[^>]*disabled>Join room<\/button>/);
 });
 
+test('room placeholder stays generic and does not expose a real room name', () => {
+  const roomInput = html.match(/<input(?=[^>]*id="room-input")[^>]*>/)?.[0] || '';
+  assert.match(roomInput, /placeholder="e\.g\. MyRoom"/);
+  assert.doesNotMatch(html, /ShittyChat/i);
+});
+
 test('account credentials keep standard autofill semantics while room and guest fields opt out', () => {
   assert.match(html, /<input(?=[^>]*id="account-username")(?=[^>]*name="username")(?=[^>]*autocomplete="username")[^>]*>/);
   assert.match(html, /<input(?=[^>]*id="account-password")(?=[^>]*name="password")(?=[^>]*autocomplete="current-password")[^>]*>/);
