@@ -3587,13 +3587,13 @@ body:not(.dark) #soundboard-btn {
 
 @media (hover: hover) and (pointer: fine) {
   .message.has-inline-media.has-inline-audio {
-    width: min(520px, 96%);
-    max-width: min(570px, 96%);
+    width: min(410px, 94%);
+    max-width: min(430px, 94%);
   }
 
   .message.media-only.has-inline-audio {
-    width: min(520px, 96%);
-    max-width: min(550px, 96%);
+    width: min(410px, 94%);
+    max-width: min(430px, 94%);
   }
 
   .message.has-inline-audio .inline-preview.inline-audio {
