@@ -726,26 +726,36 @@ const webPushCoordinator = createWebPushCoordinator({
   transport: webPushTransport,
   logger: console,
 });
+const combinePushResults = async (promises) => {
+  const results = await Promise.allSettled(promises);
+  const combined = { attempted: 0, sent: 0, failed: 0 };
+  for (const result of results) {
+    if (result.status === 'rejected') {
+      combined.failed += 1;
+      console.warn('[Push] coordinator unavailable', {
+        code: String(result.reason?.code || 'unexpected'),
+      });
+      continue;
+    }
+    combined.attempted += Number(result.value?.attempted || 0);
+    combined.sent += Number(result.value?.sent || 0);
+    combined.failed += Number(result.value?.failed || 0);
+  }
+  return combined;
+};
+
 const pushCoordinator = {
-  async onMessageStored(message, metadata = {}) {
-    const results = await Promise.allSettled([
+  onMessageStored(message, metadata = {}) {
+    return combinePushResults([
       nativePushCoordinator.onMessageStored(message, metadata),
       webPushCoordinator.onMessageStored(message, metadata),
     ]);
-    const combined = { attempted: 0, sent: 0, failed: 0 };
-    for (const result of results) {
-      if (result.status === 'rejected') {
-        combined.failed += 1;
-        console.warn('[Push] coordinator unavailable', {
-          code: String(result.reason?.code || 'unexpected'),
-        });
-        continue;
-      }
-      combined.attempted += Number(result.value?.attempted || 0);
-      combined.sent += Number(result.value?.sent || 0);
-      combined.failed += Number(result.value?.failed || 0);
-    }
-    return combined;
+  },
+  onActivityStarted(activity, metadata = {}) {
+    return combinePushResults([
+      nativePushCoordinator.onActivityStarted(activity, metadata),
+      webPushCoordinator.onActivityStarted(activity, metadata),
+    ]);
   },
   sendRoomClear: (...args) => nativePushCoordinator.sendRoomClear(...args),
 };
@@ -755,6 +765,40 @@ const readStateCoordinator = createReadStateCoordinator({
   logger: console,
 });
 const chatMessageService = createChatMessageService({ io, pushCoordinator });
+
+const notifyRoomActivity = ({
+  room,
+  activityType,
+  activityId,
+  socket = null,
+  sender = '',
+} = {}) => {
+  const roomName = normaliseRoomName(room);
+  const id = String(activityId || '').trim();
+  const type = String(activityType || '').trim().toLowerCase();
+  if (!roomName || !id || !type) return;
+
+  const starter = String(sender || socket?.username || 'Someone').trim() || 'Someone';
+  const senderCanonicalUsername = socket?.principal?.kind === 'account'
+    ? String(socket.principal.canonicalUsername || '')
+    : '';
+
+  void pushCoordinator.onActivityStarted({
+    room: roomName,
+    activityType: type,
+    activityId: id,
+    sender: starter,
+    timestamp: new Date(),
+  }, {
+    senderCanonicalUsername,
+  }).catch((error) => {
+    console.warn('[Push] room activity notification failed', {
+      type,
+      room: roomName,
+      code: String(error?.code || 'unexpected'),
+    });
+  });
+};
 const resolveAccountSessionToken = async (token) => {
   if (typeof token !== 'string' || !token) return null;
   const browserSession = accountSessions.resolve(token);
