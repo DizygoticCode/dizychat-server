@@ -3849,7 +3849,7 @@ socket.on("disconnect", () => {
   hideSearchResults();
 });
 
-window.addEventListener("dizychat:pwa-resume", (event) => {
+window.addEventListener?.("dizychat:pwa-resume", (event) => {
   const detail = event?.detail || {};
   if (!detail.standalone) return;
 
