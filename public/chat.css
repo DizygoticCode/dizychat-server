@@ -3571,7 +3571,9 @@ body:not(.dark) #soundboard-btn {
 
 .inline-preview.inline-audio .preview-media {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
+  width: 100%;
   min-height: 0;
   padding: 0;
   border: 0;
@@ -3579,17 +3581,19 @@ body:not(.dark) #soundboard-btn {
   overflow: visible;
   background: transparent;
   box-sizing: border-box;
+  justify-content: stretch;
+  align-items: stretch;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .message.has-inline-media.has-inline-audio {
-    width: min(520px, 96%);
-    max-width: min(570px, 96%);
+    width: min(410px, 94%);
+    max-width: min(430px, 94%);
   }
 
   .message.media-only.has-inline-audio {
-    width: min(520px, 96%);
-    max-width: min(550px, 96%);
+    width: min(410px, 94%);
+    max-width: min(430px, 94%);
   }
 
   .message.has-inline-audio .inline-preview.inline-audio {

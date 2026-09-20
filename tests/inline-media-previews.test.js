@@ -22,7 +22,7 @@ test('audio attachments use compact accessible chat-style controls', () => {
   );
   assert.match(
     css,
-    /\.inline-preview\.inline-audio \.preview-media\s*\{[^}]*min-height:\s*0;[^}]*padding:\s*0;[^}]*overflow:\s*visible;/s,
+    /\.inline-preview\.inline-audio \.preview-media\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);[^}]*width:\s*100%;[^}]*min-height:\s*0;[^}]*padding:\s*0;[^}]*overflow:\s*visible;[^}]*justify-content:\s*stretch;[^}]*align-items:\s*stretch;/s,
   );
   assert.match(
     css,
@@ -32,11 +32,11 @@ test('audio attachments use compact accessible chat-style controls', () => {
   assert.match(css, /\.message\.has-inline-audio \.inline-preview\.inline-audio\s*\{[^}]*width:\s*min\(440px, 100%\);/s);
   assert.match(
     css,
-    /@media \(hover: hover\) and \(pointer: fine\)[\s\S]*\.message\.has-inline-media\.has-inline-audio\s*\{[^}]*width:\s*min\(520px, 96%\);[^}]*max-width:\s*min\(570px, 96%\);/s,
+    /@media \(hover: hover\) and \(pointer: fine\)[\s\S]*\.message\.has-inline-media\.has-inline-audio\s*\{[^}]*width:\s*min\(410px, 94%\);[^}]*max-width:\s*min\(430px, 94%\);/s,
   );
   assert.match(
     css,
-    /\.message\.media-only\.has-inline-audio\s*\{[^}]*width:\s*min\(520px, 96%\);[^}]*max-width:\s*min\(550px, 96%\);/s,
+    /\.message\.media-only\.has-inline-audio\s*\{[^}]*width:\s*min\(410px, 94%\);[^}]*max-width:\s*min\(430px, 94%\);/s,
   );
   assert.match(css, /\.message\.has-inline-audio \.inline-preview\.inline-audio\s*\{[^}]*width:\s*100%;/s);
   assert.ok(css.includes('width: min(440px, 100%);'));
