@@ -101,10 +101,12 @@ final class DizyNotificationManager {
 
         String cleanSender = clean(sender);
         String cleanPreview = clean(preview);
+        String activityBody = (cleanPreview.isEmpty() ? "Started a DizyChat activity" : cleanPreview)
+                + " · Tap to open DizyChat";
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, ACTIVITY_CHANNEL_ID)
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentTitle((cleanSender.isEmpty() ? "Someone" : cleanSender) + " · " + cleanRoom)
-                .setContentText(cleanPreview.isEmpty() ? "Started a DizyChat activity" : cleanPreview)
+                .setContentText(activityBody)
                 .setContentIntent(tapPendingIntent)
                 .setAutoCancel(true)
                 .setCategory(NotificationCompat.CATEGORY_EVENT)
