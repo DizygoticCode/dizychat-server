@@ -51,6 +51,7 @@ const {
 const { scanFileWithClamAv } = require('./src/uploads/clamav-scanner');
 const { normalizeVoiceMessageUpload } = require('./src/uploads/voice-message-normalizer');
 const { DizyJamCredentialStore } = require('./src/jam/dizyjam-credentials');
+const { resolveCallTokenGrant } = require('./src/calls/call-token-grant');
 const { resolveBindHost, resolveTrustedRemoteAddress } = require('./src/config/network');
 const { fetchPublicHtmlPreview } = require('./src/security/public-http-fetch');
 
@@ -2808,7 +2809,7 @@ app.get('/api/calls/status', (_req, res) => {
   }
 });
 
-app.post('/api/calls/token', express.json(), (req, res) => {
+app.post('/api/calls/token', express.json({ limit: '8kb' }), (req, res) => {
   let status;
   try {
     status = getCallServiceStatus();
@@ -2827,11 +2828,34 @@ app.post('/api/calls/token', express.json(), (req, res) => {
   }
 
   const room = normaliseRoomName(req.body?.room);
-  const username = normaliseUsername(req.body?.username, '');
+  const grant = resolveCallTokenGrant({
+    io,
+    room,
+    socketId: req.body?.socketId,
+    nonce: req.body?.callTokenNonce,
+  });
+  if (!grant.ok) {
+    logSecurityEvent('call_token_grant_rejected', {
+      code: grant.code,
+      room,
+      ip: req.ip || req.socket?.remoteAddress || 'unknown',
+    });
+    res.status(403).json({
+      error: 'Join this DizyChat room before requesting a call token.',
+      code: 'CALL_ROOM_GRANT_REQUIRED',
+    });
+    return;
+  }
+
+  const username = normaliseUsername(grant.username, '');
   const musicMode = req.body?.musicMode === true;
   const callSessionId = String(req.body?.callSessionId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48);
   if (!room || !username) {
-    res.status(400).json({ error: 'room and username are required.' });
+    res.status(400).json({ error: 'room and admitted room identity are required.' });
+    return;
+  }
+  if (isUserBlocked(room, username)) {
+    res.status(403).json({ error: 'Call access is unavailable while blocked in this room.' });
     return;
   }
 
@@ -2853,6 +2877,7 @@ app.post('/api/calls/token', express.json(), (req, res) => {
       supportsVideo: true,
       musicMode,
       audioSettings: musicMode ? MUSIC_MODE_AUDIO_SETTINGS : null,
+      cameraDisabled: isCallVideoBlocked(room, username),
       provider: status.provider,
       selfContained: status.selfContained,
     });

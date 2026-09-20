@@ -7384,6 +7384,14 @@ socket.on("older messages", (payload = {}) => {
   updatePinnedBanner();
 });
 
+socket.on("call token nonce", (payload = {}) => {
+  const room = typeof payload.room === "string" ? payload.room.trim() : "";
+  const token = typeof payload.token === "string" ? payload.token.trim() : "";
+  const socketId = typeof payload.socketId === "string" ? payload.socketId.trim() : "";
+  if (!room || !token || !socketId) return;
+  window.dizyCallTokenGrant = { room, token, socketId };
+});
+
 socket.on("chat message", (msg) => {
   if (!isViewingChat) return;
   renderMessage(msg, { scrollBehavior: "smooth", respectScrollLock: true });
@@ -8878,12 +8886,18 @@ if (voiceBtn) {
   };
 
   const fetchToken = async (musicMode) => {
+    const grant = window.dizyCallTokenGrant;
+    if (!grant?.token || !grant?.socketId || grant.room !== window.currentRoom) {
+      throw new Error("Call authorization is unavailable. Rejoin the room and try again.");
+    }
+
     const res = await fetch("/api/calls/token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         room: window.currentRoom,
-        username: window.currentUser,
+        socketId: grant.socketId,
+        callTokenNonce: grant.token,
         callSessionId: getCallSessionId(),
         musicMode: musicMode === true,
       }),
