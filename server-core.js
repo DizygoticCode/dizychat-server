@@ -4023,6 +4023,7 @@ io.on('connection', socket => {
       callId: buildCallId(),
       startedAt: Date.now(),
       startedBy: socket.username || 'admin',
+      startedBySocketId: socket.id,
       mode: activityType,
       mediaAnnouncements: new Set(),
     };
@@ -4046,6 +4047,7 @@ io.on('connection', socket => {
         callId: buildCallId(),
         startedAt: Date.now(),
         startedBy: socket.username || 'participant',
+        startedBySocketId: socket.id,
         mode: activityType,
         mediaAnnouncements: new Set(),
       };
@@ -4098,17 +4100,25 @@ io.on('connection', socket => {
   socket.on('call:mute-user', ({ room, target } = {}) => {
     if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id) || !requireAdmin(socket)) return;
     const roomName = normaliseRoomName(room || socket.currentRoom);
-    const cleanedTarget = normaliseUsername(target, '');
-    if (!roomName || roomName !== socket.currentRoom || !cleanedTarget) return;
-    io.to(roomName).emit('call:user-muted', { room: roomName, target: cleanedTarget, by: socket.username });
+    const targetInfo = validateCallModerationTarget(socket, roomName, target);
+    if (!targetInfo) return;
+    io.to(roomName).emit('call:user-muted', {
+      room: roomName,
+      target: targetInfo.cleanedTarget,
+      by: socket.username,
+    });
   });
 
   socket.on('call:kick-user', ({ room, target } = {}) => {
     if (!ensureCallsEnabled(socket) || !canSendCallEvent(socket.id) || !requireAdmin(socket)) return;
     const roomName = normaliseRoomName(room || socket.currentRoom);
-    const cleanedTarget = normaliseUsername(target, '');
-    if (!roomName || roomName !== socket.currentRoom || !cleanedTarget) return;
-    io.to(roomName).emit('call:user-kicked', { room: roomName, target: cleanedTarget, by: socket.username });
+    const targetInfo = validateCallModerationTarget(socket, roomName, target);
+    if (!targetInfo) return;
+    io.to(roomName).emit('call:user-kicked', {
+      room: roomName,
+      target: targetInfo.cleanedTarget,
+      by: socket.username,
+    });
   });
 
   socket.on('call:disable-video-user', ({ room, target } = {}) => {
@@ -4137,9 +4147,27 @@ io.on('connection', socket => {
     if (!roomName || roomName !== socket.currentRoom) return;
     const active = activeRoomCalls.get(roomName);
     if (!active) return;
+
+    const actor = normaliseUsername(socket.username, '');
+    const isCallStarter = Boolean(
+      active.startedBySocketId && active.startedBySocketId === socket.id
+    );
+    if (!requireModerator(socket) && !isCallStarter) {
+      socket.emit('call:error', {
+        room: roomName,
+        message: 'Only the call starter or an admin can end the room call.',
+      });
+      return;
+    }
+
     activeRoomCalls.delete(roomName);
     activeRoomCallVideoBlocks.delete(roomName);
-    io.to(roomName).emit('call:ended', { room: roomName, callId: active.callId, endedBy: socket.username, endedAt: Date.now() });
+    io.to(roomName).emit('call:ended', {
+      room: roomName,
+      callId: active.callId,
+      endedBy: actor || 'participant',
+      endedAt: Date.now(),
+    });
   });
 
   // ----- Chat message -----
@@ -4430,9 +4458,9 @@ io.on('connection', socket => {
   });
 
   // ----- Typing Indicator -----
-  socket.on('typing', username => {
+  socket.on('typing', () => {
     if (!canSendTyping(socket.id)) return;
-    const safeName = typeof username === 'string' ? username.trim().slice(0, 64) : '';
+    const safeName = normaliseUsername(socket.username, '');
     if (!safeName) return;
     registerTypingUser(socket, safeName);
   });
