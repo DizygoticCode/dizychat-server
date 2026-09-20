@@ -2421,7 +2421,7 @@ app.post('/api/soundboards/import-clip', soundboardImportJson, requireHttpAccoun
   }
 });
 
-app.get('/api/soundboards/live-search', requireHttpAccount, requireHttpOwner, async (req, res) => {
+app.get('/api/soundboards/live-search', async (req, res) => {
   try {
     const result = await soundboardImporter.searchBoards({
       query: typeof req.query?.q === 'string' ? req.query.q : '',
@@ -2441,7 +2441,7 @@ app.get('/api/soundboards/live-search', requireHttpAccount, requireHttpOwner, as
   }
 });
 
-app.get('/api/soundboards/live-board', requireHttpAccount, requireHttpOwner, async (req, res) => {
+app.get('/api/soundboards/live-board', async (req, res) => {
   try {
     const result = await soundboardImporter.browseBoard({
       boardUrl: typeof req.query?.url === 'string' ? req.query.url : '',
@@ -2460,7 +2460,7 @@ app.get('/api/soundboards/live-board', requireHttpAccount, requireHttpOwner, asy
   }
 });
 
-app.get('/api/soundboards/live-clip', requireHttpAccount, requireHttpOwner, async (req, res) => {
+app.get('/api/soundboards/live-clip', async (req, res) => {
   try {
     const result = await soundboardImporter.resolveClip({
       soundPageUrl: typeof req.query?.url === 'string' ? req.query.url : '',
