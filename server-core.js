@@ -2000,7 +2000,7 @@ app.get('/link-preview', async (req, res) => {
     const contentType = response.headers.get('content-type') || '';
     if (!/text\/html/i.test(contentType)) {
       res.setHeader('Cache-Control', 'public, max-age=300');
-      return res.json({ title: '', image: '', description: '', siteName: '', icon: '' });
+      return res.json({ title: '', image: '', description: '', siteName: '', icon: '', embedUrl: '' });
     }
 
     const html = await response.text();
@@ -2033,6 +2033,13 @@ app.get('/link-preview', async (req, res) => {
       () => $('meta[name="twitter:image"]').attr('content'),
       () => $('meta[name="twitter:image:src"]').attr('content'),
       () => $('link[rel="image_src"]').attr('href'),
+    );
+
+    let embedRaw = pick(
+      () => $('meta[property="og:video:secure_url"]').attr('content'),
+      () => $('meta[property="og:video:url"]').attr('content'),
+      () => $('meta[property="og:video"]').attr('content'),
+      () => $('iframe[src*="/embed/"]').first().attr('src'),
     );
 
     const iconRaw = pick(
@@ -2125,6 +2132,7 @@ app.get('/link-preview', async (req, res) => {
       const candidateTitle = ensureString(chosen.name || chosen.headline || chosen.title);
       const candidateDescription = ensureString(chosen.description);
       const candidateImage = ensureString(extractImage(chosen.thumbnailUrl || chosen.image));
+      const candidateEmbed = ensureString(chosen.embedUrl);
       const publisher = first(chosen.publisher);
       const candidateSite = ensureString(
         (publisher && (publisher.name || (publisher['@type'] === 'Organization' && publisher.title)))
@@ -2136,6 +2144,7 @@ app.get('/link-preview', async (req, res) => {
       if (candidateTitle) title = candidateTitle;
       if (candidateDescription) description = candidateDescription;
       if (candidateImage) imageRaw = candidateImage;
+      if (candidateEmbed) embedRaw = candidateEmbed;
       if (candidateSite) siteName = candidateSite;
     };
 
@@ -2148,6 +2157,7 @@ app.get('/link-preview', async (req, res) => {
       description: clean(description),
       image: resolveAsset(clean(imageRaw)),
       icon: resolveAsset(clean(iconRaw)),
+      embedUrl: resolveAsset(clean(embedRaw)),
       siteName: clean(siteName) || host,
     };
 
@@ -2155,7 +2165,7 @@ app.get('/link-preview', async (req, res) => {
     res.json(responsePayload);
   } catch (err) {
     console.error('[Link Preview] Error:', err.message);
-    res.json({ title: '', image: '', description: '', siteName: '', icon: '' });
+    res.json({ title: '', image: '', description: '', siteName: '', icon: '', embedUrl: '' });
   }
 });
 
