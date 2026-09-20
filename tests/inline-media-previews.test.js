@@ -30,9 +30,15 @@ test('audio attachments use compact accessible chat-style controls', () => {
   );
   assert.match(css, /\.message\.media-only\.has-inline-audio\s*\{[^}]*max-width:\s*min\(470px, 96%\);/s);
   assert.match(css, /\.message\.has-inline-audio \.inline-preview\.inline-audio\s*\{[^}]*width:\s*min\(440px, 100%\);/s);
-  assert.ok(css.includes('max-width: min(570px, 96%);'));
-  assert.ok(css.includes('max-width: min(550px, 96%);'));
-  assert.ok(css.includes('width: min(520px, 100%);'));
+  assert.match(
+    css,
+    /@media \(hover: hover\) and \(pointer: fine\)[\s\S]*\.message\.has-inline-media\.has-inline-audio\s*\{[^}]*width:\s*min\(520px, 96%\);[^}]*max-width:\s*min\(570px, 96%\);/s,
+  );
+  assert.match(
+    css,
+    /\.message\.media-only\.has-inline-audio\s*\{[^}]*width:\s*min\(520px, 96%\);[^}]*max-width:\s*min\(550px, 96%\);/s,
+  );
+  assert.match(css, /\.message\.has-inline-audio \.inline-preview\.inline-audio\s*\{[^}]*width:\s*100%;/s);
   assert.ok(css.includes('width: min(440px, 100%);'));
   assert.ok(css.includes('justify-items: start;'));
   assert.match(client, /const isSoundboardAudio = previewType === "audio"/);
