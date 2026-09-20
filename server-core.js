@@ -59,10 +59,22 @@ const { DizyJamCredentialStore } = require('./src/jam/dizyjam-credentials');
 const { resolveCallTokenGrant } = require('./src/calls/call-token-grant');
 const { resolveBindHost, resolveTrustedRemoteAddress } = require('./src/config/network');
 const { fetchPublicHtmlPreview } = require('./src/security/public-http-fetch');
+const {
+  createBoundedJsonFetcher,
+  createPublicMediaAdmissionController,
+  readPublicMediaProxyLimits,
+} = require('./src/security/public-media-proxy-guard');
 
 const nodeFetchModulePromise = import('node-fetch');
 const fetch = (...args) =>
   nodeFetchModulePromise.then(({ default: fetch }) => fetch(...args));
+
+const publicMediaProxyLimits = readPublicMediaProxyLimits(process.env);
+const publicMediaAdmission = createPublicMediaAdmissionController(publicMediaProxyLimits);
+const fetchPublicMediaJson = createBoundedJsonFetcher({
+  fetchImpl: fetch,
+  timeoutMs: publicMediaProxyLimits.fetchTimeoutMs,
+});
 
 const soundboardImporter = createSoundboardImporter({ fetchImpl: fetch });
 const soundboardImportJobs = new Map();
@@ -2204,15 +2216,38 @@ app.get('/link-preview', async (req, res) => {
   }
 });
 
-app.get('/tenor-proxy', async (req, res) => {
+const guardPublicMediaProxy = (req, res, next) => {
+  const admission = publicMediaAdmission.acquire(req.ip || req.socket?.remoteAddress || 'unknown');
+  if (!admission.ok) {
+    const retryAfterSeconds = Math.max(1, Math.ceil(admission.retryAfterMs / 1000));
+    res.setHeader('Retry-After', String(retryAfterSeconds));
+    logSecurityEvent('public_media_proxy_rate_limited', {
+      code: admission.code,
+      ip: req.ip || req.socket?.remoteAddress || 'unknown',
+      path: req.path,
+    });
+    return res.status(429).json({
+      error: 'Too many media lookup requests. Please wait and try again.',
+      results: [],
+      gif: '',
+      tinyGif: '',
+    });
+  }
+
+  const release = () => admission.release();
+  res.once('finish', release);
+  res.once('close', release);
+  next();
+};
+
+app.get('/tenor-proxy', guardPublicMediaProxy, async (req, res) => {
   const { url } = req.query;
   if (!url || !/^https?:\/\/(?:www\.)?tenor\.com\//i.test(url)) {
     return res.status(400).json({ gif: '', tinyGif: '' });
   }
 
   try {
-    const response = await fetch(`https://tenor.com/oembed?url=${encodeURIComponent(url)}`);
-    const data = await response.json();
+    const { data } = await fetchPublicMediaJson(`https://tenor.com/oembed?url=${encodeURIComponent(url)}`);
     res.setHeader('Cache-Control', 'public, max-age=300');
     res.json({
       gif: data?.url || '',
@@ -2329,7 +2364,7 @@ const getRequestCountryCode = (req) =>
   parseCountryCode(req.headers['x-country-code']) ||
   'US';
 
-app.get('/giphy-search', async (req, res) => {
+app.get('/giphy-search', guardPublicMediaProxy, async (req, res) => {
   const giphyKey = process.env.GIPHY_SDK_KEY;
   if (!giphyKey) {
     return res.status(503).json({
@@ -2366,8 +2401,7 @@ app.get('/giphy-search', async (req, res) => {
   })();
 
   try {
-    const response = await fetch(`${apiPath}?${params.toString()}`);
-    const data = await response.json();
+    const { response, data } = await fetchPublicMediaJson(`${apiPath}?${params.toString()}`);
 
     let payloadData = data;
     let payloadType = safeType;
@@ -2391,8 +2425,9 @@ app.get('/giphy-search', async (req, res) => {
       const fallbackParams = new URLSearchParams(params);
       fallbackParams.delete('country_code');
       fallbackParams.set('bundle', 'messaging_non_clips');
-      const fallbackResponse = await fetch(`${getFallbackGiphyClipUrl(endpoint)}?${fallbackParams.toString()}`);
-      const fallbackData = await fallbackResponse.json();
+      const { response: fallbackResponse, data: fallbackData } = await fetchPublicMediaJson(
+        `${getFallbackGiphyClipUrl(endpoint)}?${fallbackParams.toString()}`,
+      );
 
       if (!fallbackResponse.ok) {
         const fallbackError = fallbackData?.message || fallbackData?.meta?.msg || fallbackResponse.statusText || fallbackNotice;
