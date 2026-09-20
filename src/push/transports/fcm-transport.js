@@ -10,6 +10,8 @@ const ALLOWED_DATA_KEYS = [
   'preview',
   'notificationKey',
   'timestamp',
+  'activityType',
+  'activityId',
 ];
 
 const PERMANENT_TOKEN_CODES = new Set([
@@ -68,6 +70,11 @@ const createFcmTransport = ({ projectId = '', messagingFactory, logger = console
               category: 'DIZYCHAT_MESSAGE',
             },
           },
+        };
+      } else if (data.type === 'activity') {
+        message.android = {
+          priority: 'high',
+          ttl: 120000,
         };
       } else if (data.type === 'read-control') {
         message.apns = {

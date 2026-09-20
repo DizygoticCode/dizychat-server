@@ -6,6 +6,66 @@ const { compareCursor } = require('./read-state-service');
 
 const MAX_PREVIEW_LENGTH = 160;
 
+
+const ACTIVITY_COPY = Object.freeze({
+  voice: 'Started a voice call',
+  video: 'Started their webcam',
+  jam: 'Started a jam',
+  'watch-party': 'Started a watch party',
+  'screen-share': 'Started sharing their screen',
+});
+
+const cleanActivityType = (value) => {
+  const type = String(value || '').trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(ACTIVITY_COPY, type) ? type : '';
+};
+
+const buildActivityPreview = (activityType) => ACTIVITY_COPY[cleanActivityType(activityType)] || 'Started an activity';
+
+const buildActivityNotificationKey = (canonicalUsername, {
+  room = '',
+  activityType = '',
+  activityId = '',
+} = {}) => {
+  const canonical = canonicalizeUsername(canonicalUsername);
+  const normalizedRoom = String(room || '').trim();
+  const normalizedType = cleanActivityType(activityType);
+  const normalizedId = String(activityId || '').trim();
+  return crypto
+    .createHash('sha256')
+    .update(`${canonical}\0${normalizedRoom}\0${normalizedType}\0${normalizedId}`, 'utf8')
+    .digest('hex')
+    .slice(0, 24);
+};
+
+const buildActivityIntent = ({ device, activity } = {}) => {
+  const activityType = cleanActivityType(activity?.activityType);
+  if (!activityType) throw new TypeError('unsupported activity type');
+  const room = String(activity?.room || '').trim();
+  const activityId = String(activity?.activityId || '').trim();
+  if (!room || !activityId) throw new TypeError('activity room and id are required');
+  const timestampValue = activity?.timestamp instanceof Date
+    ? activity.timestamp
+    : new Date(activity?.timestamp || Date.now());
+  if (Number.isNaN(timestampValue.getTime())) throw new TypeError('activity timestamp is invalid');
+
+  return {
+    type: 'activity',
+    room,
+    messageId: '',
+    sender: String(activity?.sender || 'Someone').trim() || 'Someone',
+    preview: buildActivityPreview(activityType),
+    notificationKey: buildActivityNotificationKey(device?.canonicalUsername, {
+      room,
+      activityType,
+      activityId,
+    }),
+    timestamp: timestampValue.toISOString(),
+    activityType,
+    activityId,
+  };
+};
+
 const buildSafePreview = (message = {}) => {
   const text = String(message.text || '').replace(/\s+/g, ' ').trim();
   if (text) return text.slice(0, MAX_PREVIEW_LENGTH);
@@ -93,6 +153,11 @@ const buildReadControlIntent = ({ device, room, cursor } = {}) => ({
 
 module.exports = {
   MAX_PREVIEW_LENGTH,
+  ACTIVITY_COPY,
+  buildActivityIntent,
+  buildActivityNotificationKey,
+  buildActivityPreview,
+  cleanActivityType,
   buildNotificationKey,
   buildPushIntent,
   buildReadControlIntent,

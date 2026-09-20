@@ -8790,6 +8790,7 @@ if (voiceBtn) {
     attachLocalVideoTrack(track);
     setCallUiState({ inCall: true, muted: callState.muted, cameraEnabled: true });
     setStatus(`Connected to ${window.currentRoom}`);
+    socket.emit("call:media-start", { room: window.currentRoom, kind: "video" });
     showToast("Video started", "success");
   };
 
@@ -8908,7 +8909,10 @@ if (voiceBtn) {
     setCallUiState({ inCall: true, muted: false, cameraEnabled: false });
     renderPeers();
     setStatus(callState.cameraBlocked ? `Connected to ${window.currentRoom}; camera disabled by admin.` : `Connected to ${window.currentRoom}`);
-    socket.emit("call:join", { room: window.currentRoom });
+    socket.emit("call:join", {
+      room: window.currentRoom,
+      mode: requestedMusicMode ? "jam" : "voice",
+    });
     room.on(LK.RoomEvent.ActiveSpeakersChanged, (speakers = []) => {
       const seen = new Set();
       speakers.forEach((participant) => {

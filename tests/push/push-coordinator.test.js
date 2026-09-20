@@ -215,3 +215,46 @@ test('temporary read-control failure preserves every registration', async () => 
   assert.deepEqual(result, { attempted: 1, sent: 0, failed: 1 });
   assert.deepEqual(retired, []);
 });
+
+
+test('activity start targets other subscribed devices and keeps the event type explicit', async () => {
+  const sent = [];
+  const coordinator = makeCoordinator({
+    devices: [candidate('rob', 'rob-token'), candidate('nick', 'nick-token')],
+    send: async (intent, token) => sent.push({ intent, token }),
+  });
+  const result = await coordinator.onActivityStarted({
+    room: 'ShittyChat',
+    activityType: 'screen-share',
+    activityId: 'call-1:rob:screen-share',
+    sender: 'Rob',
+    timestamp: new Date('2026-09-20T02:30:00.000Z'),
+  }, { senderCanonicalUsername: 'rob' });
+
+  assert.deepEqual(sent.map((entry) => entry.token), ['nick-token']);
+  assert.equal(sent[0].intent.type, 'activity');
+  assert.equal(sent[0].intent.activityType, 'screen-share');
+  assert.equal(sent[0].intent.activityId, 'call-1:rob:screen-share');
+  assert.equal(sent[0].intent.preview, 'Started sharing their screen');
+  assert.equal(sent[0].intent.messageId, '');
+  assert.deepEqual(result, { attempted: 1, sent: 1, failed: 0 });
+});
+
+test('activity start respects the same foreground suppression lease as messages', async () => {
+  const sent = [];
+  const coordinator = makeCoordinator({
+    devices: [
+      candidate('nick', 'focused-phone', new Date('2026-09-05T20:00:20Z')),
+      candidate('alice', 'background-phone', null),
+    ],
+    send: async (_intent, token) => sent.push(token),
+  });
+  await coordinator.onActivityStarted({
+    room: 'ShittyChat',
+    activityType: 'voice',
+    activityId: 'call-2',
+    sender: 'Rob',
+    timestamp: new Date('2026-09-05T20:00:11.000Z'),
+  }, { senderCanonicalUsername: 'rob' });
+  assert.deepEqual(sent, ['background-phone']);
+});

@@ -34,6 +34,33 @@ public class DizyFirebaseMessagingService extends FirebaseMessagingService {
         String messageId = clean(data.get("messageId"));
         String notificationKey = clean(data.get("notificationKey"));
         String timestamp = clean(data.get("timestamp"));
+
+        if ("activity".equals(type)) {
+            String activityId = clean(data.get("activityId"));
+            String activityType = clean(data.get("activityType"));
+            if (room.isEmpty() || activityId.isEmpty() || activityType.isEmpty()
+                    || notificationKey.isEmpty() || timestamp.isEmpty()) {
+                Log.w(TAG, "drop: activity required field missing room=" + !room.isEmpty()
+                        + " activityId=" + !activityId.isEmpty()
+                        + " activityType=" + !activityType.isEmpty()
+                        + " notificationKey=" + !notificationKey.isEmpty()
+                        + " timestamp=" + !timestamp.isEmpty());
+                return;
+            }
+            Log.i(TAG, "dispatch activity room=" + room + " type=" + activityType);
+            DizyNotificationManager.showActivityNotification(
+                    this,
+                    room,
+                    activityId,
+                    activityType,
+                    clean(data.get("sender")),
+                    clean(data.get("preview")),
+                    notificationKey,
+                    timestamp
+            );
+            return;
+        }
+
         if (room.isEmpty() || messageId.isEmpty() || notificationKey.isEmpty() || timestamp.isEmpty()) {
             Log.w(TAG, "drop: required field missing type=" + type
                     + " room=" + !room.isEmpty()

@@ -19,6 +19,8 @@ import androidx.core.content.ContextCompat;
 final class DizyNotificationManager {
     private static final String TAG = "DizyPushTrace";
     static final String CHANNEL_ID = "dizychat_messages_v2";
+    static final String ACTIVITY_CHANNEL_ID = "dizychat_activities_v1";
+    private static final int ACTIVITY_NOTIFICATION_PREFIX = 0x23000000;
     static final String EXTRA_NOTIFICATION_ID = "dizy_notification_id";
     static final String REMOTE_INPUT_KEY = "dizy_reply_text";
 
@@ -58,6 +60,63 @@ final class DizyNotificationManager {
             Log.e(TAG, "showMessageNotification failed: " + error.getClass().getSimpleName()
                     + ": " + String.valueOf(error.getMessage()));
         }
+    }
+
+    static void showActivityNotification(
+            Context context,
+            String room,
+            String activityId,
+            String activityType,
+            String sender,
+            String preview,
+            String notificationKey,
+            String timestamp
+    ) {
+        if (!canNotify(context)) {
+            Log.w(TAG, "showActivityNotification blocked: canNotify=false");
+            return;
+        }
+        String cleanRoom = clean(room);
+        String cleanActivityId = clean(activityId);
+        String cleanType = clean(activityType);
+        String cleanKey = clean(notificationKey);
+        if (cleanRoom.isEmpty() || cleanActivityId.isEmpty() || cleanType.isEmpty() || cleanKey.isEmpty()) {
+            Log.w(TAG, "showActivityNotification dropped: required field missing");
+            return;
+        }
+
+        ensureChannel(context);
+        int notificationId = ACTIVITY_NOTIFICATION_PREFIX | (cleanKey.hashCode() & 0x00ffffff);
+        Intent tapIntent = new Intent(context, MainActivity.class)
+                .setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra(DizyPushPlugin.EXTRA_ROOM, cleanRoom)
+                .putExtra(DizyPushPlugin.EXTRA_MESSAGE_ID, "")
+                .putExtra(DizyPushPlugin.EXTRA_ACTIVITY_TYPE, cleanType);
+        PendingIntent tapPendingIntent = PendingIntent.getActivity(
+                context,
+                notificationId,
+                tapIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
+        String cleanSender = clean(sender);
+        String cleanPreview = clean(preview);
+        String activityBody = (cleanPreview.isEmpty() ? "Started a DizyChat activity" : cleanPreview)
+                + " · Tap to open DizyChat";
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, ACTIVITY_CHANNEL_ID)
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setContentTitle((cleanSender.isEmpty() ? "Someone" : cleanSender) + " · " + cleanRoom)
+                .setContentText(activityBody)
+                .setContentIntent(tapPendingIntent)
+                .setAutoCancel(true)
+                .setCategory(NotificationCompat.CATEGORY_EVENT)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setOnlyAlertOnce(true)
+                .setTimeoutAfter(120000L)
+                .setWhen(DizyNotificationStateStore.timestampMillis(timestamp));
+
+        Log.i(TAG, "notify activity id=" + notificationId + " room=" + cleanRoom + " type=" + cleanType);
+        NotificationManagerCompat.from(context).notify(notificationId, builder.build());
     }
 
     static boolean applyReadControl(
@@ -223,19 +282,39 @@ final class DizyNotificationManager {
             Log.w(TAG, "ensureChannel: NotificationManager unavailable");
             return;
         }
-        if (manager.getNotificationChannel(CHANNEL_ID) != null) {
+
+        if (manager.getNotificationChannel(CHANNEL_ID) == null) {
+            NotificationChannel messageChannel = new NotificationChannel(
+                    CHANNEL_ID,
+                    "DizyChat messages",
+                    NotificationManager.IMPORTANCE_HIGH
+            );
+            messageChannel.setDescription("Messages from subscribed DizyChat rooms");
+            messageChannel.enableVibration(true);
+            messageChannel.setVibrationPattern(new long[]{0, 180, 120, 180});
+            manager.createNotificationChannel(messageChannel);
+            Log.i(TAG, "ensureChannel: created " + CHANNEL_ID);
+        } else {
             Log.i(TAG, "ensureChannel: existing " + CHANNEL_ID);
-            return;
         }
-        NotificationChannel channel = new NotificationChannel(
-                CHANNEL_ID,
-                "DizyChat messages",
-                NotificationManager.IMPORTANCE_HIGH
-        );
-        channel.setDescription("Messages from subscribed DizyChat rooms");
-        channel.enableVibration(true);
-        channel.setVibrationPattern(new long[]{0, 180, 120, 180});
-        manager.createNotificationChannel(channel);
-        Log.i(TAG, "ensureChannel: created " + CHANNEL_ID);
+
+        if (manager.getNotificationChannel(ACTIVITY_CHANNEL_ID) == null) {
+            NotificationChannel activityChannel = new NotificationChannel(
+                    ACTIVITY_CHANNEL_ID,
+                    "DizyChat activities",
+                    NotificationManager.IMPORTANCE_HIGH
+            );
+            activityChannel.setDescription("Voice, video, jam, watch party and screen share activity");
+            activityChannel.enableVibration(true);
+            activityChannel.setVibrationPattern(new long[]{0, 180, 120, 180});
+            manager.createNotificationChannel(activityChannel);
+            Log.i(TAG, "ensureChannel: created " + ACTIVITY_CHANNEL_ID);
+        } else {
+            Log.i(TAG, "ensureChannel: existing " + ACTIVITY_CHANNEL_ID);
+        }
+    }
+
+    private static String clean(String value) {
+        return value == null ? "" : value.trim();
     }
 }

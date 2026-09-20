@@ -746,6 +746,10 @@
         }
         state.localScreenPublication = publication;
         state.localScreenTrack = publication?.track || videoMediaTrack;
+        hostWindow.socket?.emit?.('call:media-start', {
+          room: hostWindow.currentRoom,
+          kind: 'screen-share',
+        });
       } catch (error) {
         if (state.localScreenStream !== stream || state.localScreenMediaTrack !== videoMediaTrack) return;
         console.warn('[DizyChat Call] screen video publish failed', error);
