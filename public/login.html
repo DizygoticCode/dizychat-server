@@ -39,7 +39,7 @@
           <section id="registered-login" class="auth-entry-card auth-entry-card--primary" aria-labelledby="registered-login-title">
             <h2 id="registered-login-title">Registered account</h2>
             <p>Use your protected DizyChat identity.</p>
-            <label class="auth-field" for="account-username">
+            <label id="account-username-field" class="auth-field" for="account-username">
               <span>Account username</span>
               <input
                 id="account-username"
@@ -50,7 +50,7 @@
                 spellcheck="false"
               />
             </label>
-            <label class="auth-field" for="account-password">
+            <label id="account-password-field" class="auth-field" for="account-password">
               <span>Account password</span>
               <input
                 id="account-password"
@@ -114,6 +114,7 @@
               />
             </label>
             <button id="guest-continue-btn" type="button">Continue as guest</button>
+            <p id="guest-login-status" class="auth-entry-status" aria-live="polite"></p>
           </section>
         </div>
 
