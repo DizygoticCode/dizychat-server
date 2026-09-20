@@ -112,7 +112,10 @@ test('registered sign-in establishes global identity without selecting or joinin
   assert.equal(c.sent.some((e) => e.name === 'join room'), false);
   assert.equal(c.auth.readToken(), 'test-token');
   assert.equal(c.roomInput.disabled, false, 'successful account sign-in unlocks room selection');
-  assert.equal(c.joinBtn.disabled, false, 'successful account sign-in enables room join');
+  assert.equal(c.joinBtn.disabled, true, 'join stays disabled until a room name is entered');
+  c.roomInput.value = 'Second';
+  c.roomInput.fire('input');
+  assert.equal(c.joinBtn.disabled, false, 'room name enables the join action');
 });
 
 test('Leave room preserves identity and token and exposes lobby account Sign out', async () => {
@@ -167,10 +170,12 @@ test('guest identity confirmation unlocks room selection without joining until S
   c.guestContinueBtn.click();
 
   assert.equal(c.roomInput.disabled, false);
-  assert.equal(c.joinBtn.disabled, false);
+  assert.equal(c.joinBtn.disabled, true);
   assert.equal(c.sent.some((e) => e.name === 'join room'), false);
 
   c.roomInput.value = 'General Chat';
+  c.roomInput.fire('input');
+  assert.equal(c.joinBtn.disabled, false);
   c.joinBtn.click();
 
   const join = c.sent.find((e) => e.name === 'join room');
