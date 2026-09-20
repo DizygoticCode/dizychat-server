@@ -24,6 +24,8 @@ function element() {
   return {
     value: '', hidden: false, textContent: '', disabled: false, style: {}, dataset: {}, children: [],
     classList: { add() {}, toggle() {}, remove() {} },
+    setAttribute() {},
+    querySelector() { return null; },
     addEventListener(name, fn) { events[name] = fn; },
     fire(name, event = {}) { return events[name]?.(event); },
     click() { return events.click?.(); }, focus() {},
@@ -41,8 +43,10 @@ function client({ native = false, vault = { token: '' }, logoutAck = { ok: true 
   };
   const nodes = Object.fromEntries([
     'accountIdentity', 'accountLogoutBtn', 'lobbyAccountLogoutBtn', 'accountLoginStatus',
-    'accountUsernameInput', 'accountPasswordInput', 'registeredJoinBtn', 'guestLogin',
-    'roomInput', 'passwordInput', 'usernameInput', 'leaveBtn', 'publicRoomList', 'joinBtn',
+    'accountUsernameInput', 'accountPasswordInput', 'accountUsernameField', 'accountPasswordField',
+    'registeredJoinBtn', 'registeredLogin', 'guestLogin', 'guestContinueBtn', 'guestLoginStatus',
+    'roomEntryStep', 'roomStepLockCopy', 'roomInput', 'passwordInput', 'usernameInput',
+    'leaveBtn', 'publicRoomList', 'joinBtn',
     'usernamePrompt', 'chatContainer', 'roomName',
   ].map((name) => [name, element()]));
   const events = {}, sent = [], toasts = [], pending = {}, timers = new Map();
@@ -71,7 +75,8 @@ function client({ native = false, vault = { token: '' }, logoutAck = { ok: true 
   const context = vm.createContext({ window, console: { ...console, warn() {} },
     setTimeout(fn) { const id = Symbol(); timers.set(id, fn); return id; },
     clearTimeout(id) { timers.delete(id); }, socket, ...nodes,
-    guestUsernameInput: nodes.usernameInput, accountAuth: null, events, sent,
+    guestUsernameInput: nodes.usernameInput, guestJoinBtn: nodes.joinBtn,
+    accountAuth: null, events, sent,
     appState: { users: [] }, latestPublicRooms: [], lastRoomName: '', lastRoomPassword: '', isViewingChat: false,
     copyJoinLinkBtn: null, siteLanding: null, pinnedContainer: null, messages: null,
     document: { createElement: element },
