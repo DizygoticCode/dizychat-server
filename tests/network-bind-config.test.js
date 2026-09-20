@@ -44,7 +44,7 @@ test('proxy client addresses are trusted only when the direct peer is loopback',
 
   assert.equal(resolveTrustedRemoteAddress({
     peerAddress: '127.0.0.1',
-    forwardedFor: '203.0.113.20, 127.0.0.1',
+    forwardedFor: '198.51.100.99, 203.0.113.20',
   }), '203.0.113.20');
 
   assert.equal(resolveTrustedRemoteAddress({
