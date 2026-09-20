@@ -26,13 +26,23 @@ const normaliseFetchTimeoutMs = (value) => {
   return Math.min(parsed, 60_000);
 };
 
-const fetchWithTimeout = async (fetchImpl, url, options = {}, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS) => {
-  if (typeof AbortController !== 'function') return fetchImpl(url, options);
+const withFetchTimeout = async (
+  fetchImpl,
+  url,
+  options = {},
+  timeoutMs = DEFAULT_FETCH_TIMEOUT_MS,
+  consumeResponse,
+) => {
+  if (typeof consumeResponse !== 'function') throw new Error('consumeResponse is required');
+  if (typeof AbortController !== 'function') {
+    return consumeResponse(await fetchImpl(url, options));
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), normaliseFetchTimeoutMs(timeoutMs));
   try {
-    return await fetchImpl(url, { ...options, signal: controller.signal });
+    const response = await fetchImpl(url, { ...options, signal: controller.signal });
+    return await consumeResponse(response);
   } catch (error) {
     if (controller.signal.aborted) {
       const timeoutError = new Error('101Soundboards request timed out.');
@@ -498,42 +508,42 @@ const postMcpMessage = async (fetchImpl, payload, sessionId = '', timeoutMs = DE
   };
   if (sessionId) headers['Mcp-Session-Id'] = sessionId;
 
-  const response = await fetchWithTimeout(fetchImpl, MCP_SEARCH_URL, {
+  return withFetchTimeout(fetchImpl, MCP_SEARCH_URL, {
     method: 'POST',
     redirect: 'manual',
     headers,
     body: JSON.stringify(payload),
-  }, timeoutMs);
+  }, timeoutMs, async (response) => {
+    if (!response || !response.ok) {
+      const error = new Error(
+        '101Soundboards MCP search failed with HTTP ' + String(response && response.status || 0) + '.'
+      );
+      error.code = response && (response.status === 403 || response.status === 429)
+        ? 'BROWSER_APPROVAL_REQUIRED'
+        : 'UPSTREAM_HTTP_ERROR';
+      throw error;
+    }
 
-  if (!response || !response.ok) {
-    const error = new Error(
-      '101Soundboards MCP search failed with HTTP ' + String(response && response.status || 0) + '.'
+    const buffer = await readBoundedResponse(
+      response,
+      MAX_PAGE_BYTES,
+      '101Soundboards MCP response exceeded the importer size limit.',
     );
-    error.code = response && (response.status === 403 || response.status === 429)
-      ? 'BROWSER_APPROVAL_REQUIRED'
-      : 'UPSTREAM_HTTP_ERROR';
-    throw error;
-  }
 
-  const buffer = await readBoundedResponse(
-    response,
-    MAX_PAGE_BYTES,
-    '101Soundboards MCP response exceeded the importer size limit.',
-  );
+    const message = parseMcpMessage(buffer.toString('utf8'));
+    if (message && message.error) {
+      const error = new Error(
+        normalise(message.error && message.error.message) || '101Soundboards MCP search returned an error.'
+      );
+      error.code = 'UPSTREAM_MCP_ERROR';
+      throw error;
+    }
 
-  const message = parseMcpMessage(buffer.toString('utf8'));
-  if (message && message.error) {
-    const error = new Error(
-      normalise(message.error && message.error.message) || '101Soundboards MCP search returned an error.'
-    );
-    error.code = 'UPSTREAM_MCP_ERROR';
-    throw error;
-  }
-
-  return {
-    message,
-    sessionId: normalise(response.headers && response.headers.get && response.headers.get('mcp-session-id')) || sessionId,
-  };
+    return {
+      message,
+      sessionId: normalise(response.headers && response.headers.get && response.headers.get('mcp-session-id')) || sessionId,
+    };
+  });
 };
 
 const searchBoardsViaMcp = async (fetchImpl, { query, limit, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS }) => {
@@ -681,48 +691,53 @@ const fetchResponse = async (fetchImpl, rawUrl, { maxBytes, binary = false, time
   let url = ensureAllowed101Url(rawUrl, 'https://www.101soundboards.com/');
   if (!url) throw new Error('Blocked non-101Soundboards fetch target.');
 
-  let response;
   for (let redirects = 0; redirects <= 4; redirects += 1) {
-    response = await fetchWithTimeout(fetchImpl, url.toString(), {
+    const step = await withFetchTimeout(fetchImpl, url.toString(), {
       method: 'GET',
       redirect: 'manual',
       headers: {
         'User-Agent': 'DizyChat Soundboard Importer/1.0',
         Accept: binary ? 'audio/*,application/octet-stream;q=0.8,*/*;q=0.1' : 'text/html,application/xhtml+xml',
       },
-    }, timeoutMs);
+    }, timeoutMs, async (response) => {
+      if (response?.status >= 300 && response?.status < 400) {
+        return { redirect: true, location: response.headers?.get?.('location') || '' };
+      }
 
-    if (response?.status >= 300 && response?.status < 400) {
-      const location = response.headers?.get?.('location');
-      const next = location ? ensureAllowed101Url(location, url.toString()) : null;
-      if (!next) throw new Error('101Soundboards redirect was blocked by the importer host boundary.');
-      if (redirects === 4) throw new Error('101Soundboards returned too many redirects.');
-      url = next;
-      continue;
-    }
-    break;
+      if (!response?.ok) {
+        const error = new Error(`101Soundboards request failed with HTTP ${response?.status || 0}.`);
+        error.code = response?.status === 403 || response?.status === 429 ? 'BROWSER_APPROVAL_REQUIRED' : 'UPSTREAM_HTTP_ERROR';
+        throw error;
+      }
+
+      const finalUrl = ensureAllowed101Url(response.url || url.toString(), url.toString());
+      if (!finalUrl) throw new Error('101Soundboards response escaped its allowed host boundary.');
+
+      const buffer = await readBoundedResponse(
+        response,
+        maxBytes,
+        '101Soundboards response exceeded the importer size limit.',
+      );
+
+      return {
+        redirect: false,
+        result: {
+          buffer,
+          url: finalUrl.toString(),
+          contentType: normalise(response.headers?.get?.('content-type')),
+        },
+      };
+    });
+
+    if (!step.redirect) return step.result;
+
+    const next = step.location ? ensureAllowed101Url(step.location, url.toString()) : null;
+    if (!next) throw new Error('101Soundboards redirect was blocked by the importer host boundary.');
+    if (redirects === 4) throw new Error('101Soundboards returned too many redirects.');
+    url = next;
   }
 
-  if (!response?.ok) {
-    const error = new Error(`101Soundboards request failed with HTTP ${response?.status || 0}.`);
-    error.code = response?.status === 403 || response?.status === 429 ? 'BROWSER_APPROVAL_REQUIRED' : 'UPSTREAM_HTTP_ERROR';
-    throw error;
-  }
-
-  const finalUrl = ensureAllowed101Url(response.url || url.toString(), url.toString());
-  if (!finalUrl) throw new Error('101Soundboards response escaped its allowed host boundary.');
-
-  const buffer = await readBoundedResponse(
-    response,
-    maxBytes,
-    '101Soundboards response exceeded the importer size limit.',
-  );
-
-  return {
-    buffer,
-    url: finalUrl.toString(),
-    contentType: normalise(response.headers?.get?.('content-type')),
-  };
+  throw new Error('101Soundboards request did not complete.');
 };
 
 const createSoundboardImporter = ({
