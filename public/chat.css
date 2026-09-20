@@ -3582,12 +3582,28 @@ body:not(.dark) #soundboard-btn {
 }
 
 @media (hover: hover) and (pointer: fine) {
+  .message.has-inline-media.has-inline-audio {
+    max-width: min(570px, 96%);
+  }
+
+  .message.media-only.has-inline-audio {
+    max-width: min(550px, 96%);
+  }
+
+  .message.has-inline-audio .inline-preview.inline-audio {
+    width: min(520px, 100%);
+  }
+
   .inline-preview.inline-audio .preview-media {
-    padding-right: 76px;
+    justify-items: start;
+  }
+
+  .inline-preview.inline-audio .preview-media audio {
+    width: min(440px, 100%);
   }
 
   .inline-preview.inline-audio .audio-waveform {
-    width: calc(100% + 76px);
+    width: 100%;
     box-sizing: border-box;
   }
 }
