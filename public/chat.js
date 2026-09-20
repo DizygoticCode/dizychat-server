@@ -9704,9 +9704,17 @@ if (voiceBtn) {
   panel.id = "soundboard-picker";
   panel.innerHTML = `
     <div class="soundboard-import" data-role="soundboard-import" hidden>
-      <div class="soundboard-import-title">Import 101Soundboards board</div>
+      <div class="soundboard-import-title">101Soundboards browser &amp; import</div>
       <div class="soundboard-import-row">
-        <input id="soundboard-import-url" type="url" inputmode="url" placeholder="Paste https://www.101soundboards.com/boards/…" autocomplete="off" spellcheck="false" />
+        <input id="soundboard-discover-query" type="search" placeholder="Search 101Soundboards…" autocomplete="off" spellcheck="false" />
+        <button id="soundboard-discover-btn" type="button">Search</button>
+      </div>
+      <div class="soundboard-import-row soundboard-import-row--secondary">
+        <button id="soundboard-popular-btn" type="button">Popular 100</button>
+      </div>
+      <div id="soundboard-discover-results" class="soundboard-discover-results" hidden></div>
+      <div class="soundboard-import-row soundboard-import-row--secondary">
+        <input id="soundboard-import-url" type="url" inputmode="url" placeholder="Or paste a /boards/ URL…" autocomplete="off" spellcheck="false" />
         <button id="soundboard-import-btn" type="button">Import</button>
       </div>
       <div class="soundboard-import-row soundboard-import-row--secondary">
@@ -9724,6 +9732,10 @@ if (voiceBtn) {
   const resultsEl = panel.querySelector("#soundboard-results");
   const searchInput = panel.querySelector("#soundboard-search-input");
   const importWrap = panel.querySelector('[data-role="soundboard-import"]');
+  const discoverQueryInput = panel.querySelector("#soundboard-discover-query");
+  const discoverBtn = panel.querySelector("#soundboard-discover-btn");
+  const popularBtn = panel.querySelector("#soundboard-popular-btn");
+  const discoverResults = panel.querySelector("#soundboard-discover-results");
   const importUrlInput = panel.querySelector("#soundboard-import-url");
   const importBtn = panel.querySelector("#soundboard-import-btn");
   const rebuildBtn = panel.querySelector("#soundboard-rebuild-btn");
@@ -9805,6 +9817,84 @@ if (voiceBtn) {
     importStatus.dataset.tone = tone;
   };
 
+  const renderDiscoveredBoards = (boards = [], label = "") => {
+    if (!discoverResults) return;
+    discoverResults.innerHTML = "";
+    discoverResults.hidden = false;
+
+    const header = document.createElement("div");
+    header.className = "soundboard-discover-summary";
+    header.textContent = boards.length ? `${label} · ${boards.length} board${boards.length === 1 ? "" : "s"}` : `${label} · no boards found`;
+    discoverResults.appendChild(header);
+
+    boards.forEach((board) => {
+      if (!board?.url) return;
+      const row = document.createElement("div");
+      row.className = "soundboard-discover-item";
+
+      const title = document.createElement("span");
+      title.className = "soundboard-discover-title";
+      title.textContent = board.title || board.id || "101Soundboards board";
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "soundboard-discover-import";
+      button.textContent = "Import";
+      button.addEventListener("click", () => {
+        if (importBtn.disabled) {
+          setImportStatus("Another soundboard job is already running.", "warn");
+          return;
+        }
+        importUrlInput.value = board.url;
+        void startBoardImport();
+      });
+
+      row.appendChild(title);
+      row.appendChild(button);
+      discoverResults.appendChild(row);
+    });
+  };
+
+  const discover101Boards = async (mode = "search") => {
+    if (!isOwnerAccount()) return;
+    const query = String(discoverQueryInput?.value || "").trim();
+    if (mode !== "popular" && !query) {
+      setImportStatus("Enter something to search on 101Soundboards.", "warn");
+      discoverQueryInput?.focus();
+      return;
+    }
+
+    discoverBtn.disabled = true;
+    popularBtn.disabled = true;
+    setImportStatus(mode === "popular" ? "Loading the 100 most popular boards…" : `Searching 101Soundboards for “${query}”…`, "loading");
+
+    try {
+      const params = new URLSearchParams({ mode });
+      if (mode !== "popular") params.set("q", query);
+      const response = await fetch(`/api/soundboards/discover?${params.toString()}`, {
+        headers: authHeaders(),
+        cache: "no-store",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || payload?.code || `101Soundboards discovery failed (${response.status}).`);
+      }
+      const boards = Array.isArray(payload?.boards) ? payload.boards : [];
+      renderDiscoveredBoards(boards, mode === "popular" ? "Popular 101Soundboards" : `Results for “${query}”`);
+      setImportStatus(
+        boards.length
+          ? "Choose a board below to import it."
+          : "No matching 101Soundboards boards were found.",
+        boards.length ? "complete" : "warn",
+      );
+    } catch (error) {
+      setImportStatus(error?.message || "Could not search 101Soundboards.", "error");
+    } finally {
+      discoverBtn.disabled = false;
+      popularBtn.disabled = false;
+    }
+  };
+
   const syncImporterIdentity = () => {
     if (!importWrap) return;
     const visible = isOwnerAccount();
@@ -9845,9 +9935,11 @@ if (voiceBtn) {
 
       const job = payload.job;
       const progress = job.progress || {};
-      const count = Number(progress.total || 0) > 0
-        ? ` ${Number(progress.current || 0)}/${Number(progress.total || 0)}`
-        : "";
+      const count = job.boardId === "__rebuild-existing__"
+        ? ""
+        : Number(progress.total || 0) > 0
+          ? ` ${Number(progress.current || 0)}/${Number(progress.total || 0)}`
+          : "";
       setImportStatus(`${progress.message || "Importing…"}${count}`, job.status);
 
       if (job.status === "complete") {
@@ -9891,7 +9983,7 @@ if (voiceBtn) {
   };
 
   const startBoardImport = async () => {
-    if (!isOwnerAccount()) return;
+    if (!isOwnerAccount() || importBtn.disabled) return;
     const url = String(importUrlInput?.value || "").trim();
     if (!url) {
       setImportStatus("Paste a 101Soundboards board URL first.", "warn");
@@ -9951,6 +10043,21 @@ if (voiceBtn) {
       setImportStatus(error?.message || "Could not start existing-board rebuild.", "error");
     }
   };
+
+  discoverBtn?.addEventListener("click", () => {
+    void discover101Boards("search");
+  });
+
+  popularBtn?.addEventListener("click", () => {
+    void discover101Boards("popular");
+  });
+
+  discoverQueryInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void discover101Boards("search");
+    }
+  });
 
   importBtn?.addEventListener("click", () => {
     void startBoardImport();
