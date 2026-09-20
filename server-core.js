@@ -30,6 +30,11 @@ const { createWebPushCoordinator } = require('./src/push/web-push-coordinator');
 const { createConfiguredWebPushTransport } = require('./src/push/web-push-config');
 const { createReadStateCoordinator } = require('./src/push/read-state-coordinator');
 const { createChatMessageService } = require('./src/messages/chat-message-service');
+const {
+  isMessageAuthor,
+  resolveCurrentSocketRoom,
+  resolveSocketUsername,
+} = require('./src/messages/socket-message-authorization');
 const { createConfiguredPushTransport } = require('./src/push/fcm-config');
 const { readLegacyAdminCredentials } = require('./src/auth/legacy-admin-credentials');
 const { createSessionStore } = require('./src/auth/session-store');
@@ -4142,7 +4147,7 @@ io.on('connection', socket => {
 
   socket.on('message read', async ({ room, id }) => {
     try {
-      const targetRoom = normaliseRoomName(room) || socket.currentRoom;
+      const targetRoom = resolveCurrentSocketRoom(socket, room);
       if (!targetRoom || !id) return;
       const msg = await Message.findById(id);
       if (!msg) return;
@@ -4176,15 +4181,31 @@ io.on('connection', socket => {
   // ----- Edit / Delete / Pin / Star / React -----
   socket.on('edit message', async ({ room, id, text }) => {
     try {
-      const sanitized = sanitizeHtml(text, { allowedTags: [], allowedAttributes: {} });
-      const msg = await Message.findByIdAndUpdate(id, { text: sanitized }, { new: true });
-      if (msg) io.to(room).emit('edit message', { id, text: msg.text });
+      const targetRoom = resolveCurrentSocketRoom(socket, room);
+      if (!targetRoom || !id) return;
+
+      const msg = await Message.findById(id);
+      if (!msg || msg.deleted || msg.room !== targetRoom) return;
+
+      const username = resolveSocketUsername(socket);
+      if (!username || !isMessageAuthor(msg, username)) {
+        socket.emit('toast', { type: 'warn', text: 'You can only edit your own messages.' });
+        return;
+      }
+
+      const sanitized = sanitizeHtml(String(text || ''), {
+        allowedTags: [],
+        allowedAttributes: {},
+      }).slice(0, 1000);
+      msg.text = sanitized;
+      await msg.save();
+      io.to(targetRoom).emit('edit message', { id, text: msg.text });
     } catch(err){ console.error("[Edit] Error:", err); }
   });
 
   socket.on('delete message', async ({ room, id, scope }) => {
     try {
-      const targetRoom = room || socket.currentRoom;
+      const targetRoom = resolveCurrentSocketRoom(socket, room);
       if (!targetRoom || !id) return;
 
       if (scope === 'me') {
@@ -4193,11 +4214,10 @@ io.on('connection', socket => {
       }
 
       const msg = await Message.findById(id);
-      if (!msg) return;
-      if (targetRoom && msg.room !== targetRoom) return;
+      if (!msg || msg.room !== targetRoom) return;
 
-      const username = socket.username || '';
-      const isOwner = msg.user === username;
+      const username = resolveSocketUsername(socket);
+      const isOwner = isMessageAuthor(msg, username);
 
       if (!requireModerator(socket) && !isOwner) {
         socket.emit('toast', { type: 'warn', text: 'You can only delete your own messages.' });
@@ -4230,15 +4250,14 @@ io.on('connection', socket => {
 
   socket.on('pin message', async ({ room, id }) => {
     try {
-      const targetRoom = room || socket.currentRoom;
+      const targetRoom = resolveCurrentSocketRoom(socket, room);
       if (!targetRoom || !id) return;
 
       const msg = await Message.findById(id);
-      if (!msg || msg.deleted) return;
-      if (targetRoom && msg.room !== targetRoom) return;
+      if (!msg || msg.deleted || msg.room !== targetRoom) return;
 
       msg.pinned = true;
-      msg.pinnedBy = socket.username || '';
+      msg.pinnedBy = resolveSocketUsername(socket);
       await msg.save();
 
       const payload = msg.toJSON ? msg.toJSON() : msg;
@@ -4248,14 +4267,13 @@ io.on('connection', socket => {
 
   socket.on('unpin message', async ({ room, id }) => {
     try {
-      const targetRoom = room || socket.currentRoom;
+      const targetRoom = resolveCurrentSocketRoom(socket, room);
       if (!targetRoom || !id) return;
 
       const msg = await Message.findById(id);
-      if (!msg) return;
-      if (targetRoom && msg.room !== targetRoom) return;
+      if (!msg || msg.room !== targetRoom) return;
 
-      const username = socket.username || '';
+      const username = resolveSocketUsername(socket);
       const isOwner = msg.pinnedBy && msg.pinnedBy === username;
       if (!requireModerator(socket) && !isOwner) {
         socket.emit('toast', { type: 'warn', text: 'Only admins can remove this pin.' });
@@ -4271,48 +4289,60 @@ io.on('connection', socket => {
     } catch(err){ console.error("[Unpin] Error:", err); }
   });
 
-  socket.on('get pinned', async ({ room }) => {
+  socket.on('get pinned', async ({ room } = {}) => {
     try {
-      const pinned = await Message.find({ room, pinned: true, deleted: { $ne: true } }).sort({ timestamp: -1 }).limit(50);
+      const targetRoom = resolveCurrentSocketRoom(socket, room);
+      if (!targetRoom) return;
+      const pinned = await Message.find({
+        room: targetRoom,
+        pinned: true,
+        deleted: { $ne: true },
+      }).sort({ timestamp: -1 }).limit(50);
       socket.emit('pinned messages', pinned);
     } catch(err){ console.error("[Pinned fetch] Error:", err); }
   });
 
-  socket.on('star message', async ({ room, id, user }) => {
+  socket.on('star message', async ({ room, id }) => {
     try {
+      const targetRoom = resolveCurrentSocketRoom(socket, room);
+      if (!targetRoom || !id) return;
+
       const msg = await Message.findById(id);
-      if (!msg || msg.deleted) return;
-      if (room && msg.room !== room) return;
-      const targetRoom = room || msg.room;
-      if (!targetRoom) return;
-      if (!msg.starredBy.includes(user)) msg.starredBy.push(user);
+      if (!msg || msg.deleted || msg.room !== targetRoom) return;
+
+      const username = resolveSocketUsername(socket);
+      if (!username) return;
+      if (!msg.starredBy.includes(username)) msg.starredBy.push(username);
       await msg.save();
       io.to(targetRoom).emit('message starred', { id, starredBy: msg.starredBy });
     } catch(err){ console.error("[Star] Error:", err); }
   });
 
-  socket.on('unstar message', async ({ room, id, user }) => {
+  socket.on('unstar message', async ({ room, id }) => {
     try {
+      const targetRoom = resolveCurrentSocketRoom(socket, room);
+      if (!targetRoom || !id) return;
+
       const msg = await Message.findById(id);
-      if (!msg || msg.deleted) return;
-      if (room && msg.room !== room) return;
-      const targetRoom = room || msg.room;
-      if (!targetRoom) return;
-      msg.starredBy = msg.starredBy.filter(u => u !== user);
+      if (!msg || msg.deleted || msg.room !== targetRoom) return;
+
+      const username = resolveSocketUsername(socket);
+      if (!username) return;
+      msg.starredBy = msg.starredBy.filter(u => u !== username);
       await msg.save();
       io.to(targetRoom).emit('message unstarred', { id, starredBy: msg.starredBy });
     } catch(err){ console.error("[Unstar] Error:", err); }
   });
 
-  socket.on('react message', async ({ room, id, reaction, username }) => {
+  socket.on('react message', async ({ room, id, reaction }) => {
     try {
-      const msg = await Message.findById(id);
-      if (!msg || msg.deleted) return;
-      if (room && msg.room !== room) return;
-      const targetRoom = room || msg.room;
-      if (!targetRoom) return;
+      const targetRoom = resolveCurrentSocketRoom(socket, room);
+      if (!targetRoom || !id) return;
 
-      const user = typeof username === 'string' ? username.trim() : '';
+      const msg = await Message.findById(id);
+      if (!msg || msg.deleted || msg.room !== targetRoom) return;
+
+      const user = resolveSocketUsername(socket);
       if (!user) return;
 
       const normalizedReaction = typeof reaction === 'string' ? reaction.trim().slice(0, 128) : '';
@@ -4335,7 +4365,7 @@ io.on('connection', socket => {
 
   socket.on('search messages', async ({ room, query = '', filter = 'all', limit = 50 } = {}) => {
     try {
-      const targetRoom = normaliseRoomName(room) || socket.currentRoom;
+      const targetRoom = resolveCurrentSocketRoom(socket, room);
       if (!targetRoom) return;
 
       const conditions = { room: targetRoom, deleted: { $ne: true } };
@@ -4343,7 +4373,7 @@ io.on('connection', socket => {
       if (filter === 'pinned') {
         conditions.pinned = true;
       } else if (filter === 'starred') {
-        const username = socket.username || '';
+        const username = resolveSocketUsername(socket);
         if (username) conditions.starredBy = username;
         else conditions.starredBy = { $exists: true, $not: { $size: 0 } };
       }
@@ -4365,7 +4395,7 @@ io.on('connection', socket => {
       socket.emit('search results', { room: targetRoom, query, filter, results: payload });
     } catch(err){
       console.error('[Search] Error:', err);
-      socket.emit('search results', { room: room || socket.currentRoom, query, filter, results: [] });
+      socket.emit('search results', { room: socket.currentRoom, query, filter, results: [] });
     }
   });
 
