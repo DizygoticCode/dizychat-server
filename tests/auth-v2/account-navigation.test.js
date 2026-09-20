@@ -111,6 +111,8 @@ test('registered sign-in establishes global identity without selecting or joinin
   assert.equal(c.window.currentRoom, null);
   assert.equal(c.sent.some((e) => e.name === 'join room'), false);
   assert.equal(c.auth.readToken(), 'test-token');
+  assert.equal(c.roomInput.disabled, false, 'successful account sign-in unlocks room selection');
+  assert.equal(c.joinBtn.disabled, false, 'successful account sign-in enables room join');
 });
 
 test('Leave room preserves identity and token and exposes lobby account Sign out', async () => {
@@ -155,6 +157,40 @@ test('Enter on registered credentials signs in globally rather than attempting a
   await flush();
   assert.equal(c.run('accountState.identity?.username'), identity.username);
 });
+
+test('guest identity confirmation unlocks room selection without joining until Step 2', () => {
+  const c = client();
+  assert.equal(c.roomInput.disabled, true);
+  assert.equal(c.joinBtn.disabled, true);
+
+  c.usernameInput.value = 'GuestTester';
+  c.guestContinueBtn.click();
+
+  assert.equal(c.roomInput.disabled, false);
+  assert.equal(c.joinBtn.disabled, false);
+  assert.equal(c.sent.some((e) => e.name === 'join room'), false);
+
+  c.roomInput.value = 'General Chat';
+  c.joinBtn.click();
+
+  const join = c.sent.find((e) => e.name === 'join room');
+  assert.equal(join?.payload.username, 'GuestTester');
+  assert.equal(join?.payload.room, 'General Chat');
+});
+
+test('editing a confirmed guest name re-locks room selection', () => {
+  const c = client();
+  c.usernameInput.value = 'GuestTester';
+  c.guestContinueBtn.click();
+  assert.equal(c.roomInput.disabled, false);
+
+  c.usernameInput.value = 'DifferentGuest';
+  c.usernameInput.fire('input');
+
+  assert.equal(c.roomInput.disabled, true);
+  assert.equal(c.joinBtn.disabled, true);
+});
+
 
 for (const native of [false, true]) {
   test(`explicit ${native ? 'Android' : 'browser'} logout clears the session and cannot restore it`, async () => {
