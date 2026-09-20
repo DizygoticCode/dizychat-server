@@ -69,7 +69,7 @@ const parseSoundPageUrl = (raw) => {
     throw new Error('Only HTTPS 101Soundboards sound URLs can be imported.');
   }
 
-  if (!/^\/sounds\/[^/]+\/?$/i.test(parsed.pathname)) {
+  if (!/^\/sounds\/\d+(?:[-a-z0-9_%]*)\/?$/i.test(parsed.pathname)) {
     throw new Error('Choose a 101Soundboards /sounds/... URL.');
   }
 
@@ -109,6 +109,30 @@ const ensureAllowed101Url = (raw, baseUrl) => {
   return parsed;
 };
 
+const soundLabelFromUrl = (raw) => {
+  try {
+    const parsed = new URL(raw, 'https://www.101soundboards.com/');
+    const match = parsed.pathname.match(/^\/sounds\/\d+(?:-([^/?#]+))?\/?$/i);
+    const slug = match?.[1] || '';
+    if (!slug) return '';
+    return decodeURIComponent(slug)
+      .replace(/[-_]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  } catch {
+    return '';
+  }
+};
+
+const cleanSoundLabel = (value, rawUrl = '') => {
+  const cleaned = normalise(value)
+    .replace(/your browser does not support the audio element\.?/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned || soundLabelFromUrl(rawUrl);
+};
+
 const extractBoard = (html, boardUrl) => {
   if (challengeDetected(html)) {
     const error = new Error('101Soundboards requires browser approval before this board can be imported.');
@@ -122,17 +146,31 @@ const extractBoard = (html, boardUrl) => {
 
   const addSoundPage = (raw, label = '') => {
     const url = ensureAllowed101Url(raw, boardUrl);
-    if (!url || !/^\/sounds\/[^/]+\/?$/i.test(url.pathname)) return;
+    if (!url || !/^\/sounds\/\d+(?:[-a-z0-9_%]*)\/?$/i.test(url.pathname)) return;
     url.search = '';
     url.hash = '';
     const href = url.toString().replace(/\/$/, '');
     if (!soundPages.has(href)) {
-      soundPages.set(href, normalise(label));
+      soundPages.set(href, cleanSoundLabel(label, href));
     }
   };
 
-  $('a[href*="/sounds/"]').each((_, el) => addSoundPage($(el).attr('href'), $(el).text()));
-  $('[data-href*="/sounds/"]').each((_, el) => addSoundPage($(el).attr('data-href'), $(el).text()));
+  $('a[href*="/sounds/"]').each((_, el) => addSoundPage(
+    $(el).attr('href'),
+    $(el).attr('title')
+      || $(el).attr('aria-label')
+      || $(el).attr('data-title')
+      || $(el).find('[data-title]').first().attr('data-title')
+      || $(el).find('img[alt]').first().attr('alt')
+      || $(el).text()
+  ));
+  $('[data-href*="/sounds/"]').each((_, el) => addSoundPage(
+    $(el).attr('data-href'),
+    $(el).attr('title')
+      || $(el).attr('aria-label')
+      || $(el).attr('data-title')
+      || $(el).text()
+  ));
 
   $('script').each((_, el) => {
     const source = $(el).html() || '';
@@ -892,7 +930,7 @@ const createSoundboardImporter = ({
     const board = extractBoard(response.buffer.toString('utf8'), parsedBoard.url);
     const clips = board.clips.slice(0, safeLimit).map((clip) => ({
       provider: '101soundboards',
-      title: normalise(clip.label) || 'Sound clip',
+      title: cleanSoundLabel(clip.label, clip.soundPageUrl) || 'Sound clip',
       soundPageUrl: clip.soundPageUrl,
     }));
 
