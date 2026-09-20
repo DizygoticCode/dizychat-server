@@ -16,8 +16,66 @@ const MAX_CLIPS = 10_000;
 const MAX_PAGE_BYTES = 2 * 1024 * 1024;
 const MAX_AUDIO_BYTES = 16 * 1024 * 1024;
 const MAX_TOTAL_AUDIO_BYTES = 2 * 1024 * 1024 * 1024;
+const DEFAULT_FETCH_TIMEOUT_MS = 8_000;
 
 const normalise = (value) => typeof value === 'string' ? value.trim() : '';
+
+const normaliseFetchTimeoutMs = (value) => {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_FETCH_TIMEOUT_MS;
+  return Math.min(parsed, 60_000);
+};
+
+const withFetchTimeout = async (
+  fetchImpl,
+  url,
+  options = {},
+  timeoutMs = DEFAULT_FETCH_TIMEOUT_MS,
+  consumeResponse,
+) => {
+  if (typeof consumeResponse !== 'function') throw new Error('consumeResponse is required');
+  if (typeof AbortController !== 'function') {
+    return consumeResponse(await fetchImpl(url, options));
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), normaliseFetchTimeoutMs(timeoutMs));
+  try {
+    const response = await fetchImpl(url, { ...options, signal: controller.signal });
+    return await consumeResponse(response);
+  } catch (error) {
+    if (controller.signal.aborted) {
+      const timeoutError = new Error('101Soundboards request timed out.');
+      timeoutError.code = 'UPSTREAM_TIMEOUT';
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const readBoundedResponse = async (response, maxBytes, errorMessage) => {
+  const declared = Number(response?.headers?.get?.('content-length') || 0);
+  if (declared && maxBytes && declared > maxBytes) throw new Error(errorMessage);
+
+  const body = response?.body;
+  if (body && typeof body[Symbol.asyncIterator] === 'function') {
+    const chunks = [];
+    let total = 0;
+    for await (const chunk of body) {
+      const buffer = Buffer.from(chunk);
+      total += buffer.length;
+      if (maxBytes && total > maxBytes) throw new Error(errorMessage);
+      chunks.push(buffer);
+    }
+    return Buffer.concat(chunks, total);
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (maxBytes && buffer.length > maxBytes) throw new Error(errorMessage);
+  return buffer;
+};
 
 const isAllowed101Host = (hostname) => {
   const host = normalise(hostname).toLowerCase().replace(/\.$/, '');
@@ -441,7 +499,7 @@ const extractMcpSearchBoards = (message, query = '') => {
     .map((entry) => entry.result);
 };
 
-const postMcpMessage = async (fetchImpl, payload, sessionId = '') => {
+const postMcpMessage = async (fetchImpl, payload, sessionId = '', timeoutMs = DEFAULT_FETCH_TIMEOUT_MS) => {
   const headers = {
     'User-Agent': 'DizyChat Soundboard Importer/1.0',
     Accept: 'application/json, text/event-stream',
@@ -450,49 +508,45 @@ const postMcpMessage = async (fetchImpl, payload, sessionId = '') => {
   };
   if (sessionId) headers['Mcp-Session-Id'] = sessionId;
 
-  const response = await fetchImpl(MCP_SEARCH_URL, {
+  return withFetchTimeout(fetchImpl, MCP_SEARCH_URL, {
     method: 'POST',
     redirect: 'manual',
     headers,
     body: JSON.stringify(payload),
+  }, timeoutMs, async (response) => {
+    if (!response || !response.ok) {
+      const error = new Error(
+        '101Soundboards MCP search failed with HTTP ' + String(response && response.status || 0) + '.'
+      );
+      error.code = response && (response.status === 403 || response.status === 429)
+        ? 'BROWSER_APPROVAL_REQUIRED'
+        : 'UPSTREAM_HTTP_ERROR';
+      throw error;
+    }
+
+    const buffer = await readBoundedResponse(
+      response,
+      MAX_PAGE_BYTES,
+      '101Soundboards MCP response exceeded the importer size limit.',
+    );
+
+    const message = parseMcpMessage(buffer.toString('utf8'));
+    if (message && message.error) {
+      const error = new Error(
+        normalise(message.error && message.error.message) || '101Soundboards MCP search returned an error.'
+      );
+      error.code = 'UPSTREAM_MCP_ERROR';
+      throw error;
+    }
+
+    return {
+      message,
+      sessionId: normalise(response.headers && response.headers.get && response.headers.get('mcp-session-id')) || sessionId,
+    };
   });
-
-  if (!response || !response.ok) {
-    const error = new Error(
-      '101Soundboards MCP search failed with HTTP ' + String(response && response.status || 0) + '.'
-    );
-    error.code = response && (response.status === 403 || response.status === 429)
-      ? 'BROWSER_APPROVAL_REQUIRED'
-      : 'UPSTREAM_HTTP_ERROR';
-    throw error;
-  }
-
-  const declared = Number(response.headers && response.headers.get && response.headers.get('content-length') || 0);
-  if (declared && declared > MAX_PAGE_BYTES) {
-    throw new Error('101Soundboards MCP response exceeded the importer size limit.');
-  }
-
-  const buffer = Buffer.from(await response.arrayBuffer());
-  if (buffer.length > MAX_PAGE_BYTES) {
-    throw new Error('101Soundboards MCP response exceeded the importer size limit.');
-  }
-
-  const message = parseMcpMessage(buffer.toString('utf8'));
-  if (message && message.error) {
-    const error = new Error(
-      normalise(message.error && message.error.message) || '101Soundboards MCP search returned an error.'
-    );
-    error.code = 'UPSTREAM_MCP_ERROR';
-    throw error;
-  }
-
-  return {
-    message,
-    sessionId: normalise(response.headers && response.headers.get && response.headers.get('mcp-session-id')) || sessionId,
-  };
 };
 
-const searchBoardsViaMcp = async (fetchImpl, { query, limit }) => {
+const searchBoardsViaMcp = async (fetchImpl, { query, limit, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS }) => {
   const initialized = await postMcpMessage(fetchImpl, {
     jsonrpc: '2.0',
     id: 1,
@@ -505,7 +559,7 @@ const searchBoardsViaMcp = async (fetchImpl, { query, limit }) => {
         version: '1.0',
       },
     },
-  });
+  }, '', timeoutMs);
 
   if (!initialized.message || !initialized.message.result) {
     const error = new Error('101Soundboards MCP search did not initialize correctly.');
@@ -517,7 +571,7 @@ const searchBoardsViaMcp = async (fetchImpl, { query, limit }) => {
     jsonrpc: '2.0',
     method: 'notifications/initialized',
     params: {},
-  }, initialized.sessionId);
+  }, initialized.sessionId, timeoutMs);
 
   const searched = await postMcpMessage(fetchImpl, {
     jsonrpc: '2.0',
@@ -532,7 +586,7 @@ const searchBoardsViaMcp = async (fetchImpl, { query, limit }) => {
         record_source: 'dizychat',
       },
     },
-  }, initialized.sessionId);
+  }, initialized.sessionId, timeoutMs);
 
   return extractMcpSearchBoards(searched.message, query).slice(0, limit);
 };
@@ -633,52 +687,57 @@ const readJson = async (filePath, fallback) => {
   }
 };
 
-const fetchResponse = async (fetchImpl, rawUrl, { maxBytes, binary = false } = {}) => {
+const fetchResponse = async (fetchImpl, rawUrl, { maxBytes, binary = false, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS } = {}) => {
   let url = ensureAllowed101Url(rawUrl, 'https://www.101soundboards.com/');
   if (!url) throw new Error('Blocked non-101Soundboards fetch target.');
 
-  let response;
   for (let redirects = 0; redirects <= 4; redirects += 1) {
-    response = await fetchImpl(url.toString(), {
+    const step = await withFetchTimeout(fetchImpl, url.toString(), {
       method: 'GET',
       redirect: 'manual',
       headers: {
         'User-Agent': 'DizyChat Soundboard Importer/1.0',
         Accept: binary ? 'audio/*,application/octet-stream;q=0.8,*/*;q=0.1' : 'text/html,application/xhtml+xml',
       },
+    }, timeoutMs, async (response) => {
+      if (response?.status >= 300 && response?.status < 400) {
+        return { redirect: true, location: response.headers?.get?.('location') || '' };
+      }
+
+      if (!response?.ok) {
+        const error = new Error(`101Soundboards request failed with HTTP ${response?.status || 0}.`);
+        error.code = response?.status === 403 || response?.status === 429 ? 'BROWSER_APPROVAL_REQUIRED' : 'UPSTREAM_HTTP_ERROR';
+        throw error;
+      }
+
+      const finalUrl = ensureAllowed101Url(response.url || url.toString(), url.toString());
+      if (!finalUrl) throw new Error('101Soundboards response escaped its allowed host boundary.');
+
+      const buffer = await readBoundedResponse(
+        response,
+        maxBytes,
+        '101Soundboards response exceeded the importer size limit.',
+      );
+
+      return {
+        redirect: false,
+        result: {
+          buffer,
+          url: finalUrl.toString(),
+          contentType: normalise(response.headers?.get?.('content-type')),
+        },
+      };
     });
 
-    if (response?.status >= 300 && response?.status < 400) {
-      const location = response.headers?.get?.('location');
-      const next = location ? ensureAllowed101Url(location, url.toString()) : null;
-      if (!next) throw new Error('101Soundboards redirect was blocked by the importer host boundary.');
-      if (redirects === 4) throw new Error('101Soundboards returned too many redirects.');
-      url = next;
-      continue;
-    }
-    break;
+    if (!step.redirect) return step.result;
+
+    const next = step.location ? ensureAllowed101Url(step.location, url.toString()) : null;
+    if (!next) throw new Error('101Soundboards redirect was blocked by the importer host boundary.');
+    if (redirects === 4) throw new Error('101Soundboards returned too many redirects.');
+    url = next;
   }
 
-  if (!response?.ok) {
-    const error = new Error(`101Soundboards request failed with HTTP ${response?.status || 0}.`);
-    error.code = response?.status === 403 || response?.status === 429 ? 'BROWSER_APPROVAL_REQUIRED' : 'UPSTREAM_HTTP_ERROR';
-    throw error;
-  }
-
-  const finalUrl = ensureAllowed101Url(response.url || url.toString(), url.toString());
-  if (!finalUrl) throw new Error('101Soundboards response escaped its allowed host boundary.');
-
-  const declared = Number(response.headers?.get?.('content-length') || 0);
-  if (declared && maxBytes && declared > maxBytes) throw new Error('101Soundboards response exceeded the importer size limit.');
-
-  const buffer = Buffer.from(await response.arrayBuffer());
-  if (maxBytes && buffer.length > maxBytes) throw new Error('101Soundboards response exceeded the importer size limit.');
-
-  return {
-    buffer,
-    url: finalUrl.toString(),
-    contentType: normalise(response.headers?.get?.('content-type')),
-  };
+  throw new Error('101Soundboards request did not complete.');
 };
 
 const createSoundboardImporter = ({
@@ -686,8 +745,14 @@ const createSoundboardImporter = ({
   dataRoot = DEFAULT_DATA_ROOT,
   publicRoot = DEFAULT_PUBLIC_ROOT,
   normalizeAudioImpl = normalizeSoundboardAudio,
+  fetchTimeoutMs = DEFAULT_FETCH_TIMEOUT_MS,
 } = {}) => {
   if (typeof fetchImpl !== 'function') throw new Error('fetchImpl is required');
+  const safeFetchTimeoutMs = normaliseFetchTimeoutMs(fetchTimeoutMs);
+  const fetch101Response = (rawUrl, options = {}) => fetchResponse(fetchImpl, rawUrl, {
+    ...options,
+    timeoutMs: safeFetchTimeoutMs,
+  });
 
   const importBoard = async ({
     boardUrl,
@@ -701,7 +766,7 @@ const createSoundboardImporter = ({
     const targetDir = path.join(publicRoot, parsedBoard.boardId);
 
     await onProgress({ phase: 'board', message: 'Fetching board page…', current: 0, total: 0 });
-    const boardResponse = await fetchResponse(fetchImpl, parsedBoard.url, { maxBytes: MAX_PAGE_BYTES });
+    const boardResponse = await fetch101Response(parsedBoard.url, { maxBytes: MAX_PAGE_BYTES });
     const boardHtml = boardResponse.buffer.toString('utf8');
     const board = extractBoard(boardHtml, parsedBoard.url);
 
@@ -765,7 +830,7 @@ const createSoundboardImporter = ({
       }
 
       try {
-        const soundPage = await fetchResponse(fetchImpl, clipRef.soundPageUrl, { maxBytes: MAX_PAGE_BYTES });
+        const soundPage = await fetch101Response(clipRef.soundPageUrl, { maxBytes: MAX_PAGE_BYTES });
         const clip = extractSound(soundPage.buffer.toString('utf8'), clipRef.soundPageUrl, clipRef.label);
         if (!clip) {
           failed += 1;
@@ -786,7 +851,7 @@ const createSoundboardImporter = ({
           }
         }
 
-        const audio = await fetchResponse(fetchImpl, clip.url, { maxBytes: MAX_AUDIO_BYTES, binary: true });
+        const audio = await fetch101Response(clip.url, { maxBytes: MAX_AUDIO_BYTES, binary: true });
         totalBytes += audio.buffer.length;
         if (totalBytes > MAX_TOTAL_AUDIO_BYTES) {
           throw new Error('Board import exceeded the total audio size limit.');
@@ -908,7 +973,7 @@ const createSoundboardImporter = ({
 
     const safeLimit = Math.min(Math.max(Number.parseInt(limit, 10) || 24, 1), 50);
     try {
-      const results = await searchBoardsViaMcp(fetchImpl, { query: q, limit: safeLimit });
+      const results = await searchBoardsViaMcp(fetchImpl, { query: q, limit: safeLimit, timeoutMs: safeFetchTimeoutMs });
       return { provider: '101soundboards', query: q, results };
     } catch (error) {
       if (error && error.code === 'BROWSER_APPROVAL_REQUIRED') throw error;
@@ -918,7 +983,7 @@ const createSoundboardImporter = ({
     }
 
     const searchUrl = 'https://www.101soundboards.com/search/' + encodeURIComponent(q);
-    const response = await fetchResponse(fetchImpl, searchUrl, { maxBytes: MAX_PAGE_BYTES });
+    const response = await fetch101Response(searchUrl, { maxBytes: MAX_PAGE_BYTES });
     const results = extractSearchBoards(response.buffer.toString('utf8'), response.url, q).slice(0, safeLimit);
     return { provider: '101soundboards', query: q, results };
   };
@@ -926,7 +991,7 @@ const createSoundboardImporter = ({
   const browseBoard = async ({ boardUrl, limit = 80 } = {}) => {
     const parsedBoard = parseBoardUrl(boardUrl);
     const safeLimit = Math.min(Math.max(Number.parseInt(limit, 10) || 80, 1), 200);
-    const response = await fetchResponse(fetchImpl, parsedBoard.url, { maxBytes: MAX_PAGE_BYTES });
+    const response = await fetch101Response(parsedBoard.url, { maxBytes: MAX_PAGE_BYTES });
     const board = extractBoard(response.buffer.toString('utf8'), parsedBoard.url);
     const clips = board.clips.slice(0, safeLimit).map((clip) => ({
       provider: '101soundboards',
@@ -947,7 +1012,7 @@ const createSoundboardImporter = ({
 
   const resolveClip = async ({ soundPageUrl } = {}) => {
     const parsedSound = parseSoundPageUrl(soundPageUrl);
-    const response = await fetchResponse(fetchImpl, parsedSound.url, { maxBytes: MAX_PAGE_BYTES });
+    const response = await fetch101Response(parsedSound.url, { maxBytes: MAX_PAGE_BYTES });
     const clip = extractSound(response.buffer.toString('utf8'), parsedSound.url);
     if (!clip) {
       const error = new Error('No playable audio was found for that 101Soundboards sound.');
