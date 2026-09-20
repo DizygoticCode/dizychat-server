@@ -27,54 +27,18 @@
       />
       <h1>Welcome to DizyChat</h1>
       <div class="landing-inputs auth-v2-landing">
-        <section class="room-entry-card auth-step-card" aria-labelledby="room-entry-title">
-          <div class="auth-section-heading">
-            <span class="auth-step-number" aria-hidden="true">1</span>
-            <div>
-              <h2 id="room-entry-title">Choose or create a room</h2>
-              <p>Room details are separate from your DizyChat account login.</p>
-            </div>
-          </div>
-          <div class="room-entry-fields" aria-label="Room details">
-            <label class="auth-field" for="room-input">
-              <span>Room name</span>
-              <input
-                id="room-input"
-                name="room-name"
-                placeholder="e.g. ShittyChat"
-                autocomplete="off"
-                autocapitalize="none"
-                spellcheck="false"
-              />
-            </label>
-            <label class="auth-field" for="room-password">
-              <span>Room password <small>optional</small></span>
-              <input
-                id="room-password"
-                name="room-access-password"
-                type="password"
-                placeholder="Only for private rooms"
-                autocomplete="off"
-                data-1p-ignore
-                data-lpignore="true"
-                data-bwignore="true"
-              />
-            </label>
-          </div>
-        </section>
-
         <div class="auth-choice-heading">
-          <span class="auth-step-number" aria-hidden="true">2</span>
+          <span class="auth-step-number" aria-hidden="true">1</span>
           <div>
             <h2>Choose how you want to join</h2>
-            <p>Sign in with a registered account, or use a guest name.</p>
+            <p>Sign in with your DizyChat account, or continue with a guest name.</p>
           </div>
         </div>
 
         <div class="auth-entry-grid">
           <section id="registered-login" class="auth-entry-card auth-entry-card--primary" aria-labelledby="registered-login-title">
             <h2 id="registered-login-title">Registered account</h2>
-            <p>Your account password is not the room password above.</p>
+            <p>Use your protected DizyChat identity.</p>
             <label class="auth-field" for="account-username">
               <span>Account username</span>
               <input
@@ -106,10 +70,10 @@
 
             <div id="create-account-panel" class="auth-subpanel" hidden>
               <h3>Create account</h3>
-              <input id="register-username" placeholder="Choose username" autocomplete="username" />
-              <input id="register-password" type="password" placeholder="Choose password (8+ characters)" autocomplete="new-password" />
-              <input id="register-password-confirm" type="password" placeholder="Confirm password" autocomplete="new-password" />
-              <input id="register-recovery-email" type="email" placeholder="Recovery email (optional)" autocomplete="email" />
+              <input id="register-username" name="new-username" placeholder="Choose username" autocomplete="off" autocapitalize="none" spellcheck="false" />
+              <input id="register-password" name="new-password" type="password" placeholder="Choose password (8+ characters)" autocomplete="new-password" />
+              <input id="register-password-confirm" name="new-password-confirm" type="password" placeholder="Confirm password" autocomplete="new-password" />
+              <input id="register-recovery-email" name="recovery-email" type="email" placeholder="Recovery email (optional)" autocomplete="email" />
               <p class="auth-help">Recovery email is optional and is used only for password recovery. No email verification is required.</p>
               <button id="register-submit-btn" type="button">Create account</button>
               <p id="register-status" class="auth-entry-status" aria-live="polite"></p>
@@ -117,7 +81,7 @@
 
             <div id="forgot-password-panel" class="auth-subpanel" hidden>
               <h3>Reset password</h3>
-              <input id="reset-request-username" placeholder="Account username" autocomplete="username" />
+              <input id="reset-request-username" name="reset-username" placeholder="Account username" autocomplete="username" autocapitalize="none" spellcheck="false" />
               <p class="auth-help">If that account has a recovery email, DizyChat will email a one-time reset link.</p>
               <button id="reset-request-submit-btn" type="button">Email reset link</button>
               <p id="reset-request-status" class="auth-entry-status" aria-live="polite"></p>
@@ -126,7 +90,7 @@
             <div id="recovery-email-manage" class="auth-subpanel" hidden>
               <h3>Add or change recovery email</h3>
               <p class="auth-help">Set an email for future password recovery. Your saved recovery address is never displayed here.</p>
-              <input id="recovery-email-update" type="email" placeholder="Recovery email" autocomplete="email" />
+              <input id="recovery-email-update" name="recovery-email-update" type="email" placeholder="Recovery email" autocomplete="email" />
               <button id="recovery-email-update-btn" type="button">Save recovery email</button>
               <p id="recovery-email-status" class="auth-entry-status" aria-live="polite"></p>
             </div>
@@ -149,14 +113,55 @@
                 data-bwignore="true"
               />
             </label>
-            <button id="guest-join-btn" type="button">Join as guest</button>
+            <button id="guest-continue-btn" type="button">Continue as guest</button>
           </section>
         </div>
-      </div>
 
-      <div id="room-list">
-        <h3>Available Public Rooms</h3>
-        <ul id="public-room-list"></ul>
+        <section id="room-entry-step" class="room-entry-card auth-step-card is-locked" aria-labelledby="room-entry-title" aria-disabled="true">
+          <div class="auth-section-heading">
+            <span class="auth-step-number" aria-hidden="true">2</span>
+            <div>
+              <h2 id="room-entry-title">Choose or create a room</h2>
+              <p class="auth-step-lock-copy">Complete Step 1 to unlock room selection.</p>
+            </div>
+          </div>
+
+          <div class="room-entry-fields" aria-label="Room details">
+            <label class="auth-field" for="room-input">
+              <span>Room name</span>
+              <input
+                id="room-input"
+                name="room-name"
+                placeholder="e.g. ShittyChat"
+                autocomplete="off"
+                autocapitalize="none"
+                spellcheck="false"
+                disabled
+              />
+            </label>
+            <label class="auth-field" for="room-password">
+              <span>Room password <small>optional</small></span>
+              <input
+                id="room-password"
+                name="room-access-password"
+                type="password"
+                placeholder="Only for private rooms"
+                autocomplete="off"
+                data-1p-ignore
+                data-lpignore="true"
+                data-bwignore="true"
+                disabled
+              />
+            </label>
+          </div>
+
+          <button id="guest-join-btn" class="room-join-btn" type="button" disabled>Join room</button>
+
+          <div id="room-list">
+            <h3>Or choose a public room</h3>
+            <ul id="public-room-list"></ul>
+          </div>
+        </section>
       </div>
     </div>
 
