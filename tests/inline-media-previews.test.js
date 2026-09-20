@@ -61,7 +61,10 @@ test('video and embedded players keep enough responsive space for native control
   assert.match(client, /if \(el\.tagName === "IFRAME"\) \{\s*node\.classList\.add\("has-inline-embed"\);/s);
   assert.match(css, /\.inline-preview\.inline-video \.preview-media\s*\{[^}]*aspect-ratio:\s*16 \/ 9;/s);
   assert.match(css, /\.inline-preview\.inline-video \.preview-media video\s*\{[^}]*object-fit:\s*contain;/s);
-  assert.match(css, /\.message\.has-inline-embed\s*\{[^}]*max-width:\s*min\(520px, 94%\);/s);
+  assert.match(
+    css,
+    /\.message\.has-inline-embed\s*\{[^}]*width:\s*min\(500px, 94%\);[^}]*max-width:\s*min\(520px, 94%\);/s,
+  );
   assert.match(
     css,
     /\.embed-iframe\.youtube,\s*\.embed-iframe\.rumble\s*\{[^}]*width:\s*100%;[^}]*aspect-ratio:\s*16 \/ 9;/s,
