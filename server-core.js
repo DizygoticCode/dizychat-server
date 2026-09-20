@@ -2324,6 +2324,26 @@ app.get('/giphy-search', async (req, res) => {
 
 const soundboardImportJson = express.json({ limit: '4kb' });
 
+app.get('/api/soundboards/discover', requireHttpAccount, requireHttpOwner, async (req, res) => {
+  try {
+    const mode = req.query?.mode === 'popular' ? 'popular' : 'search';
+    const query = typeof req.query?.q === 'string' ? req.query.q : '';
+    const limit = mode === 'popular' ? 100 : 50;
+    const result = await soundboardImporter.discoverBoards({ mode, query, limit });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ ok: true, ...result });
+  } catch (error) {
+    const code = String(error?.code || 'SOUNDBOARD_DISCOVERY_FAILED');
+    const status = code === 'BROWSER_APPROVAL_REQUIRED' ? 409 : 502;
+    return res.status(status).json({
+      ok: false,
+      code,
+      error: String(error?.message || 'Unable to discover 101Soundboards boards.'),
+      boards: [],
+    });
+  }
+});
+
 app.post('/api/soundboards/import', soundboardImportJson, requireHttpAccount, requireHttpOwner, (req, res) => {
   try {
     const job = startSoundboardImportJob({
