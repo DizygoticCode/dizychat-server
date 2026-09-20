@@ -326,12 +326,12 @@ const createSoundboardImporter = ({
       };
 
       const clipLabelKey = normalise(clipRef.label).toLowerCase();
-      const existingIndex = existingBySource.has(clipRef.soundPageUrl)
+      let existingIndex = existingBySource.has(clipRef.soundPageUrl)
         ? existingBySource.get(clipRef.soundPageUrl)
         : (clipLabelKey && existingByTitle.has(clipLabelKey)
           ? existingByTitle.get(clipLabelKey)
           : -1);
-      const existingItem = existingIndex >= 0 ? workingItems[existingIndex] : null;
+      let existingItem = existingIndex >= 0 ? workingItems[existingIndex] : null;
 
       if (existingItem && !replaceExisting) {
         skipped += 1;
@@ -346,6 +346,19 @@ const createSoundboardImporter = ({
           failed += 1;
           await onProgress({ ...progressBase, message: `No downloadable audio found for clip ${index + 1}.` });
           continue;
+        }
+
+        if (!existingItem) {
+          const resolvedTitleKey = normalise(clip.title).toLowerCase();
+          if (resolvedTitleKey && existingByTitle.has(resolvedTitleKey)) {
+            existingIndex = existingByTitle.get(resolvedTitleKey);
+            existingItem = workingItems[existingIndex] || null;
+            if (existingItem && !replaceExisting) {
+              skipped += 1;
+              await onProgress({ ...progressBase, message: `Skipping existing clip ${index + 1}/${board.clips.length}.` });
+              continue;
+            }
+          }
         }
 
         const audio = await fetchResponse(fetchImpl, clip.url, { maxBytes: MAX_AUDIO_BYTES, binary: true });
