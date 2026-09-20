@@ -72,7 +72,6 @@ const buildSocketOptions = (options = {}) => {
 
 const socketOptions = buildSocketOptions(baseSocketOptions);
 let socket;
-let pwaResumeReconnect = false;
 if (socketUrl && socketOptions) {
   socket = io(socketUrl, socketOptions);
 } else if (socketUrl) {
@@ -3805,8 +3804,8 @@ const MediaLightbox = (() => {
 socket.on("join error", (msg) => showToast(msg || "Join failed.", "error"));
 socket.on("toast", (data) => showToast(data?.text || "", data?.type || "info"));
 socket.on("connect", () => {
-  const resumedFromPwa = pwaResumeReconnect;
-  pwaResumeReconnect = false;
+  const resumedFromPwa = window.__dizyPwaResumeReconnect === true;
+  window.__dizyPwaResumeReconnect = false;
   showToast(resumedFromPwa ? "Reconnected" : "Connected", "success");
   renderPublicRooms([], { state: "loading" });
   socket.emit("request rooms");
@@ -3842,7 +3841,7 @@ socket.on("connect", () => {
 socket.on("disconnect", () => {
   finishAccountAction(accountState.revision);
   accountState.revision += 1;
-  if (!pwaResumeReconnect) {
+  if (window.__dizyPwaResumeReconnect !== true) {
     showToast("Disconnected — attempting to reconnect…", "warn");
   }
   renderPublicRooms([], { state: "error" });
@@ -3854,7 +3853,7 @@ window.addEventListener?.("dizychat:pwa-resume", (event) => {
   if (!detail.standalone) return;
 
   if (detail.reconnectRecommended) {
-    pwaResumeReconnect = true;
+    window.__dizyPwaResumeReconnect = true;
     if (socket.connected) socket.disconnect();
     socket.connect();
     return;
