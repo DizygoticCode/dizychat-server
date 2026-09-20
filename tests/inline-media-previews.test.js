@@ -18,7 +18,7 @@ test('audio attachments use compact accessible chat-style controls', () => {
 
   assert.match(
     css,
-    /\.message\.has-inline-media\.has-inline-audio\s*\{[^}]*min-width:\s*0;[^}]*max-width:\s*min\(450px, 96%\);/s,
+    /\.message\.has-inline-media\.has-inline-audio\s*\{[^}]*min-width:\s*0;[^}]*max-width:\s*min\(490px, 96%\);/s,
   );
   assert.match(
     css,
@@ -28,12 +28,17 @@ test('audio attachments use compact accessible chat-style controls', () => {
     css,
     /\.inline-preview\.inline-audio \.preview-media audio\s*\{[^}]*width:\s*100%;[^}]*height:\s*42px;/s,
   );
-  assert.match(css, /\.message\.media-only\.has-inline-audio\s*\{[^}]*max-width:\s*min\(430px, 96%\);/s);
-  assert.match(css, /\.message\.has-inline-audio \.inline-preview\.inline-audio\s*\{[^}]*width:\s*min\(400px, 100%\);/s);
-  assert.match(
-    css,
-    /@media \(hover: hover\) and \(pointer: fine\)\s*\{\s*\.inline-preview\.inline-audio \.preview-media\s*\{[^}]*padding-right:\s*34px;/s,
-  );
+  assert.match(css, /\.message\.media-only\.has-inline-audio\s*\{[^}]*max-width:\s*min\(470px, 96%\);/s);
+  assert.match(css, /\.message\.has-inline-audio \.inline-preview\.inline-audio\s*\{[^}]*width:\s*min\(440px, 100%\);/s);
+  assert.ok(css.includes('max-width: min(570px, 96%);'));
+  assert.ok(css.includes('max-width: min(550px, 96%);'));
+  assert.ok(css.includes('width: min(520px, 100%);'));
+  assert.ok(css.includes('width: min(440px, 100%);'));
+  assert.ok(css.includes('justify-items: start;'));
+  assert.match(client, /const isSoundboardAudio = previewType === "audio"/);
+  assert.match(client, /pathname\.startsWith\("\/soundboards\/"\)/);
+  assert.match(client, /node\.classList\.add\("has-soundboard-audio"\)/);
+  assert.match(css, /\.message\.has-soundboard-audio \.text:not\(:empty\)\s*\{[^}]*margin-bottom:\s*2px;[^}]*font-weight:\s*600;/s);
   assert.match(client, /waveform\.className = "audio-waveform"/);
   assert.match(client, /for \(let index = 0; index < 24; index \+= 1\)/);
   assert.match(client, /waveform\.dataset\.playing = audio\.paused \|\| audio\.ended \? "0" : "1"/);

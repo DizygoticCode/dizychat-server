@@ -7110,6 +7110,18 @@ function appendAttachmentFromMessage(node, msg) {
     preview.classList.add("tenor-inline");
   }
 
+  const isSoundboardAudio = previewType === "audio" && (() => {
+    try {
+      return new URL(url, window.location.origin).pathname.startsWith("/soundboards/");
+    } catch {
+      return /^\/soundboards\//i.test(String(url || ""));
+    }
+  })();
+  if (isSoundboardAudio) {
+    preview.classList.add("soundboard-audio-preview");
+    node.classList.add("has-soundboard-audio");
+  }
+
   attachPreviewActions(preview, { link: url, label, type: previewType });
   node.appendChild(preview);
   node.classList.add("has-inline-preview");
