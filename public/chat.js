@@ -9882,6 +9882,7 @@ if (voiceBtn) {
       }, 1200);
     } catch (error) {
       importBtn.disabled = false;
+      rebuildBtn.disabled = false;
       importUrlInput.disabled = false;
       setImportStatus(error?.message || "Could not read import status.", "error");
     }
@@ -9915,6 +9916,7 @@ if (voiceBtn) {
       void pollImportJob(payload.job.id);
     } catch (error) {
       importBtn.disabled = false;
+      rebuildBtn.disabled = false;
       importUrlInput.disabled = false;
       setImportStatus(error?.message || "Could not start soundboard import.", "error");
     }
