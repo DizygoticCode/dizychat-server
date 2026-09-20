@@ -12,13 +12,13 @@ test('audio attachments use compact accessible chat-style controls', () => {
   const css = fs.readFileSync(path.join(repoRoot, 'public', 'chat.css'), 'utf8');
 
   assert.match(client, /audio\.setAttribute\("aria-label", labelText \|\| "Audio message"\)/);
-  assert.match(client, /download\.textContent = "↓"/);
+  assert.match(client, /download\.textContent = "Download"/);
   assert.match(client, /download\.title = "Download audio"/);
   assert.match(client, /download\.setAttribute\("aria-label", "Download audio"\)/);
 
   assert.match(
     css,
-    /\.message\.has-inline-media\.has-inline-audio\s*\{[^}]*min-width:\s*0;[^}]*max-width:\s*min\(380px, 92%\);/s,
+    /\.message\.has-inline-media\.has-inline-audio\s*\{[^}]*min-width:\s*0;[^}]*max-width:\s*min\(400px, 94%\);/s,
   );
   assert.match(
     css,
@@ -26,9 +26,16 @@ test('audio attachments use compact accessible chat-style controls', () => {
   );
   assert.match(
     css,
-    /\.inline-preview\.inline-audio \.preview-media audio\s*\{[^}]*width:\s*100%;[^}]*height:\s*40px;/s,
+    /\.inline-preview\.inline-audio \.preview-media audio\s*\{[^}]*width:\s*100%;[^}]*height:\s*42px;/s,
   );
-  assert.match(css, /\.message\.media-only\.has-inline-audio\s*\{[^}]*max-width:\s*min\(360px, 92%\);/s);
+  assert.match(css, /\.message\.media-only\.has-inline-audio\s*\{[^}]*max-width:\s*min\(380px, 94%\);/s);
+  assert.match(client, /waveform\.className = "audio-waveform"/);
+  assert.match(client, /for \(let index = 0; index < 24; index \+= 1\)/);
+  assert.match(client, /waveform\.dataset\.playing = audio\.paused \|\| audio\.ended \? "0" : "1"/);
+  assert.match(client, /audio\.addEventListener\(eventName, syncAudioWaveform\)/);
+  assert.match(css, /\.audio-waveform\s*\{[^}]*height:\s*28px;/s);
+  assert.match(css, /\.audio-waveform-bar\.is-played\s*\{[^}]*background:\s*var\(--accent\);/s);
+  assert.match(css, /\.inline-preview\.inline-audio \.preview-download\s*\{[^}]*min-width:\s*84px;[^}]*border-radius:\s*999px;/s);
 });
 
 test('video and embedded players keep enough responsive space for native controls', () => {

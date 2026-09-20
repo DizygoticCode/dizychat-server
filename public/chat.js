@@ -6682,12 +6682,46 @@ function createInlinePreview(link, type, labelText) {
     });
     mediaWrap.appendChild(video);
   } else if (type === "audio") {
+    const waveform = document.createElement("div");
+    waveform.className = "audio-waveform";
+    waveform.setAttribute("aria-hidden", "true");
+    waveform.dataset.playing = "0";
+
+    const waveformBars = [];
+    for (let index = 0; index < 24; index += 1) {
+      const bar = document.createElement("span");
+      bar.className = "audio-waveform-bar";
+      bar.style?.setProperty("--wave-index", String(index));
+      bar.style?.setProperty("--wave-height", `${30 + ((index * 37) % 62)}%`);
+      waveform.appendChild(bar);
+      waveformBars.push(bar);
+    }
+
     const audio = document.createElement("audio");
     audio.src = resolveMediaSource(link);
     audio.controls = true;
     audio.preload = "metadata";
     audio.setAttribute("aria-label", labelText || "Audio message");
+
+    const syncAudioWaveform = () => {
+      const duration = Number(audio.duration);
+      const progress =
+        Number.isFinite(duration) && duration > 0
+          ? Math.max(0, Math.min(1, audio.currentTime / duration))
+          : 0;
+      const playedBars = Math.round(progress * waveformBars.length);
+      waveformBars.forEach((bar, index) => {
+        bar.classList.toggle("is-played", index < playedBars);
+      });
+      waveform.dataset.playing = audio.paused || audio.ended ? "0" : "1";
+    };
+
+    for (const eventName of ["loadedmetadata", "timeupdate", "play", "pause", "ended", "seeking"]) {
+      audio.addEventListener(eventName, syncAudioWaveform);
+    }
+
     mediaWrap.appendChild(audio);
+    mediaWrap.appendChild(waveform);
   } else {
     const label = document.createElement("span");
     label.className = "preview-label";
@@ -6919,7 +6953,7 @@ function attachPreviewActions(preview, { link, label, type } = {}) {
   download.className = "preview-download";
   download.setAttribute("download", "");
   if (type === "audio") {
-    download.textContent = "↓";
+    download.textContent = "Download";
     download.title = "Download audio";
     download.setAttribute("aria-label", "Download audio");
   } else {

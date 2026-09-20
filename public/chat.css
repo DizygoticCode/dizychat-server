@@ -3543,7 +3543,7 @@ body:not(.dark) #soundboard-btn {
 /* Compact chat-style audio cards for uploads, voice messages and soundboards. */
 .message.has-inline-media.has-inline-audio {
   min-width: 0;
-  max-width: min(380px, 92%);
+  max-width: min(400px, 94%);
 }
 
 .message.media-only.has-inline-video {
@@ -3551,14 +3551,14 @@ body:not(.dark) #soundboard-btn {
 }
 
 .message.media-only.has-inline-audio {
-  max-width: min(360px, 92%);
+  max-width: min(380px, 94%);
 }
 
 .message.has-inline-audio .inline-preview.inline-audio {
-  width: min(320px, 100%);
+  width: min(350px, 100%);
   margin-top: 4px;
-  padding: 6px 8px;
-  gap: 4px;
+  padding: 8px 10px;
+  gap: 6px;
   border-radius: 18px;
 }
 
@@ -3567,6 +3567,8 @@ body:not(.dark) #soundboard-btn {
 }
 
 .inline-preview.inline-audio .preview-media {
+  display: grid;
+  gap: 6px;
   min-height: 0;
   padding: 0;
   border: 0;
@@ -3579,7 +3581,53 @@ body:not(.dark) #soundboard-btn {
   display: block;
   width: 100%;
   min-width: 0;
-  height: 40px;
+  height: 42px;
+}
+
+.audio-waveform {
+  order: -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 28px;
+  padding: 3px 6px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
+  overflow: hidden;
+}
+
+.audio-waveform-bar {
+  flex: 1 1 0;
+  min-width: 2px;
+  max-width: 5px;
+  height: var(--wave-height, 55%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 72%, transparent);
+  opacity: 0.58;
+  transform-origin: center;
+  transition: background 0.14s ease, opacity 0.14s ease;
+}
+
+.audio-waveform-bar.is-played {
+  background: var(--accent);
+  opacity: 0.98;
+}
+
+.audio-waveform[data-playing="1"] .audio-waveform-bar {
+  animation: audio-wave-pulse 0.72s ease-in-out infinite alternate;
+  animation-delay: calc(var(--wave-index) * -28ms);
+}
+
+@keyframes audio-wave-pulse {
+  from { transform: scaleY(0.72); }
+  to { transform: scaleY(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .audio-waveform[data-playing="1"] .audio-waveform-bar {
+    animation: none;
+  }
 }
 
 .inline-preview.inline-audio .preview-actions {
@@ -3592,12 +3640,12 @@ body:not(.dark) #soundboard-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
-  padding: 0;
+  width: auto;
+  min-width: 84px;
+  height: 30px;
+  padding: 0 10px;
   border-radius: 999px;
-  font-size: 1rem;
+  font-size: 0.72rem;
   line-height: 1;
 }
 
