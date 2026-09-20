@@ -3571,7 +3571,9 @@ body:not(.dark) #soundboard-btn {
 
 .inline-preview.inline-audio .preview-media {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
+  width: 100%;
   min-height: 0;
   padding: 0;
   border: 0;
@@ -3579,6 +3581,8 @@ body:not(.dark) #soundboard-btn {
   overflow: visible;
   background: transparent;
   box-sizing: border-box;
+  justify-content: stretch;
+  align-items: stretch;
 }
 
 @media (hover: hover) and (pointer: fine) {
