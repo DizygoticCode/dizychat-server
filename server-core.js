@@ -2031,7 +2031,31 @@ app.post('/upload', validateUploadOrigin, guardUploadAbuse, uploadSingleMiddlewa
 });
 
 // ---------------- Link Preview ----------------
-app.get('/link-preview', async (req, res) => {
+const linkPreviewAdmission = createPublicMediaAdmissionController({
+  maxStarts: parsePositiveIntegerEnv('LINK_PREVIEW_MAX_STARTS_PER_WINDOW', 30, { min: 5, max: 300 }),
+  maxConcurrent: parsePositiveIntegerEnv('LINK_PREVIEW_MAX_CONCURRENT_PER_IP', 3, { min: 1, max: 10 }),
+  windowMs: parsePositiveIntegerEnv('LINK_PREVIEW_RATE_WINDOW_SECONDS', 60, { min: 10, max: 60 * 60 }) * 1000,
+});
+
+const guardLinkPreview = (req, res, next) => {
+  const admission = linkPreviewAdmission.acquire(req.ip || req.socket?.remoteAddress || 'unknown');
+  if (!admission.ok) {
+    const retryAfterSeconds = Math.max(1, Math.ceil(admission.retryAfterMs / 1000));
+    res.setHeader('Retry-After', String(retryAfterSeconds));
+    logSecurityEvent('link_preview_rate_limited', {
+      code: admission.code,
+      ip: req.ip || req.socket?.remoteAddress || 'unknown',
+    });
+    return res.status(429).json({ error: 'Too many link preview requests. Please wait and try again.' });
+  }
+
+  const release = () => admission.release();
+  res.once('finish', release);
+  res.once('close', release);
+  next();
+};
+
+app.get('/link-preview', guardLinkPreview, async (req, res) => {
   let { url } = req.query;
   if (!url) return res.status(400).json({ error: 'No URL provided' });
 
