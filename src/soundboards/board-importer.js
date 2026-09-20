@@ -55,6 +55,32 @@ const parseBoardUrl = (raw) => {
   return { url: parsed.toString(), boardId };
 };
 
+const parseSoundPageUrl = (raw) => {
+  let parsed;
+  try {
+    parsed = new URL(normalise(raw));
+  } catch {
+    throw new Error('Choose a valid 101Soundboards sound.');
+  }
+
+  if (parsed.protocol !== 'https:' || !isAllowed101Host(parsed.hostname)) {
+    throw new Error('Only HTTPS 101Soundboards sound URLs can be imported.');
+  }
+
+  if (!/^\/sounds\/[^/]+\/?$/i.test(parsed.pathname)) {
+    throw new Error('Choose a 101Soundboards /sounds/... URL.');
+  }
+
+  parsed.protocol = 'https:';
+  parsed.hostname = 'www.101soundboards.com';
+  parsed.port = '';
+  parsed.search = '';
+  parsed.hash = '';
+  parsed.pathname = parsed.pathname.replace(/\/$/, '');
+
+  return { url: parsed.toString() };
+};
+
 const challengeDetected = (html) => {
   const text = String(html || '').toLowerCase();
   return [
@@ -121,6 +147,43 @@ const extractBoard = (html, boardUrl) => {
   }
 
   return { title, clips: clips.slice(0, MAX_CLIPS), discovered: clips.length };
+};
+
+const extractSearchBoards = (html, searchUrl) => {
+  if (challengeDetected(html)) {
+    const error = new Error('101Soundboards requires browser approval before live search can continue.');
+    error.code = 'BROWSER_APPROVAL_REQUIRED';
+    throw error;
+  }
+
+  const $ = cheerio.load(String(html || ''));
+  const boards = new Map();
+
+  $('a[href*="/boards/"]').each((_, el) => {
+    const rawHref = $(el).attr('href');
+    const url = ensureAllowed101Url(rawHref, searchUrl);
+    if (!url || !/^\/boards\/[^/]+\/?$/i.test(url.pathname)) return;
+
+    let parsed;
+    try {
+      parsed = parseBoardUrl(url.toString());
+    } catch {
+      return;
+    }
+
+    const rawTitle = normalise($(el).attr('title') || $(el).text()).replace(/\s+/g, ' ');
+    if (!rawTitle) return;
+    if (!boards.has(parsed.url)) {
+      boards.set(parsed.url, {
+        provider: '101soundboards',
+        boardId: parsed.boardId,
+        title: rawTitle.slice(0, 180),
+        url: parsed.url,
+      });
+    }
+  });
+
+  return Array.from(boards.values());
 };
 
 const cleanScriptUrl = (value) => normalise(value)
@@ -278,6 +341,7 @@ const createSoundboardImporter = ({
   const importBoard = async ({
     boardUrl,
     replaceExisting = false,
+    onlySoundPageUrl = '',
     onProgress = () => {},
   } = {}) => {
     const parsedBoard = parseBoardUrl(boardUrl);
@@ -289,6 +353,16 @@ const createSoundboardImporter = ({
     const boardResponse = await fetchResponse(fetchImpl, parsedBoard.url, { maxBytes: MAX_PAGE_BYTES });
     const boardHtml = boardResponse.buffer.toString('utf8');
     const board = extractBoard(boardHtml, parsedBoard.url);
+
+    if (onlySoundPageUrl) {
+      const selected = parseSoundPageUrl(onlySoundPageUrl).url;
+      board.clips = board.clips.filter((clip) => clip.soundPageUrl === selected);
+      if (!board.clips.length) {
+        const error = new Error('That sound is not part of the selected 101Soundboards board.');
+        error.code = 'SOUNDBOARD_CLIP_NOT_FOUND';
+        throw error;
+      }
+    }
 
     const existingBoard = await readJson(boardFile, null);
     const existingItems = Array.isArray(existingBoard?.items) ? existingBoard.items.slice() : [];
@@ -477,14 +551,68 @@ const createSoundboardImporter = ({
     };
   };
 
-  return { importBoard };
+  const searchBoards = async ({ query, limit = 24 } = {}) => {
+    const q = normalise(query).replace(/\s+/g, ' ').slice(0, 120);
+    if (q.length < 2) return { provider: '101soundboards', query: q, results: [] };
+
+    const safeLimit = Math.min(Math.max(Number.parseInt(limit, 10) || 24, 1), 50);
+    const searchUrl = `https://www.101soundboards.com/search/${encodeURIComponent(q)}`;
+    const response = await fetchResponse(fetchImpl, searchUrl, { maxBytes: MAX_PAGE_BYTES });
+    const results = extractSearchBoards(response.buffer.toString('utf8'), response.url).slice(0, safeLimit);
+    return { provider: '101soundboards', query: q, results };
+  };
+
+  const browseBoard = async ({ boardUrl, limit = 80 } = {}) => {
+    const parsedBoard = parseBoardUrl(boardUrl);
+    const safeLimit = Math.min(Math.max(Number.parseInt(limit, 10) || 80, 1), 200);
+    const response = await fetchResponse(fetchImpl, parsedBoard.url, { maxBytes: MAX_PAGE_BYTES });
+    const board = extractBoard(response.buffer.toString('utf8'), parsedBoard.url);
+    const clips = board.clips.slice(0, safeLimit).map((clip) => ({
+      provider: '101soundboards',
+      title: normalise(clip.label) || 'Sound clip',
+      soundPageUrl: clip.soundPageUrl,
+    }));
+
+    return {
+      provider: '101soundboards',
+      boardId: parsedBoard.boardId,
+      title: board.title,
+      url: parsedBoard.url,
+      total: board.discovered,
+      clips,
+      truncated: board.discovered > clips.length,
+    };
+  };
+
+  const resolveClip = async ({ soundPageUrl } = {}) => {
+    const parsedSound = parseSoundPageUrl(soundPageUrl);
+    const response = await fetchResponse(fetchImpl, parsedSound.url, { maxBytes: MAX_PAGE_BYTES });
+    const clip = extractSound(response.buffer.toString('utf8'), parsedSound.url);
+    if (!clip) {
+      const error = new Error('No playable audio was found for that 101Soundboards sound.');
+      error.code = 'SOUNDBOARD_CLIP_UNAVAILABLE';
+      throw error;
+    }
+
+    return {
+      provider: '101soundboards',
+      title: clip.title,
+      soundPageUrl: clip.soundPageUrl,
+      audioUrl: clip.url,
+      duration: clip.duration,
+    };
+  };
+
+  return { importBoard, searchBoards, browseBoard, resolveClip };
 };
 
 module.exports = {
   MAX_CLIPS,
   parseBoardUrl,
+  parseSoundPageUrl,
   challengeDetected,
   extractBoard,
+  extractSearchBoards,
   extractSound,
   createSoundboardImporter,
 };
