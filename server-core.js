@@ -51,6 +51,10 @@ const {
 const { scanFileWithClamAv } = require('./src/uploads/clamav-scanner');
 const { normalizeVoiceMessageUpload } = require('./src/uploads/voice-message-normalizer');
 const { applyUploadResponseHeaders } = require('./src/uploads/upload-response-security');
+const {
+  createUploadAdmissionController,
+  readUploadAbuseLimits,
+} = require('./src/uploads/upload-abuse-guard');
 const { DizyJamCredentialStore } = require('./src/jam/dizyjam-credentials');
 const { resolveCallTokenGrant } = require('./src/calls/call-token-grant');
 const { resolveBindHost, resolveTrustedRemoteAddress } = require('./src/config/network');
@@ -1900,6 +1904,43 @@ const upload = multer({
   limits: Object.keys(uploadLimits).length ? uploadLimits : undefined,
 });
 
+const uploadAbuseLimits = readUploadAbuseLimits(process.env);
+const uploadAdmissionController = createUploadAdmissionController(uploadAbuseLimits);
+console.log(
+  `[Upload] Abuse guard: ${uploadAbuseLimits.maxConcurrent} concurrent/IP, `
+  + `${uploadAbuseLimits.maxStarts} starts/${Math.round(uploadAbuseLimits.windowMs / 1000)}s/IP`
+);
+
+const guardUploadAbuse = (req, res, next) => {
+  const clientKey = String(req.ip || req.socket?.remoteAddress || 'unknown').trim() || 'unknown';
+  const admission = uploadAdmissionController.acquire(clientKey);
+
+  if (!admission.ok) {
+    const retryAfterSeconds = Math.max(1, Math.ceil(admission.retryAfterMs / 1000));
+    res.setHeader('Retry-After', String(retryAfterSeconds));
+    logSecurityEvent('upload_rate_limited', {
+      code: admission.code,
+      ip: clientKey,
+      retryAfterSeconds,
+    });
+    return res.status(429).json({
+      error: 'Too many uploads from this connection. Please wait and try again.',
+      code: admission.code,
+      retryAfterSeconds,
+    });
+  }
+
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    admission.release();
+  };
+  res.once('finish', release);
+  res.once('close', release);
+  return next();
+};
+
 const uploadSingleMiddleware = (req, res, next) => {
   upload.single('file')(req, res, (err) => {
     if (!err) return next();
@@ -1916,7 +1957,7 @@ const uploadSingleMiddleware = (req, res, next) => {
   });
 };
 
-app.post('/upload', validateUploadOrigin, uploadSingleMiddleware, async (req, res) => {
+app.post('/upload', validateUploadOrigin, guardUploadAbuse, uploadSingleMiddleware, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
   const quarantinePath = req.file.path;
