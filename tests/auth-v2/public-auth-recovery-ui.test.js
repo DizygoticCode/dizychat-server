@@ -73,12 +73,12 @@ const postJson = async (baseUrl, route, body, token = '') => {
   return { response, json };
 };
 
-test('registered-account landing restores room guidance, create-account, recovery email, and forgot-password controls', () => {
+test('registered-account landing keeps staged room guidance, create-account, recovery email, and forgot-password controls', () => {
   const login = readPublic('login.html');
 
   assert.match(login, /Choose or create a room/i);
-  assert.match(login, /join existing or create new/i);
-  assert.match(login, /remember|save/i);
+  assert.match(login, /Complete Step 1 to unlock room selection/i);
+  assert.match(login, /Or choose a public room/i);
   assert.match(login, /room name/i);
   assert.match(login, /room password/i);
   assert.match(login, /Room name[^"']*join existing or create new/i);
