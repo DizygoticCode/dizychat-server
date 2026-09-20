@@ -81,7 +81,7 @@ test('registered-account landing keeps staged room guidance, create-account, rec
   assert.match(login, /Or choose a public room/i);
   assert.match(login, /room name/i);
   assert.match(login, /room password/i);
-  assert.match(login, /Room name[^"']*join existing or create new/i);
+  assert.match(login, /<span>Room name<\/span>[\s\S]*?id="room-input"/i);
 
   assert.match(login, /id="create-account-btn"/);
   assert.match(login, />\s*Create account\s*</i);
