@@ -56,7 +56,7 @@ const createFcmTransport = ({ projectId = '', messagingFactory, logger = console
         message.android = {
           priority: 'high',
           notification: {
-            channelId: 'dizychat_messages_v1',
+            channelId: 'dizychat_messages_v2',
             proxy: 'allow',
           },
         };
