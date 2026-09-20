@@ -14,6 +14,7 @@ self.addEventListener('push', (event) => {
     }
   }
 
+  const type = clean(payload.type);
   const title = clean(payload.title) || 'DizyChat';
   const body = clean(payload.body) || 'New message';
   const room = clean(payload.room);
@@ -30,14 +31,19 @@ self.addEventListener('push', (event) => {
     // Keep the same-origin fallback route.
   }
 
-  event.waitUntil(self.registration.showNotification(title, {
+  const options = {
     body,
     icon: '/logo.png',
     badge: '/logo.png',
     tag,
     renotify: true,
-    data: { url, room, messageId },
-  }));
+    data: { url, room, messageId, type },
+  };
+  if (type === 'activity') {
+    options.vibrate = [180, 120, 180];
+  }
+
+  event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener('notificationclick', (event) => {
