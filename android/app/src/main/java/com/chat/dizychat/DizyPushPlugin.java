@@ -32,6 +32,7 @@ import java.util.List;
 public class DizyPushPlugin extends Plugin {
     static final String EXTRA_ROOM = "dizy_room";
     static final String EXTRA_MESSAGE_ID = "dizy_message_id";
+    static final String EXTRA_ACTIVITY_TYPE = "dizy_activity_type";
     private static WeakReference<DizyPushPlugin> activePlugin = new WeakReference<>(null);
 
     @Override
