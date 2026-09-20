@@ -58,7 +58,7 @@ test('Rumble pages resolve a clean embed player instead of guessing from the pag
 
   assert.match(client, /async function resolveRumblePlayer/);
   assert.match(client, /payload\?\.embedUrl/);
-  assert.match(client, /if \(!\/\^\\\/embed\\\//i\.test\(parsed\.pathname\)\) return null;/);
+  assert.ok(client.includes("if (!/^\\/embed\\//i.test(parsed.pathname)) return null;"));
   assert.match(client, /placeholder\.replaceWith\(iframe\)/);
   assert.doesNotMatch(client, /const candidate = segments\.find\(\(segment\) => \/\^v\[a-z0-9\]\+\/i\.test\(segment\)\)/);
 });
