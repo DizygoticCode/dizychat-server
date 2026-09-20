@@ -4101,6 +4101,9 @@ body:not(.dark) #soundboard-btn {
   width: 340px;
   max-height: 320px;
   display: none;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
   padding: 10px;
   border-radius: 12px;
   border: 1px solid rgba(187,134,252,0.25);
@@ -4225,6 +4228,8 @@ body:not(.dark) #soundboard-import-url {
 
 #soundboard-picker .soundboard-results {
   display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
   flex-direction: column;
   gap: 6px;
   max-height: 250px;
