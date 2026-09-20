@@ -5,6 +5,7 @@ const fsp = fs.promises;
 const path = require('path');
 const cheerio = require('cheerio');
 const crypto = require('crypto');
+const { normalizeSoundboardAudio } = require('./audio-normalizer');
 
 const DEFAULT_DATA_ROOT = path.join(__dirname, '..', '..', 'data', 'soundboards');
 const DEFAULT_PUBLIC_ROOT = path.join(__dirname, '..', '..', 'public', 'soundboards');
@@ -270,10 +271,15 @@ const createSoundboardImporter = ({
   fetchImpl,
   dataRoot = DEFAULT_DATA_ROOT,
   publicRoot = DEFAULT_PUBLIC_ROOT,
+  normalizeAudioImpl = normalizeSoundboardAudio,
 } = {}) => {
   if (typeof fetchImpl !== 'function') throw new Error('fetchImpl is required');
 
-  const importBoard = async ({ boardUrl, onProgress = () => {} } = {}) => {
+  const importBoard = async ({
+    boardUrl,
+    replaceExisting = false,
+    onProgress = () => {},
+  } = {}) => {
     const parsedBoard = parseBoardUrl(boardUrl);
     const boardFile = path.join(dataRoot, `${parsedBoard.boardId}.json`);
     const indexFile = path.join(dataRoot, 'index.json');
@@ -286,17 +292,23 @@ const createSoundboardImporter = ({
 
     const existingBoard = await readJson(boardFile, null);
     const existingItems = Array.isArray(existingBoard?.items) ? existingBoard.items.slice() : [];
-    const existingKeys = new Set(existingItems.map((item) => normalise(item?.sourceUrl)).filter(Boolean));
-    const existingTitles = new Set(
-      existingItems.map((item) => normalise(item?.title).toLowerCase()).filter(Boolean)
-    );
+    const workingItems = existingItems.slice();
+    const existingBySource = new Map();
+    const existingByTitle = new Map();
+    existingItems.forEach((item, index) => {
+      const sourceKey = normalise(item?.sourceUrl);
+      const titleKey = normalise(item?.title).toLowerCase();
+      if (sourceKey && !existingBySource.has(sourceKey)) existingBySource.set(sourceKey, index);
+      if (titleKey && !existingByTitle.has(titleKey)) existingByTitle.set(titleKey, index);
+    });
 
     await fsp.mkdir(targetDir, { recursive: true });
     let imported = 0;
+    let replaced = 0;
     let skipped = 0;
     let failed = 0;
     let totalBytes = 0;
-    const addedItems = [];
+    const obsoleteFiles = new Set();
 
     await onProgress({
       phase: 'sounds',
@@ -314,7 +326,14 @@ const createSoundboardImporter = ({
       };
 
       const clipLabelKey = normalise(clipRef.label).toLowerCase();
-      if (existingKeys.has(clipRef.soundPageUrl) || (clipLabelKey && existingTitles.has(clipLabelKey))) {
+      const existingIndex = existingBySource.has(clipRef.soundPageUrl)
+        ? existingBySource.get(clipRef.soundPageUrl)
+        : (clipLabelKey && existingByTitle.has(clipLabelKey)
+          ? existingByTitle.get(clipLabelKey)
+          : -1);
+      const existingItem = existingIndex >= 0 ? workingItems[existingIndex] : null;
+
+      if (existingItem && !replaceExisting) {
         skipped += 1;
         await onProgress({ ...progressBase, message: `Skipping existing clip ${index + 1}/${board.clips.length}.` });
         continue;
@@ -335,34 +354,51 @@ const createSoundboardImporter = ({
           throw new Error('Board import exceeded the total audio size limit.');
         }
 
-        const extension = extensionFor(audio.url, audio.contentType);
         const filenameBase = safeSlug(clip.title, `clip-${index + 1}`);
-        let filename = `${filenameBase}.${extension}`;
-        let targetPath = path.join(targetDir, filename);
-
-        if (fs.existsSync(targetPath)) {
-          const fingerprint = sha256(clip.soundPageUrl).slice(0, 8);
-          filename = `${filenameBase}-${fingerprint}.${extension}`;
-          targetPath = path.join(targetDir, filename);
-        }
+        const fingerprint = sha256(audio.buffer).slice(0, 10);
+        const filename = `${filenameBase}-${fingerprint}.m4a`;
+        const targetPath = path.join(targetDir, filename);
 
         if (!fs.existsSync(targetPath)) {
-          await fsp.writeFile(targetPath, audio.buffer, { flag: 'wx' });
+          await normalizeAudioImpl({
+            sourceBuffer: audio.buffer,
+            targetPath,
+            sourceUrl: audio.url,
+          });
         }
 
         const item = {
-          id: `${parsedBoard.boardId}-${sha256(clip.soundPageUrl).slice(0, 16)}`,
+          id: existingItem?.id || `${parsedBoard.boardId}-${sha256(clip.soundPageUrl).slice(0, 16)}`,
           title: clip.title,
-          tags: clip.tags,
-          duration: clip.duration,
+          tags: Array.isArray(clip.tags) && clip.tags.length ? clip.tags : (existingItem?.tags || []),
+          duration: clip.duration || Number(existingItem?.duration || 0),
           file: `${parsedBoard.boardId}/${filename}`,
           sourceUrl: clip.soundPageUrl,
+          normalized: true,
+          normalization: {
+            targetLufs: -16,
+            truePeakDb: -1.5,
+            sampleRate: 48000,
+            codec: 'aac',
+          },
         };
-        addedItems.push(item);
-        existingKeys.add(clip.soundPageUrl);
-        existingTitles.add(normalise(clip.title).toLowerCase());
-        imported += 1;
-        await onProgress({ ...progressBase, message: `Imported ${clip.title}.` });
+
+        if (existingItem) {
+          const previousFile = normalise(existingItem.file);
+          workingItems[existingIndex] = item;
+          existingBySource.set(clip.soundPageUrl, existingIndex);
+          existingByTitle.set(normalise(clip.title).toLowerCase(), existingIndex);
+          if (previousFile && previousFile !== item.file) obsoleteFiles.add(previousFile);
+          replaced += 1;
+          await onProgress({ ...progressBase, message: `Rebuilt and normalized ${clip.title}.` });
+        } else {
+          const nextIndex = workingItems.length;
+          workingItems.push(item);
+          existingBySource.set(clip.soundPageUrl, nextIndex);
+          existingByTitle.set(normalise(clip.title).toLowerCase(), nextIndex);
+          imported += 1;
+          await onProgress({ ...progressBase, message: `Imported and normalized ${clip.title}.` });
+        }
       } catch (error) {
         if (error?.code === 'BROWSER_APPROVAL_REQUIRED') throw error;
         failed += 1;
@@ -370,7 +406,7 @@ const createSoundboardImporter = ({
       }
     }
 
-    const mergedItems = [...existingItems, ...addedItems];
+    const mergedItems = workingItems;
     const nextBoard = {
       ...(existingBoard && typeof existingBoard === 'object' ? existingBoard : {}),
       id: parsedBoard.boardId,
@@ -387,11 +423,31 @@ const createSoundboardImporter = ({
     if (!boards.includes(parsedBoard.boardId)) boards.push(parsedBoard.boardId);
     await atomicWriteJson(indexFile, { ...index, boards });
 
+    const referencedFiles = new Set(mergedItems.map((item) => normalise(item?.file)).filter(Boolean));
+    for (const staleFile of obsoleteFiles) {
+      if (referencedFiles.has(staleFile)) continue;
+      const prefix = `${parsedBoard.boardId}/`;
+      if (!staleFile.startsWith(prefix)) continue;
+      const relative = staleFile.slice(prefix.length);
+      if (!relative || relative.includes('..') || relative.includes('\\') || relative.includes('/')) continue;
+      try {
+        await fsp.unlink(path.join(targetDir, relative));
+      } catch (error) {
+        if (error?.code !== 'ENOENT') {
+          console.warn('[Soundboard Import] Could not remove replaced audio file', {
+            boardId: parsedBoard.boardId,
+            file: relative,
+            error: error?.message || error,
+          });
+        }
+      }
+    }
+
     await onProgress({
       phase: 'complete',
       current: board.clips.length,
       total: board.clips.length,
-      message: `Import complete: ${imported} added, ${skipped} already present, ${failed} unavailable.`,
+      message: `Import complete: ${imported} added, ${replaced} rebuilt, ${skipped} already present, ${failed} unavailable.`,
     });
 
     return {
@@ -400,6 +456,7 @@ const createSoundboardImporter = ({
       discovered: board.discovered,
       processed: board.clips.length,
       imported,
+      replaced,
       skipped,
       failed,
       totalItems: mergedItems.length,
