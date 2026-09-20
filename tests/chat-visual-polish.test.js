@@ -16,8 +16,9 @@ test('message chrome stays compact and touch-friendly', () => {
 });
 
 test('composer uses a compact rounded input and consistent icon hit targets', () => {
-  assert.match(css, /--input-field-padding-y:\s*7px;/);
-  assert.match(css, /#input\s*\{[^}]*border-radius:\s*999px;[^}]*min-height:\s*36px;/s);
+  assert.match(css, /--input-field-height:\s*36px;/);
+  assert.match(css, /body\.compact-mode[\s\S]*--input-field-height:\s*34px;/);
+  assert.match(css, /#input\s*\{[^}]*border-radius:\s*999px;[^}]*box-sizing:\s*border-box;[^}]*height:\s*var\(--input-field-height\);[^}]*min-height:\s*var\(--input-field-height\);/s);
   assert.match(css, /#input:focus\s*\{[^}]*box-shadow:\s*0 0 0 3px/s);
   assert.match(css, /#form button\s*\{[^}]*min-width:\s*var\(--input-icon-size\);[^}]*min-height:\s*var\(--input-icon-size\);[^}]*border-radius:\s*999px;/s);
 });
