@@ -22,7 +22,7 @@ test('audio attachments use compact accessible chat-style controls', () => {
   );
   assert.match(
     css,
-    /\.inline-preview\.inline-audio \.preview-media\s*\{[^}]*min-height:\s*0;[^}]*padding:\s*0;[^}]*overflow:\s*visible;/s,
+    /\.inline-preview\.inline-audio \.preview-media\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);[^}]*width:\s*100%;[^}]*min-height:\s*0;[^}]*padding:\s*0;[^}]*overflow:\s*visible;[^}]*justify-content:\s*stretch;[^}]*align-items:\s*stretch;/s,
   );
   assert.match(
     css,
