@@ -4147,7 +4147,8 @@ body:not(.dark) #soundboard-btn {
   gap: 6px;
 }
 
-#soundboard-import-url {
+#soundboard-import-url,
+#soundboard-discover-query {
   min-width: 0;
   flex: 1;
   padding: 7px 8px;
@@ -4159,7 +4160,10 @@ body:not(.dark) #soundboard-btn {
 }
 
 #soundboard-import-btn,
-#soundboard-rebuild-btn {
+#soundboard-rebuild-btn,
+#soundboard-discover-btn,
+#soundboard-popular-btn,
+.soundboard-discover-import {
   flex: 0 0 auto;
   border: 1px solid rgba(187,134,252,0.45);
   border-radius: 8px;
@@ -4174,14 +4178,62 @@ body:not(.dark) #soundboard-btn {
   margin-top: 6px;
 }
 
-#soundboard-rebuild-btn {
+#soundboard-rebuild-btn,
+#soundboard-popular-btn {
   width: 100%;
   background: rgba(73,46,114,0.78);
 }
 
+.soundboard-discover-results {
+  max-height: 104px;
+  margin-top: 6px;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid rgba(187,134,252,0.2);
+  border-radius: 8px;
+  background: rgba(0,0,0,0.16);
+}
+
+.soundboard-discover-results[hidden] {
+  display: none !important;
+}
+
+.soundboard-discover-summary {
+  padding: 3px 4px 6px;
+  color: rgba(240,240,255,0.72);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.soundboard-discover-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border-top: 1px solid rgba(187,134,252,0.12);
+}
+
+.soundboard-discover-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #f5f0ff;
+  font-size: 0.72rem;
+}
+
+.soundboard-discover-import {
+  padding: 4px 7px;
+  font-size: 0.68rem;
+}
+
 #soundboard-import-btn:disabled,
 #soundboard-rebuild-btn:disabled,
-#soundboard-import-url:disabled {
+#soundboard-discover-btn:disabled,
+#soundboard-popular-btn:disabled,
+#soundboard-import-url:disabled,
+#soundboard-discover-query:disabled {
   opacity: 0.55;
   cursor: wait;
 }
@@ -4220,10 +4272,21 @@ body:not(.dark) .soundboard-import-status {
   color: #4a287f;
 }
 
-body:not(.dark) #soundboard-import-url {
+body:not(.dark) #soundboard-import-url,
+body:not(.dark) #soundboard-discover-query {
   background: #fff;
   color: #24104c;
   border-color: rgba(123,47,247,0.25);
+}
+
+body:not(.dark) .soundboard-discover-results {
+  background: rgba(123,47,247,0.04);
+  border-color: rgba(123,47,247,0.16);
+}
+
+body:not(.dark) .soundboard-discover-summary,
+body:not(.dark) .soundboard-discover-title {
+  color: #4a287f;
 }
 
 #soundboard-picker .soundboard-results {
