@@ -4442,47 +4442,92 @@ io.on('connection', socket => {
   });
 
   // ----- Announcement & Moderation -----
-  socket.on('announce', ({ room, text }) => {
+  socket.on('announce', ({ room, text } = {}) => {
+    const targetRoom = normaliseRoomName(room) || socket.currentRoom;
+    if (!targetRoom || targetRoom !== socket.currentRoom) return;
     if (!requireAdmin(socket)) return;
-    const clean = sanitizeHtml(text || '', { allowedTags: [], allowedAttributes: {} });
-    io.to(room).emit('announcement', { text: clean, at: new Date().toISOString(), by: socket.username || 'Admin' });
-    console.log('[Announce]', room, 'broadcast by', socket.username || 'Admin');
+
+    const clean = sanitizeHtml(String(text || ''), {
+      allowedTags: [],
+      allowedAttributes: {},
+    }).slice(0, 1000);
+    if (!clean) return;
+
+    io.to(targetRoom).emit('announcement', {
+      text: clean,
+      at: new Date().toISOString(),
+      by: socket.username || 'Admin',
+    });
+    console.log('[Announce]', targetRoom, 'broadcast by', socket.username || 'Admin');
   });
 
-  socket.on('moderate', ({ room, cmd, target }) => {
+  socket.on('moderate', ({ room, cmd, target } = {}) => {
+    const targetRoom = normaliseRoomName(room) || socket.currentRoom;
+    if (!targetRoom || targetRoom !== socket.currentRoom) return;
     if (!requireAdmin(socket)) return;
-    if (!room) return;
 
-    if (cmd === 'ban' && target) {
-      const canonicalTarget = canonicalUsername(target);
-      addUserBan(room, canonicalTarget);
-      const sockets = getSocketsForUser(room, canonicalTarget);
-      sockets.forEach((s) => {
-        s.emit('moderation notice', { type: 'banned', room });
-        s.emit('join error', 'You were banned from the room.');
-        removeSocketFromRoom(s, room);
+    const cleanedTarget = normaliseUsername(target, '').trim();
+    if (!cleanedTarget) return;
+
+    const canonicalTarget = canonicalUsername(cleanedTarget);
+    const presence = roomPresence.get(targetRoom);
+    const targetInfo = presence
+      ? Array.from(presence.values()).find(
+          (entry) => canonicalUsername(entry.username) === canonicalTarget
+        )
+      : null;
+
+    if (!targetInfo) {
+      socket.emit('toast', { type: 'warn', text: 'That user is no longer online.' });
+      return;
+    }
+    if (canonicalTarget === canonicalUsername(socket.username)) {
+      socket.emit('toast', { type: 'warn', text: 'You cannot perform that action on yourself.' });
+      return;
+    }
+    if (targetInfo.isAdmin) {
+      socket.emit('toast', { type: 'warn', text: 'You cannot perform that action on an admin.' });
+      return;
+    }
+
+    const targets = getSocketsForUser(targetRoom, canonicalTarget);
+    if (!targets.length) return;
+
+    if (cmd === 'ban') {
+      addUserBan(targetRoom, canonicalTarget);
+      targets.forEach((targetSocket) => {
+        targetSocket.emit('moderation notice', { type: 'banned', room: targetRoom });
+        targetSocket.emit('join error', 'You were banned from the room.');
+        removeSocketFromRoom(targetSocket, targetRoom);
       });
       emitRoomListUpdate();
-      emitRoomUsers(room);
-      io.to(room).emit('user moderation', {
-        room,
+      emitRoomUsers(targetRoom);
+      io.to(targetRoom).emit('user moderation', {
+        room: targetRoom,
         action: 'ban',
-        target,
+        target: cleanedTarget,
         performedBy: socket.username || 'Admin',
       });
-      io.to(room).emit('toast', { type: 'warn', text: `${target} was banned.` });
-      console.log('[Moderate] ban', target, 'in', room);
+      io.to(targetRoom).emit('toast', { type: 'warn', text: `${cleanedTarget} was banned.` });
+      console.log('[Moderate] ban', cleanedTarget, 'in', targetRoom);
+      return;
     }
-    if (cmd === 'kick' && target) {
-      for (const [id, s] of io.of('/').sockets) {
-        if (s.currentRoom === room && s.username === target) {
-          removeSocketFromRoom(s, room);
-          emitRoomListUpdate();
-          io.to(room).emit('toast', { type: 'warn', text: `${target} was kicked.` });
-          s.emit('join error', 'You were kicked from the room.');
-          console.log('[Moderate] kick', target, 'from', room);
-        }
-      }
+
+    if (cmd === 'kick') {
+      targets.forEach((targetSocket) => {
+        removeSocketFromRoom(targetSocket, targetRoom);
+        targetSocket.emit('join error', 'You were kicked from the room.');
+      });
+      emitRoomListUpdate();
+      emitRoomUsers(targetRoom);
+      io.to(targetRoom).emit('user moderation', {
+        room: targetRoom,
+        action: 'kick',
+        target: cleanedTarget,
+        performedBy: socket.username || 'Admin',
+      });
+      io.to(targetRoom).emit('toast', { type: 'warn', text: `${cleanedTarget} was kicked.` });
+      console.log('[Moderate] kick', cleanedTarget, 'from', targetRoom);
     }
   });
 
