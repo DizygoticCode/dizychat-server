@@ -9709,6 +9709,9 @@ if (voiceBtn) {
         <input id="soundboard-import-url" type="url" inputmode="url" placeholder="Paste https://www.101soundboards.com/boards/…" autocomplete="off" spellcheck="false" />
         <button id="soundboard-import-btn" type="button">Import</button>
       </div>
+      <div class="soundboard-import-row soundboard-import-row--secondary">
+        <button id="soundboard-rebuild-btn" type="button">Rebuild current 101 boards</button>
+      </div>
       <div id="soundboard-import-status" class="soundboard-import-status" aria-live="polite"></div>
     </div>
     <div class="soundboard-search">
@@ -9723,6 +9726,7 @@ if (voiceBtn) {
   const importWrap = panel.querySelector('[data-role="soundboard-import"]');
   const importUrlInput = panel.querySelector("#soundboard-import-url");
   const importBtn = panel.querySelector("#soundboard-import-btn");
+  const rebuildBtn = panel.querySelector("#soundboard-rebuild-btn");
   const importStatus = panel.querySelector("#soundboard-import-status");
 
   const closePanel = () => {
@@ -9846,6 +9850,7 @@ if (voiceBtn) {
 
       if (job.status === "complete") {
         importBtn.disabled = false;
+        rebuildBtn.disabled = false;
         importUrlInput.disabled = false;
         setImportStatus(progress.message || "Import complete.", "complete");
         await loadClips("");
@@ -9854,6 +9859,7 @@ if (voiceBtn) {
 
       if (job.status === "browser-approval-required") {
         importBtn.disabled = false;
+        rebuildBtn.disabled = false;
         importUrlInput.disabled = false;
         setImportStatus(
           "101Soundboards asked for human/browser approval. Open that board normally in your browser, complete the check, then try again later.",
@@ -9864,6 +9870,7 @@ if (voiceBtn) {
 
       if (job.status === "error") {
         importBtn.disabled = false;
+        rebuildBtn.disabled = false;
         importUrlInput.disabled = false;
         setImportStatus(job.error || "Soundboard import failed.", "error");
         return;
@@ -9890,6 +9897,7 @@ if (voiceBtn) {
     }
 
     importBtn.disabled = true;
+    rebuildBtn.disabled = true;
     importUrlInput.disabled = true;
     setImportStatus("Starting import…", "loading");
 
@@ -9912,8 +9920,40 @@ if (voiceBtn) {
     }
   };
 
+  const startExistingBoardRebuild = async () => {
+    if (!isOwnerAccount()) return;
+
+    importBtn.disabled = true;
+    rebuildBtn.disabled = true;
+    importUrlInput.disabled = true;
+    setImportStatus("Starting clean rebuild of current 101Soundboards boards…", "loading");
+
+    try {
+      const response = await fetch("/api/soundboards/rebuild-existing", {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: "{}",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.job?.id) {
+        throw new Error(payload?.error || payload?.code || `Rebuild request failed (${response.status}).`);
+      }
+      setImportStatus(payload.job.progress?.message || "Rebuild queued…", "loading");
+      void pollImportJob(payload.job.id);
+    } catch (error) {
+      importBtn.disabled = false;
+      rebuildBtn.disabled = false;
+      importUrlInput.disabled = false;
+      setImportStatus(error?.message || "Could not start existing-board rebuild.", "error");
+    }
+  };
+
   importBtn?.addEventListener("click", () => {
     void startBoardImport();
+  });
+
+  rebuildBtn?.addEventListener("click", () => {
+    void startExistingBoardRebuild();
   });
 
   importUrlInput?.addEventListener("keydown", (event) => {
