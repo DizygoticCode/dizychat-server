@@ -76,7 +76,38 @@ const readSoundboardImportJob = (jobId) => {
   };
 };
 
-const startSoundboardImportJob = ({ boardUrl, requestedBy }) => {
+const readExisting101SoundboardTargets = async () => {
+  const dataRoot = path.join(__dirname, 'data', 'soundboards');
+  let index;
+  try {
+    index = JSON.parse(await fs.promises.readFile(path.join(dataRoot, 'index.json'), 'utf8'));
+  } catch {
+    return [];
+  }
+
+  const boardIds = Array.isArray(index?.boards) ? index.boards : [];
+  const targets = [];
+  for (const rawId of boardIds) {
+    const boardId = String(rawId || '').trim();
+    if (!boardId) continue;
+    try {
+      const board = JSON.parse(await fs.promises.readFile(path.join(dataRoot, `${boardId}.json`), 'utf8'));
+      const source = String(board?.source || '').trim().toLowerCase();
+      if (source && source !== '101soundboards') continue;
+      const candidate = board?.sourceUrl || `https://www.101soundboards.com/boards/${boardId}`;
+      const parsed = parseSoundboardImportUrl(candidate);
+      targets.push({ boardId: parsed.boardId, boardUrl: parsed.url });
+    } catch (error) {
+      console.warn('[Soundboard Import] Skipping unreadable legacy board during rebuild discovery', {
+        boardId,
+        error: error?.message || error,
+      });
+    }
+  }
+  return targets;
+};
+
+const startSoundboardImportJob = ({ boardUrl, requestedBy, replaceExisting = false }) => {
   trimSoundboardImportJobs();
   const parsed = parseSoundboardImportUrl(boardUrl);
 
@@ -114,6 +145,7 @@ const startSoundboardImportJob = ({ boardUrl, requestedBy }) => {
     try {
       const result = await soundboardImporter.importBoard({
         boardUrl: parsed.url,
+        replaceExisting,
         onProgress: async (progress) => {
           job.progress = {
             phase: String(progress?.phase || 'running'),
@@ -129,7 +161,7 @@ const startSoundboardImportJob = ({ boardUrl, requestedBy }) => {
       job.status = 'complete';
       job.progress = {
         phase: 'complete',
-        message: `Import complete: ${result.imported} added, ${result.skipped} already present, ${result.failed} unavailable.`,
+        message: `Import complete: ${result.imported} added, ${result.replaced || 0} rebuilt, ${result.skipped} already present, ${result.failed} unavailable.`,
         current: Number(result.processed || 0),
         total: Number(result.processed || 0),
       };
@@ -145,6 +177,132 @@ const startSoundboardImportJob = ({ boardUrl, requestedBy }) => {
       };
       console.warn('[Soundboard Import] Import failed', {
         boardId: parsed.boardId,
+        code: job.code,
+        error: job.error,
+      });
+    } finally {
+      job.updatedAt = Date.now();
+      if (activeSoundboardImportJobId === job.id) activeSoundboardImportJobId = '';
+    }
+  });
+
+  return readSoundboardImportJob(job.id);
+};
+
+const startExistingSoundboardRebuildJob = ({ requestedBy }) => {
+  trimSoundboardImportJobs();
+
+  if (activeSoundboardImportJobId) {
+    const active = soundboardImportJobs.get(activeSoundboardImportJobId);
+    if (active && ['queued', 'running'].includes(active.status)) {
+      const error = new Error('Another soundboard import is already running.');
+      error.code = 'SOUNDBOARD_IMPORT_BUSY';
+      throw error;
+    }
+    activeSoundboardImportJobId = '';
+  }
+
+  const now = Date.now();
+  const job = {
+    id: crypto.randomUUID(),
+    status: 'queued',
+    boardUrl: '',
+    boardId: '__rebuild-existing__',
+    requestedBy: String(requestedBy || ''),
+    progress: { phase: 'queued', message: 'Existing-board rebuild queued…', current: 0, total: 0 },
+    result: null,
+    error: '',
+    code: '',
+    createdAt: now,
+    updatedAt: now,
+  };
+  soundboardImportJobs.set(job.id, job);
+  activeSoundboardImportJobId = job.id;
+
+  setImmediate(async () => {
+    job.status = 'running';
+    job.updatedAt = Date.now();
+    try {
+      const targets = await readExisting101SoundboardTargets();
+      const summary = {
+        boards: targets.length,
+        boardsComplete: 0,
+        imported: 0,
+        replaced: 0,
+        skipped: 0,
+        failed: 0,
+        failedBoards: [],
+      };
+
+      if (!targets.length) {
+        job.result = summary;
+        job.status = 'complete';
+        job.progress = { phase: 'complete', message: 'No existing 101Soundboards catalogs were found.', current: 0, total: 0 };
+        return;
+      }
+
+      for (let boardIndex = 0; boardIndex < targets.length; boardIndex += 1) {
+        const target = targets[boardIndex];
+        job.progress = {
+          phase: 'rebuild',
+          message: `Rebuilding board ${boardIndex + 1}/${targets.length}: ${target.boardId}`,
+          current: boardIndex,
+          total: targets.length,
+        };
+        job.updatedAt = Date.now();
+
+        try {
+          const result = await soundboardImporter.importBoard({
+            boardUrl: target.boardUrl,
+            replaceExisting: true,
+            onProgress: async (progress) => {
+              const clipCount = Number(progress?.total || 0);
+              const clipCurrent = Number(progress?.current || 0);
+              const clipSuffix = clipCount > 0 ? ` · clip ${clipCurrent}/${clipCount}` : '';
+              job.progress = {
+                phase: 'rebuild',
+                message: `Board ${boardIndex + 1}/${targets.length}: ${target.boardId}${clipSuffix} · ${String(progress?.message || '')}`,
+                current: boardIndex,
+                total: targets.length,
+              };
+              job.updatedAt = Date.now();
+            },
+          });
+          summary.boardsComplete += 1;
+          summary.imported += Number(result.imported || 0);
+          summary.replaced += Number(result.replaced || 0);
+          summary.skipped += Number(result.skipped || 0);
+          summary.failed += Number(result.failed || 0);
+          soundboardStore.reload();
+        } catch (error) {
+          if (error?.code === 'BROWSER_APPROVAL_REQUIRED') throw error;
+          summary.failedBoards.push({
+            boardId: target.boardId,
+            error: String(error?.message || 'Board rebuild failed.'),
+          });
+        }
+      }
+
+      soundboardStore.reload();
+      job.result = summary;
+      job.status = 'complete';
+      job.progress = {
+        phase: 'complete',
+        message: `Rebuild complete: ${summary.replaced} clips replaced, ${summary.imported} new, ${summary.failed} unavailable across ${summary.boardsComplete}/${summary.boards} boards.`,
+        current: targets.length,
+        total: targets.length,
+      };
+    } catch (error) {
+      job.status = error?.code === 'BROWSER_APPROVAL_REQUIRED' ? 'browser-approval-required' : 'error';
+      job.code = String(error?.code || 'SOUNDBOARD_REBUILD_FAILED');
+      job.error = String(error?.message || 'Existing soundboard rebuild failed.');
+      job.progress = {
+        phase: job.status,
+        message: job.error,
+        current: Number(job.progress?.current || 0),
+        total: Number(job.progress?.total || 0),
+      };
+      console.warn('[Soundboard Import] Existing-board rebuild stopped', {
         code: job.code,
         error: job.error,
       });
@@ -2180,6 +2338,23 @@ app.post('/api/soundboards/import', soundboardImportJson, requireHttpAccount, re
       ok: false,
       code,
       error: String(error?.message || 'Unable to start soundboard import.'),
+    });
+  }
+});
+
+app.post('/api/soundboards/rebuild-existing', soundboardImportJson, requireHttpAccount, requireHttpOwner, (req, res) => {
+  try {
+    const job = startExistingSoundboardRebuildJob({
+      requestedBy: req.accountPrincipal?.canonicalUsername || req.accountPrincipal?.username,
+    });
+    return res.status(202).json({ ok: true, job });
+  } catch (error) {
+    const code = String(error?.code || 'SOUNDBOARD_REBUILD_INVALID');
+    const status = code === 'SOUNDBOARD_IMPORT_BUSY' ? 409 : 400;
+    return res.status(status).json({
+      ok: false,
+      code,
+      error: String(error?.message || 'Unable to start existing-board rebuild.'),
     });
   }
 });
