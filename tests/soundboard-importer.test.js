@@ -350,3 +350,22 @@ test('server and client keep board import owner-only and separate from normal so
   assert.match(client, /Authorization: `Bearer \$\{token\}`/);
   assert.match(client, /browser-approval-required/);
 });
+
+
+test('soundboard picker stays constrained above the composer when owner controls are visible', () => {
+  const repoRoot = path.resolve(__dirname, '..');
+  const css = fs.readFileSync(path.join(repoRoot, 'public', 'chat.css'), 'utf8');
+  const client = fs.readFileSync(path.join(repoRoot, 'public', 'chat.js'), 'utf8');
+
+  assert.match(
+    css,
+    /#soundboard-picker\s*\{[^}]*display:\s*none;[^}]*flex-direction:\s*column;[^}]*overflow:\s*hidden;/s,
+  );
+  assert.match(
+    css,
+    /#soundboard-picker \.soundboard-results\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/s,
+  );
+  assert.match(client, /const availableHeight = Math\.max\(120, rect\.top - 20\);/);
+  assert.match(client, /panel\.style\.maxHeight = `\$\{Math\.min\(320, availableHeight\)\}px`;/);
+  assert.match(client, /panel\.style\.display = "flex";/);
+});
