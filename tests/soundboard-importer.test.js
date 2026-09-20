@@ -319,7 +319,7 @@ test('soundboard FFmpeg recipe trims only edge silence and normalizes level cons
   assert.match(FILTER_CHAIN, /loudnorm=I=-16:TP=-1\.5:LRA=7/);
 
   const args = buildSoundboardFfmpegArgs('/tmp/in.audio', '/tmp/out.m4a');
-  assert.deepEqual(args.slice(-8), [
+  assert.deepEqual(args.slice(-9), [
     '-ar', '48000',
     '-c:a', 'aac',
     '-b:a', '128k',
