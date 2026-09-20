@@ -9703,11 +9703,15 @@ if (voiceBtn) {
   const panel = document.createElement("div");
   panel.id = "soundboard-picker";
   panel.innerHTML = `
+    <div class="soundboard-mode-tabs" role="tablist" aria-label="Soundboard source">
+      <button type="button" class="soundboard-mode-tab active" data-soundboard-mode="local" role="tab" aria-selected="true">Local</button>
+      <button type="button" class="soundboard-mode-tab" data-soundboard-mode="web" role="tab" aria-selected="false" hidden>Web</button>
+    </div>
     <div class="soundboard-import" data-role="soundboard-import" hidden>
-      <div class="soundboard-import-title">Import 101Soundboards board</div>
+      <div class="soundboard-import-title">101Soundboards web source</div>
       <div class="soundboard-import-row">
         <input id="soundboard-import-url" type="url" inputmode="url" placeholder="Paste https://www.101soundboards.com/boards/…" autocomplete="off" spellcheck="false" />
-        <button id="soundboard-import-btn" type="button">Import</button>
+        <button id="soundboard-import-btn" type="button">Import board</button>
       </div>
       <div class="soundboard-import-row soundboard-import-row--secondary">
         <button id="soundboard-rebuild-btn" type="button">Rebuild current 101 boards</button>
@@ -9715,7 +9719,7 @@ if (voiceBtn) {
       <div id="soundboard-import-status" class="soundboard-import-status" aria-live="polite"></div>
     </div>
     <div class="soundboard-search">
-      <input id="soundboard-search-input" type="search" placeholder="Search audio clips…" autocomplete="off" />
+      <input id="soundboard-search-input" type="search" placeholder="Search saved audio clips…" autocomplete="off" />
     </div>
     <div id="soundboard-results" class="soundboard-results"></div>
   `;
@@ -9728,6 +9732,8 @@ if (voiceBtn) {
   const importBtn = panel.querySelector("#soundboard-import-btn");
   const rebuildBtn = panel.querySelector("#soundboard-rebuild-btn");
   const importStatus = panel.querySelector("#soundboard-import-status");
+  const modeButtons = Array.from(panel.querySelectorAll("[data-soundboard-mode]"));
+  const webModeBtn = panel.querySelector('[data-soundboard-mode="web"]');
 
   const closePanel = () => {
     panel.style.display = "none";
@@ -9796,6 +9802,8 @@ if (voiceBtn) {
   let lastQuery = "";
   let isLoading = false;
   let importPollTimer = null;
+  let pickerMode = "local";
+  let livePreviewAudio = null;
 
   const isOwnerAccount = () => accountState.identity?.role === "owner";
 
@@ -9806,15 +9814,26 @@ if (voiceBtn) {
   };
 
   const syncImporterIdentity = () => {
-    if (!importWrap) return;
     const visible = isOwnerAccount();
-    importWrap.hidden = !visible;
+    if (webModeBtn) webModeBtn.hidden = !visible;
+    if (importWrap) importWrap.hidden = !(visible && pickerMode === "web");
     if (!visible) {
+      if (pickerMode === "web") pickerMode = "local";
       setImportStatus("");
       if (importPollTimer) {
         clearTimeout(importPollTimer);
         importPollTimer = null;
       }
+    }
+    modeButtons.forEach((button) => {
+      const active = button.dataset.soundboardMode === pickerMode;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-selected", String(active));
+    });
+    if (searchInput) {
+      searchInput.placeholder = pickerMode === "web"
+        ? "Search 101Soundboards…"
+        : "Search saved audio clips…";
     }
   };
 
@@ -9845,9 +9864,11 @@ if (voiceBtn) {
 
       const job = payload.job;
       const progress = job.progress || {};
-      const count = Number(progress.total || 0) > 0
-        ? ` ${Number(progress.current || 0)}/${Number(progress.total || 0)}`
-        : "";
+      const count = progress.phase === "rebuild"
+        ? ""
+        : Number(progress.total || 0) > 0
+          ? ` ${Number(progress.current || 0)}/${Number(progress.total || 0)}`
+          : "";
       setImportStatus(`${progress.message || "Importing…"}${count}`, job.status);
 
       if (job.status === "complete") {
@@ -9855,7 +9876,7 @@ if (voiceBtn) {
         rebuildBtn.disabled = false;
         importUrlInput.disabled = false;
         setImportStatus(progress.message || "Import complete.", "complete");
-        await loadClips("");
+        if (pickerMode === "local") await loadClips("");
         return;
       }
 
@@ -9924,6 +9945,34 @@ if (voiceBtn) {
     }
   };
 
+  const startClipImport = async (boardUrl, soundPageUrl) => {
+    if (!isOwnerAccount() || !boardUrl || !soundPageUrl) return;
+
+    importBtn.disabled = true;
+    rebuildBtn.disabled = true;
+    importUrlInput.disabled = true;
+    setImportStatus("Starting clip import…", "loading");
+
+    try {
+      const response = await fetch("/api/soundboards/import-clip", {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ boardUrl, soundPageUrl }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.job?.id) {
+        throw new Error(payload?.error || payload?.code || `Clip import failed (${response.status}).`);
+      }
+      setImportStatus(payload.job.progress?.message || "Clip import queued…", "loading");
+      void pollImportJob(payload.job.id);
+    } catch (error) {
+      importBtn.disabled = false;
+      rebuildBtn.disabled = false;
+      importUrlInput.disabled = false;
+      setImportStatus(error?.message || "Could not start clip import.", "error");
+    }
+  };
+
   const startExistingBoardRebuild = async () => {
     if (!isOwnerAccount()) return;
 
@@ -9965,6 +10014,234 @@ if (voiceBtn) {
       event.preventDefault();
       void startBoardImport();
     }
+  });
+
+  const fetchLiveJson = async (endpoint) => {
+    const response = await fetch(endpoint, {
+      headers: authHeaders(),
+      cache: "no-store",
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload?.error || payload?.code || `Live soundboard request failed (${response.status}).`);
+    }
+    return payload;
+  };
+
+  const stopLivePreview = () => {
+    if (!livePreviewAudio) return;
+    try {
+      livePreviewAudio.pause();
+      livePreviewAudio.currentTime = 0;
+    } catch {
+      /* ignore media cleanup failures */
+    }
+    livePreviewAudio = null;
+  };
+
+  const renderLiveBoard = async (boardSummary) => {
+    if (!resultsEl || !isOwnerAccount()) return;
+    isLoading = true;
+    renderStatus("Loading board from 101Soundboards…", "loading");
+
+    try {
+      const payload = await fetchLiveJson(
+        `/api/soundboards/live-board?url=${encodeURIComponent(boardSummary.url)}`
+      );
+      const board = payload?.board;
+      const clips = Array.isArray(board?.clips) ? board.clips : [];
+      if (!board || !clips.length) {
+        renderStatus("No clips were found on that web board.", "info");
+        return;
+      }
+
+      resultsEl.innerHTML = "";
+
+      const header = document.createElement("div");
+      header.className = "soundboard-web-header";
+
+      const backBtn = document.createElement("button");
+      backBtn.type = "button";
+      backBtn.className = "soundboard-web-action";
+      backBtn.textContent = "← Results";
+      backBtn.addEventListener("click", () => {
+        const q = searchInput?.value.trim() || "";
+        void loadLiveBoards(q);
+      });
+
+      const heading = document.createElement("div");
+      heading.className = "soundboard-web-heading";
+      heading.textContent = board.title || boardSummary.title || "101Soundboards";
+
+      const importBoardBtn = document.createElement("button");
+      importBoardBtn.type = "button";
+      importBoardBtn.className = "soundboard-web-action soundboard-web-action--primary";
+      importBoardBtn.textContent = "Import board";
+      importBoardBtn.addEventListener("click", () => {
+        if (importUrlInput) importUrlInput.value = board.url;
+        void startBoardImport();
+      });
+
+      header.append(backBtn, heading, importBoardBtn);
+      resultsEl.appendChild(header);
+
+      clips.forEach((clip) => {
+        const row = document.createElement("div");
+        row.className = "soundboard-web-clip";
+
+        const title = document.createElement("div");
+        title.className = "soundboard-web-clip-title";
+        title.textContent = clip.title || "Sound clip";
+
+        const actions = document.createElement("div");
+        actions.className = "soundboard-web-actions";
+
+        const previewBtn = document.createElement("button");
+        previewBtn.type = "button";
+        previewBtn.className = "soundboard-web-action";
+        previewBtn.textContent = "▶";
+        previewBtn.title = "Preview from 101Soundboards";
+        previewBtn.setAttribute("aria-label", `Preview ${clip.title || "sound clip"}`);
+        previewBtn.addEventListener("click", async () => {
+          previewBtn.disabled = true;
+          try {
+            const previewPayload = await fetchLiveJson(
+              `/api/soundboards/live-clip?url=${encodeURIComponent(clip.soundPageUrl)}`
+            );
+            const audioUrl = previewPayload?.clip?.audioUrl;
+            if (!audioUrl) throw new Error("No playable audio was returned.");
+            stopLivePreview();
+            const audio = new Audio(audioUrl);
+            livePreviewAudio = audio;
+            previewBtn.textContent = "■";
+            audio.addEventListener("ended", () => {
+              if (livePreviewAudio === audio) livePreviewAudio = null;
+              previewBtn.textContent = "▶";
+            }, { once: true });
+            await audio.play();
+          } catch (error) {
+            showToast(error?.message || "Could not preview that clip.", "error");
+            previewBtn.textContent = "▶";
+          } finally {
+            previewBtn.disabled = false;
+          }
+        });
+
+        const importClipBtn = document.createElement("button");
+        importClipBtn.type = "button";
+        importClipBtn.className = "soundboard-web-action soundboard-web-action--primary";
+        importClipBtn.textContent = "+";
+        importClipBtn.title = "Import this clip";
+        importClipBtn.setAttribute("aria-label", `Import ${clip.title || "sound clip"}`);
+        importClipBtn.addEventListener("click", () => {
+          void startClipImport(board.url, clip.soundPageUrl);
+        });
+
+        actions.append(previewBtn, importClipBtn);
+        row.append(title, actions);
+        resultsEl.appendChild(row);
+      });
+
+      if (board.truncated) {
+        const note = document.createElement("div");
+        note.className = "soundboard-web-note";
+        note.textContent = `Showing the first ${clips.length} of ${board.total} clips.`;
+        resultsEl.appendChild(note);
+      }
+    } catch (error) {
+      console.error("[Soundboard] Live board error:", error);
+      renderStatus(error?.message || "Could not load that web board.", "error");
+    } finally {
+      isLoading = false;
+    }
+  };
+
+  const loadLiveBoards = async (query = "") => {
+    if (!resultsEl || isLoading || !isOwnerAccount()) return;
+    const q = String(query || "").trim();
+    lastQuery = q;
+    if (q.length < 2) {
+      renderStatus("Type at least 2 characters to search 101Soundboards.", "info");
+      return;
+    }
+
+    isLoading = true;
+    renderStatus("Searching 101Soundboards…", "loading");
+    try {
+      const payload = await fetchLiveJson(
+        `/api/soundboards/live-search?q=${encodeURIComponent(q)}`
+      );
+      const boards = Array.isArray(payload?.results) ? payload.results : [];
+      if (!boards.length) {
+        renderStatus("No 101Soundboards boards matched that search.", "info");
+        return;
+      }
+
+      resultsEl.innerHTML = "";
+      boards.forEach((board) => {
+        const row = document.createElement("div");
+        row.className = "soundboard-web-board";
+
+        const content = document.createElement("div");
+        content.className = "soundboard-item-content";
+        const title = document.createElement("div");
+        title.className = "soundboard-item-title";
+        title.textContent = board.title || board.boardId || "101Soundboards board";
+        const meta = document.createElement("div");
+        meta.className = "soundboard-item-meta";
+        meta.textContent = "101Soundboards · live web result";
+        content.append(title, meta);
+
+        const actions = document.createElement("div");
+        actions.className = "soundboard-web-actions";
+
+        const browseBtn = document.createElement("button");
+        browseBtn.type = "button";
+        browseBtn.className = "soundboard-web-action";
+        browseBtn.textContent = "Browse";
+        browseBtn.addEventListener("click", () => void renderLiveBoard(board));
+
+        const importBoardBtn = document.createElement("button");
+        importBoardBtn.type = "button";
+        importBoardBtn.className = "soundboard-web-action soundboard-web-action--primary";
+        importBoardBtn.textContent = "Import";
+        importBoardBtn.addEventListener("click", () => {
+          if (importUrlInput) importUrlInput.value = board.url;
+          void startBoardImport();
+        });
+
+        actions.append(browseBtn, importBoardBtn);
+        row.append(content, actions);
+        resultsEl.appendChild(row);
+      });
+    } catch (error) {
+      console.error("[Soundboard] Live search error:", error);
+      renderStatus(error?.message || "101Soundboards search failed.", "error");
+    } finally {
+      isLoading = false;
+    }
+  };
+
+  const setPickerMode = (mode) => {
+    const next = mode === "web" && isOwnerAccount() ? "web" : "local";
+    if (pickerMode === next) return;
+    stopLivePreview();
+    pickerMode = next;
+    lastQuery = "";
+    if (searchInput) searchInput.value = "";
+    syncImporterIdentity();
+    if (pickerMode === "web") {
+      renderStatus("Search 101Soundboards, preview clips, then import one clip or the whole board.", "info");
+    } else {
+      void loadClips("");
+    }
+  };
+
+  modeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      setPickerMode(button.dataset.soundboardMode || "local");
+      searchInput?.focus();
+    });
   });
 
   const loadClips = async (query = "") => {
@@ -10084,10 +10361,18 @@ if (voiceBtn) {
     }
     positionPanel();
     if (!panel.dataset.loaded) {
-      loadClips();
+      if (pickerMode === "web") {
+        renderStatus("Search 101Soundboards, preview clips, then import one clip or the whole board.", "info");
+      } else {
+        loadClips();
+      }
       panel.dataset.loaded = "1";
     } else if (!lastQuery) {
-      loadClips("");
+      if (pickerMode === "web") {
+        renderStatus("Search 101Soundboards, preview clips, then import one clip or the whole board.", "info");
+      } else {
+        loadClips("");
+      }
     }
     searchInput?.focus();
   });
@@ -10096,7 +10381,8 @@ if (voiceBtn) {
     if (event.key === "Enter") {
       event.preventDefault();
       const query = searchInput.value.trim();
-      loadClips(query);
+      if (pickerMode === "web") loadLiveBoards(query);
+      else loadClips(query);
     } else if (event.key === "Escape") {
       closePanel();
       soundboardBtn.focus();
@@ -10106,7 +10392,12 @@ if (voiceBtn) {
   searchInput?.addEventListener("search", () => {
     const query = searchInput.value.trim();
     if (!query && lastQuery) {
-      loadClips("");
+      if (pickerMode === "web") {
+        lastQuery = "";
+        renderStatus("Search 101Soundboards, preview clips, then import one clip or the whole board.", "info");
+      } else {
+        loadClips("");
+      }
     }
   });
 
@@ -10116,6 +10407,7 @@ if (voiceBtn) {
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && panel.style.display === "flex") {
+      stopLivePreview();
       closePanel();
       soundboardBtn.focus();
     }
