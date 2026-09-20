@@ -71,6 +71,14 @@ test('live 101Soundboards helpers keep search and clip URLs inside the allowed h
     () => parseSoundPageUrl('https://example.com/sounds/123-test-clip'),
     /Only HTTPS 101Soundboards/,
   );
+  assert.throws(
+    () => parseSoundPageUrl('https://www.101soundboards.com/sounds/trending'),
+    /\/sounds\//,
+  );
+  assert.throws(
+    () => parseSoundPageUrl('https://www.101soundboards.com/sounds/live'),
+    /\/sounds\//,
+  );
 
   const boards = extractSearchBoards(`
     <a href="/boards/100-first-board">First Board</a>
@@ -94,6 +102,24 @@ test('live 101Soundboards helpers keep search and clip URLs inside the allowed h
       url: 'https://www.101soundboards.com/boards/200-second-board',
     },
   ]);
+});
+
+test('board browsing filters site navigation sound routes and recovers real clip names', () => {
+  const board = extractBoard(`
+    <h1>Rambo Board</h1>
+    <a href="/sounds/trending">Trending</a>
+    <a href="/sounds/live">Live</a>
+    <a href="/sounds/46403162-are-you-tellin-me-that-200-men-against-your-boy"></a>
+    <a href="/sounds/263546-company-leader-to-raven" aria-label="Company leader to raven!">ignored fallback text</a>
+  `, 'https://www.101soundboards.com/boards/1386389-first-blood-1982');
+
+  assert.equal(board.discovered, 2);
+  assert.deepEqual(board.clips.map((clip) => clip.soundPageUrl), [
+    'https://www.101soundboards.com/sounds/46403162-are-you-tellin-me-that-200-men-against-your-boy',
+    'https://www.101soundboards.com/sounds/263546-company-leader-to-raven',
+  ]);
+  assert.equal(board.clips[0].label, 'Are You Tellin Me That 200 Men Against Your Boy');
+  assert.equal(board.clips[1].label, 'Company leader to raven!');
 });
 
 test('live 101Soundboards search ignores unrelated promotional board links and ranks query matches', () => {
@@ -602,6 +628,10 @@ test('live soundboard browsing is available to guests while imports stay owner-o
   assert.match(client, /\/api\/soundboards\/live-search/);
   assert.match(client, /\/api\/soundboards\/live-board/);
   assert.match(client, /\/api\/soundboards\/live-clip/);
+  assert.match(client, /const sendLiveClipToChat = async/);
+  assert.match(client, /fileUrl: resolved\.audioUrl/);
+  assert.match(client, /row\.setAttribute\("role", "button"\)/);
+  assert.match(client, /row\.title = "Send this clip to chat"/);
   assert.match(client, /\/api\/soundboards\/import-clip/);
   assert.match(client, /progress\.phase === "rebuild"/);
   assert.match(client, /Authorization: `Bearer \$\{token\}`/);
