@@ -9,8 +9,10 @@ const assert = require('node:assert/strict');
 
 const {
   parseBoardUrl,
+  parseSoundPageUrl,
   challengeDetected,
   extractBoard,
+  extractSearchBoards,
   createSoundboardImporter,
 } = require('../src/soundboards/board-importer');
 const {
@@ -58,6 +60,120 @@ test('soundboard importer accepts only HTTPS 101Soundboards board URLs', () => {
     () => parseBoardUrl('https://www.101soundboards.com/sounds/24049510-boom-vine'),
     /\/boards\//,
   );
+});
+
+test('live 101Soundboards helpers keep search and clip URLs inside the allowed host boundary', () => {
+  const clip = parseSoundPageUrl('https://101soundboards.com/sounds/123-test-clip?junk=1');
+  assert.equal(clip.url, 'https://www.101soundboards.com/sounds/123-test-clip');
+
+  assert.throws(
+    () => parseSoundPageUrl('https://example.com/sounds/123-test-clip'),
+    /Only HTTPS 101Soundboards/,
+  );
+
+  const boards = extractSearchBoards(`
+    <a href="/boards/100-first-board">First Board</a>
+    <a href="https://www.101soundboards.com/boards/200-second-board">Second Board</a>
+    <a href="/boards/100-first-board">First Board duplicate</a>
+    <a href="/sounds/999-not-a-board">Not a board</a>
+    <a href="https://example.com/boards/300-blocked">Blocked</a>
+  `, 'https://www.101soundboards.com/search/test');
+
+  assert.deepEqual(boards, [
+    {
+      provider: '101soundboards',
+      boardId: '100-first-board',
+      title: 'First Board',
+      url: 'https://www.101soundboards.com/boards/100-first-board',
+    },
+    {
+      provider: '101soundboards',
+      boardId: '200-second-board',
+      title: 'Second Board',
+      url: 'https://www.101soundboards.com/boards/200-second-board',
+    },
+  ]);
+});
+
+test('live source browser can search, browse, preview, and import only one selected clip', async (t) => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'dizychat-live-soundboard-'));
+  t.after(() => fsp.rm(root, { recursive: true, force: true }));
+
+  const dataRoot = path.join(root, 'data');
+  const publicRoot = path.join(root, 'public');
+  await fsp.mkdir(dataRoot, { recursive: true });
+
+  const searchUrl = 'https://www.101soundboards.com/search/duke';
+  const boardUrl = 'https://www.101soundboards.com/boards/321-duke-board';
+  const firstSoundUrl = 'https://www.101soundboards.com/sounds/901-first-clip';
+  const secondSoundUrl = 'https://www.101soundboards.com/sounds/902-second-clip';
+  const firstAudioUrl = 'https://www.101soundboards.com/media/first.mp3';
+  const responses = new Map([
+    [searchUrl, new FakeResponse({
+      url: searchUrl,
+      body: '<a href="/boards/321-duke-board">Duke Board</a>',
+      headers: { 'content-type': 'text/html' },
+    })],
+    [boardUrl, new FakeResponse({
+      url: boardUrl,
+      body: '<h1>Duke Board</h1><a href="/sounds/901-first-clip">First clip</a><a href="/sounds/902-second-clip">Second clip</a>',
+      headers: { 'content-type': 'text/html' },
+    })],
+    [firstSoundUrl, new FakeResponse({
+      url: firstSoundUrl,
+      body: '<h1>First clip</h1><audio src="/media/first.mp3"></audio>Length 2 seconds',
+      headers: { 'content-type': 'text/html' },
+    })],
+    [firstAudioUrl, new FakeResponse({
+      url: firstAudioUrl,
+      body: Buffer.from('FIRST-AUDIO'),
+      headers: { 'content-type': 'audio/mpeg' },
+    })],
+  ]);
+
+  const requested = [];
+  const importer = createSoundboardImporter({
+    fetchImpl: async (url) => {
+      requested.push(url);
+      const response = responses.get(url);
+      if (!response) throw new Error(`Unexpected fetch: ${url}`);
+      return response;
+    },
+    dataRoot,
+    publicRoot,
+    normalizeAudioImpl: async ({ sourceBuffer, targetPath }) => {
+      await fsp.mkdir(path.dirname(targetPath), { recursive: true });
+      await fsp.writeFile(targetPath, Buffer.concat([Buffer.from('NORMALIZED:'), sourceBuffer]));
+      return { path: targetPath, mimeType: 'audio/mp4', extension: 'm4a' };
+    },
+  });
+
+  const search = await importer.searchBoards({ query: 'duke' });
+  assert.equal(search.results.length, 1);
+  assert.equal(search.results[0].url, boardUrl);
+
+  const board = await importer.browseBoard({ boardUrl });
+  assert.equal(board.title, 'Duke Board');
+  assert.equal(board.clips.length, 2);
+  assert.equal(board.clips[0].soundPageUrl, firstSoundUrl);
+
+  const preview = await importer.resolveClip({ soundPageUrl: firstSoundUrl });
+  assert.equal(preview.title, 'First clip');
+  assert.equal(preview.audioUrl, firstAudioUrl);
+
+  requested.length = 0;
+  const imported = await importer.importBoard({
+    boardUrl,
+    onlySoundPageUrl: firstSoundUrl,
+  });
+  assert.equal(imported.imported, 1);
+  assert.equal(imported.processed, 1);
+  assert.equal(requested.includes(secondSoundUrl), false);
+
+  const saved = JSON.parse(await fsp.readFile(path.join(dataRoot, '321-duke-board.json'), 'utf8'));
+  assert.equal(saved.items.length, 1);
+  assert.equal(saved.items[0].title, 'First clip');
+  assert.equal(saved.items[0].sourceUrl, firstSoundUrl);
 });
 
 test('challenge pages stop cleanly instead of attempting anti-bot bypass', () => {
@@ -337,6 +453,10 @@ test('server and client keep board import owner-only and separate from normal so
 
   assert.match(server, /app\.post\('\/api\/soundboards\/import'/);
   assert.match(server, /app\.post\('\/api\/soundboards\/rebuild-existing'/);
+  assert.match(server, /app\.post\('\/api\/soundboards\/import-clip'/);
+  assert.match(server, /app\.get\('\/api\/soundboards\/live-search'/);
+  assert.match(server, /app\.get\('\/api\/soundboards\/live-board'/);
+  assert.match(server, /app\.get\('\/api\/soundboards\/live-clip'/);
   assert.match(server, /replaceExisting:\s*true/);
   assert.match(server, /requireHttpAccount, requireHttpOwner/);
   assert.match(server, /req\.accountPrincipal\?\.role !== 'owner'/);
@@ -347,6 +467,13 @@ test('server and client keep board import owner-only and separate from normal so
   assert.match(client, /\/api\/soundboards\/import/);
   assert.match(client, /\/api\/soundboards\/rebuild-existing/);
   assert.match(client, /Rebuild current 101 boards/);
+  assert.match(client, /data-soundboard-mode="web"/);
+  assert.match(client, /Search 101Soundboards/);
+  assert.match(client, /\/api\/soundboards\/live-search/);
+  assert.match(client, /\/api\/soundboards\/live-board/);
+  assert.match(client, /\/api\/soundboards\/live-clip/);
+  assert.match(client, /\/api\/soundboards\/import-clip/);
+  assert.match(client, /progress\.phase === "rebuild"/);
   assert.match(client, /Authorization: `Bearer \$\{token\}`/);
   assert.match(client, /browser-approval-required/);
 });
