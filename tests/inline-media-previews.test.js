@@ -18,7 +18,7 @@ test('audio attachments use compact accessible chat-style controls', () => {
 
   assert.match(
     css,
-    /\.message\.has-inline-media\.has-inline-audio\s*\{[^}]*min-width:\s*0;[^}]*max-width:\s*min\(400px, 94%\);/s,
+    /\.message\.has-inline-media\.has-inline-audio\s*\{[^}]*min-width:\s*0;[^}]*max-width:\s*min\(450px, 96%\);/s,
   );
   assert.match(
     css,
@@ -28,7 +28,12 @@ test('audio attachments use compact accessible chat-style controls', () => {
     css,
     /\.inline-preview\.inline-audio \.preview-media audio\s*\{[^}]*width:\s*100%;[^}]*height:\s*42px;/s,
   );
-  assert.match(css, /\.message\.media-only\.has-inline-audio\s*\{[^}]*max-width:\s*min\(380px, 94%\);/s);
+  assert.match(css, /\.message\.media-only\.has-inline-audio\s*\{[^}]*max-width:\s*min\(430px, 96%\);/s);
+  assert.match(css, /\.message\.has-inline-audio \.inline-preview\.inline-audio\s*\{[^}]*width:\s*min\(400px, 100%\);/s);
+  assert.match(
+    css,
+    /@media \(hover: hover\) and \(pointer: fine\)\s*\{\s*\.inline-preview\.inline-audio \.preview-media\s*\{[^}]*padding-right:\s*34px;/s,
+  );
   assert.match(client, /waveform\.className = "audio-waveform"/);
   assert.match(client, /for \(let index = 0; index < 24; index \+= 1\)/);
   assert.match(client, /waveform\.dataset\.playing = audio\.paused \|\| audio\.ended \? "0" : "1"/);
