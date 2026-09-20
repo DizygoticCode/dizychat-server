@@ -95,6 +95,27 @@ test('live 101Soundboards helpers keep search and clip URLs inside the allowed h
   ]);
 });
 
+test('live 101Soundboards search ignores unrelated promotional board links and ranks query matches', () => {
+  const boards = extractSearchBoards(`
+    <a href="/boards/900-create-a-new-soundboard">Create a new soundboard</a>
+    <a href="/boards/901-clone-my-voice">Clone My Voice</a>
+    <a href="/boards/902-free-song-maker">Free song maker</a>
+    <a href="/boards/10716-arnold-schwarzenegger-soundboard">Arnold Schwarzenegger Soundboard</a>
+    <a href="/boards/20732-arnold-schwarzenegger-original-soundboard">Arnold Schwarzenegger Original Soundboard</a>
+    <a href="/boards/10416-arnold-schwarzenegger-soundboard-the-running-man">Arnold Schwarzenegger Soundboard: The Running Man</a>
+  `, 'https://www.101soundboards.com/search/arnold', 'arnold');
+
+  assert.deepEqual(
+    boards.map((board) => board.boardId),
+    [
+      '10716-arnold-schwarzenegger-soundboard',
+      '20732-arnold-schwarzenegger-original-soundboard',
+      '10416-arnold-schwarzenegger-soundboard-the-running-man',
+    ],
+  );
+  assert.equal(boards.some((board) => /create-a-new|clone-my-voice|free-song-maker/.test(board.boardId)), false);
+});
+
 test('live source browser can search, browse, preview, and import only one selected clip', async (t) => {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'dizychat-live-soundboard-'));
   t.after(() => fsp.rm(root, { recursive: true, force: true }));
