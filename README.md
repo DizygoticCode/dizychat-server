@@ -134,6 +134,7 @@ deploy/livekit/                  # Self-hosted LiveKit Compose/runbook
 - **Node.js 22+** (matching `package.json`).
 - **MongoDB** reachable through `MONGO_URI`.
 - **ClamAV daemon plus `clamdscan`** for uploads; scanning fails closed if unavailable.
+- **FFmpeg** for voice-message conversion and normalized soundboard imports/rebuilds.
 - LiveKit credentials only when live calls are enabled.
 - Firebase/FCM credentials when native push delivery is enabled; browser Web Push additionally uses VAPID configuration. Apple signing/APNs configuration is only required for distributable native iOS builds.
 
@@ -166,6 +167,7 @@ Create a local `.env` for development or configure the protected service environ
 | `UPLOAD_QUARANTINE_DIR` | Private pre-scan upload directory; default `/var/lib/dizychat/upload-quarantine`. |
 | `CLAMAV_SCAN_COMMAND` | ClamAV client command; default `clamdscan`. |
 | `CLAMAV_SCAN_TIMEOUT_MS` | Per-file scan timeout; default `120000`, bounded 5000-600000 ms. |
+| `FFMPEG_PATH` | Optional FFmpeg executable override; defaults to `ffmpeg` on PATH. Used for voice-message conversion and soundboard normalization. |
 | `ENABLE_VOICE_CALLS` | Optional explicit LiveKit call enable/disable flag. If unset, calls enable when all LiveKit credentials are present. |
 | `LIVEKIT_URL` | Browser-reachable LiveKit URL, normally trusted `wss://...`. |
 | `LIVEKIT_API_KEY` | LiveKit API key used by DizyChat to issue room-scoped tokens. |
@@ -295,13 +297,32 @@ Accepts a provider/room request and returns launch instructions for JackTrip or 
 
 ## Soundboard catalog maintenance
 
-To import a curated 101Soundboards board into the local catalog:
+The signed-in **owner** can manage public 101Soundboards boards directly from the existing soundboard picker.
 
-```bash
-node scripts/download-101-soundboard.js --board https://www.101soundboards.com/boards/<board-slug>
-```
+### Import a new board
 
-Metadata is kept in `data/soundboards`; downloaded binaries under `public/soundboards` are intentionally not part of the Git source history. If the source site requires a browser session cookie, the importer supports `SB_101SOUNDBOARDS_COOKIE`.
+Paste an HTTPS `101soundboards.com/boards/...` URL and choose **Import**.
+
+Normal imports are additive and resumable:
+
+- existing catalog entries and audio files are preserved;
+- an already-imported board skips matched clips and adds only new/unmatched clips;
+- the server validates every page, media and redirect target against the 101Soundboards host boundary;
+- imports run as a background job with progress shown in the picker;
+- the in-memory soundboard search cache reloads automatically when an import completes; and
+- if the source site presents CAPTCHA/human verification, DizyChat stops cleanly rather than attempting to bypass it.
+
+Every newly downloaded clip is passed through FFmpeg before it enters the catalog. DizyChat trims quiet leading/trailing edges, normalizes to a consistent `-16 LUFS` target with a `-1.5 dBTP` ceiling, resamples to 48 kHz, and stores browser-friendly 128 kb/s AAC/M4A.
+
+### Rebuild the existing 101Soundboards library
+
+The owner-only **Rebuild current 101 boards** control discovers only catalogs explicitly marked `source: "101soundboards"`, re-downloads their source clips sequentially, applies the same normalization pipeline, and safely replaces matched legacy audio.
+
+Replacement is fail-safe: a cleaned file must be created successfully before its catalog entry is changed, and the old local file is removed only after the new catalog has been written. If FFmpeg or a source clip fails, the working legacy clip remains in place.
+
+This rebuild is intended for migrating older DizyChat soundboards that were captured by the previous downloader/blob workflow into cleaner, level-consistent source copies. FFmpeg can trim silence and normalize level, but it does not attempt to identify/remove arbitrary non-silent content embedded in the source clip itself.
+
+Metadata remains under `data/soundboards`; downloaded binaries remain under `public/soundboards`. The older `scripts/download-101-soundboard.js` CLI remains available for legacy/manual maintenance of publicly accessible boards.
 
 ## Android release signing
 
