@@ -9735,10 +9735,12 @@ if (voiceBtn) {
 
   const positionPanel = () => {
     const rect = form.getBoundingClientRect();
+    const availableHeight = Math.max(120, rect.top - 20);
     panel.style.position = "fixed";
     panel.style.left = rect.left + 8 + "px";
     panel.style.bottom = window.innerHeight - rect.top + 10 + "px";
-    panel.style.display = "block";
+    panel.style.maxHeight = `${Math.min(320, availableHeight)}px`;
+    panel.style.display = "flex";
   };
 
   const guessExtension = (url) => {
@@ -10072,7 +10074,7 @@ if (voiceBtn) {
   };
 
   soundboardBtn.addEventListener("click", () => {
-    if (panel.style.display === "block") {
+    if (panel.style.display === "flex") {
       closePanel();
       return;
     }
@@ -10109,11 +10111,11 @@ if (voiceBtn) {
   });
 
   window.addEventListener("resize", () => {
-    if (panel.style.display === "block") positionPanel();
+    if (panel.style.display === "flex") positionPanel();
   });
 
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && panel.style.display === "block") {
+    if (event.key === "Escape" && panel.style.display === "flex") {
       closePanel();
       soundboardBtn.focus();
     }
