@@ -79,7 +79,6 @@ test('board import is additive: existing board items and index entries survive w
     tags: ['legacy'],
     duration: 2,
     file: '999-test-board/existing.mp3',
-    sourceUrl: 'https://www.101soundboards.com/sounds/100-existing-clip',
   };
 
   await fsp.writeFile(
