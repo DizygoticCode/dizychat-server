@@ -195,6 +195,76 @@ test('official 101Soundboards MCP results return real boards and suppress site p
 });
 
 
+test('live 101Soundboards fetch timeout covers a stalled response body', async () => {
+  const boardUrl = 'https://www.101soundboards.com/boards/321-timeout-board';
+  let sawAbortSignal = false;
+
+  const importer = createSoundboardImporter({
+    fetchTimeoutMs: 15,
+    fetchImpl: async (url, options = {}) => {
+      assert.equal(url, boardUrl);
+      const signal = options.signal;
+      sawAbortSignal = Boolean(signal);
+      return {
+        url,
+        status: 200,
+        ok: true,
+        headers: { get: () => null },
+        body: {
+          async *[Symbol.asyncIterator]() {
+            yield Buffer.from('<html><body>');
+            await new Promise((resolve, reject) => {
+              const abort = () => {
+                const error = new Error('aborted');
+                error.name = 'AbortError';
+                reject(error);
+              };
+              if (signal?.aborted) return abort();
+              signal?.addEventListener('abort', abort, { once: true });
+            });
+          },
+        },
+      };
+    },
+  });
+
+  await assert.rejects(
+    importer.browseBoard({ boardUrl }),
+    (error) => error?.code === 'UPSTREAM_TIMEOUT',
+  );
+  assert.equal(sawAbortSignal, true);
+});
+
+test('live 101Soundboards streamed responses stop once the byte cap is exceeded', async () => {
+  const boardUrl = 'https://www.101soundboards.com/boards/321-size-board';
+  let chunksRead = 0;
+
+  const importer = createSoundboardImporter({
+    fetchImpl: async (url) => ({
+      url,
+      status: 200,
+      ok: true,
+      headers: { get: () => null },
+      body: {
+        async *[Symbol.asyncIterator]() {
+          chunksRead += 1;
+          yield Buffer.alloc(1024 * 1024);
+          chunksRead += 1;
+          yield Buffer.alloc((1024 * 1024) + 1);
+          chunksRead += 1;
+          yield Buffer.alloc(1024 * 1024);
+        },
+      },
+    }),
+  });
+
+  await assert.rejects(
+    importer.browseBoard({ boardUrl }),
+    /101Soundboards response exceeded the importer size limit/,
+  );
+  assert.equal(chunksRead, 2);
+});
+
 test('live source browser can search, browse, preview, and import only one selected clip', async (t) => {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'dizychat-live-soundboard-'));
   t.after(() => fsp.rm(root, { recursive: true, force: true }));
@@ -229,6 +299,7 @@ test('live source browser can search, browse, preview, and import only one selec
   const requested = [];
   const importer = createSoundboardImporter({
     fetchImpl: async (url, options = {}) => {
+      assert.equal(Boolean(options.signal), true);
       requested.push(url);
       if (url === mcpSearchUrl && options.method === 'POST') {
         const payload = JSON.parse(options.body || '{}');
