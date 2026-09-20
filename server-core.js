@@ -41,6 +41,7 @@ const { createSessionStore } = require('./src/auth/session-store');
 const { createMobileSessionService } = require('./src/auth/mobile-session-service');
 const { requireModerator, requireOwner } = require('./src/auth/authorization');
 const { createRoomPasswordService } = require('./src/rooms/room-password-service');
+const { createRoomAuthThrottle } = require('./src/rooms/room-auth-throttle');
 const soundboardStore = require('./src/utils/soundboard');
 const {
   createSoundboardImporter,
@@ -820,6 +821,7 @@ const revokeAccountSessionToken = async (token) => {
   return mobileAccountSessions.revoke(token);
 };
 const roomPasswordService = createRoomPasswordService({ RoomModel: Room });
+const roomAuthThrottle = createRoomAuthThrottle();
 const roomPasswords = new Map();
 const PERSISTENT_ROOMS = [
   'General Chat',
@@ -3580,6 +3582,19 @@ io.on('connection', socket => {
     }
 
     const providedPassword = normalisePassword(password);
+    const roomAuthKey = `${getSocketRemoteAddress(socket)}::${roomName.toLowerCase()}`;
+    const roomAuthGate = roomAuthThrottle.check(roomAuthKey);
+    if (roomAuthGate.blocked) {
+      logSecurityEvent('room_password_rate_limited', {
+        room: roomName,
+        ip: getSocketRemoteAddress(socket),
+        socketId: socket.id,
+        retryAfterMs: roomAuthGate.retryAfterMs,
+      });
+      sendJoinError(socket, 'Too many incorrect room password attempts. Please wait and try again.');
+      return;
+    }
+
     let roomPasswordResult;
     try {
       roomPasswordResult = await roomPasswordService.claimOrVerify(roomName, providedPassword);
@@ -3591,14 +3606,18 @@ io.on('connection', socket => {
     }
 
     if (!roomPasswordResult.ok) {
+      const failure = roomAuthThrottle.registerFailure(roomAuthKey);
       logSecurityEvent('room_password_mismatch', {
         room: roomName,
         ip: getSocketRemoteAddress(socket),
         socketId: socket.id,
+        retryAfterMs: failure.retryAfterMs,
       });
       sendJoinError(socket, 'Incorrect room password');
       return;
     }
+
+    roomAuthThrottle.clear(roomAuthKey);
 
     const fallbackUser = `Guest-${socket.id.slice(0, 4)}`;
     let effectivePrincipal;
