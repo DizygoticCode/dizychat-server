@@ -27,24 +27,75 @@
       />
       <h1>Welcome to DizyChat</h1>
       <div class="landing-inputs auth-v2-landing">
-        <section class="room-entry-card" aria-labelledby="room-entry-title">
-          <h2 id="room-entry-title">Choose or create a room</h2>
-          <p>
-            Enter an existing room name to join it, or a new room name to create it. An optional room password makes that room private.
-            Remember or save the room name and room password separately from your DizyChat account details so you can return or share them.
-          </p>
+        <section class="room-entry-card auth-step-card" aria-labelledby="room-entry-title">
+          <div class="auth-section-heading">
+            <span class="auth-step-number" aria-hidden="true">1</span>
+            <div>
+              <h2 id="room-entry-title">Choose or create a room</h2>
+              <p>Room details are separate from your DizyChat account login.</p>
+            </div>
+          </div>
           <div class="room-entry-fields" aria-label="Room details">
-            <input id="room-input" placeholder="Room name — join existing or create new" autocomplete="off" />
-            <input id="room-password" type="password" placeholder="Room password (optional)" autocomplete="current-password" />
+            <label class="auth-field" for="room-input">
+              <span>Room name</span>
+              <input
+                id="room-input"
+                name="room-name"
+                placeholder="e.g. ShittyChat"
+                autocomplete="off"
+                autocapitalize="none"
+                spellcheck="false"
+              />
+            </label>
+            <label class="auth-field" for="room-password">
+              <span>Room password <small>optional</small></span>
+              <input
+                id="room-password"
+                name="room-access-password"
+                type="password"
+                placeholder="Only for private rooms"
+                autocomplete="off"
+                data-1p-ignore
+                data-lpignore="true"
+                data-bwignore="true"
+              />
+            </label>
           </div>
         </section>
 
+        <div class="auth-choice-heading">
+          <span class="auth-step-number" aria-hidden="true">2</span>
+          <div>
+            <h2>Choose how you want to join</h2>
+            <p>Sign in with a registered account, or use a guest name.</p>
+          </div>
+        </div>
+
         <div class="auth-entry-grid">
-          <section id="registered-login" class="auth-entry-card" aria-labelledby="registered-login-title">
+          <section id="registered-login" class="auth-entry-card auth-entry-card--primary" aria-labelledby="registered-login-title">
             <h2 id="registered-login-title">Registered account</h2>
-            <p>Use your protected DizyChat identity.</p>
-            <input id="account-username" placeholder="Account username" autocomplete="username" />
-            <input id="account-password" type="password" placeholder="Account password" autocomplete="current-password" />
+            <p>Your account password is not the room password above.</p>
+            <label class="auth-field" for="account-username">
+              <span>Account username</span>
+              <input
+                id="account-username"
+                name="username"
+                placeholder="Your DizyChat username"
+                autocomplete="username"
+                autocapitalize="none"
+                spellcheck="false"
+              />
+            </label>
+            <label class="auth-field" for="account-password">
+              <span>Account password</span>
+              <input
+                id="account-password"
+                name="password"
+                type="password"
+                placeholder="Your DizyChat password"
+                autocomplete="current-password"
+              />
+            </label>
             <button id="registered-join-btn" type="button">Sign in to account</button>
             <div class="auth-entry-actions" aria-label="Registered account options">
               <button id="create-account-btn" type="button" class="auth-link-button" aria-expanded="false" aria-controls="create-account-panel">Create account</button>
@@ -81,10 +132,23 @@
             </div>
           </section>
 
-          <section id="guest-login" class="auth-entry-card" aria-labelledby="guest-login-title">
+          <section id="guest-login" class="auth-entry-card auth-entry-card--guest" aria-labelledby="guest-login-title">
             <h2 id="guest-login-title">Guest</h2>
-            <p>Join without an account. Registered names are protected.</p>
-            <input id="guest-username" placeholder="Guest username" autocomplete="nickname" />
+            <p>No account needed. Registered names remain protected.</p>
+            <label class="auth-field" for="guest-username">
+              <span>Guest name</span>
+              <input
+                id="guest-username"
+                name="guest-display-name"
+                placeholder="Choose a guest name"
+                autocomplete="off"
+                autocapitalize="none"
+                spellcheck="false"
+                data-1p-ignore
+                data-lpignore="true"
+                data-bwignore="true"
+              />
+            </label>
             <button id="guest-join-btn" type="button">Join as guest</button>
           </section>
         </div>
