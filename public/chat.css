@@ -3582,8 +3582,9 @@ body:not(.dark) #soundboard-btn {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .inline-preview.inline-audio .preview-media {
-    padding-right: 76px;
+  .inline-preview.inline-audio .preview-media audio {
+    width: calc(100% - 76px);
+    justify-self: start;
   }
 }
 
