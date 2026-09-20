@@ -3524,6 +3524,14 @@ function canSendTyping(socketId) {
   return true;
 }
 
+const clearSocketRateLimitState = (socketId) => {
+  if (!socketId) return;
+  messageTimestamps.delete(socketId);
+  typingTimestamps.delete(socketId);
+  callEventTimestamps.delete(socketId);
+  watchPartyCreateTimestamps.delete(socketId);
+};
+
 function requireAdmin(socket){
   const principal = requireModerator(socket);
   if (!principal) {
@@ -4852,6 +4860,7 @@ io.on('connection', socket => {
       emitRoomListUpdate();
     }
     clearTypingUser(socket, lastRoom);
+    clearSocketRateLimitState(socket.id);
   });
 });
 
