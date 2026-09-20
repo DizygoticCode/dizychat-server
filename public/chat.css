@@ -3711,8 +3711,9 @@ body:not(.dark) #soundboard-btn {
   object-fit: contain;
 }
 
-/* Embedded players need a wider bubble so their own controls remain usable. */
+/* Embedded players need a real desktop width so iframe controls remain usable. */
 .message.has-inline-embed {
+  width: min(500px, 94%);
   max-width: min(520px, 94%);
 }
 
