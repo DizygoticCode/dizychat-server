@@ -267,6 +267,58 @@ const fetchResponse = async (fetchImpl, rawUrl, { maxBytes, binary = false } = {
   };
 };
 
+
+const extractBoardListings = (html, pageUrl, { limit = 100 } = {}) => {
+  if (challengeDetected(html)) {
+    const error = new Error('101Soundboards requires browser approval before boards can be discovered.');
+    error.code = 'BROWSER_APPROVAL_REQUIRED';
+    throw error;
+  }
+
+  const $ = cheerio.load(String(html || ''));
+  const boards = new Map();
+  const safeLimit = Math.max(1, Math.min(100, Number(limit) || 100));
+
+  const addBoard = (raw, label = '') => {
+    const url = ensureAllowed101Url(raw, pageUrl);
+    if (!url || !/^\/boards\/[^/?#]+\/?$/i.test(url.pathname)) return;
+
+    let parsed;
+    try {
+      parsed = parseBoardUrl(url.toString());
+    } catch {
+      return;
+    }
+
+    const title = normalise(label)
+      .replace(/\s+/g, ' ')
+      .slice(0, 180)
+      || parsed.boardId.replace(/-/g, ' ');
+
+    if (!boards.has(parsed.url)) {
+      boards.set(parsed.url, {
+        id: parsed.boardId,
+        title,
+        url: parsed.url,
+      });
+    }
+  };
+
+  $('a[href*="/boards/"]').each((_, el) => {
+    if (boards.size >= safeLimit) return false;
+    addBoard($(el).attr('href'), $(el).text() || $(el).attr('title') || '');
+    return undefined;
+  });
+
+  $('[data-href*="/boards/"]').each((_, el) => {
+    if (boards.size >= safeLimit) return false;
+    addBoard($(el).attr('data-href'), $(el).text() || '');
+    return undefined;
+  });
+
+  return Array.from(boards.values()).slice(0, safeLimit);
+};
+
 const createSoundboardImporter = ({
   fetchImpl,
   dataRoot = DEFAULT_DATA_ROOT,
@@ -274,6 +326,43 @@ const createSoundboardImporter = ({
   normalizeAudioImpl = normalizeSoundboardAudio,
 } = {}) => {
   if (typeof fetchImpl !== 'function') throw new Error('fetchImpl is required');
+
+  const discoverBoards = async ({
+    query = '',
+    mode = 'search',
+    limit = 100,
+  } = {}) => {
+    const safeLimit = Math.max(1, Math.min(100, Number(limit) || 100));
+    const safeMode = mode === 'popular' ? 'popular' : 'search';
+    const discovered = new Map();
+
+    const collectPage = async (url) => {
+      const response = await fetchResponse(fetchImpl, url, { maxBytes: MAX_PAGE_BYTES });
+      const boards = extractBoardListings(response.buffer.toString('utf8'), response.url, {
+        limit: safeLimit - discovered.size,
+      });
+      boards.forEach((board) => {
+        if (!discovered.has(board.url)) discovered.set(board.url, board);
+      });
+    };
+
+    if (safeMode === 'popular') {
+      for (let page = 1; page <= 5 && discovered.size < safeLimit; page += 1) {
+        const suffix = page === 1 ? '' : `?page=${page}`;
+        await collectPage(`https://www.101soundboards.com/featured/popular${suffix}`);
+      }
+    } else {
+      const safeQuery = normalise(query).slice(0, 80);
+      if (!safeQuery) throw new Error('Enter a 101Soundboards search term.');
+      await collectPage(`https://www.101soundboards.com/search/${encodeURIComponent(safeQuery)}`);
+    }
+
+    return {
+      mode: safeMode,
+      query: safeMode === 'search' ? normalise(query).slice(0, 80) : '',
+      boards: Array.from(discovered.values()).slice(0, safeLimit),
+    };
+  };
 
   const importBoard = async ({
     boardUrl,
@@ -477,7 +566,7 @@ const createSoundboardImporter = ({
     };
   };
 
-  return { importBoard };
+  return { importBoard, discoverBoards };
 };
 
 module.exports = {
@@ -485,6 +574,7 @@ module.exports = {
   parseBoardUrl,
   challengeDetected,
   extractBoard,
+  extractBoardListings,
   extractSound,
   createSoundboardImporter,
 };
