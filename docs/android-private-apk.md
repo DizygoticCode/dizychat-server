@@ -24,8 +24,8 @@ Verified current release APK:
 
 ```text
 File:    dizychat-v1.apk
-Size:    3,951,226 bytes
-SHA-256: 26c47392baab81b2c5dee8dfc976c1c23fbba03769c41c102cbd755c75d0ab35
+Size:    4,693,459 bytes
+SHA-256: 7a196bd500de09c545ea6ad5c1ce2ab3f9109ded1beb8903d41544fb3bb31f71
 Package: com.chat.dizychat
 ```
 
