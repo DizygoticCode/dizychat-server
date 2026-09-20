@@ -14,14 +14,14 @@ test('login flow identifies the user before exposing room selection', () => {
   const roomAt = html.indexOf('id="room-entry-step"');
   assert.ok(identityAt >= 0 && roomAt > identityAt, 'identity step must appear before room selection');
   assert.match(html, /id="room-entry-step"[^>]*class="[^"]*is-locked[^"]*"[^>]*aria-disabled="true"/);
-  assert.match(html, /id="room-input"[sS]*?disabled/);
-  assert.match(html, /id="room-password"[sS]*?disabled/);
-  assert.match(html, /id="guest-join-btn"[^>]*disabled>Join room</button>/);
+  assert.match(html, /<input(?=[^>]*id="room-input")[^>]*disabled/);
+  assert.match(html, /<input(?=[^>]*id="room-password")[^>]*disabled/);
+  assert.match(html, /<button(?=[^>]*id="guest-join-btn")[^>]*disabled>Join room<\/button>/);
 });
 
 test('account credentials keep standard autofill semantics while room and guest fields opt out', () => {
-  assert.match(html, /id="account-username"[sS]*?name="username"[sS]*?autocomplete="username"/);
-  assert.match(html, /id="account-password"[sS]*?name="password"[sS]*?autocomplete="current-password"/);
+  assert.match(html, /<input(?=[^>]*id="account-username")(?=[^>]*name="username")(?=[^>]*autocomplete="username")[^>]*>/);
+  assert.match(html, /<input(?=[^>]*id="account-password")(?=[^>]*name="password")(?=[^>]*autocomplete="current-password")[^>]*>/);
 
   const roomPassword = html.match(/<input[sS]*?id="room-password"[sS]*?/>/)?.[0] || '';
   assert.match(roomPassword, /name="room-access-password"/);
