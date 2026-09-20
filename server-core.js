@@ -50,6 +50,7 @@ const {
 } = require('./src/soundboards/board-importer');
 const { scanFileWithClamAv } = require('./src/uploads/clamav-scanner');
 const { normalizeVoiceMessageUpload } = require('./src/uploads/voice-message-normalizer');
+const { applyUploadResponseHeaders } = require('./src/uploads/upload-response-security');
 const { DizyJamCredentialStore } = require('./src/jam/dizyjam-credentials');
 const { resolveCallTokenGrant } = require('./src/calls/call-token-grant');
 const { resolveBindHost, resolveTrustedRemoteAddress } = require('./src/config/network');
@@ -981,10 +982,8 @@ app.use(
   express.static(uploadDir, {
     maxAge: '30d',
     immutable: true,
-    setHeaders: (res) => {
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-      res.setHeader('Content-Disposition', 'inline');
-      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    setHeaders: (res, filePath) => {
+      applyUploadResponseHeaders(res, filePath);
     },
   })
 );
