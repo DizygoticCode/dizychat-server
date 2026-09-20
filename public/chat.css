@@ -5088,6 +5088,127 @@ body:not(.dark) .header-right button#watch-party-btn {
   gap: 14px;
 }
 
+.auth-choice-heading,
+.auth-section-heading {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  text-align: left;
+}
+
+.auth-choice-heading > div,
+.auth-section-heading > div {
+  min-width: 0;
+}
+
+.auth-choice-heading h2,
+.auth-choice-heading p,
+.auth-section-heading h2,
+.auth-section-heading p {
+  margin: 0;
+}
+
+.auth-choice-heading p,
+.auth-section-heading p {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.auth-step-number {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface-alt));
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border-color));
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.room-entry-card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--surface-alt);
+  box-sizing: border-box;
+  transition: opacity 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.room-entry-card.is-locked {
+  opacity: 0.48;
+  background: color-mix(in srgb, var(--surface-alt) 78%, transparent);
+}
+
+.room-entry-card.is-locked input,
+.room-entry-card.is-locked button,
+.room-entry-card.is-locked .public-room-item {
+  cursor: not-allowed;
+}
+
+.room-entry-card.is-unlocked {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border-color));
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  text-align: left;
+}
+
+.auth-field > span {
+  color: var(--text-primary);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.auth-field > span small {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.auth-entry-card--primary {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border-color));
+}
+
+.auth-entry-card.is-selected {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--border-color));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.auth-entry-status {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  line-height: 1.3;
+}
+
+.room-join-btn {
+  width: min(420px, 100%);
+  align-self: center;
+}
+
+.room-entry-card #room-list {
+  width: 100%;
+  margin-top: 2px;
+}
+
+.room-entry-card #room-list h3 {
+  margin: 0 0 8px;
+}
+
 .room-entry-fields {
   display: grid;
   width: min(420px, 100%);
@@ -5142,5 +5263,8 @@ body:not(.dark) .header-right button#watch-party-btn {
 @media (max-width: 720px) {
   .auth-v2-landing { width: min(100%, calc(100vw - 24px)); }
   .auth-entry-grid { grid-template-columns: 1fr; }
-  .auth-entry-card { padding: 12px; }
+  .auth-entry-card,
+  .room-entry-card { padding: 12px; }
+  .auth-choice-heading,
+  .auth-section-heading { gap: 8px; }
 }
