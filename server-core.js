@@ -37,6 +37,7 @@ const { createMobileSessionService } = require('./src/auth/mobile-session-servic
 const { requireModerator, requireOwner } = require('./src/auth/authorization');
 const { createRoomPasswordService } = require('./src/rooms/room-password-service');
 const soundboardStore = require('./src/utils/soundboard');
+const { createSoundboardImporter, parseBoardUrl: parseSoundboardImportUrl } = require('./src/soundboards/board-importer');
 const { scanFileWithClamAv } = require('./src/uploads/clamav-scanner');
 const { normalizeVoiceMessageUpload } = require('./src/uploads/voice-message-normalizer');
 const { DizyJamCredentialStore } = require('./src/jam/dizyjam-credentials');
@@ -44,6 +45,117 @@ const { DizyJamCredentialStore } = require('./src/jam/dizyjam-credentials');
 const nodeFetchModulePromise = import('node-fetch');
 const fetch = (...args) =>
   nodeFetchModulePromise.then(({ default: fetch }) => fetch(...args));
+
+const soundboardImporter = createSoundboardImporter({ fetchImpl: fetch });
+const soundboardImportJobs = new Map();
+let activeSoundboardImportJobId = '';
+const SOUNDBOARD_IMPORT_JOB_TTL_MS = 6 * 60 * 60 * 1000;
+
+const trimSoundboardImportJobs = () => {
+  const cutoff = Date.now() - SOUNDBOARD_IMPORT_JOB_TTL_MS;
+  for (const [jobId, job] of soundboardImportJobs.entries()) {
+    if (job.status === 'running' || job.status === 'queued') continue;
+    if (Number(job.updatedAt || 0) < cutoff) soundboardImportJobs.delete(jobId);
+  }
+};
+
+const readSoundboardImportJob = (jobId) => {
+  const job = soundboardImportJobs.get(String(jobId || '').trim());
+  if (!job) return null;
+  return {
+    id: job.id,
+    status: job.status,
+    boardUrl: job.boardUrl,
+    boardId: job.boardId,
+    progress: job.progress,
+    result: job.result || null,
+    error: job.error || '',
+    code: job.code || '',
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+  };
+};
+
+const startSoundboardImportJob = ({ boardUrl, requestedBy }) => {
+  trimSoundboardImportJobs();
+  const parsed = parseSoundboardImportUrl(boardUrl);
+
+  if (activeSoundboardImportJobId) {
+    const active = soundboardImportJobs.get(activeSoundboardImportJobId);
+    if (active && ['queued', 'running'].includes(active.status)) {
+      if (active.boardId === parsed.boardId) return readSoundboardImportJob(active.id);
+      const error = new Error('Another soundboard import is already running.');
+      error.code = 'SOUNDBOARD_IMPORT_BUSY';
+      throw error;
+    }
+    activeSoundboardImportJobId = '';
+  }
+
+  const now = Date.now();
+  const job = {
+    id: crypto.randomUUID(),
+    status: 'queued',
+    boardUrl: parsed.url,
+    boardId: parsed.boardId,
+    requestedBy: String(requestedBy || ''),
+    progress: { phase: 'queued', message: 'Import queued…', current: 0, total: 0 },
+    result: null,
+    error: '',
+    code: '',
+    createdAt: now,
+    updatedAt: now,
+  };
+  soundboardImportJobs.set(job.id, job);
+  activeSoundboardImportJobId = job.id;
+
+  setImmediate(async () => {
+    job.status = 'running';
+    job.updatedAt = Date.now();
+    try {
+      const result = await soundboardImporter.importBoard({
+        boardUrl: parsed.url,
+        onProgress: async (progress) => {
+          job.progress = {
+            phase: String(progress?.phase || 'running'),
+            message: String(progress?.message || ''),
+            current: Number(progress?.current || 0),
+            total: Number(progress?.total || 0),
+          };
+          job.updatedAt = Date.now();
+        },
+      });
+      soundboardStore.reload();
+      job.result = result;
+      job.status = 'complete';
+      job.progress = {
+        phase: 'complete',
+        message: `Import complete: ${result.imported} added, ${result.skipped} already present, ${result.failed} unavailable.`,
+        current: Number(result.processed || 0),
+        total: Number(result.processed || 0),
+      };
+    } catch (error) {
+      job.status = error?.code === 'BROWSER_APPROVAL_REQUIRED' ? 'browser-approval-required' : 'error';
+      job.code = String(error?.code || 'SOUNDBOARD_IMPORT_FAILED');
+      job.error = String(error?.message || 'Soundboard import failed.');
+      job.progress = {
+        phase: job.status,
+        message: job.error,
+        current: Number(job.progress?.current || 0),
+        total: Number(job.progress?.total || 0),
+      };
+      console.warn('[Soundboard Import] Import failed', {
+        boardId: parsed.boardId,
+        code: job.code,
+        error: job.error,
+      });
+    } finally {
+      job.updatedAt = Date.now();
+      if (activeSoundboardImportJobId === job.id) activeSoundboardImportJobId = '';
+    }
+  });
+
+  return readSoundboardImportJob(job.id);
+};
 
 const TRUSTED_NATIVE_ORIGINS = new Set([
   'https://localhost',
@@ -680,6 +792,13 @@ const requireHttpAccount = async (req, res, next) => {
     console.warn('[Push] account HTTP auth unavailable', { code: String(error?.code || 'unexpected') });
     return res.status(503).json({ ok: false, code: 'AUTH_UNAVAILABLE' });
   }
+};
+
+const requireHttpOwner = (req, res, next) => {
+  if (req.accountPrincipal?.kind !== 'account' || req.accountPrincipal?.role !== 'owner') {
+    return res.status(403).json({ ok: false, code: 'OWNER_REQUIRED' });
+  }
+  return next();
 };
 
 const requireHttpMobileAccount = async (req, res, next) => {
@@ -2043,6 +2162,33 @@ app.get('/giphy-search', async (req, res) => {
     console.error('[GIPHY] Error:', err.message);
     res.status(502).json({ error: 'GIPHY request failed.', results: [] });
   }
+});
+
+const soundboardImportJson = express.json({ limit: '4kb' });
+
+app.post('/api/soundboards/import', soundboardImportJson, requireHttpAccount, requireHttpOwner, (req, res) => {
+  try {
+    const job = startSoundboardImportJob({
+      boardUrl: req.body?.url,
+      requestedBy: req.accountPrincipal?.canonicalUsername || req.accountPrincipal?.username,
+    });
+    return res.status(job.status === 'queued' ? 202 : 200).json({ ok: true, job });
+  } catch (error) {
+    const code = String(error?.code || 'SOUNDBOARD_IMPORT_INVALID');
+    const status = code === 'SOUNDBOARD_IMPORT_BUSY' ? 409 : 400;
+    return res.status(status).json({
+      ok: false,
+      code,
+      error: String(error?.message || 'Unable to start soundboard import.'),
+    });
+  }
+});
+
+app.get('/api/soundboards/import/:jobId', requireHttpAccount, requireHttpOwner, (req, res) => {
+  trimSoundboardImportJobs();
+  const job = readSoundboardImportJob(req.params?.jobId);
+  if (!job) return res.status(404).json({ ok: false, code: 'SOUNDBOARD_IMPORT_NOT_FOUND' });
+  return res.json({ ok: true, job });
 });
 
 app.get('/soundboard-clips', (req, res) => {
