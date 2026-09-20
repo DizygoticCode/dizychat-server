@@ -6583,6 +6583,7 @@ function createInlinePreview(link, type, labelText) {
     audio.src = resolveMediaSource(link);
     audio.controls = true;
     audio.preload = "metadata";
+    audio.setAttribute("aria-label", labelText || "Audio message");
     mediaWrap.appendChild(audio);
   } else {
     const label = document.createElement("span");
@@ -6814,7 +6815,13 @@ function attachPreviewActions(preview, { link, label, type } = {}) {
   download.rel = "noopener noreferrer";
   download.className = "preview-download";
   download.setAttribute("download", "");
-  download.textContent = "Download";
+  if (type === "audio") {
+    download.textContent = "↓";
+    download.title = "Download audio";
+    download.setAttribute("aria-label", "Download audio");
+  } else {
+    download.textContent = "Download";
+  }
   actions.appendChild(download);
 
   preview.appendChild(actions);
@@ -10506,6 +10513,44 @@ if (voiceBtn) {
 })();
 
 // ------------------- Embeds & Link Cards -------------------
+function normaliseRumbleEmbedUrl(value) {
+  try {
+    const url = new URL(String(value || "").trim());
+    if (url.protocol !== "https:") return "";
+    if (!/^(?:www\.)?rumble\.com$/i.test(url.hostname)) return "";
+    if (!/^\/embed\/[a-z0-9]+\/?$/i.test(url.pathname)) return "";
+
+    const params = new URLSearchParams();
+    for (const key of ["pub", "video"]) {
+      const candidate = url.searchParams.get(key);
+      if (candidate) params.set(key, candidate);
+    }
+    params.set("autoplay", "0");
+    url.search = params.toString();
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+function createRumbleIframe(embedUrl) {
+  const safeUrl = normaliseRumbleEmbedUrl(embedUrl);
+  if (!safeUrl) return null;
+
+  const iframe = document.createElement("iframe");
+  iframe.src = safeUrl;
+  iframe.className = "embed-iframe rumble";
+  iframe.loading = "lazy";
+  iframe.setAttribute(
+    "allow",
+    "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+  );
+  iframe.setAttribute("allowfullscreen", "true");
+  iframe.setAttribute("title", "Rumble video player");
+  return iframe;
+}
+
 function autoEmbed(node, providedLinks = null) {
   const textEl = node.querySelector(".text") || node;
   const txt = textEl ? textEl.textContent : "";
@@ -10647,62 +10692,24 @@ function autoEmbed(node, providedLinks = null) {
 
     // Rumble
     if (!el && /https?:\/\/(?:www\.)?rumble\.com\//i.test(link)) {
-      let embedUrl = "";
-      try {
-        const parsed = new URL(link);
-        const segments = parsed.pathname.split("/").filter(Boolean);
-        let videoId = "";
-        if (segments[0] && segments[0].toLowerCase() === "embed" && segments[1]) {
-          videoId = segments[1].split(".")[0];
-        } else {
-          const candidate = segments.find((segment) => /^v[a-z0-9]+/i.test(segment));
-          if (candidate) {
-            const matchId = candidate.match(/^(v[a-z0-9]+)/i);
-            if (matchId) videoId = matchId[1];
-          }
-        }
-        if (videoId) {
-          const embedParams = new URLSearchParams();
-          const allowedParams = ["pub", "video"];
-          for (const param of allowedParams) {
-            const value = parsed.searchParams.get(param);
-            if (value) {
-              embedParams.set(param, value);
-            }
-          }
-          if (!embedParams.has("autoplay")) {
-            embedParams.set("autoplay", "0");
-          }
-          const query = embedParams.toString();
-          embedUrl = `https://rumble.com/embed/${videoId}/${query ? `?${query}` : ""}`;
-        }
-      } catch {
-        const fallback = link.match(/https?:\/\/(?:www\.)?rumble\.com\/embed\/([a-z0-9]+)/i);
-        if (fallback) {
-          const embedParams = new URLSearchParams();
-          const pubMatch = link.match(/[?&]pub=([^&]+)/i);
-          if (pubMatch) {
-            embedParams.set("pub", pubMatch[1]);
-          }
-          const videoParamMatch = link.match(/[?&]video=([^&]+)/i);
-          if (videoParamMatch) {
-            embedParams.set("video", videoParamMatch[1]);
-          }
-          embedParams.set("autoplay", "0");
-          const query = embedParams.toString();
-          embedUrl = `https://rumble.com/embed/${fallback[1]}/${query ? `?${query}` : ""}`;
-        }
-      }
-      if (embedUrl) {
-        el = document.createElement("iframe");
-        el.src = embedUrl;
-        el.className = "embed-iframe rumble";
-        el.loading = "lazy";
-        el.setAttribute(
-          "allow",
-          "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-        );
-        el.setAttribute("allowfullscreen", "true");
+      const directEmbed = normaliseRumbleEmbedUrl(link);
+      if (directEmbed) {
+        el = createRumbleIframe(directEmbed);
+      } else {
+        fetch("/link-preview?url=" + encodeURIComponent(link))
+          .then((response) => response.json())
+          .then((preview) => {
+            const iframe = createRumbleIframe(preview?.embedUrl);
+            if (!iframe) return;
+            removeAnchorFor(link);
+            wrap.appendChild(iframe);
+            ensureWrap();
+            node.classList.add("has-inline-embed");
+            updateInlineMediaClasses(node);
+          })
+          .catch((error) => {
+            console.warn("[Rumble] Unable to resolve canonical embed URL", error);
+          });
       }
     }
 
@@ -10763,6 +10770,9 @@ function autoEmbed(node, providedLinks = null) {
       }
       wrap.appendChild(el);
       ensureWrap();
+      if (el.tagName === "IFRAME") {
+        node.classList.add("has-inline-embed");
+      }
       updateInlineMediaClasses(node);
       if (el.tagName === "IFRAME" && el.classList.contains("soundcloud")) {
         attachSoundCloudControls(el, wrap);
