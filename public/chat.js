@@ -9808,6 +9808,7 @@ if (voiceBtn) {
   let importPollTimer = null;
   let pickerMode = "local";
   let livePreviewAudio = null;
+  const liveClipCache = new Map();
 
   const isOwnerAccount = () => accountState.identity?.role === "owner";
 
@@ -10031,6 +10032,67 @@ if (voiceBtn) {
     return payload;
   };
 
+  const resolveLiveClip = async (clip = {}) => {
+    const soundPageUrl = String(clip?.soundPageUrl || "").trim();
+    if (!soundPageUrl) throw new Error("No 101Soundboards clip URL was provided.");
+    if (liveClipCache.has(soundPageUrl)) return liveClipCache.get(soundPageUrl);
+
+    const pending = fetchLiveJson(
+      `/api/soundboards/live-clip?url=${encodeURIComponent(soundPageUrl)}`
+    ).then((payload) => {
+      const resolved = payload?.clip || {};
+      const audioUrl = String(resolved.audioUrl || "").trim();
+      if (!audioUrl) throw new Error("No playable audio was returned.");
+      return {
+        title: String(resolved.title || clip?.title || "Sound clip").trim() || "Sound clip",
+        audioUrl,
+        duration: Number(resolved.duration || 0) || 0,
+        soundPageUrl,
+      };
+    }).catch((error) => {
+      liveClipCache.delete(soundPageUrl);
+      throw error;
+    });
+
+    liveClipCache.set(soundPageUrl, pending);
+    return pending;
+  };
+
+  const sendLiveClipToChat = async (clip, titleEl, row) => {
+    if (!window.currentRoom || !window.currentUser) {
+      showToast("Join a room to share audio clips.", "warn");
+      return;
+    }
+
+    if (row) row.setAttribute("aria-busy", "true");
+    try {
+      const resolved = await resolveLiveClip(clip);
+      const clipTitle = resolved.title || clip?.title || "Sound clip";
+      if (titleEl) titleEl.textContent = clipTitle;
+
+      const ext = guessExtension(resolved.audioUrl);
+      const mime = guessMime(ext);
+      const safeName = sanitiseFilename(clipTitle || "Soundboard Clip");
+
+      socket.emit("chat message", {
+        room: window.currentRoom,
+        user: window.currentUser,
+        text: clipTitle,
+        timestamp: Date.now(),
+        fileUrl: resolved.audioUrl,
+        fileType: mime,
+        fileName: `${safeName}.${ext}`,
+      });
+      showToast("Audio clip added", "success");
+      closePanel();
+      input?.focus();
+    } catch (error) {
+      showToast(error?.message || "Could not send that web clip.", "error");
+    } finally {
+      if (row) row.removeAttribute("aria-busy");
+    }
+  };
+
   const stopLivePreview = () => {
     if (!livePreviewAudio) return;
     try {
@@ -10106,16 +10168,15 @@ if (voiceBtn) {
         previewBtn.textContent = "▶";
         previewBtn.title = "Preview from 101Soundboards";
         previewBtn.setAttribute("aria-label", `Preview ${clip.title || "sound clip"}`);
-        previewBtn.addEventListener("click", async () => {
+        previewBtn.addEventListener("click", async (event) => {
+          event.preventDefault();
+          event.stopPropagation();
           previewBtn.disabled = true;
           try {
-            const previewPayload = await fetchLiveJson(
-              `/api/soundboards/live-clip?url=${encodeURIComponent(clip.soundPageUrl)}`
-            );
-            const audioUrl = previewPayload?.clip?.audioUrl;
-            if (!audioUrl) throw new Error("No playable audio was returned.");
+            const resolved = await resolveLiveClip(clip);
+            title.textContent = resolved.title || clip.title || "Sound clip";
             stopLivePreview();
-            const audio = new Audio(audioUrl);
+            const audio = new Audio(resolveMediaSource(resolved.audioUrl));
             livePreviewAudio = audio;
             previewBtn.textContent = "■";
             audio.addEventListener("ended", () => {
@@ -10137,8 +10198,24 @@ if (voiceBtn) {
         importClipBtn.textContent = "+";
         importClipBtn.title = "Import this clip";
         importClipBtn.setAttribute("aria-label", `Import ${clip.title || "sound clip"}`);
-        importClipBtn.addEventListener("click", () => {
+        importClipBtn.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
           void startClipImport(board.url, clip.soundPageUrl);
+        });
+
+        row.setAttribute("role", "button");
+        row.setAttribute("tabindex", "0");
+        row.setAttribute("aria-label", `Send ${clip.title || "sound clip"} to chat`);
+        row.title = "Send this clip to chat";
+        row.addEventListener("click", (event) => {
+          if (event.target?.closest?.("button, a")) return;
+          void sendLiveClipToChat(clip, title, row);
+        });
+        row.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          void sendLiveClipToChat(clip, title, row);
         });
 
         actions.appendChild(previewBtn);
