@@ -59,7 +59,7 @@
   --scroll-to-latest-font-size: 0.9rem;
   --input-padding-y: 10px;
   --input-padding-x: 12px;
-  --input-field-padding-y: 10px;
+  --input-field-padding-y: 7px;
   --input-field-padding-x: 14px;
   --input-font-size: 1em;
   --input-button-gap: 5px;
@@ -132,7 +132,7 @@ body.compact-mode {
   --scroll-to-latest-font-size: 0.85rem;
   --input-padding-y: 6px;
   --input-padding-x: 10px;
-  --input-field-padding-y: 8px;
+  --input-field-padding-y: 6px;
   --input-field-padding-x: 12px;
   --input-font-size: 0.95em;
   --input-button-gap: 4px;
@@ -2353,7 +2353,7 @@ body:not(.dark) #quick-emoji-panel .quick-emoji-button {
   background: var(--input-bg);
   color: var(--text-primary);
   outline: none;
-  min-height: 40px;
+  min-height: 36px;
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
