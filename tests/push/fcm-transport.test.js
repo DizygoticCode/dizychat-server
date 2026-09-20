@@ -66,7 +66,7 @@ test('enabled transport serializes only allowlisted message data and token envel
   });
   assert.deepEqual(payloads[0].android, {
     priority: 'high',
-    notification: { channelId: 'dizychat_messages_v1', proxy: 'allow' },
+    notification: { channelId: 'dizychat_messages_v2', proxy: 'allow' },
   });
   assert.deepEqual(payloads[0].apns, {
     headers: { 'apns-priority': '10' },
