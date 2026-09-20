@@ -34,8 +34,11 @@ const resolveTrustedRemoteAddress = ({
   const peer = normalizePeerAddress(peerAddress);
   if (!isLoopbackAddress(peer)) return peer || 'unknown';
 
-  const forwarded = typeof forwardedFor === 'string'
-    ? forwardedFor.split(',')[0].trim()
+  const forwardedChain = typeof forwardedFor === 'string'
+    ? forwardedFor.split(',').map((value) => value.trim()).filter(Boolean)
+    : [];
+  const forwarded = forwardedChain.length
+    ? forwardedChain[forwardedChain.length - 1]
     : '';
   return forwarded || peer || 'unknown';
 };
