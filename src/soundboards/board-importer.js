@@ -165,6 +165,18 @@ const extractSearchBoards = (html, searchUrl, query = '') => {
     .trim();
   const searchNeedle = normaliseSearchText(query);
   const searchTerms = searchNeedle.split(' ').filter((term) => term.length >= 2);
+  const promotionalBoards = new Set([
+    'create-a-new-soundboard',
+    'clone-my-voice',
+    'free-song-maker',
+  ]);
+
+  const isPromotionalBoard = (title, boardId) => {
+    const slug = String(boardId || '').replace(/^\d+-/, '');
+    if (promotionalBoards.has(slug)) return true;
+    const label = normaliseSearchText(title);
+    return promotionalBoards.has(label.replace(/\s+/g, '-'));
+  };
 
   const relevanceScore = (title, boardId) => {
     if (!searchTerms.length) return 1;
@@ -176,9 +188,8 @@ const extractSearchBoards = (html, searchUrl, query = '') => {
     searchTerms.forEach((term) => {
       if (haystack.includes(term)) matched += 1;
     });
-    if (!matched) return 0;
     score += matched * 10;
-    if (matched === searchTerms.length) score += 25;
+    if (matched === searchTerms.length && matched > 0) score += 25;
     return score;
   };
 
@@ -195,16 +206,24 @@ const extractSearchBoards = (html, searchUrl, query = '') => {
       return;
     }
 
-    const rawTitle = normalise($(el).attr('title') || $(el).text()).replace(/\s+/g, ' ');
-    if (!rawTitle) return;
+    const rawTitle = normalise(
+      $(el).attr('title')
+        || $(el).attr('aria-label')
+        || $(el).find('img[alt]').first().attr('alt')
+        || $(el).text()
+    ).replace(/\s+/g, ' ');
+    const fallbackTitle = parsed.boardId
+      .replace(/^\d+-/, '')
+      .replace(/[-_]+/g, ' ')
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
+    const title = rawTitle || fallbackTitle;
+    if (!title || isPromotionalBoard(title, parsed.boardId)) return;
 
-    const score = relevanceScore(rawTitle, parsed.boardId);
-    if (!score) return;
-
+    const score = relevanceScore(title, parsed.boardId);
     const candidate = {
       provider: '101soundboards',
       boardId: parsed.boardId,
-      title: rawTitle.slice(0, 180),
+      title: title.slice(0, 180),
       url: parsed.url,
     };
     const existing = boards.get(parsed.url);
@@ -217,7 +236,6 @@ const extractSearchBoards = (html, searchUrl, query = '') => {
     .sort((a, b) => b.score - a.score || a.order - b.order)
     .map((entry) => entry.result);
 };
-
 const cleanScriptUrl = (value) => normalise(value)
   .replace(/\\u002F/gi, '/')
   .replace(/\\\//g, '/')

@@ -116,6 +116,24 @@ test('live 101Soundboards search ignores unrelated promotional board links and r
   assert.equal(boards.some((board) => /create-a-new|clone-my-voice|free-song-maker/.test(board.boardId)), false);
 });
 
+test('live search keeps site-ranked non-exact board results while suppressing promotional boards', () => {
+  const boards = extractSearchBoards(`
+    <a href="/boards/900-create-a-new-soundboard">Create a new soundboard</a>
+    <a href="/boards/901-clone-my-voice">Clone My Voice</a>
+    <a href="/boards/100-exact-match"><img alt="Terminator Soundboard"></a>
+    <a href="/boards/101-related-action-movie"><img alt="Classic Action Movie Quotes"></a>
+    <a href="/boards/102-no-text"></a>
+  `, 'https://www.101soundboards.com/search/terminator', 'terminator');
+
+  assert.deepEqual(boards.map((board) => board.boardId), [
+    '100-exact-match',
+    '101-related-action-movie',
+    '102-no-text',
+  ]);
+  assert.equal(boards[0].title, 'Terminator Soundboard');
+  assert.equal(boards[2].title, 'No Text');
+});
+
 test('live source browser can search, browse, preview, and import only one selected clip', async (t) => {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'dizychat-live-soundboard-'));
   t.after(() => fsp.rm(root, { recursive: true, force: true }));
