@@ -5198,6 +5198,25 @@ body:not(.dark) .header-right button#watch-party-btn {
 .room-join-btn {
   width: min(420px, 100%);
   align-self: center;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #07130c;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease, opacity 0.16s ease;
+}
+
+.room-join-btn:disabled {
+  background: color-mix(in srgb, var(--text-muted) 38%, var(--surface));
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.room-join-btn:not(:disabled):hover {
+  opacity: 0.9;
 }
 
 .room-entry-card #room-list {
