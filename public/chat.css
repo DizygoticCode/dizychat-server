@@ -4112,6 +4112,33 @@ body:not(.dark) #soundboard-btn {
   z-index: 1000;
 }
 
+.soundboard-mode-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.soundboard-mode-tab {
+  flex: 1 1 0;
+  border: 1px solid rgba(187,134,252,0.3);
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: rgba(40,40,40,0.85);
+  color: rgba(245,240,255,0.78);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.soundboard-mode-tab.active {
+  background: rgba(123,47,247,0.72);
+  color: #fff;
+  border-color: rgba(187,134,252,0.65);
+}
+
+.soundboard-mode-tab[hidden] {
+  display: none !important;
+}
+
 #soundboard-picker .soundboard-search input {
   width: 100%;
   padding: 8px;
@@ -4210,6 +4237,17 @@ body:not(.dark) #soundboard-btn {
   color: #ffbdb6;
 }
 
+body:not(.dark) .soundboard-mode-tab {
+  background: #fff;
+  color: #4a287f;
+  border-color: rgba(123,47,247,0.2);
+}
+
+body:not(.dark) .soundboard-mode-tab.active {
+  background: rgba(123,47,247,0.16);
+  color: #24104c;
+}
+
 body:not(.dark) #soundboard-picker .soundboard-import {
   background: rgba(123,47,247,0.06);
   border-color: rgba(123,47,247,0.2);
@@ -4234,6 +4272,89 @@ body:not(.dark) #soundboard-import-url {
   gap: 6px;
   max-height: 250px;
   overflow-y: auto;
+}
+
+.soundboard-web-header,
+.soundboard-web-board,
+.soundboard-web-clip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.soundboard-web-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding-bottom: 6px;
+  background: rgba(20,20,20,0.98);
+}
+
+.soundboard-web-heading {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #efe7ff;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.soundboard-web-board,
+.soundboard-web-clip {
+  padding: 8px 9px;
+  border: 1px solid rgba(187,134,252,0.22);
+  border-radius: 9px;
+  background: rgba(30,30,30,0.88);
+}
+
+.soundboard-web-board .soundboard-item-content {
+  flex: 1 1 auto;
+}
+
+.soundboard-web-clip-title {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #f5f0ff;
+  font-size: 0.84rem;
+}
+
+.soundboard-web-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 5px;
+}
+
+.soundboard-web-action {
+  border: 1px solid rgba(187,134,252,0.35);
+  border-radius: 7px;
+  padding: 5px 7px;
+  background: rgba(73,46,114,0.7);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.soundboard-web-action--primary {
+  background: rgba(123,47,247,0.75);
+}
+
+.soundboard-web-action:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.soundboard-web-note {
+  padding: 5px 2px;
+  color: rgba(240,240,255,0.68);
+  font-size: 0.7rem;
 }
 
 .soundboard-item {
@@ -4321,6 +4442,34 @@ body:not(.dark) #soundboard-picker {
   background: rgba(248,248,255,0.98);
   border-color: rgba(123,47,247,0.2);
   box-shadow: 0 0 10px rgba(123,47,247,0.2);
+}
+
+body:not(.dark) .soundboard-web-header {
+  background: rgba(248,248,255,0.99);
+}
+
+body:not(.dark) .soundboard-web-heading,
+body:not(.dark) .soundboard-web-clip-title {
+  color: #39226b;
+}
+
+body:not(.dark) .soundboard-web-board,
+body:not(.dark) .soundboard-web-clip {
+  background: rgba(247,240,255,0.88);
+  border-color: rgba(123,47,247,0.22);
+}
+
+body:not(.dark) .soundboard-web-action {
+  background: rgba(123,47,247,0.12);
+  color: #39226b;
+}
+
+body:not(.dark) .soundboard-web-action--primary {
+  background: rgba(123,47,247,0.22);
+}
+
+body:not(.dark) .soundboard-web-note {
+  color: rgba(57,34,107,0.68);
 }
 
 body:not(.dark) .soundboard-item {
