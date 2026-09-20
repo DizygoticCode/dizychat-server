@@ -295,13 +295,18 @@ Accepts a provider/room request and returns launch instructions for JackTrip or 
 
 ## Soundboard catalog maintenance
 
-To import a curated 101Soundboards board into the local catalog:
+The signed-in **owner** can add a public 101Soundboards board directly from the existing soundboard picker: paste an HTTPS `101soundboards.com/boards/...` URL and choose **Import**.
 
-```bash
-node scripts/download-101-soundboard.js --board https://www.101soundboards.com/boards/<board-slug>
-```
+Imports are additive and resumable:
 
-Metadata is kept in `data/soundboards`; downloaded binaries under `public/soundboards` are intentionally not part of the Git source history. If the source site requires a browser session cookie, the importer supports `SB_101SOUNDBOARDS_COOKIE`.
+- existing board catalog entries and audio files are not deleted;
+- an already-imported board is resumed and only new/unmatched clips are added;
+- the server validates all fetch/redirect targets against the 101Soundboards host boundary;
+- imports run as a background job with progress shown in the picker;
+- the in-memory soundboard search cache reloads automatically when an import completes; and
+- if the source site presents a CAPTCHA/human-verification challenge, DizyChat stops cleanly rather than attempting to bypass it.
+
+Metadata remains under `data/soundboards`; downloaded binaries remain under `public/soundboards`. The older `scripts/download-101-soundboard.js` CLI remains available for legacy/manual maintenance of publicly accessible boards.
 
 ## Android release signing
 
