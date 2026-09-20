@@ -60,8 +60,11 @@ test('Android app creates the DizyChat message notification channel during start
   assert.match(notifications, /static void ensureChannel\(Context context\)/);
   assert.match(notifications, /CHANNEL_ID\s*=\s*"dizychat_messages_v2"/);
   assert.match(notifications, /new NotificationChannel\([\s\S]*CHANNEL_ID[\s\S]*"DizyChat messages"[\s\S]*NotificationManager\.IMPORTANCE_HIGH/);
-  assert.match(notifications, /channel\.enableVibration\(true\)/);
-  assert.match(notifications, /channel\.setVibrationPattern\(new long\[\]\{0, 180, 120, 180\}\)/);
+  assert.match(notifications, /ACTIVITY_CHANNEL_ID\s*=\s*"dizychat_activities_v1"/);
+  assert.match(notifications, /new NotificationChannel\([\s\S]*ACTIVITY_CHANNEL_ID[\s\S]*"DizyChat activities"[\s\S]*NotificationManager\.IMPORTANCE_HIGH/);
+  assert.match(notifications, /messageChannel\.enableVibration\(true\)/);
+  assert.match(notifications, /activityChannel\.enableVibration\(true\)/);
+  assert.match(notifications, /activityChannel\.setVibrationPattern\(new long\[\]\{0, 180, 120, 180\}\)/);
   const manifest = read('android/app/src/main/AndroidManifest.xml');
   assert.match(manifest, /android\.permission\.VIBRATE/);
 });
@@ -77,10 +80,44 @@ test('native push path emits bounded DizyPushTrace diagnostics', () => {
   assert.match(service, /drop: required field missing/);
   assert.match(service, /drop: unsupported type=/);
   assert.match(service, /dispatch message room=/);
+  assert.match(service, /dispatch activity room=/);
+  assert.match(service, /DizyNotificationManager\.showActivityNotification/);
 
   assert.match(notifications, /showMessageNotification start room=/);
+  assert.match(notifications, /showActivityNotification/);
+  assert.match(notifications, /NotificationCompat\.CATEGORY_EVENT/);
+  assert.match(notifications, /setTimeoutAfter\(120000L\)/);
   assert.match(notifications, /recordMessage ok notificationId=/);
   assert.match(notifications, /showMessageNotification failed:/);
   assert.match(notifications, /notify start id=/);
   assert.match(notifications, /notify complete id=/);
+});
+
+
+test('activity FCM payload stays data-only so old APKs fail closed while the new APK owns rendering', async () => {
+  const payloads = [];
+  const transport = createFcmTransport({
+    projectId: 'dizychat-test',
+    messagingFactory: () => ({
+      send: async (payload) => {
+        payloads.push(payload);
+        return 'ok';
+      },
+    }),
+  });
+
+  await transport.send({
+    type: 'activity',
+    room: 'General Chat',
+    messageId: '',
+    sender: 'Alice',
+    preview: 'Started sharing their screen',
+    notificationKey: 'screen-key',
+    timestamp: '2026-09-20T02:30:00.000Z',
+    activityType: 'screen-share',
+    activityId: 'call-1:alice:screen-share',
+  }, 'p30-token');
+
+  assert.equal(payloads[0].notification, undefined);
+  assert.deepEqual(payloads[0].android, { priority: 'high', ttl: 120000 });
 });
