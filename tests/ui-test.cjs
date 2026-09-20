@@ -41,7 +41,7 @@ async function runPlaywrightTest() {
     await page.waitForFunction(() => {
       const roomInput = document.querySelector('#room-input');
       return roomInput && !roomInput.disabled;
-    }, { timeout: 10000 });
+    }, null, { timeout: 10000 });
     await page.fill('#room-input', 'AutoTestRoom');
     await page.click('#guest-join-btn');
     console.log('➡️ Guest identity confirmed and Join button clicked');
