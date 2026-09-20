@@ -4119,6 +4119,99 @@ body:not(.dark) #soundboard-btn {
   margin-bottom: 8px;
 }
 
+#soundboard-picker .soundboard-import {
+  margin-bottom: 10px;
+  padding: 9px;
+  border: 1px solid rgba(187,134,252,0.3);
+  border-radius: 10px;
+  background: rgba(187,134,252,0.08);
+}
+
+#soundboard-picker .soundboard-import[hidden] {
+  display: none !important;
+}
+
+.soundboard-import-title {
+  margin-bottom: 6px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #d8c1ff;
+}
+
+.soundboard-import-row {
+  display: flex;
+  gap: 6px;
+}
+
+#soundboard-import-url {
+  min-width: 0;
+  flex: 1;
+  padding: 7px 8px;
+  border-radius: 8px;
+  border: 1px solid #333;
+  background: #111;
+  color: #fff;
+  font-size: 0.78rem;
+}
+
+#soundboard-import-btn {
+  flex: 0 0 auto;
+  border: 1px solid rgba(187,134,252,0.45);
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: rgba(123,47,247,0.7);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+#soundboard-import-btn:disabled,
+#soundboard-import-url:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.soundboard-import-status {
+  min-height: 0;
+  margin-top: 6px;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: rgba(240,240,255,0.82);
+}
+
+.soundboard-import-status:empty {
+  display: none;
+}
+
+.soundboard-import-status[data-tone="complete"] {
+  color: #9ee6b8;
+}
+
+.soundboard-import-status[data-tone="warn"] {
+  color: #ffe9a6;
+}
+
+.soundboard-import-status[data-tone="error"] {
+  color: #ffbdb6;
+}
+
+body:not(.dark) #soundboard-picker .soundboard-import {
+  background: rgba(123,47,247,0.06);
+  border-color: rgba(123,47,247,0.2);
+}
+
+body:not(.dark) .soundboard-import-title,
+body:not(.dark) .soundboard-import-status {
+  color: #4a287f;
+}
+
+body:not(.dark) #soundboard-import-url {
+  background: #fff;
+  color: #24104c;
+  border-color: rgba(123,47,247,0.25);
+}
+
 #soundboard-picker .soundboard-results {
   display: flex;
   flex-direction: column;
