@@ -50,6 +50,7 @@ const {
 const { scanFileWithClamAv } = require('./src/uploads/clamav-scanner');
 const { normalizeVoiceMessageUpload } = require('./src/uploads/voice-message-normalizer');
 const { DizyJamCredentialStore } = require('./src/jam/dizyjam-credentials');
+const { fetchPublicHtmlPreview } = require('./src/security/public-http-fetch');
 
 const nodeFetchModulePromise = import('node-fetch');
 const fetch = (...args) =>
@@ -1978,37 +1979,19 @@ app.get('/link-preview', async (req, res) => {
   let { url } = req.query;
   if (!url) return res.status(400).json({ error: 'No URL provided' });
 
-  if (!/^https?:\/\//i.test(url)) {
-    url = 'http://' + url;
-  } else {
-    try {
-      const parsed = new URL(url);
-      if (parsed.protocol === 'https:' && parsed.port && parsed.port !== '443') {
-        parsed.protocol = 'http:';
-        url = parsed.toString();
-      }
-    } catch (_err) {
-      /* fall back to original url */
-    }
-  }
-
   try {
-    const response = await fetch(url, {
-      timeout: 5000,
-      headers: {
-        'user-agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-        accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      },
+    const previewResponse = await fetchPublicHtmlPreview({
+      fetchImpl: fetch,
+      url,
     });
+    url = previewResponse.url;
 
-    const contentType = response.headers.get('content-type') || '';
-    if (!/text\/html/i.test(contentType)) {
+    if (!previewResponse.isHtml) {
       res.setHeader('Cache-Control', 'public, max-age=300');
       return res.json({ title: '', image: '', description: '', siteName: '', icon: '', embedUrl: '' });
     }
 
-    const html = await response.text();
+    const html = previewResponse.html;
     const $ = cheerio.load(html);
 
     const pick = (...candidates) => {
@@ -2169,7 +2152,10 @@ app.get('/link-preview', async (req, res) => {
     res.setHeader('Cache-Control', 'public, max-age=300');
     res.json(responsePayload);
   } catch (err) {
-    console.error('[Link Preview] Error:', err.message);
+    const code = String(err?.code || 'LINK_PREVIEW_FAILED');
+    const logger = code.includes('BLOCKED') ? console.warn : console.error;
+    logger('[Link Preview] Request rejected:', code, err?.message || err);
+    res.setHeader('Cache-Control', 'no-store');
     res.json({ title: '', image: '', description: '', siteName: '', icon: '', embedUrl: '' });
   }
 });
