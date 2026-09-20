@@ -93,7 +93,7 @@ const readExisting101SoundboardTargets = async () => {
     try {
       const board = JSON.parse(await fs.promises.readFile(path.join(dataRoot, `${boardId}.json`), 'utf8'));
       const source = String(board?.source || '').trim().toLowerCase();
-      if (source && source !== '101soundboards') continue;
+      if (source !== '101soundboards') continue;
       const candidate = board?.sourceUrl || `https://www.101soundboards.com/boards/${boardId}`;
       const parsed = parseSoundboardImportUrl(candidate);
       targets.push({ boardId: parsed.boardId, boardUrl: parsed.url });
