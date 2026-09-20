@@ -154,7 +154,10 @@
       const json = subscription.toJSON?.() || subscription;
       const result = await post('/api/web-push/register', {
         subscription: json,
-        deviceLabel: win?.navigator?.standalone === true ? 'iPhone Home Screen' : 'Web',
+        deviceLabel: (
+          win?.navigator?.standalone === true
+          || win?.dizychatPwaRuntime?.isStandalone?.(win) === true
+        ) ? 'iPhone Home Screen' : 'Web',
       });
       webPushActive = Boolean(result?.ok);
       if (webPushActive && joinedRoom) {
@@ -176,7 +179,10 @@
       if (registrationPromise) return registrationPromise;
 
       registrationPromise = (async () => {
-        const serviceWorker = await win.navigator.serviceWorker.register('/dizychat-sw.js');
+        let serviceWorker = await win.navigator.serviceWorker.getRegistration?.('/');
+        if (!serviceWorker) {
+          serviceWorker = await win.navigator.serviceWorker.register('/dizychat-sw.js');
+        }
         const ready = await win.navigator.serviceWorker.ready;
         const registration = ready || serviceWorker;
         let current = await registration.pushManager.getSubscription();
