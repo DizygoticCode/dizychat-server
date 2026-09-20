@@ -1,6 +1,98 @@
 'use strict';
 
+const CACHE_PREFIX = 'dizychat-shell-';
+const CACHE_NAME = `${CACHE_PREFIX}v2`;
+const APP_SHELL = [
+  '/login.html',
+  '/manifest.webmanifest',
+  '/logo.png',
+  '/mobile-bootstrap.js',
+  '/iphone-install.js',
+  '/iphone-install.css',
+  '/pwa-runtime.js',
+  '/pwa-runtime.css',
+];
+const BYPASS_PREFIXES = ['/api/', '/socket.io/', '/uploads/', '/soundboards/'];
+
 const clean = (value) => String(value || '').trim();
+
+const shouldBypass = (url) =>
+  BYPASS_PREFIXES.some((prefix) => url.pathname.startsWith(prefix));
+
+const isStaticAsset = (url) =>
+  /\.(?:js|css|png|jpg|jpeg|gif|webp|svg|ico|webmanifest|woff2?)$/i.test(url.pathname);
+
+const fetchAndCache = async (request) => {
+  const response = await fetch(request);
+  if (
+    response
+    && response.ok
+    && response.type !== 'opaque'
+    && request.method === 'GET'
+  ) {
+    const cache = await caches.open(CACHE_NAME);
+    await cache.put(request, response.clone()).catch(() => {});
+  }
+  return response;
+};
+
+const networkFirst = async (request, fallbackUrl = '') => {
+  try {
+    return await fetchAndCache(request);
+  } catch (_error) {
+    const cached = await caches.match(request);
+    if (cached) return cached;
+    if (fallbackUrl) {
+      const fallback = await caches.match(fallbackUrl);
+      if (fallback) return fallback;
+    }
+    throw _error;
+  }
+};
+
+self.addEventListener('install', (event) => {
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    await Promise.allSettled(APP_SHELL.map((path) => cache.add(path)));
+  })());
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys
+      .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
+      .map((key) => caches.delete(key)));
+    await self.clients.claim();
+  })());
+});
+
+self.addEventListener('message', (event) => {
+  if (event?.data?.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
+self.addEventListener('fetch', (event) => {
+  const request = event.request;
+  if (!request || request.method !== 'GET') return;
+
+  let url;
+  try {
+    url = new URL(request.url);
+  } catch (_error) {
+    return;
+  }
+
+  if (url.origin !== self.location.origin || shouldBypass(url)) return;
+
+  if (request.mode === 'navigate') {
+    event.respondWith(networkFirst(request, '/login.html'));
+    return;
+  }
+
+  if (isStaticAsset(url) || APP_SHELL.includes(url.pathname)) {
+    event.respondWith(networkFirst(request));
+  }
+});
 
 self.addEventListener('push', (event) => {
   let payload = {};
