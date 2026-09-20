@@ -17,9 +17,10 @@ const createUploadAdmissionController = ({
   now = Date.now,
 } = {}) => {
   const states = new Map();
+  const sweepIntervalMs = Math.min(windowMs, 60_000);
+  let lastSweepAt = Number(now());
 
-  const cleanState = (key) => {
-    const timestamp = Number(now());
+  const cleanState = (key, timestamp = Number(now())) => {
     const existing = states.get(key) || { active: 0, starts: [] };
     const starts = existing.starts.filter((startedAt) => startedAt + windowMs > timestamp);
     const state = { active: Math.max(0, existing.active || 0), starts };
@@ -28,10 +29,20 @@ const createUploadAdmissionController = ({
     return state;
   };
 
+  const sweepExpiredStates = (timestamp = Number(now())) => {
+    for (const key of states.keys()) cleanState(key, timestamp);
+    lastSweepAt = timestamp;
+  };
+
+  const maybeSweepExpiredStates = (timestamp) => {
+    if (timestamp - lastSweepAt >= sweepIntervalMs) sweepExpiredStates(timestamp);
+  };
+
   const acquire = (key) => {
     const normalizedKey = String(key || 'unknown').trim() || 'unknown';
     const timestamp = Number(now());
-    const state = cleanState(normalizedKey);
+    maybeSweepExpiredStates(timestamp);
+    const state = cleanState(normalizedKey, timestamp);
 
     if (state.active >= maxConcurrent) {
       return {
@@ -59,7 +70,7 @@ const createUploadAdmissionController = ({
       release() {
         if (released) return;
         released = true;
-        const current = cleanState(normalizedKey);
+        const current = cleanState(normalizedKey, Number(now()));
         current.active = Math.max(0, current.active - 1);
         if (!current.active && !current.starts.length) states.delete(normalizedKey);
         else states.set(normalizedKey, current);
@@ -67,7 +78,7 @@ const createUploadAdmissionController = ({
     };
   };
 
-  return { acquire };
+  return { acquire, getTrackedClientCount: () => states.size };
 };
 
 const readUploadAbuseLimits = (env = process.env) => ({

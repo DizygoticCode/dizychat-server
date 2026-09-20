@@ -31,6 +31,28 @@ test('upload abuse guard permits normal sequential uploads', () => {
   second.release();
 });
 
+test('upload abuse guard evicts expired idle client state when other clients arrive', () => {
+  let now = 3_000_000;
+  const guard = createUploadAdmissionController({
+    now: () => now,
+    maxStarts: 10,
+    maxConcurrent: 2,
+    windowMs: 60_000,
+  });
+
+  const first = guard.acquire('203.0.113.10');
+  assert.equal(first.ok, true);
+  first.release();
+  assert.equal(guard.getTrackedClientCount(), 1);
+
+  now += 61_000;
+
+  const second = guard.acquire('203.0.113.11');
+  assert.equal(second.ok, true);
+  second.release();
+  assert.equal(guard.getTrackedClientCount(), 1);
+});
+
 test('upload abuse guard blocks excessive simultaneous uploads per client', () => {
   const guard = createUploadAdmissionController({
     maxStarts: 10,
