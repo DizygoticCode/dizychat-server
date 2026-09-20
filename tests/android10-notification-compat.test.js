@@ -58,8 +58,12 @@ test('Android app creates the DizyChat message notification channel during start
   assert.match(activity, /DizyNotificationManager\.ensureChannel\(this\)/);
   assert.match(service, /void onCreate\(\)[\s\S]*DizyNotificationManager\.ensureChannel\(this\)/);
   assert.match(notifications, /static void ensureChannel\(Context context\)/);
-  assert.match(notifications, /CHANNEL_ID\s*=\s*"dizychat_messages_v1"/);
+  assert.match(notifications, /CHANNEL_ID\s*=\s*"dizychat_messages_v2"/);
   assert.match(notifications, /new NotificationChannel\([\s\S]*CHANNEL_ID[\s\S]*"DizyChat messages"[\s\S]*NotificationManager\.IMPORTANCE_HIGH/);
+  assert.match(notifications, /channel\.enableVibration\(true\)/);
+  assert.match(notifications, /channel\.setVibrationPattern\(new long\[\]\{0, 180, 120, 180\}\)/);
+  const manifest = read('android/app/src/main/AndroidManifest.xml');
+  assert.match(manifest, /android\.permission\.VIBRATE/);
 });
 
 
