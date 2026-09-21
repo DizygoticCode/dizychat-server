@@ -174,5 +174,6 @@ module.exports = {
   DEFAULT_WINDOW_MS,
   createBoundedJsonFetcher,
   createPublicMediaAdmissionController,
+  readBoundedBody,
   readPublicMediaProxyLimits,
 };
