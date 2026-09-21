@@ -10714,6 +10714,26 @@ function createRumbleIframe(embedUrl) {
   return iframe;
 }
 
+function getGoogleMeetPreview(url) {
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase();
+    const pathParts = parsed.pathname.split("/").filter(Boolean);
+    if (parsed.protocol !== "https:" || hostname !== "meet.google.com" || !pathParts.length) {
+      return null;
+    }
+    return {
+      siteName: "Google Meet",
+      title: "Join this Google Meet",
+      description: "Join this link in Google Meet.",
+      image: "",
+      icon: "",
+    };
+  } catch {
+    return null;
+  }
+}
+
 function autoEmbed(node, providedLinks = null) {
   const textEl = node.querySelector(".text") || node;
   const txt = textEl ? textEl.textContent : "";
@@ -11022,15 +11042,15 @@ function autoEmbed(node, providedLinks = null) {
       if (!normalized || seen.has(normalized)) continue;
       seen.add(normalized);
 
-      const d = await fetchPreview(normalized);
-      if (!d || !(d.title || d.image || d.description)) continue;
-
       let parsedUrl;
       try {
         parsedUrl = new URL(normalized);
       } catch {
         continue;
       }
+
+      const d = getGoogleMeetPreview(normalized) || await fetchPreview(normalized);
+      if (!d || !(d.title || d.image || d.description)) continue;
 
       ensureWrap();
       removeAnchorFor(normalized);
