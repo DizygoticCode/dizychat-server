@@ -575,6 +575,7 @@ const W2G_API_KEY = W2G_API_KEY_ENV.value;
 const W2G_CREATE_ROOM_URL = process.env.W2G_CREATE_ROOM_URL || 'https://api.w2g.tv/rooms/create.json';
 const W2G_ROOM_BASE_URL = process.env.W2G_ROOM_BASE_URL || 'https://w2g.tv/rooms';
 const W2G_REQUEST_TIMEOUT_MS = parsePositiveIntegerEnv('W2G_REQUEST_TIMEOUT_MS', 10000, { min: 1000, max: 30000 });
+const W2G_MAX_RESPONSE_BYTES = parsePositiveIntegerEnv('W2G_MAX_RESPONSE_BYTES', 256 * 1024, { min: 1024, max: 4 * 1024 * 1024 });
 const WATCH_PARTY_EVENT_WINDOW_MS = 60 * 1000;
 const WATCH_PARTY_MAX_CREATES_PER_WINDOW = 3;
 
@@ -3385,7 +3386,8 @@ const createWatch2GetherRoom = async ({ sourceUrl }) => {
       signal: controller.signal,
     });
 
-    const bodyText = await response.text();
+    const bodyBuffer = await readBoundedBody(response, W2G_MAX_RESPONSE_BYTES);
+    const bodyText = bodyBuffer.toString('utf8');
     let payload = {};
     if (bodyText) {
       try {
