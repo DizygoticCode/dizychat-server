@@ -3622,48 +3622,95 @@ body:not(.dark) #soundboard-btn {
 }
 
 .audio-waveform {
+  --wave-progress: 0%;
   order: -1;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  height: 28px;
-  padding: 3px 6px;
+  gap: 2px;
+  width: 100%;
+  height: 42px;
+  padding: 5px 8px;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--border-color) 74%, transparent);
   border-radius: 12px;
   background: color-mix(in srgb, var(--surface) 76%, transparent);
   overflow: hidden;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.audio-waveform:hover {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--border-color));
+}
+
+.audio-waveform:active {
+  cursor: grabbing;
+}
+
+.audio-waveform:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 82%, white);
+  outline-offset: 2px;
 }
 
 .audio-waveform-bar {
+  position: relative;
+  z-index: 1;
   flex: 1 1 0;
-  min-width: 2px;
+  min-width: 1px;
   max-width: 5px;
-  height: var(--wave-height, 55%);
+  height: var(--wave-height, 42%);
   border-radius: 999px;
   background: color-mix(in srgb, var(--text-muted) 72%, transparent);
-  opacity: 0.58;
+  opacity: 0.52;
   transform-origin: center;
-  transition: background 0.14s ease, opacity 0.14s ease;
+  transition: height 0.18s ease, background 0.12s ease, opacity 0.12s ease;
+  pointer-events: none;
+}
+
+.audio-waveform[data-waveform-source="decoded"] .audio-waveform-bar {
+  opacity: 0.66;
 }
 
 .audio-waveform-bar.is-played {
   background: var(--accent);
-  opacity: 0.98;
+  opacity: 1;
 }
 
-.audio-waveform[data-playing="1"] .audio-waveform-bar {
-  animation: audio-wave-pulse 0.72s ease-in-out infinite alternate;
-  animation-delay: calc(var(--wave-index) * -28ms);
+.audio-waveform-playhead {
+  position: absolute;
+  z-index: 2;
+  top: 4px;
+  bottom: 4px;
+  left: var(--wave-progress);
+  width: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 88%, white);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.24), 0 0 8px color-mix(in srgb, var(--accent) 55%, transparent);
+  transform: translateX(-1px);
+  pointer-events: none;
+  opacity: 0.82;
 }
 
-@keyframes audio-wave-pulse {
-  from { transform: scaleY(0.72); }
-  to { transform: scaleY(1); }
+.audio-waveform[data-playing="1"] .audio-waveform-playhead {
+  animation: audio-wave-playhead-pulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes audio-wave-playhead-pulse {
+  from { opacity: 0.72; }
+  to { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .audio-waveform[data-playing="1"] .audio-waveform-bar {
+  .audio-waveform[data-playing="1"] .audio-waveform-playhead {
     animation: none;
+  }
+
+  .audio-waveform-bar {
+    transition: none;
   }
 }
 
