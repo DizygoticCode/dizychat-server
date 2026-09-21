@@ -493,6 +493,8 @@ const ADMIN_AUTH_MAX_FAILURES = parsePositiveIntegerEnv('ADMIN_AUTH_MAX_FAILURES
 const ADMIN_AUTH_LOCK_MS = parsePositiveIntegerEnv('ADMIN_AUTH_LOCK_MS', 15 * 60 * 1000, { min: 5000, max: 24 * 60 * 60 * 1000 });
 const ADMIN_AUTH_MIN_RETRY_DELAY_MS = 750;
 const ADMIN_AUTH_MAX_RETRY_DELAY_MS = 5000;
+const ADMIN_AUTH_MAX_TRACKED_KEYS = parsePositiveIntegerEnv('ADMIN_AUTH_MAX_TRACKED_KEYS', 5000, { min: 100, max: 50_000 });
+const ROOM_AUTH_MAX_TRACKED_KEYS = parsePositiveIntegerEnv('ROOM_AUTH_MAX_TRACKED_KEYS', 5000, { min: 100, max: 50_000 });
 const LIVEKIT_URL_ENV_NAMES = [
   'LIVEKIT_URL',
   'LIVE_KIT_URL',
@@ -841,7 +843,17 @@ const revokeAccountSessionToken = async (token) => {
   return mobileAccountSessions.revoke(token);
 };
 const roomPasswordService = createRoomPasswordService({ RoomModel: Room });
-const roomAuthThrottle = createRoomAuthThrottle();
+const roomAuthThrottle = createRoomAuthThrottle({
+  maxTrackedKeys: ROOM_AUTH_MAX_TRACKED_KEYS,
+});
+const accountAuthThrottle = createRoomAuthThrottle({
+  windowMs: ADMIN_AUTH_WINDOW_MS,
+  maxFailures: ADMIN_AUTH_MAX_FAILURES,
+  lockMs: ADMIN_AUTH_LOCK_MS,
+  minRetryDelayMs: ADMIN_AUTH_MIN_RETRY_DELAY_MS,
+  maxRetryDelayMs: ADMIN_AUTH_MAX_RETRY_DELAY_MS,
+  maxTrackedKeys: ADMIN_AUTH_MAX_TRACKED_KEYS,
+});
 const roomPasswords = new Map();
 const PERSISTENT_ROOMS = [
   'General Chat',
@@ -854,8 +866,6 @@ const plaintextAdminCredentialCount = [...adminCredentials.values()].filter((ite
 if (plaintextAdminCredentialCount > 0) {
   console.warn(`[Admin] ${plaintextAdminCredentialCount} plaintext admin credential(s) detected. Migrate to ADMIN_PASSWORD_HASH / ADMIN_CREDENTIALS_HASHED.`);
 }
-const adminAuthFailures = new Map();
-
 const getSocketRemoteAddress = (socket) =>
   resolveTrustedRemoteAddress({
     peerAddress: socket?.handshake?.address || socket?.conn?.remoteAddress,
@@ -866,46 +876,6 @@ const getAdminAuthAttemptKey = (socket, username) => {
   const remoteAddress = getSocketRemoteAddress(socket);
   const canonicalUser = normaliseAdminUsername(username || '');
   return `${remoteAddress}::${canonicalUser || '*'}`;
-};
-
-const getAdminAuthState = (attemptKey) => {
-  const now = Date.now();
-  const existing = adminAuthFailures.get(attemptKey);
-  if (!existing) return { count: 0, windowStart: now, lockUntil: 0, lastFailedAt: 0 };
-
-  if (existing.lockUntil && existing.lockUntil > now) return existing;
-  if (existing.windowStart + ADMIN_AUTH_WINDOW_MS <= now) {
-    const reset = { count: 0, windowStart: now, lockUntil: 0, lastFailedAt: 0 };
-    adminAuthFailures.set(attemptKey, reset);
-    return reset;
-  }
-  return existing;
-};
-
-const computeAdminAuthRetryDelayMs = (state) => {
-  const failures = Number.isFinite(state?.count) ? state.count : 0;
-  const exponent = Math.max(0, failures - 1);
-  const delay = ADMIN_AUTH_MIN_RETRY_DELAY_MS * (2 ** exponent);
-  return Math.min(delay, ADMIN_AUTH_MAX_RETRY_DELAY_MS);
-};
-
-const registerAdminAuthFailure = (attemptKey) => {
-  const now = Date.now();
-  const state = getAdminAuthState(attemptKey);
-  const nextCount = state.count + 1;
-  const lockUntil = nextCount >= ADMIN_AUTH_MAX_FAILURES ? now + ADMIN_AUTH_LOCK_MS : 0;
-  const updated = {
-    count: nextCount,
-    windowStart: state.windowStart || now,
-    lockUntil,
-    lastFailedAt: now,
-  };
-  adminAuthFailures.set(attemptKey, updated);
-  return updated;
-};
-
-const clearAdminAuthFailures = (attemptKey) => {
-  adminAuthFailures.delete(attemptKey);
 };
 
 // ---------------- MongoDB ----------------
@@ -3615,33 +3585,25 @@ io.on('connection', socket => {
       const username = typeof payload.username === 'string' ? payload.username.trim() : '';
       const password = typeof payload.password === 'string' ? payload.password : '';
       const attemptKey = getAdminAuthAttemptKey(socket, username);
-      const authState = getAdminAuthState(attemptKey);
-      const now = Date.now();
-
-      if (authState.lockUntil > now) {
+      const authGate = accountAuthThrottle.check(attemptKey);
+      if (authGate.blocked) {
         if (typeof ack === 'function') {
-          ack({ ok: false, error: 'Too many authentication attempts.', retryAfterMs: authState.lockUntil - now });
-        }
-        return;
-      }
-
-      const retryDelayMs = computeAdminAuthRetryDelayMs(authState);
-      if (authState.lastFailedAt && authState.lastFailedAt + retryDelayMs > now) {
-        if (typeof ack === 'function') {
-          ack({ ok: false, error: 'Authentication retry delayed.', retryAfterMs: (authState.lastFailedAt + retryDelayMs) - now });
+          ack({
+            ok: false,
+            error: authGate.reason === 'delay'
+              ? 'Authentication retry delayed.'
+              : 'Too many authentication attempts.',
+            retryAfterMs: authGate.retryAfterMs,
+          });
         }
         return;
       }
 
       const account = await accountService.authenticate(username, password);
       if (!account) {
-        const failedState = registerAdminAuthFailure(attemptKey);
-        const failedAt = Date.now();
-        const retryAfterMs = failedState.lockUntil > failedAt
-          ? failedState.lockUntil - failedAt
-          : computeAdminAuthRetryDelayMs(failedState);
+        const failedState = accountAuthThrottle.registerFailure(attemptKey);
         if (typeof ack === 'function') {
-          ack({ ok: false, error: 'Invalid username or password.', retryAfterMs });
+          ack({ ok: false, error: 'Invalid username or password.', retryAfterMs: failedState.retryAfterMs });
         }
         return;
       }
@@ -3652,7 +3614,7 @@ io.on('connection', socket => {
         return;
       }
 
-      clearAdminAuthFailures(attemptKey);
+      accountAuthThrottle.clear(attemptKey);
       if (socket.accountSessionToken) {
         const previousMobileSessionId = socket.mobileSessionId;
         await revokeAccountSessionToken(socket.accountSessionToken);

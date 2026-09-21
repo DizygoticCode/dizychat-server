@@ -8,6 +8,7 @@ const test = require('node:test');
 const {
   DEFAULT_LOCK_MS,
   DEFAULT_MAX_FAILURES,
+  DEFAULT_MAX_TRACKED_KEYS,
   DEFAULT_WINDOW_MS,
   createRoomAuthThrottle,
 } = require('../src/rooms/room-auth-throttle');
@@ -75,4 +76,58 @@ test('production room join path checks, records, and clears the throttle', () =>
   assert.match(joinHandler, /roomAuthThrottle\.registerFailure\(roomAuthKey\)/);
   assert.match(joinHandler, /roomAuthThrottle\.clear\(roomAuthKey\)/);
   assert.match(joinHandler, /Too many incorrect room password attempts/);
+});
+
+
+test('room password throttle evicts expired idle keys when another key arrives', () => {
+  let now = 4_000_000;
+  const throttle = createRoomAuthThrottle({
+    windowMs: 1000,
+    lockMs: 500,
+    now: () => now,
+  });
+
+  throttle.registerFailure('203.0.113.10::private room');
+  assert.equal(throttle.getTrackedKeyCount(), 1);
+
+  now += 1100;
+  throttle.registerFailure('203.0.113.11::private room');
+  assert.equal(throttle.getTrackedKeyCount(), 1);
+});
+
+test('room password throttle fails closed at the tracked-key ceiling and recovers after expiry', () => {
+  let now = 5_000_000;
+  const throttle = createRoomAuthThrottle({
+    windowMs: 1000,
+    lockMs: 500,
+    maxTrackedKeys: 2,
+    now: () => now,
+  });
+
+  throttle.registerFailure('client-a');
+  throttle.registerFailure('client-b');
+  assert.equal(throttle.getTrackedKeyCount(), 2);
+
+  const saturated = throttle.check('client-c');
+  assert.equal(saturated.blocked, true);
+  assert.equal(saturated.reason, 'capacity');
+  assert.equal(throttle.getTrackedKeyCount(), 2);
+
+  now += 1100;
+  assert.deepEqual(throttle.check('client-c'), { blocked: false, retryAfterMs: 0 });
+  assert.equal(throttle.getTrackedKeyCount(), 0);
+});
+
+test('production account and room auth throttles use bounded shared state', () => {
+  const server = fs.readFileSync(path.join(repoRoot, 'server-core.js'), 'utf8');
+
+  assert.match(server, /ADMIN_AUTH_MAX_TRACKED_KEYS = parsePositiveIntegerEnv\('ADMIN_AUTH_MAX_TRACKED_KEYS', 5000/);
+  assert.match(server, /ROOM_AUTH_MAX_TRACKED_KEYS = parsePositiveIntegerEnv\('ROOM_AUTH_MAX_TRACKED_KEYS', 5000/);
+  assert.match(server, /const roomAuthThrottle = createRoomAuthThrottle\(\{[\s\S]{0,120}maxTrackedKeys: ROOM_AUTH_MAX_TRACKED_KEYS/);
+  assert.match(server, /const accountAuthThrottle = createRoomAuthThrottle\(\{[\s\S]{0,400}maxTrackedKeys: ADMIN_AUTH_MAX_TRACKED_KEYS/);
+  assert.match(server, /accountAuthThrottle\.check\(attemptKey\)/);
+  assert.match(server, /accountAuthThrottle\.registerFailure\(attemptKey\)/);
+  assert.match(server, /accountAuthThrottle\.clear\(attemptKey\)/);
+  assert.doesNotMatch(server, /const adminAuthFailures = new Map\(\)/);
+  assert.equal(DEFAULT_MAX_TRACKED_KEYS, 5000);
 });

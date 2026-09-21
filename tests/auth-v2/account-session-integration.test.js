@@ -22,7 +22,9 @@ test('Socket.IO handshake resolves an optional browser or durable mobile Auth v2
 test('account login authenticates server-side, preserves browser sessions, and gates durable mobile sessions to trusted native clients', () => {
   assert.match(indexSource, /socket\.on\('account login', async \(payload = \{\}, ack\) => \{/);
   assert.match(indexSource, /getAdminAuthAttemptKey\(socket, username\)/);
-  assert.match(indexSource, /getAdminAuthState\(attemptKey\)/);
+  assert.match(indexSource, /accountAuthThrottle\.check\(attemptKey\)/);
+  assert.match(indexSource, /accountAuthThrottle\.registerFailure\(attemptKey\)/);
+  assert.match(indexSource, /accountAuthThrottle\.clear\(attemptKey\)/);
   assert.match(indexSource, /accountService\.authenticate\(username, password\)/);
   assert.match(indexSource, /const wantsMobileSession = payload\.sessionKind === 'mobile';/);
   assert.match(indexSource, /wantsMobileSession && !isTrustedNativeOrigin\(socket\)/);
