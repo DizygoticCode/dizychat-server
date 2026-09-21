@@ -15,15 +15,45 @@ const registrationStatusByCode = Object.freeze({
 
 const requestIp = (req) => String(req.ip || req.socket?.remoteAddress || 'unknown');
 
-const createRateLimiter = ({ maxAttempts, windowMs, now }) => {
+const DEFAULT_MAX_TRACKED_RATE_LIMIT_KEYS = 5000;
+
+const createRateLimiter = ({
+  maxAttempts,
+  windowMs,
+  now,
+  maxTrackedKeys = DEFAULT_MAX_TRACKED_RATE_LIMIT_KEYS,
+}) => {
   const entries = new Map();
+  const sweepIntervalMs = Math.min(windowMs, 60_000);
+  let lastSweepAt = Number(now());
+
+  const isExpired = (entry, timestamp) =>
+    Boolean(entry) && timestamp - entry.startedAt >= windowMs;
+
+  const maybeSweepExpiredEntries = (timestamp) => {
+    if (timestamp - lastSweepAt < sweepIntervalMs) return;
+    for (const [key, entry] of entries.entries()) {
+      if (isExpired(entry, timestamp)) entries.delete(key);
+    }
+    lastSweepAt = timestamp;
+  };
 
   return (req, res, next) => {
     const timestamp = Number(now());
+    maybeSweepExpiredEntries(timestamp);
+
     const key = requestIp(req);
     let entry = entries.get(key);
 
-    if (!entry || timestamp - entry.startedAt >= windowMs) {
+    if (isExpired(entry, timestamp)) {
+      entries.delete(key);
+      entry = null;
+    }
+
+    if (!entry) {
+      if (entries.size >= maxTrackedKeys) {
+        return res.status(429).json({ ok: false, code: 'RATE_LIMITED' });
+      }
       entry = { startedAt: timestamp, attempts: 0 };
       entries.set(key, entry);
     }
@@ -165,6 +195,7 @@ const createPublicAuthRouter = ({
 };
 
 module.exports = {
+  DEFAULT_MAX_TRACKED_RATE_LIMIT_KEYS,
   REGISTRATION_LIMIT,
   RESET_LIMIT,
   createPublicAuthRouter,

@@ -6,9 +6,10 @@ const http = require('node:http');
 const express = require('express');
 
 let createPublicAuthRouter;
+let createRateLimiter;
 let moduleLoadError = null;
 try {
-  ({ createPublicAuthRouter } = require('../../src/auth/public-auth-router'));
+  ({ createPublicAuthRouter, createRateLimiter } = require('../../src/auth/public-auth-router'));
 } catch (error) {
   moduleLoadError = error;
 }
@@ -16,6 +17,7 @@ try {
 const requireFactory = () => {
   assert.equal(moduleLoadError, null, moduleLoadError?.message || 'public auth router module failed to load');
   assert.equal(typeof createPublicAuthRouter, 'function');
+  assert.equal(typeof createRateLimiter, 'function');
 };
 
 const startServer = async ({ accountService, passwordResetService, now } = {}) => {
@@ -212,4 +214,50 @@ test('public auth JSON body is bounded', async (t) => {
     body: JSON.stringify({ username: 'x'.repeat(40_000), password: 'password' }),
   });
   assert.equal(response.status, 413);
+});
+
+
+test('public auth limiter evicts expired idle IPs and fails closed at the tracked-key ceiling', () => {
+  requireFactory();
+  let nowMs = 10_000;
+  const limiter = createRateLimiter({
+    maxAttempts: 10,
+    windowMs: 1000,
+    maxTrackedKeys: 2,
+    now: () => nowMs,
+  });
+
+  const invoke = (ip) => {
+    let statusCode = 200;
+    let payload = null;
+    let nextCalled = false;
+    const req = { ip, socket: { remoteAddress: ip } };
+    const res = {
+      status(code) {
+        statusCode = code;
+        return this;
+      },
+      json(value) {
+        payload = value;
+        return this;
+      },
+    };
+    limiter(req, res, () => {
+      nextCalled = true;
+    });
+    return { statusCode, payload, nextCalled };
+  };
+
+  assert.equal(invoke('203.0.113.10').nextCalled, true);
+  assert.equal(invoke('203.0.113.11').nextCalled, true);
+
+  const saturated = invoke('203.0.113.12');
+  assert.equal(saturated.statusCode, 429);
+  assert.deepEqual(saturated.payload, { ok: false, code: 'RATE_LIMITED' });
+  assert.equal(saturated.nextCalled, false);
+
+  nowMs += 1100;
+  const recovered = invoke('203.0.113.12');
+  assert.equal(recovered.statusCode, 200);
+  assert.equal(recovered.nextCalled, true);
 });
