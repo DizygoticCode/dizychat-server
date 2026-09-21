@@ -53,6 +53,12 @@
   color: var(--text-primary);
 }
 
+@media (min-width: 769px) {
+  #chat-main.dizy-call-layout.dizy-call-has-visuals > .dizy-call-stage {
+    max-height: min(56dvh, 640px);
+  }
+}
+
 .dizy-call-stage[hidden] {
   display: none !important;
 }
@@ -187,6 +193,14 @@
   user-select: auto;
 }
 
+.dizy-call-stage.has-visuals .voice-call-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
 .dizy-call-stage .voice-call-header[data-role="drag-handle"] {
   display: flex;
   align-items: center;
@@ -315,7 +329,7 @@
 }
 
 .dizy-call-stage.has-screen-share .call-video-grid {
-  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
   align-content: start;
 }
 
@@ -328,6 +342,16 @@
 .dizy-call-stage.has-screen-share .call-video-tile:not(.dizy-screen-share-tile) {
   min-height: 0;
   aspect-ratio: auto;
+}
+
+.dizy-call-stage.has-screen-share .dizy-screen-share-tile .call-video-element,
+.dizy-call-stage.has-screen-share .dizy-screen-share-tile video {
+  max-height: min(36dvh, 440px);
+}
+
+.dizy-call-stage.has-screen-share .call-video-tile:not(.dizy-screen-share-tile) .call-video-element,
+.dizy-call-stage.has-screen-share .call-video-tile:not(.dizy-screen-share-tile) video {
+  max-height: min(24dvh, 280px);
 }
 
 .dizy-call-stage.audio-only .voice-call-panel {
