@@ -6646,6 +6646,115 @@ function hasInlinePreview(node, url) {
   );
 }
 
+const AUDIO_WAVEFORM_BAR_COUNT = 64;
+const AUDIO_WAVEFORM_MAX_DECODE_BYTES = 12 * 1024 * 1024;
+const AUDIO_WAVEFORM_CACHE_LIMIT = 48;
+const audioWaveformCache = new Map();
+
+function formatAudioWaveformTime(value) {
+  const seconds = Math.max(0, Number(value) || 0);
+  const whole = Math.floor(seconds);
+  const minutes = Math.floor(whole / 60);
+  const remainder = whole % 60;
+  return `${minutes}:${String(remainder).padStart(2, "0")}`;
+}
+
+function trimAudioWaveformCache() {
+  while (audioWaveformCache.size > AUDIO_WAVEFORM_CACHE_LIMIT) {
+    const oldestKey = audioWaveformCache.keys().next().value;
+    if (!oldestKey) break;
+    audioWaveformCache.delete(oldestKey);
+  }
+}
+
+function decodeAudioWaveform(sourceUrl, barCount = AUDIO_WAVEFORM_BAR_COUNT) {
+  const source = String(sourceUrl || "").trim();
+  if (!source || !Number.isFinite(barCount) || barCount < 8) {
+    return Promise.resolve(null);
+  }
+
+  const cacheKey = `${source}::${barCount}`;
+  if (audioWaveformCache.has(cacheKey)) {
+    return audioWaveformCache.get(cacheKey);
+  }
+
+  const task = (async () => {
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (typeof AudioContextCtor !== "function") return null;
+
+    try {
+      const head = await fetch(source, { method: "HEAD", cache: "force-cache" });
+      if (!head.ok) return null;
+      const declaredBytes = Number.parseInt(head.headers.get("content-length") || "", 10);
+      if (
+        !Number.isFinite(declaredBytes) ||
+        declaredBytes <= 0 ||
+        declaredBytes > AUDIO_WAVEFORM_MAX_DECODE_BYTES
+      ) {
+        return null;
+      }
+
+      const response = await fetch(source, { cache: "force-cache" });
+      if (!response.ok) return null;
+      const responseBytes = Number.parseInt(response.headers.get("content-length") || "", 10);
+      if (Number.isFinite(responseBytes) && responseBytes > AUDIO_WAVEFORM_MAX_DECODE_BYTES) {
+        return null;
+      }
+
+      const encoded = await response.arrayBuffer();
+      if (!encoded.byteLength || encoded.byteLength > AUDIO_WAVEFORM_MAX_DECODE_BYTES) {
+        return null;
+      }
+
+      const context = new AudioContextCtor();
+      try {
+        const decoded = await context.decodeAudioData(encoded.slice(0));
+        const frameCount = Number(decoded.length) || 0;
+        const channelCount = Number(decoded.numberOfChannels) || 0;
+        if (!frameCount || !channelCount) return null;
+
+        const channels = [];
+        for (let channel = 0; channel < channelCount; channel += 1) {
+          channels.push(decoded.getChannelData(channel));
+        }
+
+        const heights = [];
+        for (let barIndex = 0; barIndex < barCount; barIndex += 1) {
+          const start = Math.floor((barIndex / barCount) * frameCount);
+          const end = Math.max(start + 1, Math.floor(((barIndex + 1) / barCount) * frameCount));
+          const stride = Math.max(1, Math.floor((end - start) / 512));
+          let peak = 0;
+
+          for (let sampleIndex = start; sampleIndex < end; sampleIndex += stride) {
+            let sample = 0;
+            for (const channel of channels) {
+              sample += Math.abs(channel[sampleIndex] || 0);
+            }
+            peak = Math.max(peak, sample / channels.length);
+          }
+
+          const shaped = Math.sqrt(Math.max(0, Math.min(1, peak)));
+          heights.push(Math.round(18 + (shaped * 82)));
+        }
+
+        return heights;
+      } finally {
+        try {
+          await context.close();
+        } catch {
+          /* ignore */
+        }
+      }
+    } catch {
+      return null;
+    }
+  })();
+
+  audioWaveformCache.set(cacheKey, task);
+  trimAudioWaveformCache();
+  return task;
+}
+
 function createInlinePreview(link, type, labelText) {
   if (!link || !type) return null;
 
@@ -6684,18 +6793,30 @@ function createInlinePreview(link, type, labelText) {
   } else if (type === "audio") {
     const waveform = document.createElement("div");
     waveform.className = "audio-waveform";
-    waveform.setAttribute("aria-hidden", "true");
     waveform.dataset.playing = "0";
+    waveform.dataset.waveformSource = "fallback";
+    waveform.setAttribute("role", "slider");
+    waveform.setAttribute("tabindex", "0");
+    waveform.setAttribute("aria-label", "Seek audio");
+    waveform.setAttribute("aria-valuemin", "0");
+    waveform.setAttribute("aria-valuemax", "100");
+    waveform.setAttribute("aria-valuenow", "0");
+    waveform.title = "Click or drag the waveform to seek";
 
     const waveformBars = [];
-    for (let index = 0; index < 24; index += 1) {
+    for (let index = 0; index < AUDIO_WAVEFORM_BAR_COUNT; index += 1) {
       const bar = document.createElement("span");
       bar.className = "audio-waveform-bar";
       bar.style?.setProperty("--wave-index", String(index));
-      bar.style?.setProperty("--wave-height", `${30 + ((index * 37) % 62)}%`);
+      bar.style?.setProperty("--wave-height", `${24 + ((index * 37) % 58)}%`);
       waveform.appendChild(bar);
       waveformBars.push(bar);
     }
+
+    const playhead = document.createElement("span");
+    playhead.className = "audio-waveform-playhead";
+    playhead.setAttribute("aria-hidden", "true");
+    waveform.appendChild(playhead);
 
     const audio = document.createElement("audio");
     audio.src = resolveMediaSource(link);
@@ -6703,22 +6824,117 @@ function createInlinePreview(link, type, labelText) {
     audio.preload = "metadata";
     audio.setAttribute("aria-label", labelText || "Audio message");
 
+    let waveformFrame = 0;
+    let pointerSeeking = false;
+
     const syncAudioWaveform = () => {
       const duration = Number(audio.duration);
+      const currentTime = Math.max(0, Number(audio.currentTime) || 0);
       const progress =
         Number.isFinite(duration) && duration > 0
-          ? Math.max(0, Math.min(1, audio.currentTime / duration))
+          ? Math.max(0, Math.min(1, currentTime / duration))
           : 0;
-      const playedBars = Math.round(progress * waveformBars.length);
+
       waveformBars.forEach((bar, index) => {
-        bar.classList.toggle("is-played", index < playedBars);
+        const barProgress = (index + 0.5) / waveformBars.length;
+        bar.classList.toggle("is-played", barProgress <= progress);
       });
+      waveform.style?.setProperty("--wave-progress", `${progress * 100}%`);
       waveform.dataset.playing = audio.paused || audio.ended ? "0" : "1";
+      waveform.setAttribute("aria-valuenow", String(Math.round(progress * 100)));
+      waveform.setAttribute(
+        "aria-valuetext",
+        Number.isFinite(duration) && duration > 0
+          ? `${formatAudioWaveformTime(currentTime)} of ${formatAudioWaveformTime(duration)}`
+          : formatAudioWaveformTime(currentTime)
+      );
     };
 
-    for (const eventName of ["loadedmetadata", "timeupdate", "play", "pause", "ended", "seeking"]) {
+    const stopWaveformAnimation = () => {
+      if (!waveformFrame) return;
+      window.cancelAnimationFrame(waveformFrame);
+      waveformFrame = 0;
+    };
+
+    const animateWaveform = () => {
+      syncAudioWaveform();
+      if (!audio.paused && !audio.ended) {
+        waveformFrame = window.requestAnimationFrame(animateWaveform);
+      } else {
+        waveformFrame = 0;
+      }
+    };
+
+    const startWaveformAnimation = () => {
+      if (waveformFrame) return;
+      waveformFrame = window.requestAnimationFrame(animateWaveform);
+    };
+
+    const seekToClientX = (clientX) => {
+      const duration = Number(audio.duration);
+      if (!Number.isFinite(duration) || duration <= 0) return;
+      const rect = waveform.getBoundingClientRect();
+      if (!rect.width) return;
+      const progress = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      audio.currentTime = progress * duration;
+      syncAudioWaveform();
+    };
+
+    waveform.addEventListener("pointerdown", (event) => {
+      if (typeof event.button === "number" && event.button !== 0) return;
+      event.preventDefault();
+      pointerSeeking = true;
+      waveform.setPointerCapture?.(event.pointerId);
+      seekToClientX(event.clientX);
+    });
+    waveform.addEventListener("pointermove", (event) => {
+      if (!pointerSeeking) return;
+      event.preventDefault();
+      seekToClientX(event.clientX);
+    });
+    waveform.addEventListener("pointerup", (event) => {
+      if (!pointerSeeking) return;
+      seekToClientX(event.clientX);
+      pointerSeeking = false;
+      waveform.releasePointerCapture?.(event.pointerId);
+    });
+    waveform.addEventListener("pointercancel", (event) => {
+      pointerSeeking = false;
+      waveform.releasePointerCapture?.(event.pointerId);
+    });
+    waveform.addEventListener("keydown", (event) => {
+      const duration = Number(audio.duration);
+      if (!Number.isFinite(duration) || duration <= 0) return;
+
+      let nextTime = null;
+      if (event.key === "ArrowLeft") nextTime = Math.max(0, audio.currentTime - 5);
+      if (event.key === "ArrowRight") nextTime = Math.min(duration, audio.currentTime + 5);
+      if (event.key === "Home") nextTime = 0;
+      if (event.key === "End") nextTime = duration;
+      if (nextTime === null) return;
+
+      event.preventDefault();
+      audio.currentTime = nextTime;
+      syncAudioWaveform();
+    });
+
+    for (const eventName of ["loadedmetadata", "timeupdate", "pause", "ended", "seeking", "seeked", "durationchange"]) {
       audio.addEventListener(eventName, syncAudioWaveform);
     }
+    audio.addEventListener("play", () => {
+      syncAudioWaveform();
+      startWaveformAnimation();
+    });
+    audio.addEventListener("pause", stopWaveformAnimation);
+    audio.addEventListener("ended", stopWaveformAnimation);
+
+    decodeAudioWaveform(audio.src, waveformBars.length).then((heights) => {
+      if (!Array.isArray(heights) || heights.length !== waveformBars.length) return;
+      heights.forEach((height, index) => {
+        waveformBars[index].style?.setProperty("--wave-height", `${height}%`);
+      });
+      waveform.dataset.waveformSource = "decoded";
+    });
 
     mediaWrap.appendChild(audio);
     mediaWrap.appendChild(waveform);
