@@ -2551,6 +2551,12 @@ const soundboardLiveAdmission = createPublicMediaAdmissionController({
   windowMs: parsePositiveIntegerEnv('SOUNDBOARD_LIVE_RATE_WINDOW_SECONDS', 60, { min: 10, max: 60 * 60 }) * 1000,
 });
 
+const soundboardLocalAdmission = createPublicMediaAdmissionController({
+  maxStarts: parsePositiveIntegerEnv('SOUNDBOARD_LOCAL_MAX_STARTS_PER_WINDOW', 120, { min: 20, max: 1200 }),
+  maxConcurrent: parsePositiveIntegerEnv('SOUNDBOARD_LOCAL_MAX_CONCURRENT_PER_IP', 4, { min: 1, max: 20 }),
+  windowMs: parsePositiveIntegerEnv('SOUNDBOARD_LOCAL_RATE_WINDOW_SECONDS', 60, { min: 10, max: 60 * 60 }) * 1000,
+});
+
 const guardSoundboardLiveLookup = (req, res, next) => {
   const admission = soundboardLiveAdmission.acquire(req.ip || req.socket?.remoteAddress || 'unknown');
   if (!admission.ok) {
@@ -2565,6 +2571,30 @@ const guardSoundboardLiveLookup = (req, res, next) => {
       ok: false,
       code: 'SOUNDBOARD_LIVE_RATE_LIMIT',
       error: 'Too many live soundboard requests. Please wait and try again.',
+    });
+  }
+
+  const release = () => admission.release();
+  res.once('finish', release);
+  res.once('close', release);
+  next();
+};
+
+const guardSoundboardLocalLookup = (req, res, next) => {
+  const admission = soundboardLocalAdmission.acquire(req.ip || req.socket?.remoteAddress || 'unknown');
+  if (!admission.ok) {
+    const retryAfterSeconds = Math.max(1, Math.ceil(admission.retryAfterMs / 1000));
+    res.setHeader('Retry-After', String(retryAfterSeconds));
+    logSecurityEvent('soundboard_local_lookup_rate_limited', {
+      code: admission.code,
+      ip: req.ip || req.socket?.remoteAddress || 'unknown',
+      path: req.path,
+    });
+    return res.status(429).json({
+      hits: [],
+      total: 0,
+      totalHits: 0,
+      code: 'SOUNDBOARD_LOCAL_RATE_LIMIT',
     });
   }
 
@@ -2655,12 +2685,12 @@ app.get('/api/soundboards/import/:jobId', requireHttpAccount, requireHttpOwner, 
   return res.json({ ok: true, job });
 });
 
-app.get('/soundboard-clips', (req, res) => {
+app.get('/soundboard-clips', guardSoundboardLocalLookup, (req, res) => {
   try {
     const { q, board } = req.query;
     const { hits, total } = soundboardStore.searchClips({
-      query: typeof q === 'string' ? q : '',
-      boardId: typeof board === 'string' ? board : '',
+      query: typeof q === 'string' ? q.trim().slice(0, 200) : '',
+      boardId: typeof board === 'string' ? board.trim().slice(0, 120) : '',
     });
 
     res.setHeader('Cache-Control', 'public, max-age=60');
