@@ -231,3 +231,34 @@ test('bootstrap loads embedded call view immediately after chat client', () => {
   assert.ok(chatIndex >= 0, 'chat.js bootstrap load must exist');
   assert.ok(embeddedIndex > chatIndex, 'embedded call view must load after chat.js');
 });
+
+
+test('mixed screen share and portrait cameras stay contained above the message area', () => {
+  const css = fs.readFileSync(cssPath, 'utf8');
+
+  assert.match(
+    css,
+    /#chat-main\.dizy-call-layout\.dizy-call-has-visuals > \.dizy-call-stage\s*\{[^}]*max-height:\s*min\(56dvh, 640px\);/s,
+  );
+  assert.match(
+    css,
+    /\.dizy-call-stage\.has-visuals \.voice-call-panel\s*\{[^}]*flex:\s*1 1 auto;[^}]*overflow:\s*auto;[^}]*overscroll-behavior:\s*contain;/s,
+  );
+  assert.match(
+    css,
+    /\.dizy-call-stage\.has-screen-share \.call-video-grid\s*\{[^}]*minmax\(min\(180px, 100%\), 1fr\)/s,
+  );
+  assert.match(
+    css,
+    /\.dizy-screen-share-tile[\s\S]{0,220}max-height:\s*min\(36dvh, 440px\);/s,
+  );
+  assert.match(
+    css,
+    /\.call-video-tile:not\(\.dizy-screen-share-tile\)[\s\S]{0,260}max-height:\s*min\(24dvh, 280px\);/s,
+  );
+
+  // Preserve the no-crop contract and the existing escape hatches.
+  assert.match(css, /object-fit:\s*contain/);
+  assert.match(css, /\.call-video-tile\.dizy-media-expanded[\s\S]*height:\s*100dvh\s*!important/i);
+  assert.match(css, /\.dizy-media-hide-button/);
+});
