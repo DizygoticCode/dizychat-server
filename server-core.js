@@ -3291,9 +3291,12 @@ const sendJoinError = (socket, message) => {
 const RATE_LIMIT_WINDOW = 2000;
 const MAX_MESSAGES_PER_WINDOW = 3;
 const MAX_TYPING_EVENTS_PER_WINDOW = 5;
+const SOCKET_QUERY_RATE_WINDOW_MS = parsePositiveIntegerEnv('SOCKET_QUERY_RATE_WINDOW_MS', 2000, { min: 500, max: 60_000 });
+const SOCKET_QUERY_MAX_PER_WINDOW = parsePositiveIntegerEnv('SOCKET_QUERY_MAX_PER_WINDOW', 8, { min: 2, max: 100 });
 
 const messageTimestamps = new Map();
 const typingTimestamps = new Map();
+const socketQueryTimestamps = new Map();
 const callEventTimestamps = new Map();
 const watchPartyCreateTimestamps = new Map();
 const activeRoomCalls = new Map();
@@ -3524,10 +3527,22 @@ function canSendTyping(socketId) {
   return true;
 }
 
+const canRunSocketQuery = (socketId) => {
+  if (!socketId) return false;
+  const now = Date.now();
+  if (!socketQueryTimestamps.has(socketId)) socketQueryTimestamps.set(socketId, []);
+  const ts = socketQueryTimestamps.get(socketId);
+  while (ts.length && now - ts[0] > SOCKET_QUERY_RATE_WINDOW_MS) ts.shift();
+  if (ts.length >= SOCKET_QUERY_MAX_PER_WINDOW) return false;
+  ts.push(now);
+  return true;
+};
+
 const clearSocketRateLimitState = (socketId) => {
   if (!socketId) return;
   messageTimestamps.delete(socketId);
   typingTimestamps.delete(socketId);
+  socketQueryTimestamps.delete(socketId);
   callEventTimestamps.delete(socketId);
   watchPartyCreateTimestamps.delete(socketId);
 };
@@ -3897,6 +3912,16 @@ io.on('connection', socket => {
 
       if (!cursor) {
         socket.emit('older messages', { messages: [], hasMore: false, cursor: null });
+        return;
+      }
+
+      if (!canRunSocketQuery(socket.id)) {
+        socket.emit('older messages', {
+          messages: [],
+          hasMore: true,
+          cursor: String(cursor),
+          rateLimited: true,
+        });
         return;
       }
 
@@ -4562,7 +4587,9 @@ io.on('connection', socket => {
     try {
       const targetRoom = resolveCurrentSocketRoom(socket, room);
       if (!targetRoom) return;
+      if (!canRunSocketQuery(socket.id)) return;
 
+      const safeQuery = typeof query === 'string' ? query.trim().slice(0, 200) : '';
       const conditions = { room: targetRoom, deleted: { $ne: true } };
 
       if (filter === 'pinned') {
@@ -4575,9 +4602,8 @@ io.on('connection', socket => {
 
       const limitCount = Math.max(1, Math.min(Number(limit) || 50, 100));
       let results;
-      if (query && query.trim()) {
-        const searchQuery = query.trim();
-        results = await Message.find({ ...conditions, $text: { $search: searchQuery } })
+      if (safeQuery) {
+        results = await Message.find({ ...conditions, $text: { $search: safeQuery } })
           .sort({ timestamp: -1 })
           .limit(limitCount);
       } else {
@@ -4587,7 +4613,7 @@ io.on('connection', socket => {
       }
 
       const payload = results.map(m => (m.toJSON ? m.toJSON() : m));
-      socket.emit('search results', { room: targetRoom, query, filter, results: payload });
+      socket.emit('search results', { room: targetRoom, query: safeQuery, filter, results: payload });
     } catch(err){
       console.error('[Search] Error:', err);
       socket.emit('search results', { room: socket.currentRoom, query, filter, results: [] });
