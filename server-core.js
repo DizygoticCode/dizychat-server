@@ -56,6 +56,7 @@ const {
   readUploadAbuseLimits,
 } = require('./src/uploads/upload-abuse-guard');
 const { DizyJamCredentialStore } = require('./src/jam/dizyjam-credentials');
+const { createJamSessionRateLimiter } = require('./src/jam/jam-session-rate-limit');
 const { resolveCallTokenGrant } = require('./src/calls/call-token-grant');
 const { resolveBindHost, resolveTrustedRemoteAddress } = require('./src/config/network');
 const { fetchPublicHtmlPreview } = require('./src/security/public-http-fetch');
@@ -2670,21 +2671,12 @@ app.get('/api/watch-party/status', (_req, res) => {
   });
 });
 
-const jamSessionTimestamps = new Map();
+const jamSessionRateLimiter = createJamSessionRateLimiter({
+  windowMs: JAM_SESSION_EVENT_WINDOW_MS,
+  maxStarts: JAM_SESSION_MAX_CREATES_PER_WINDOW,
+});
 
-const canCreateJamSession = (socketKey) => {
-  const key = socketKey || 'unknown';
-  const now = Date.now();
-  if (!jamSessionTimestamps.has(key)) jamSessionTimestamps.set(key, []);
-  const ts = jamSessionTimestamps.get(key).filter((time) => now - time < JAM_SESSION_EVENT_WINDOW_MS);
-  if (ts.length >= JAM_SESSION_MAX_CREATES_PER_WINDOW) {
-    jamSessionTimestamps.set(key, ts);
-    return false;
-  }
-  ts.push(now);
-  jamSessionTimestamps.set(key, ts);
-  return true;
-};
+const canCreateJamSession = (socketKey) => jamSessionRateLimiter.check(socketKey);
 
 const safeJamSlug = (value) => {
   const cleaned = String(value || '')
@@ -2773,7 +2765,7 @@ app.get('/api/jam/status', (_req, res) => {
   });
 });
 
-app.post('/api/jam/session', express.json(), (req, res) => {
+app.post('/api/jam/session', express.json({ limit: '4kb' }), (req, res) => {
   const remoteAddress = req.ip || req.headers?.['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
   if (!canCreateJamSession(String(remoteAddress).split(',')[0].trim())) {
     res.status(429).json({ error: 'Too many jam session requests. Please wait a minute and try again.' });
@@ -4887,6 +4879,7 @@ io.on('connection', socket => {
     }
     clearTypingUser(socket, lastRoom);
     clearSocketRateLimitState(socket.id);
+    jamSessionRateLimiter.clear(socket.id);
   });
 });
 
