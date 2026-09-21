@@ -46,11 +46,23 @@ test('audio attachments use compact accessible chat-style controls', () => {
   assert.match(client, /node\.classList\.add\("has-soundboard-audio"\)/);
   assert.match(css, /\.message\.has-soundboard-audio \.text:not\(:empty\)\s*\{[^}]*margin-bottom:\s*2px;[^}]*font-weight:\s*600;/s);
   assert.match(client, /waveform\.className = "audio-waveform"/);
-  assert.match(client, /for \(let index = 0; index < 24; index \+= 1\)/);
+  assert.match(client, /const AUDIO_WAVEFORM_BAR_COUNT = 64/);
+  assert.match(client, /AUDIO_WAVEFORM_MAX_DECODE_BYTES = 12 \* 1024 \* 1024/);
+  assert.match(client, /decodeAudioWaveform\(audio\.src, waveformBars\.length\)/);
+  assert.match(client, /context\.decodeAudioData\(encoded\.slice\(0\)\)/);
+  assert.match(client, /waveform\.setAttribute\("role", "slider"\)/);
+  assert.match(client, /waveform\.setAttribute\("tabindex", "0"\)/);
+  assert.match(client, /waveform\.addEventListener\("pointerdown"/);
+  assert.match(client, /waveform\.addEventListener\("pointermove"/);
+  assert.match(client, /audio\.currentTime = progress \* duration/);
+  assert.match(client, /event\.key === "ArrowLeft"/);
+  assert.match(client, /event\.key === "ArrowRight"/);
+  assert.match(client, /window\.requestAnimationFrame\(animateWaveform\)/);
   assert.match(client, /waveform\.dataset\.playing = audio\.paused \|\| audio\.ended \? "0" : "1"/);
   assert.match(client, /audio\.addEventListener\(eventName, syncAudioWaveform\)/);
-  assert.match(css, /\.audio-waveform\s*\{[^}]*height:\s*28px;/s);
+  assert.match(css, /\.audio-waveform\s*\{[^}]*height:\s*42px;[^}]*touch-action:\s*none;/s);
   assert.match(css, /\.audio-waveform-bar\.is-played\s*\{[^}]*background:\s*var\(--accent\);/s);
+  assert.match(css, /\.audio-waveform-playhead\s*\{[^}]*left:\s*var\(--wave-progress\);/s);
   assert.match(css, /\.inline-preview\.inline-audio \.preview-download\s*\{[^}]*min-width:\s*84px;[^}]*border-radius:\s*999px;/s);
 });
 
@@ -87,4 +99,17 @@ test('Rumble links resolve the canonical player URL instead of guessing page IDs
   assert.match(client, /fetch\("\/link-preview\?url=" \+ encodeURIComponent\(link\)\)/);
   assert.match(client, /createRumbleIframe\(preview\?\.embedUrl\)/);
   assert.doesNotMatch(client, /const candidate = segments\.find\(\(segment\) => \/\^v/);
+});
+
+
+test('decoded audio waveform work is bounded and degrades safely for large or unsupported media', () => {
+  const client = fs.readFileSync(path.join(repoRoot, 'public', 'chat.js'), 'utf8');
+
+  assert.match(client, /const AUDIO_WAVEFORM_CACHE_LIMIT = 48/);
+  assert.match(client, /method: "HEAD"/);
+  assert.match(client, /declaredBytes > AUDIO_WAVEFORM_MAX_DECODE_BYTES/);
+  assert.match(client, /encoded\.byteLength > AUDIO_WAVEFORM_MAX_DECODE_BYTES/);
+  assert.match(client, /return null;/);
+  assert.match(client, /waveform\.dataset\.waveformSource = "fallback"/);
+  assert.match(client, /waveform\.dataset\.waveformSource = "decoded"/);
 });
