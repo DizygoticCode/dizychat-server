@@ -80,11 +80,11 @@ const createRoomAuthThrottle = ({
     const timestamp = Number(now());
 
     if (state.capacityBlocked) {
-      return { blocked: true, retryAfterMs: Math.max(1000, state.lockUntil - timestamp) };
+      return { blocked: true, retryAfterMs: Math.max(1000, state.lockUntil - timestamp), reason: 'capacity' };
     }
 
     if (state.lockUntil > timestamp) {
-      return { blocked: true, retryAfterMs: state.lockUntil - timestamp };
+      return { blocked: true, retryAfterMs: state.lockUntil - timestamp, reason: 'lock' };
     }
 
     const delay = retryDelayMs(state);
@@ -92,6 +92,7 @@ const createRoomAuthThrottle = ({
       return {
         blocked: true,
         retryAfterMs: (state.lastFailedAt + delay) - timestamp,
+        reason: 'delay',
       };
     }
 
