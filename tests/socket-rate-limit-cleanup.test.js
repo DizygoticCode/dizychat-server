@@ -12,6 +12,7 @@ test('disconnect clears all per-socket rate-limit state', () => {
   assert.match(server, /const clearSocketRateLimitState = \(socketId\) => \{/);
   assert.match(server, /messageTimestamps\.delete\(socketId\)/);
   assert.match(server, /typingTimestamps\.delete\(socketId\)/);
+  assert.match(server, /socketQueryTimestamps\.delete\(socketId\)/);
   assert.match(server, /callEventTimestamps\.delete\(socketId\)/);
   assert.match(server, /watchPartyCreateTimestamps\.delete\(socketId\)/);
 
