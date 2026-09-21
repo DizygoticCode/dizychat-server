@@ -495,6 +495,10 @@ const ADMIN_AUTH_MIN_RETRY_DELAY_MS = 750;
 const ADMIN_AUTH_MAX_RETRY_DELAY_MS = 5000;
 const ADMIN_AUTH_MAX_TRACKED_KEYS = parsePositiveIntegerEnv('ADMIN_AUTH_MAX_TRACKED_KEYS', 5000, { min: 100, max: 50_000 });
 const ROOM_AUTH_MAX_TRACKED_KEYS = parsePositiveIntegerEnv('ROOM_AUTH_MAX_TRACKED_KEYS', 5000, { min: 100, max: 50_000 });
+const ROOM_CREATE_WINDOW_MS = parsePositiveIntegerEnv('ROOM_CREATE_WINDOW_MS', 60 * 60 * 1000, { min: 60_000, max: 24 * 60 * 60 * 1000 });
+const ROOM_CREATE_MAX_PER_WINDOW = parsePositiveIntegerEnv('ROOM_CREATE_MAX_PER_WINDOW', 10, { min: 1, max: 100 });
+const ROOM_CREATE_MAX_TRACKED_KEYS = parsePositiveIntegerEnv('ROOM_CREATE_MAX_TRACKED_KEYS', 5000, { min: 100, max: 50_000 });
+const ROOM_MAX_PERSISTED = parsePositiveIntegerEnv('ROOM_MAX_PERSISTED', 5000, { min: 100, max: 50_000 });
 const LIVEKIT_URL_ENV_NAMES = [
   'LIVEKIT_URL',
   'LIVE_KIT_URL',
@@ -853,6 +857,14 @@ const accountAuthThrottle = createRoomAuthThrottle({
   minRetryDelayMs: ADMIN_AUTH_MIN_RETRY_DELAY_MS,
   maxRetryDelayMs: ADMIN_AUTH_MAX_RETRY_DELAY_MS,
   maxTrackedKeys: ADMIN_AUTH_MAX_TRACKED_KEYS,
+});
+const roomCreationThrottle = createRoomAuthThrottle({
+  windowMs: ROOM_CREATE_WINDOW_MS,
+  maxFailures: ROOM_CREATE_MAX_PER_WINDOW,
+  lockMs: ROOM_CREATE_WINDOW_MS,
+  minRetryDelayMs: 0,
+  maxRetryDelayMs: 0,
+  maxTrackedKeys: ROOM_CREATE_MAX_TRACKED_KEYS,
 });
 const roomPasswords = new Map();
 const PERSISTENT_ROOMS = [
@@ -3748,7 +3760,34 @@ io.on('connection', socket => {
     }
 
     const providedPassword = normalisePassword(password);
-    const roomAuthKey = `${getSocketRemoteAddress(socket)}::${roomName.toLowerCase()}`;
+    const remoteAddress = getSocketRemoteAddress(socket);
+    if (!roomPasswords.has(roomName)) {
+      if (roomPasswords.size >= ROOM_MAX_PERSISTED) {
+        logSecurityEvent('room_creation_capacity_reached', {
+          room: roomName,
+          ip: remoteAddress,
+          socketId: socket.id,
+          persistedRooms: roomPasswords.size,
+        });
+        sendJoinError(socket, 'Room creation is temporarily unavailable.');
+        return;
+      }
+
+      const roomCreateGate = roomCreationThrottle.check(remoteAddress);
+      if (roomCreateGate.blocked) {
+        logSecurityEvent('room_creation_rate_limited', {
+          room: roomName,
+          ip: remoteAddress,
+          socketId: socket.id,
+          retryAfterMs: roomCreateGate.retryAfterMs,
+        });
+        sendJoinError(socket, 'Too many new room creation attempts. Please wait and try again.');
+        return;
+      }
+      roomCreationThrottle.registerFailure(remoteAddress);
+    }
+
+    const roomAuthKey = `${remoteAddress}::${roomName.toLowerCase()}`;
     const roomAuthGate = roomAuthThrottle.check(roomAuthKey);
     if (roomAuthGate.blocked) {
       logSecurityEvent('room_password_rate_limited', {
