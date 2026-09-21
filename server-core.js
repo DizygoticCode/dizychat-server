@@ -63,6 +63,7 @@ const { fetchPublicHtmlPreview } = require('./src/security/public-http-fetch');
 const {
   createBoundedJsonFetcher,
   createPublicMediaAdmissionController,
+  readBoundedBody,
   readPublicMediaProxyLimits,
 } = require('./src/security/public-media-proxy-guard');
 
@@ -1420,6 +1421,37 @@ const PSYBIN_STATUS_TIMEOUT_RAW = Number.parseInt(
 const PSYBIN_STATUS_TIMEOUT_MS = Number.isFinite(PSYBIN_STATUS_TIMEOUT_RAW)
   ? Math.min(Math.max(PSYBIN_STATUS_TIMEOUT_RAW, 1000), 20000)
   : 7000;
+const PSYBIN_METADATA_MAX_BYTES = parsePositiveIntegerEnv('PSYBIN_METADATA_MAX_BYTES', 512 * 1024, { min: 1024, max: 4 * 1024 * 1024 });
+const PSYBIN_TEXT_MAX_BYTES = parsePositiveIntegerEnv('PSYBIN_TEXT_MAX_BYTES', 64 * 1024, { min: 256, max: 1024 * 1024 });
+const psybinMetadataAdmission = createPublicMediaAdmissionController({
+  maxStarts: parsePositiveIntegerEnv('PSYBIN_METADATA_MAX_STARTS_PER_WINDOW', 30, { min: 6, max: 300 }),
+  maxConcurrent: parsePositiveIntegerEnv('PSYBIN_METADATA_MAX_CONCURRENT_PER_IP', 3, { min: 1, max: 10 }),
+  windowMs: parsePositiveIntegerEnv('PSYBIN_METADATA_RATE_WINDOW_SECONDS', 60, { min: 10, max: 60 * 60 }) * 1000,
+});
+
+const guardPsybinMetadata = (req, res, next) => {
+  const admission = psybinMetadataAdmission.acquire(req.ip || req.socket?.remoteAddress || 'unknown');
+  if (!admission.ok) {
+    const retryAfterSeconds = Math.max(1, Math.ceil(admission.retryAfterMs / 1000));
+    res.setHeader('Retry-After', String(retryAfterSeconds));
+    logSecurityEvent('psybin_metadata_rate_limited', {
+      code: admission.code,
+      ip: req.ip || req.socket?.remoteAddress || 'unknown',
+    });
+    return res.status(429).json({
+      title: '',
+      artist: '',
+      text: '',
+      fetchedAt: Date.now(),
+      error: 'RATE_LIMITED',
+    });
+  }
+
+  const release = () => admission.release();
+  res.once('finish', release);
+  res.once('close', release);
+  next();
+};
 const normalisePsybinString = (value) => {
   if (typeof value === 'string') {
     return value.trim();
@@ -1664,7 +1696,7 @@ const mapPsybinNowPlaying = (payload) => {
   return { title, artist, text };
 };
 
-app.get('/api/psybin/now-playing', async (req, res) => {
+app.get('/api/psybin/now-playing', guardPsybinMetadata, async (req, res) => {
   const controller = typeof AbortController === 'function' ? new AbortController() : null;
   const timeoutId = controller
     ? setTimeout(() => {
@@ -1692,7 +1724,8 @@ app.get('/api/psybin/now-playing', async (req, res) => {
 
     let payload;
     try {
-      payload = await response.json();
+      const payloadBuffer = await readBoundedBody(response, PSYBIN_METADATA_MAX_BYTES);
+      payload = JSON.parse(payloadBuffer.toString('utf8'));
     } catch (err) {
       if (err?.name === 'AbortError' || err?.code === 'ABORT_ERR') {
         throw err;
@@ -1734,7 +1767,8 @@ app.get('/api/psybin/now-playing', async (req, res) => {
       throw new Error(`HTTP ${songResponse.status}`);
     }
 
-    const rawSong = await songResponse.text();
+    const rawSongBuffer = await readBoundedBody(songResponse, PSYBIN_TEXT_MAX_BYTES);
+    const rawSong = rawSongBuffer.toString('utf8');
     const lines = rawSong
       .split(/\r?\n/g)
       .map((line) => normalisePsybinString(line))
@@ -1759,7 +1793,9 @@ app.get('/api/psybin/now-playing', async (req, res) => {
 
     let remainingMs = null;
     if (timeResponse?.ok) {
-      const remainingText = await timeResponse.text().catch(() => '');
+      const remainingText = await readBoundedBody(timeResponse, PSYBIN_TEXT_MAX_BYTES)
+        .then((buffer) => buffer.toString('utf8'))
+        .catch(() => '');
       const numeric = Number.parseFloat(normalisePsybinString(remainingText));
       if (Number.isFinite(numeric) && numeric >= 0) {
         remainingMs = Math.round(numeric * 1000);
