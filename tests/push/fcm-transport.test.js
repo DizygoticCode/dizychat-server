@@ -60,17 +60,17 @@ test('enabled transport serializes only allowlisted message data and token envel
   assert.equal(payloads[0].token, 'fcm-token');
   assert.deepEqual(Object.keys(payloads[0].data).sort(), ['activityId', 'activityType', 'messageId', 'notificationKey', 'preview', 'room', 'sender', 'timestamp', 'type'].sort());
   assert.equal(payloads[0].data.type, 'message');
-  assert.deepEqual(payloads[0].notification, {
-    title: 'Rob · ShittyChat',
-    body: 'hello',
-  });
-  assert.deepEqual(payloads[0].android, {
-    priority: 'high',
-    notification: { channelId: 'dizychat_messages_v2', proxy: 'allow' },
-  });
+  assert.equal(payloads[0].notification, undefined);
+  assert.deepEqual(payloads[0].android, { priority: 'high' });
   assert.deepEqual(payloads[0].apns, {
-    headers: { 'apns-priority': '10' },
-    payload: { aps: { sound: 'default', category: 'DIZYCHAT_MESSAGE' } },
+    headers: { 'apns-priority': '10', 'apns-push-type': 'alert' },
+    payload: {
+      aps: {
+        alert: { title: 'Rob · ShittyChat', body: 'hello' },
+        sound: 'default',
+        category: 'DIZYCHAT_MESSAGE',
+      },
+    },
   });
   const serialized = JSON.stringify(payloads[0]);
   assert.equal(serialized.includes('NOPE'), false);
