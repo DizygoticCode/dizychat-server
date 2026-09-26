@@ -96,7 +96,7 @@ test('Rumble links resolve the canonical player URL instead of guessing page IDs
 
   assert.match(client, /function normaliseRumbleEmbedUrl\(value\)/);
   assert.match(client, /function createRumbleIframe\(embedUrl\)/);
-  assert.match(client, /fetch\("\/link-preview\?url=" \+ encodeURIComponent\(link\)\)/);
+  assert.match(client, /linkPreviewLoader\?\.request\(link, node\)/);
   assert.match(client, /createRumbleIframe\(preview\?\.embedUrl\)/);
   assert.doesNotMatch(client, /const candidate = segments\.find\(\(segment\) => \/\^v/);
 });
