@@ -201,6 +201,14 @@ const createValidatingLookup = (lookupCallback = dns.lookup) =>
         return;
       }
 
+      if (typeof options === 'object' && options?.all) {
+        callback(null, results.map((entry) => ({
+          address: entry.address,
+          family: entry.family || net.isIP(entry.address),
+        })));
+        return;
+      }
+
       const selected = results[0];
       callback(null, selected.address, selected.family || net.isIP(selected.address));
     });
