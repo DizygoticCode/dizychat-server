@@ -258,10 +258,10 @@ const readBodyWithLimit = async (response, maxBytes) => {
 // For oversized HTML, inspect at most the normal response limit and keep only
 // a complete <head>. Never raise the cap or parse incomplete document markup.
 const completeHtmlHead = (html) => {
-  const open = /<head(?:\\s|>)/i.exec(html);
+  const open = /<head(?:\s|>)/i.exec(html);
   if (!open) return '';
   const restStart = open.index + open[0].length;
-  const close = /<\\/head\\s*>/i.exec(html.slice(restStart));
+  const close = /<\/head\s*>/i.exec(html.slice(restStart));
   if (!close) return '';
   return html.slice(0, restStart + close.index + close[0].length);
 };
