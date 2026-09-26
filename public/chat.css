@@ -3788,7 +3788,8 @@ body:not(.dark) #soundboard-btn {
 }
 
 .embed-iframe.youtube,
-.embed-iframe.rumble {
+.embed-iframe.rumble,
+.embed-iframe.facebook {
   width: 100%;
   max-width: none;
   height: auto;
@@ -3968,7 +3969,8 @@ body:not(.dark) #soundboard-btn {
 
   .message.has-inline-embed .embed-wrap,
   .embed-iframe.youtube,
-  .embed-iframe.rumble {
+  .embed-iframe.rumble,
+  .embed-iframe.facebook {
     width: 100%;
     max-width: 100%;
   }

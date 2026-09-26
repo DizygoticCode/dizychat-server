@@ -89,6 +89,7 @@
     }
 
     await loadScript('/link-preview-loader.js');
+    await loadScript('/facebook-video-embed.js');
     await loadScript('/chat.js');
     await loadScript('/embedded-call-view.js');
     await loadScript('/public-auth-ui.js');

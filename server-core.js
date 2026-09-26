@@ -433,6 +433,7 @@ const TRUSTED_FRAME_SOURCES = [
   "https://www.youtube.com",
   "https://www.youtube-nocookie.com",
   "https://open.spotify.com",
+  "https://www.facebook.com",
   "https://w.soundcloud.com",
   "https://rumble.com",
   "https://*.rumble.com",
