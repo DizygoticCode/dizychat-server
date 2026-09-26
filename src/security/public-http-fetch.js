@@ -254,6 +254,52 @@ const readBodyWithLimit = async (response, maxBytes) => {
   return text;
 };
 
+// Some public pages include megabytes of scripts after their Open Graph tags.
+// For oversized HTML, inspect at most the normal response limit and keep only
+// a complete <head>. Never raise the cap or parse incomplete document markup.
+const completeHtmlHead = (html) => {
+  const open = /<head(?:\s|>)/i.exec(html);
+  if (!open) return '';
+  const restStart = open.index + open[0].length;
+  const close = /<\/head\s*>/i.exec(html.slice(restStart));
+  if (!close) return '';
+  return html.slice(0, restStart + close.index + close[0].length);
+};
+
+const readHtmlWithHeadFallback = async (response, maxBytes) => {
+  // Non-streaming adapters cannot be bounded incrementally. Keep the strict
+  // original implementation for those responses.
+  if (!response?.body || typeof response.body[Symbol.asyncIterator] !== 'function') {
+    return readBodyWithLimit(response, maxBytes);
+  }
+
+  const declared = Number(response.headers?.get?.('content-length') || 0);
+  const largerThanLimit = declared > maxBytes;
+  const chunks = [];
+  let total = 0;
+
+  for await (const chunk of response.body) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    const remaining = Math.max(0, maxBytes - total);
+    if (remaining) {
+      const bounded = buffer.length > remaining ? buffer.subarray(0, remaining) : buffer;
+      chunks.push(bounded);
+      total += bounded.length;
+    }
+
+    if (largerThanLimit || total >= maxBytes) {
+      const head = completeHtmlHead(Buffer.concat(chunks, total).toString('utf8'));
+      if (head) return head;
+    }
+
+    if (buffer.length > remaining || (largerThanLimit && total >= maxBytes)) {
+      throw createPreviewError('LINK_PREVIEW_TOO_LARGE', 'Link preview response is too large.');
+    }
+  }
+
+  return Buffer.concat(chunks, total).toString('utf8');
+};
+
 const fetchPublicHtmlPreview = async ({
   fetchImpl,
   url,
@@ -309,7 +355,7 @@ const fetchPublicHtmlPreview = async ({
         };
       }
 
-      const html = await readBodyWithLimit(response, maxBytes);
+      const html = await readHtmlWithHeadFallback(response, maxBytes);
       return {
         url: current.toString(),
         contentType,

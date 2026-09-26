@@ -175,6 +175,94 @@ test('HTML preview bodies are capped before parsing', async () => {
   );
 });
 
+test('large HTML pages expose bounded head metadata without downloading their body', async () => {
+  let chunksRead = 0;
+  const result = await fetchPublicHtmlPreview({
+    url: 'https://example.com/oversized',
+    maxBytes: 256,
+    lookupImpl: async () => [{ address: '93.184.216.34', family: 4 }],
+    lookupCallback: (_host, _options, callback) =>
+      callback(null, [{ address: '93.184.216.34', family: 4 }]),
+    fetchImpl: async () => ({
+      status: 200,
+      headers: headers({
+        'content-type': 'text/html; charset=utf-8',
+        'content-length': '999999',
+      }),
+      body: (async function* body() {
+        chunksRead += 1;
+        yield Buffer.from('<html><head><meta property="og:title" content="Large page"><title>Large page</title></head>');
+        chunksRead += 1;
+        yield Buffer.alloc(10_000, 65);
+      })(),
+    }),
+  });
+
+  assert.equal(result.isHtml, true);
+  assert.match(result.html, /og:title/);
+  assert.doesNotMatch(result.html, /<body>/);
+  assert.equal(chunksRead, 1, 'stop immediately when complete head is available');
+});
+
+test('unknown-length oversized HTML falls back to a complete head within the cap', async () => {
+  const result = await fetchPublicHtmlPreview({
+    url: 'https://example.com/unknown-length',
+    maxBytes: 256,
+    lookupImpl: async () => [{ address: '93.184.216.34', family: 4 }],
+    lookupCallback: (_host, _options, callback) =>
+      callback(null, [{ address: '93.184.216.34', family: 4 }]),
+    fetchImpl: async () => ({
+      status: 200,
+      headers: headers({ 'content-type': 'text/html' }),
+      body: (async function* body() {
+        yield Buffer.from('<html><head><meta name="description" content="Safe"></head><body>');
+        yield Buffer.alloc(1000, 66);
+      })(),
+    }),
+  });
+
+  assert.match(result.html, /name="description"/);
+  assert.ok(Buffer.byteLength(result.html, 'utf8') <= 256);
+});
+
+test('oversized HTML without a complete head remains blocked', async () => {
+  await assert.rejects(
+    fetchPublicHtmlPreview({
+      url: 'https://example.com/no-complete-head',
+      maxBytes: 128,
+      lookupImpl: async () => [{ address: '93.184.216.34', family: 4 }],
+      lookupCallback: (_host, _options, callback) =>
+        callback(null, [{ address: '93.184.216.34', family: 4 }]),
+      fetchImpl: async () => ({
+        status: 200,
+        headers: headers({ 'content-type': 'text/html', 'content-length': '4096' }),
+        body: (async function* body() {
+          yield Buffer.from('<html><head>');
+          yield Buffer.alloc(4096, 65);
+        })(),
+      }),
+    }),
+    (error) => error?.code === 'LINK_PREVIEW_TOO_LARGE',
+  );
+});
+
+test('ordinary HTML within the cap keeps body JSON-LD for existing previews', async () => {
+  const wholePage = '<html><head><title>Ordinary</title></head><body><script type="application/ld+json">{}</script></body></html>';
+  const result = await fetchPublicHtmlPreview({
+    url: 'https://example.com/ordinary',
+    maxBytes: 256,
+    lookupImpl: async () => [{ address: '93.184.216.34', family: 4 }],
+    lookupCallback: (_host, _options, callback) =>
+      callback(null, [{ address: '93.184.216.34', family: 4 }]),
+    fetchImpl: async () => ({
+      status: 200,
+      headers: headers({ 'content-type': 'text/html', 'content-length': String(Buffer.byteLength(wholePage)) }),
+      body: (async function* body() { yield Buffer.from(wholePage); })(),
+    }),
+  });
+  assert.equal(result.html, wholePage);
+});
+
 test('safe link preview fetch returns HTML and final URL for ordinary public pages', async () => {
   const result = await fetchPublicHtmlPreview({
     url: 'https://example.com/page',
