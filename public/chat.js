@@ -11117,6 +11117,19 @@ function autoEmbed(node, providedLinks = null) {
       }
     }
 
+    // Facebook public-video permalinks use the official player, not an Open Graph card.
+    // Keep the original clickable link visible if Facebook disallows embedding.
+    const facebookPlayerUrl = window.dizychatFacebookVideo?.getFacebookVideoEmbedUrl(link) || "";
+    if (!el && facebookPlayerUrl) {
+      el = document.createElement("iframe");
+      el.src = facebookPlayerUrl;
+      el.className = "embed-iframe facebook";
+      el.loading = "lazy";
+      el.setAttribute("allow", "autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share");
+      el.setAttribute("allowfullscreen", "true");
+      el.setAttribute("title", "Facebook video player");
+    }
+
     // Direct media
     if (!el && /\.(png|jpg|jpeg|gif|webp|avif|heic|heif|bmp|svg)(\?.*)?$/i.test(link)) {
       if (!hasInlinePreview(wrap, link)) {
@@ -11166,7 +11179,7 @@ function autoEmbed(node, providedLinks = null) {
     }
 
     if (el) {
-      removeAnchorFor(link);
+      if (!facebookPlayerUrl) removeAnchorFor(link);
       if (el.classList.contains("inline-preview")) {
         const typeClass = Array.from(el.classList).find((cls) => cls.startsWith("inline-") && cls !== "inline-preview");
         const previewType = typeClass ? typeClass.replace("inline-", "") : "";
@@ -11241,6 +11254,7 @@ function autoEmbed(node, providedLinks = null) {
   (async () => {
     const previewable = links.filter(
       (u) =>
+        !window.dizychatFacebookVideo?.getFacebookVideoEmbedUrl(u) &&
         !/(youtube|youtu\.be|open\.spotify|soundcloud|rumble\.com|tenor\.com|\.mp4|\.webm|\.mov|\.mp3|\.wav|\.ogg|\.opus|\.png|\.jpg|\.jpeg|\.gif|\.webp|\.pdf|\.zip|\.rar|\.7z|\.tar|\.gz)/i.test(
           u
         )
