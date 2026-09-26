@@ -79,7 +79,7 @@ test('video and embedded players keep enough responsive space for native control
   );
   assert.match(
     css,
-    /\.embed-iframe\.youtube,\s*\.embed-iframe\.rumble\s*\{[^}]*width:\s*100%;[^}]*aspect-ratio:\s*16 \/ 9;/s,
+    /\.embed-iframe\.youtube,\s*\.embed-iframe\.rumble,\s*\.embed-iframe\.facebook\s*\{[^}]*width:\s*100%;[^}]*aspect-ratio:\s*16 \/ 9;/s,
   );
   assert.match(css, /\.message\.media-only\.has-inline-video\s*\{[^}]*max-width:\s*min\(460px, 94%\);/s);
 });
