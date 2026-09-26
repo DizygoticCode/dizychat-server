@@ -10950,6 +10950,11 @@ function getGoogleMeetPreview(url) {
   }
 }
 
+const linkPreviewLoader = window.dizychatLinkPreviewLoader?.createLinkPreviewLoader({
+  fetchImpl: window.fetch.bind(window),
+  container: messages,
+}) || null;
+
 function autoEmbed(node, providedLinks = null) {
   const textEl = node.querySelector(".text") || node;
   const txt = textEl ? textEl.textContent : "";
@@ -11095,9 +11100,9 @@ function autoEmbed(node, providedLinks = null) {
       if (directEmbed) {
         el = createRumbleIframe(directEmbed);
       } else {
-        fetch("/link-preview?url=" + encodeURIComponent(link))
-          .then((response) => response.json())
+        linkPreviewLoader?.request(link, node)
           .then((preview) => {
+            if (!node.isConnected) return;
             const iframe = createRumbleIframe(preview?.embedUrl);
             if (!iframe) return;
             removeAnchorFor(link);
@@ -11244,8 +11249,7 @@ function autoEmbed(node, providedLinks = null) {
 
     async function fetchPreview(url) {
       try {
-        const r = await fetch("/link-preview?url=" + encodeURIComponent(url));
-        return await r.json();
+        return await linkPreviewLoader?.request(url, node) || null;
       } catch {
         return null;
       }

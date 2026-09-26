@@ -88,6 +88,7 @@
       }
     }
 
+    await loadScript('/link-preview-loader.js');
     await loadScript('/chat.js');
     await loadScript('/embedded-call-view.js');
     await loadScript('/public-auth-ui.js');
