@@ -80,6 +80,105 @@ const createPublicMediaAdmissionController = ({
   return { acquire, getTrackedClientCount: () => states.size };
 };
 
+// Link previews may arrive simultaneously from several tabs sharing a gateway
+// IP. Hold a small, bounded FIFO instead of immediately rejecting brief bursts.
+// Only admitted fetches consume a concurrency slot or rate-limit start.
+const createQueuedPublicMediaAdmissionController = ({
+  admission,
+  maxPendingPerKey = 8,
+  maxPendingTotal = 64,
+  maxWaitMs = 12_000,
+  setTimer = setTimeout,
+  clearTimer = clearTimeout,
+} = {}) => {
+  if (typeof admission?.acquire !== 'function') {
+    throw new TypeError('admission controller is required');
+  }
+
+  const queues = new Map();
+  let pendingTotal = 0;
+  const denied = (code, retryAfterMs = 1000) => ({ ok: false, code, retryAfterMs });
+
+  const settle = (ticket, result) => {
+    if (ticket.done) return;
+    ticket.done = true;
+    if (ticket.timer != null) clearTimer(ticket.timer);
+    ticket.signal?.removeEventListener?.('abort', ticket.onAbort);
+    const queue = queues.get(ticket.key);
+    const index = queue?.indexOf(ticket) ?? -1;
+    if (index >= 0) {
+      queue.splice(index, 1);
+      pendingTotal -= 1;
+      if (!queue.length) queues.delete(ticket.key);
+    }
+    ticket.resolve(result);
+  };
+
+  const drain = (key) => {
+    while (queues.get(key)?.length) {
+      const ticket = queues.get(key)[0];
+      if (ticket.signal?.aborted) {
+        settle(ticket, denied('PUBLIC_MEDIA_CLIENT_CLOSED'));
+        continue;
+      }
+      const result = admission.acquire(key);
+      if (!result.ok && result.code === 'PUBLIC_MEDIA_CONCURRENCY_LIMIT') break;
+      settle(ticket, result.ok ? wrap(key, result) : result);
+    }
+  };
+
+  const wrap = (key, result) => {
+    let released = false;
+    return {
+      ok: true,
+      release() {
+        if (released) return;
+        released = true;
+        result.release();
+        drain(key);
+      },
+    };
+  };
+
+  const acquire = (rawKey, { signal } = {}) => {
+    const key = String(rawKey || 'unknown').trim() || 'unknown';
+    if (signal?.aborted) return Promise.resolve(denied('PUBLIC_MEDIA_CLIENT_CLOSED'));
+
+    if (!queues.has(key)) {
+      const immediate = admission.acquire(key);
+      if (immediate.ok) return Promise.resolve(wrap(key, immediate));
+      if (immediate.code !== 'PUBLIC_MEDIA_CONCURRENCY_LIMIT') {
+        return Promise.resolve(immediate);
+      }
+    }
+
+    if ((queues.get(key)?.length || 0) >= maxPendingPerKey || pendingTotal >= maxPendingTotal) {
+      return Promise.resolve(denied('PUBLIC_MEDIA_CONCURRENCY_LIMIT'));
+    }
+
+    return new Promise((resolve) => {
+      const ticket = { key, resolve, signal, timer: null, onAbort: null, done: false };
+      ticket.onAbort = () => settle(ticket, denied('PUBLIC_MEDIA_CLIENT_CLOSED'));
+      if (!queues.has(key)) queues.set(key, []);
+      queues.get(key).push(ticket);
+      pendingTotal += 1;
+      ticket.timer = setTimer(
+        () => settle(ticket, denied('PUBLIC_MEDIA_CONCURRENCY_LIMIT')),
+        maxWaitMs,
+      );
+      ticket.timer?.unref?.();
+      signal?.addEventListener?.('abort', ticket.onAbort, { once: true });
+      if (signal?.aborted) ticket.onAbort();
+    });
+  };
+
+  return {
+    acquire,
+    getPendingCount: () => pendingTotal,
+    getPendingClientCount: () => queues.size,
+  };
+};
+
 const readPublicMediaProxyLimits = (env = process.env) => ({
   maxStarts: clampPositiveInteger(
     env.PUBLIC_MEDIA_MAX_STARTS_PER_WINDOW,
@@ -174,6 +273,7 @@ module.exports = {
   DEFAULT_WINDOW_MS,
   createBoundedJsonFetcher,
   createPublicMediaAdmissionController,
+  createQueuedPublicMediaAdmissionController,
   readBoundedBody,
   readPublicMediaProxyLimits,
 };
