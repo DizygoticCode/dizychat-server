@@ -78,6 +78,68 @@ test('resolved preview hosts are rejected if any address is private', async () =
   assert.equal(results[0].address, '93.184.216.34');
 });
 
+test('validated socket DNS lookup follows both Node callback signatures', async () => {
+  const publicAddresses = [
+    { address: '93.184.216.34', family: 4 },
+    { address: '2606:4700:4700::1111', family: 6 },
+  ];
+
+  const result = await fetchPublicHtmlPreview({
+    url: 'https://example.com/page',
+    lookupImpl: async () => publicAddresses,
+    lookupCallback: (_hostname, options, callback) => {
+      assert.equal(options.all, true);
+      callback(null, publicAddresses);
+    },
+    fetchImpl: async (_url, { agent }) => {
+      const lookup = agent.options.lookup;
+
+      const all = await new Promise((resolve, reject) => {
+        lookup('example.com', { all: true }, (error, addresses) => {
+          if (error) reject(error);
+          else resolve(addresses);
+        });
+      });
+      assert.deepEqual(all, publicAddresses);
+
+      const one = await new Promise((resolve, reject) => {
+        lookup('example.com', { family: 4 }, (error, address, family) => {
+          if (error) reject(error);
+          else resolve({ address, family });
+        });
+      });
+      assert.deepEqual(one, publicAddresses[0]);
+
+      return { status: 200, headers: headers({ 'content-type': 'text/plain' }) };
+    },
+  });
+
+  assert.equal(result.isHtml, false);
+});
+
+test('validated socket DNS lookup blocks private addresses with all:true', async () => {
+  const publicAddress = { address: '93.184.216.34', family: 4 };
+
+  await fetchPublicHtmlPreview({
+    url: 'https://example.com/page',
+    lookupImpl: async () => [publicAddress],
+    lookupCallback: (_hostname, _options, callback) =>
+      callback(null, [publicAddress, { address: '127.0.0.1', family: 4 }]),
+    fetchImpl: async (_url, { agent }) => {
+      await assert.rejects(
+        new Promise((resolve, reject) => {
+          agent.options.lookup('example.com', { all: true }, (error, addresses) => {
+            if (error) reject(error);
+            else resolve(addresses);
+          });
+        }),
+        (error) => error?.code === 'LINK_PREVIEW_ADDRESS_BLOCKED',
+      );
+      return { status: 200, headers: headers({ 'content-type': 'text/plain' }) };
+    },
+  });
+});
+
 test('redirect targets are revalidated before a second outbound request', async () => {
   const requested = [];
   const fetchImpl = async (url) => {
