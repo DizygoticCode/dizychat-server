@@ -63,6 +63,7 @@ const { fetchPublicHtmlPreview } = require('./src/security/public-http-fetch');
 const {
   createBoundedJsonFetcher,
   createPublicMediaAdmissionController,
+  createQueuedPublicMediaAdmissionController,
   readBoundedBody,
   readPublicMediaProxyLimits,
 } = require('./src/security/public-media-proxy-guard');
@@ -2058,8 +2059,25 @@ const linkPreviewAdmission = createPublicMediaAdmissionController({
   windowMs: parsePositiveIntegerEnv('LINK_PREVIEW_RATE_WINDOW_SECONDS', 60, { min: 10, max: 60 * 60 }) * 1000,
 });
 
-const guardLinkPreview = (req, res, next) => {
-  const admission = linkPreviewAdmission.acquire(req.ip || req.socket?.remoteAddress || 'unknown');
+const queuedLinkPreviewAdmission = createQueuedPublicMediaAdmissionController({
+  admission: linkPreviewAdmission,
+});
+
+const guardLinkPreview = async (req, res, next) => {
+  // Abandoned tabs must release their waiting positions immediately.
+  const waitAbort = new AbortController();
+  const abortPending = () => waitAbort.abort();
+  res.once('close', abortPending);
+  const admission = await queuedLinkPreviewAdmission.acquire(
+    req.ip || req.socket?.remoteAddress || 'unknown',
+    { signal: waitAbort.signal },
+  );
+  res.off('close', abortPending);
+  if (waitAbort.signal.aborted) {
+    if (admission.ok) admission.release();
+    return;
+  }
+
   if (!admission.ok) {
     const retryAfterSeconds = Math.max(1, Math.ceil(admission.retryAfterMs / 1000));
     res.setHeader('Retry-After', String(retryAfterSeconds));
