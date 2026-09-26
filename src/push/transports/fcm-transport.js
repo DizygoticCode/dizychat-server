@@ -49,23 +49,24 @@ const createFcmTransport = ({ projectId = '', messagingFactory, logger = console
         const sender = data.sender.trim() || 'DizyChat';
         const room = data.room.trim();
         const preview = data.preview.trim() || 'New message';
-        message.notification = {
-          title: room ? `${sender} · ${room}` : sender,
-          body: preview,
-        };
+        // Android must receive data-only messages: the native Firebase service
+        // owns one stable MessagingStyle notification per room. A common
+        // notification payload would be auto-posted by FCM in the background
+        // and bypass that grouping/read-reconciliation path.
         message.android = {
           priority: 'high',
-          notification: {
-            channelId: 'dizychat_messages_v2',
-            proxy: 'allow',
-          },
         };
         message.apns = {
           headers: {
             'apns-priority': '10',
+            'apns-push-type': 'alert',
           },
           payload: {
             aps: {
+              alert: {
+                title: room ? `${sender} · ${room}` : sender,
+                body: preview,
+              },
               sound: 'default',
               category: 'DIZYCHAT_MESSAGE',
             },
