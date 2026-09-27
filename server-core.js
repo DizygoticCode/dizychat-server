@@ -376,31 +376,7 @@ const isTrustedNativeHttpOrigin = (req) => {
   return TRUSTED_NATIVE_ORIGINS.has(origin) ? origin : '';
 };
 
-const parseSocketCorsOrigins = () => {
-  const raw =
-    process.env.SOCKET_IO_CORS_ORIGINS ||
-    process.env.SOCKET_IO_CORS_ORIGIN ||
-    process.env.CORS_ORIGINS ||
-    process.env.CORS_ORIGIN ||
-    '';
-
-  if (!raw.trim()) {
-    console.warn('[Socket.IO] CORS origin allowlist not configured; defaulting to "*" (not recommended for public deployments).');
-    return '*';
-  }
-
-  const origins = raw
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-
-  if (!origins.length) {
-    console.warn('[Socket.IO] CORS origin allowlist was empty after parsing; defaulting to "*" (not recommended for public deployments).');
-    return '*';
-  }
-
-  return origins;
-};
+const { parseSocketCorsOrigins, isSocketOriginAllowed } = require('./src/config/socket-cors-origins');
 
 // ---------------- App Setup ----------------
 const app = express();
@@ -414,7 +390,12 @@ const ALLOWED_SOCKET_IO_ORIGINS = Array.isArray(SOCKET_IO_CORS_ORIGIN)
   ? new Set(SOCKET_IO_CORS_ORIGIN)
   : null;
 const io = new Server(server, {
-  cors: { origin: SOCKET_IO_CORS_ORIGIN, methods: ["GET", "POST"] }
+  cors: { origin: SOCKET_IO_CORS_ORIGIN, methods: ["GET", "POST"] },
+  // CORS alone does not protect WebSocket upgrade handshakes.
+  allowRequest: (request, callback) => callback(
+    null,
+    isSocketOriginAllowed(request.headers.origin, SOCKET_IO_CORS_ORIGIN),
+  ),
 });
 const PORT = process.env.PORT || 10000;
 const BIND_HOST = resolveBindHost(process.env);

@@ -211,7 +211,7 @@ Create a local `.env` for development or configure the protected service environ
 | --- | --- |
 | `PORT` | Optional HTTP port; defaults to `10000`. |
 | `MONGO_URI` | **Required.** MongoDB connection string. |
-| `SOCKET_IO_CORS_ORIGINS` | Recommended public-deployment Socket.IO CORS allowlist. |
+| `SOCKET_IO_CORS_ORIGINS` | Comma-separated extra trusted browser origins. Production always allows the first-party `https://dizychat.com` and `https://www.dizychat.com` plus packaged native origins; missing or wildcard settings cannot widen production to `*`. WebSocket Origin checks apply too, but do not replace authentication. |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Optional legacy/default admin credential pair. |
 | `ADMIN_CREDENTIALS` | Optional comma-separated `username:password` admin pairs. |
 | `ADMIN_PASSWORD_HASH` | Preferred hashed admin credential for `ADMIN_USERNAME`. |
