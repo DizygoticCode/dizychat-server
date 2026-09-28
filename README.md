@@ -205,6 +205,17 @@ npm install
 
 Create a local `.env` for development or configure the protected service environment on the deployment host. Production secrets, MongoDB credentials, API keys, Firebase credentials and Android signing material must stay outside Git.
 
+**Self-hosted production install (28 September 2026 checkpoint):** after a
+reviewed exact commit and state backup, the operator used
+`npm ci --omit=optional` rather than the development-oriented
+`npm install`. This omits unused optional Firebase Storage/Firestore
+dependencies from the **host installation** without changing the lockfile.
+It is a deliberately scoped, CI-tested runtime choice, not a universal
+instruction for Android/iOS build jobs. See the
+[self-hosted maintenance runbook](docs/SELF_HOSTED_MAINTENANCE.md) for
+checks, the remaining upstream advisory and how to verify the deployment.
+
+
 ## Environment variables
 
 | Variable | Description |
@@ -389,6 +400,26 @@ Release signing keys/passwords are never committed. CI reconstructs the keystore
 
 See [`docs/android-private-apk.md`](docs/android-private-apk.md) for the full signing/build/install boundary.
 
+## Verified host checkpoint — 28 September 2026
+
+The self-hosted DizyChat checkout was updated to
+`0af4eae090743d5b27cee3be12b008aead118927`, a
+**CI-only dependency-audit test change**. Caddy `2.11.4`, MongoDB
+`8.0.32`, Ubuntu kernel `6.8.0-142-generic` and updated
+Netplan/firmware packages were observed on the shared host. Node.js
+`22.23.1` is APT-held for the co-hosted DizyTrades exact engine pin;
+DizyChat's own engine range remains Node 22+. A fresh MongoDB archive
+passed a restore **dry run**; no full isolated restore has been established.
+
+A tested `npm ci --omit=optional` server installation and matching
+`npm audit --omit=optional --audit-level=moderate` reported **zero
+vulnerabilities for that installed dependency graph**. The default
+lockfile still retains two moderate, optional Firebase Storage
+transitive warnings: [issue #477](https://github.com/DizygoticCode/dizychat-server/issues/477).
+Do not describe this as an upstream patch or a complete live FCM
+delivery validation. Details and operator checks:
+[Self-hosted maintenance](docs/SELF_HOSTED_MAINTENANCE.md).
+
 ## Deployment notes
 
 - The canonical production deployment is self-hosted behind a reverse proxy; WebSocket upgrades must reach the Node/Socket.IO service.
@@ -396,6 +427,8 @@ See [`docs/android-private-apk.md`](docs/android-private-apk.md) for the full si
 - Provision persistent storage for uploads if files must survive service redeploy/replacement.
 - The native web-bundle endpoint is part of the production server contract, so deploy frontend assets atomically with the DizyChat service and retain the native clients' hash verification/fallback boundary.
 - LiveKit remains a separate realtime-media service; see [`deploy/livekit/README.md`](deploy/livekit/README.md) for the self-hosted network/TLS boundary.
+- Preserve host-local `data/soundboards` changes across Git pulls; do not clean or hard-reset working copies as a shortcut to deploying docs or dependency changes.
+- A documentation-only merge does not require restarting the live Node, MongoDB or Caddy services; verify actual running versions and public behaviour independently.
 
 ## Security notes
 
