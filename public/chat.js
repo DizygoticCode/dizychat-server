@@ -279,11 +279,16 @@ function applyAccountSession(session) {
   const previousUserId = String(accountState.identity?.userId || "");
   const nextUserId = String(session?.identity?.userId || "");
   if (previousUserId !== nextUserId) {
+    // Keep the explicit ?room= invitation for a first sign-in, but never
+    // carry a previous account's room name or any session-only password across
+    // identities. The URL password parameter is already stripped on load.
+    const invitedRoom = !previousUserId && typeof prefillRoom === "string"
+      && prefillRoom && lastRoomName === prefillRoom ? prefillRoom : "";
     clearRecentRoomsUi();
-    lastRoomName = "";
+    lastRoomName = invitedRoom;
     lastRoomPassword = "";
     if (!window.currentRoom) {
-      if (roomInput) roomInput.value = "";
+      if (roomInput) roomInput.value = invitedRoom;
       if (passwordInput) passwordInput.value = "";
     }
   }
