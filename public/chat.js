@@ -222,6 +222,7 @@ function applyAccountSession(session) {
   if (token) socket.auth.sessionToken = token;
   else delete socket.auth.sessionToken;
   syncAccountUi();
+  requestRecentRooms();
   if (token && window.dizychatBrowserNotificationController?.syncRegistration) {
     void window.dizychatBrowserNotificationController.syncRegistration();
   }
@@ -239,7 +240,15 @@ async function clearAccountSession({ persistent = false } = {}) {
   storeAccountSessionToken("");
   socket.auth = socket.auth && typeof socket.auth === "object" ? { ...socket.auth } : {};
   delete socket.auth.sessionToken;
+  // A shared device must not retain a previous account's private room name
+  // or in-memory room password after the account session is cleared.
+  lastRoomName = "";
+  lastRoomPassword = "";
+  window.currentPassword = "";
+  if (roomInput) roomInput.value = "";
+  if (passwordInput) passwordInput.value = "";
   syncAccountUi();
+  renderRecentRoomList([]);
   return true;
 }
 
@@ -282,6 +291,8 @@ const registeredLogin = document.getElementById("registered-login");
 const guestUsernameInput = document.getElementById("guest-username");
 const guestLoginStatus = document.getElementById("guest-login-status");
 const roomEntryStep = document.getElementById("room-entry-step");
+const recentRoomsSection = document.getElementById("recent-rooms-section");
+const recentRoomList = document.getElementById("recent-room-list");
 const roomStepLockCopy = roomEntryStep?.querySelector?.(".auth-step-lock-copy") || null;
 const roomInput = document.getElementById("room-input");
 const passwordInput = document.getElementById("room-password");
@@ -3909,6 +3920,10 @@ window.addEventListener?.("dizychat:pwa-resume", (event) => {
 socket.on("room list", (rooms) => {
   renderPublicRooms(Array.isArray(rooms) ? rooms : []);
 });
+socket.on("recent rooms updated", () => {
+  // Re-query under the *current* session instead of trusting a delayed push.
+  requestRecentRooms();
+});
 
 socket.on("room users", ({ room, users } = {}) => {
   if (room && window.currentRoom && room !== window.currentRoom) return;
@@ -5618,6 +5633,79 @@ function emitJoinRequest() {
 
   completeRoomJoin(username, room, password);
   socket.emit("join room", { room, username, password });
+}
+
+function renderRecentRoomList(rooms = []) {
+  if (!recentRoomsSection || !recentRoomList) return;
+  recentRoomList.innerHTML = "";
+  const accountId = accountState.identity?.userId;
+  const entries = accountId && Array.isArray(rooms)
+    ? rooms.filter((room) => typeof room?.name === "string" && room.name.trim()).slice(0, 8)
+    : [];
+  recentRoomsSection.hidden = entries.length === 0;
+  if (!entries.length) return;
+
+  entries.forEach((room, index) => {
+    const item = document.createElement("li");
+    item.className = "recent-room-item";
+    const joinButton = document.createElement("button");
+    joinButton.type = "button";
+    joinButton.className = "recent-room-join";
+    joinButton.textContent = index === 0
+      ? `Continue to #${room.name}`
+      : `Join #${room.name}`;
+    const status = document.createElement("span");
+    status.className = "recent-room-status";
+    status.textContent = room.requiresPassword ? "Private · password required" : "Public";
+    const forgetButton = document.createElement("button");
+    forgetButton.type = "button";
+    forgetButton.className = "recent-room-forget";
+    forgetButton.textContent = "Remove";
+    forgetButton.setAttribute("aria-label", `Remove #${room.name} from recent rooms`);
+
+    joinButton.addEventListener("click", () => {
+      if (!accountState.identity || accountState.identity.userId !== accountId) return;
+      if (roomInput) roomInput.value = room.name;
+      if (passwordInput) passwordInput.value = "";
+      syncLandingJoinFlow();
+      if (room.requiresPassword) {
+        passwordInput?.focus();
+        showToast("Enter the room password to rejoin this private room.", "info");
+        return;
+      }
+      emitJoinRequest();
+    });
+
+    forgetButton.addEventListener("click", () => {
+      if (!accountState.identity || accountState.identity.userId !== accountId || !socket.connected) return;
+      socket.emit("recent rooms forget", { room: room.name }, (ack = {}) => {
+        if (accountState.identity?.userId !== accountId) return;
+        if (!ack.ok) {
+          showToast("Could not remove this recent room. Try again.", "warn");
+          return;
+        }
+        renderRecentRoomList(ack.rooms);
+      });
+    });
+
+    item.appendChild(joinButton);
+    item.appendChild(status);
+    item.appendChild(forgetButton);
+    recentRoomList.appendChild(item);
+  });
+}
+
+function requestRecentRooms() {
+  const accountId = accountState.identity?.userId;
+  if (!accountId || !socket.connected) {
+    renderRecentRoomList([]);
+    return;
+  }
+  socket.emit("recent rooms get", {}, (ack = {}) => {
+    // Ignore a delayed result after logout or a different user's sign-in.
+    if (accountState.identity?.userId !== accountId) return;
+    renderRecentRoomList(ack.ok ? ack.rooms : []);
+  });
 }
 
 function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
