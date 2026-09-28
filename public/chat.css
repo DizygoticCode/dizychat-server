@@ -5428,3 +5428,79 @@ body:not(.dark) .header-right button#watch-party-btn {
   .auth-choice-heading,
   .auth-section-heading { gap: 8px; }
 }
+
+
+/* Registered-account recent rooms, isolated from the public/guest room list. */
+#room-entry-step .recent-rooms[hidden] {
+  display: none !important;
+}
+#room-entry-step .recent-rooms {
+  margin: 14px 0 18px;
+  padding: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--preview-bg);
+  min-width: 0;
+}
+#room-entry-step .recent-rooms h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+#room-entry-step .recent-rooms > p {
+  margin: 0 0 10px;
+  font-size: .85rem;
+  color: var(--text-muted);
+}
+#room-entry-step #recent-room-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+#room-entry-step .recent-room-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+}
+#room-entry-step .recent-room-join {
+  flex: 1 1 180px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 9px 12px;
+  text-align: left;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--surface-alt);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+#room-entry-step .recent-room-status {
+  color: var(--text-muted);
+  font-size: .78rem;
+  flex: 0 1 auto;
+}
+#room-entry-step .recent-room-forget {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+#room-entry-step .recent-room-join:focus-visible,
+#room-entry-step .recent-room-forget:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (max-width: 420px) {
+  #room-entry-step .recent-room-join {
+    flex-basis: 100%;
+  }
+}
