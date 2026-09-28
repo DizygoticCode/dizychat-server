@@ -33,6 +33,23 @@ Monitor structured logs prefixed with `[SecurityEvent]` for:
 2. Confirm whether temporarily disabled upload security should remain off for compatibility testing or be re-enabled after the incident.
 3. Review room bans/blocks and moderation logs for follow-up cleanup.
 
+## Dependency security maintenance (28 September 2026)
+
+The default committed dependency tree has two moderate, transitive
+Firebase Storage / gaxios / uuid warnings tracked in
+[issue #477](https://github.com/DizygoticCode/dizychat-server/issues/477).
+The tested server-only `npm ci --omit=optional` install excludes that
+optional dependency chain; its omitted-optional audit reported no
+vulnerabilities at the 28 September checkpoint. CI also verified Firebase
+Messaging initialisation and 573 deterministic tests, but **not**
+end-to-end remote mobile delivery. This is not an upstream advisory fix:
+retain the issue, watch vendor updates, and retest on dependency changes.
+Avoid incompatible forced UUID overrides and unreviewed broad
+`npm audit fix` changes.
+
+See [self-hosted maintenance](SELF_HOSTED_MAINTENANCE.md) for the
+exact host versions, controlled installation and verification steps.
+
 ## Post-incident actions
 
 1. Capture timeline with exact UTC timestamps.
