@@ -45,6 +45,12 @@ function assertWithin(box, width, label) {
         assert.equal(landing.recentVisible, false,
           viewport.name + ': guest landing must not expose account history');
 
+        const dizyChoice = page.locator('.public-room-item[data-room="DIZY"]');
+        await dizyChoice.waitFor({ state: 'visible', timeout: 15000 });
+        assert.equal(await dizyChoice.getAttribute('role'), 'button');
+        assert.equal(await dizyChoice.getAttribute('aria-disabled'), 'true');
+        assert.equal(await dizyChoice.getAttribute('tabindex'), '-1');
+
         await page.fill('#guest-username', 'ResponsiveAudit' + viewport.width);
         await page.locator('#guest-continue-btn').click();
         await page.waitForFunction(() => !document.querySelector('#room-input').disabled);
