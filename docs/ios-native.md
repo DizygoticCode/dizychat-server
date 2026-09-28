@@ -74,14 +74,16 @@ The updater:
 
 - requires the configured backend to use HTTPS;
 - downloads the DizyChat mobile-web manifest;
-- accepts only the fixed declared frontend allowlist;
+- accepts only the fixed declared frontend allowlist (the exact current 19-file set, or the exact previous 17-file set during this rollout);
 - enforces file and total-size limits;
 - verifies SHA-256 for every downloaded asset;
 - activates a bundle only after full verification;
 - records the healthy bundle after the web client marks it healthy; and
 - falls back to the last verified healthy bundle if an update fails.
 
-Normal DizyChat HTML/CSS/JS changes therefore remain server-managed. A future signed iOS package only needs replacement when the native iOS boundary itself changes.
+The 28 September 2026 manifest adds `link-preview-loader.js` and `facebook-video-embed.js`. The tracked Swift validator now accepts **only** the exact previous 17-file or current 19-file approved set. This lets a future native shell handle the old server bundle before a coordinated rollout, without permitting arbitrary missing or extra files. Once a current verified bundle is active, native bootstrap loads the preview helpers before `chat.js`. The iOS path remains **unsigned CI/build validation only**, not a distributed IPA or real-device preview-acceptance claim.
+
+Normal DizyChat HTML/CSS/JS changes therefore remain server-managed. A future signed iOS package needs replacement when the native iOS boundary changes, **including its fixed web-bundle file allowlist**.
 
 ## Firebase iOS configuration
 
