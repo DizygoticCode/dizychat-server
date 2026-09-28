@@ -5428,3 +5428,81 @@ body:not(.dark) .header-right button#watch-party-btn {
   .auth-choice-heading,
   .auth-section-heading { gap: 8px; }
 }
+
+/* Account-only recent-room shortcuts. Names are text nodes; no passwords are stored. */
+.recent-rooms-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: var(--surface-alt);
+}
+.recent-rooms-panel[hidden] { display: none !important; }
+.recent-rooms-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.recent-rooms-heading h3 { margin: 0; font-size: 0.96rem; }
+.recent-rooms-panel > p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+.recent-rooms-clear {
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text-primary);
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.recent-rooms-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.recent-rooms-list li { min-width: 0; }
+.recent-room-choice {
+  width: 100%;
+  min-height: 48px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  text-align: left;
+  min-width: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 11px;
+  padding: 9px 12px;
+  background: var(--surface);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.recent-room-choice:hover,
+.recent-rooms-clear:hover { border-color: var(--accent); }
+.recent-room-choice:focus-visible,
+.recent-rooms-clear:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+.recent-room-name {
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}
+.recent-room-detail {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
