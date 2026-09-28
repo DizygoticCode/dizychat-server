@@ -3,6 +3,7 @@
 // ==============================
 
 const { chromium } = require('playwright');
+const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 
@@ -10,6 +11,10 @@ const path = require('path');
 const BASE_URL = process.env.DEPLOY_URL
   ? String(process.env.DEPLOY_URL).replace(/\/$/, "")
   : "http://127.0.0.1:10000";
+// The browser smoke test creates a fixture room and records video.
+// It must never be pointed at a public DizyChat deployment.
+assert.equal(new URL(BASE_URL).origin, 'http://127.0.0.1:10000',
+  'UI fixture must target the isolated loopback CI server');
 const SITE = `${BASE_URL}/login.html`;
 const ARTIFACT_DIR = path.join(process.cwd(), 'ui-test-artifacts');
 const VIDEO_DIR = path.join(ARTIFACT_DIR, 'playwright_videos');
