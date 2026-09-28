@@ -57,14 +57,16 @@ async function simulateBootstrap(native) {
   return { scripts, errors };
 }
 
-test('native bootstrap does not request preview files absent from the signed APK allowlist', async () => {
+test('new native bootstrap loads both preview helpers from the signed APK allowlist', async () => {
   const { scripts, errors } = await simulateBootstrap(true);
   assert.equal(errors.length, 0, 'native startup must not enter the purple error path');
   assert.ok(scripts.includes('https://dizychat.com/socket.io/socket.io.js'));
   assert.ok(scripts.includes('/chat.js'));
   assert.ok(scripts.includes('/mobile-push-runtime.js'));
-  assert.ok(!scripts.includes('/link-preview-loader.js'));
-  assert.ok(!scripts.includes('/facebook-video-embed.js'));
+  const link = scripts.indexOf('/link-preview-loader.js');
+  const facebook = scripts.indexOf('/facebook-video-embed.js');
+  const chat = scripts.indexOf('/chat.js');
+  assert.ok(link >= 0 && facebook > link && chat > facebook);
   const core = new Set(MOBILE_WEB_CORE_PATHS);
   for (const script of scripts.filter((src) => src.startsWith('/'))) {
     assert.ok(core.has(script.slice(1)), `unbundled native asset ${script}`);
