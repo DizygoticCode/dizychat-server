@@ -5772,7 +5772,12 @@ function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
 
     item.appendChild(nameEl);
     item.appendChild(metaEl);
-    item.tabIndex = 0;
+    item.setAttribute("role", "button");
+    item.setAttribute("aria-label", "Join public room " + roomNameValue);
+    const identityReady = Boolean(accountState.identity?.username ||
+      String(window.__dizyLandingGuestName || "").trim());
+    item.tabIndex = identityReady ? 0 : -1;
+    item.setAttribute("aria-disabled", String(!identityReady));
 
     item.classList.add("clickable");
     item.title = "Join this room";
