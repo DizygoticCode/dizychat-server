@@ -347,7 +347,12 @@ public final class WebBundlePlugin: CAPPlugin, CAPBridgedPlugin {
                 throw BundleError.invalidManifest("total size")
             }
         }
-        guard seen == requiredCorePaths else {
+        // Accept the precise previous 17-file bundle during signed-client rollout;
+        // all other incomplete or unexpected manifests still fail closed.
+        var legacyCorePaths = requiredCorePaths
+        legacyCorePaths.remove("link-preview-loader.js")
+        legacyCorePaths.remove("facebook-video-embed.js")
+        guard seen == requiredCorePaths || seen == legacyCorePaths else {
             throw BundleError.invalidManifest("core files")
         }
     }
