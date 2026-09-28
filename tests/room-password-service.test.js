@@ -130,3 +130,29 @@ test('duplicate first-join race refetches authority and verifies against the win
     FakeRoomModel.create = originalCreate;
   }
 });
+
+
+test('public DIZY room is seeded even while empty without changing room password authority', async () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const server = fs.readFileSync(path.join(__dirname, '..', 'server-core.js'), 'utf8');
+  const match = server.match(/const PERSISTENT_ROOMS = (\\[[\\s\\S]*?\\]);/);
+  assert.ok(match, 'server must declare persistent room names');
+  const persistentRooms = JSON.parse(match[1].replace(/'/g, '"'));
+  assert.ok(persistentRooms.includes('DIZY'), 'DIZY room must persist even when empty');
+  assert.match(server, /PERSISTENT_ROOMS\\.forEach\\(\\(room\\) => \\{/);
+  assert.match(server, /if \\(requiresPassword\\) return;/);
+
+  const service = makeService();
+  await service.ensureRooms(persistentRooms);
+  assert.equal(FakeRoomModel.rows.get('DIZY').passwordHash, '');
+  const publicJoin = await service.claimOrVerify('DIZY', '');
+  assert.equal(publicJoin.ok, true);
+
+  FakeRoomModel.reset();
+  const protectedRoom = await service.claimOrVerify('DIZY', 'private-password');
+  await service.ensureRooms(persistentRooms);
+  assert.equal(FakeRoomModel.rows.get('DIZY').passwordHash, protectedRoom.passwordHash);
+  assert.equal((await service.claimOrVerify('DIZY', '')).ok, false,
+    'a pre-existing protected room must never be changed into a public room');
+});
