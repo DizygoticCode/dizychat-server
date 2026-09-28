@@ -56,7 +56,10 @@ function assertWithin(box, width, label) {
         await page.waitForFunction(() => !document.querySelector('#room-input').disabled);
         const publicDizy = page.locator('.public-room-item[data-room="DIZY"]');
         await publicDizy.waitFor({ state: 'visible', timeout: 15000 });
-        await publicDizy.click();
+        assert.equal(await publicDizy.getAttribute('aria-disabled'), 'false');
+        assert.equal(await publicDizy.getAttribute('tabindex'), '0');
+        await publicDizy.focus();
+        await page.keyboard.press('Enter');
         await page.locator('#chat-container').waitFor({ state: 'visible', timeout: 20000 });
         await page.waitForFunction(() => window.currentRoom === 'DIZY');
 
