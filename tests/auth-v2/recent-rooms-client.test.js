@@ -16,14 +16,20 @@ assert.ok(begin >= 0 && end > begin, 'production recent-room renderer must be di
 
 function element() {
   const handlers = {};
-  return {
-    children: [], textContent: '', hidden: false, value: '', innerHTML: '', disabled: false,
+  const node = {
+    children: [], textContent: '', hidden: false, value: '', disabled: false,
     appendChild(child) { this.children.push(child); },
     addEventListener(type, handler) { handlers[type] = handler; },
     setAttribute(name, value) { this[name] = value; },
     click() { handlers.click?.(); },
     focus() { this.focused = true; },
   };
+  let markup = '';
+  Object.defineProperty(node, 'innerHTML', {
+    get() { return markup; },
+    set(value) { markup = value; node.children = []; },
+  });
+  return node;
 }
 
 function fixture() {
