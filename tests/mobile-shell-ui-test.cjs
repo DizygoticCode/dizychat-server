@@ -7,6 +7,10 @@ const BASE_URL = process.env.DEPLOY_URL
   ? String(process.env.DEPLOY_URL).replace(/\/$/, '')
   : 'http://127.0.0.1:10000';
 
+// These tests join fixture chat rooms. Never direct them to a live server.
+assert.equal(new URL(BASE_URL).origin, 'http://127.0.0.1:10000',
+  'mobile UI fixtures must target the isolated loopback CI server');
+
 function withinViewport(rect, viewportHeight, label) {
   assert.ok(rect.top >= -1, `${label} starts above the mobile viewport: ${JSON.stringify(rect)}`);
   assert.ok(rect.bottom <= viewportHeight + 1, `${label} ends below the mobile viewport: ${JSON.stringify(rect)}`);
