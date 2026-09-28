@@ -132,16 +132,17 @@ test('duplicate first-join race refetches authority and verifies against the win
 });
 
 
+
 test('public DIZY room is seeded even while empty without changing room password authority', async () => {
   const fs = require('node:fs');
   const path = require('node:path');
   const server = fs.readFileSync(path.join(__dirname, '..', 'server-core.js'), 'utf8');
-  const match = server.match(/const PERSISTENT_ROOMS = (\\[[\\s\\S]*?\\]);/);
+  const match = server.match(/const PERSISTENT_ROOMS = (\[[\s\S]*?\]);/);
   assert.ok(match, 'server must declare persistent room names');
-  const persistentRooms = JSON.parse(match[1].replace(/'/g, '"'));
+  const persistentRooms = [...match[1].matchAll(/'([^']+)'/g)].map((found) => found[1]);
   assert.ok(persistentRooms.includes('DIZY'), 'DIZY room must persist even when empty');
-  assert.match(server, /PERSISTENT_ROOMS\\.forEach\\(\\(room\\) => \\{/);
-  assert.match(server, /if \\(requiresPassword\\) return;/);
+  assert.match(server, /PERSISTENT_ROOMS\.forEach\(\(room\) => \{/);
+  assert.match(server, /if \(requiresPassword\) return;/);
 
   const service = makeService();
   await service.ensureRooms(persistentRooms);
