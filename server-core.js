@@ -3992,7 +3992,10 @@ io.on('connection', socket => {
         const principal = await resolveRecentRoomsPrincipal(socket);
         if (principal) {
           const recentRooms = await recentRoomService.record(principal, roomName);
-          if (recentRooms) socket.emit('recent rooms updated', { rooms: recentRoomSummary(recentRooms) });
+          const stillCurrent = await resolveRecentRoomsPrincipal(socket);
+          if (recentRooms && stillCurrent?.userId === principal.userId) {
+            socket.emit('recent rooms updated');
+          }
         }
       } catch (error) {
         console.warn('[Rooms] Recent room recording unavailable', { code: String(error?.code || 'unexpected') });
