@@ -23,6 +23,8 @@ function element() {
   const events = {};
   return {
     value: '', hidden: false, textContent: '', disabled: false, style: {}, dataset: {}, children: [],
+    set innerHTML(value) { this._html = value; this.children = []; },
+    get innerHTML() { return this._html || ''; },
     classList: { add() {}, toggle() {}, remove() {} },
     setAttribute() {},
     querySelector() { return null; },
@@ -47,6 +49,7 @@ function client({ native = false, vault = { token: '' }, logoutAck = { ok: true 
     'registeredJoinBtn', 'registeredLogin', 'guestLogin', 'guestContinueBtn', 'guestLoginStatus',
     'roomEntryStep', 'roomStepLockCopy', 'roomInput', 'passwordInput', 'usernameInput',
     'leaveBtn', 'publicRoomList', 'joinBtn',
+    'recentRoomsPanel', 'recentRoomsList', 'clearRecentRoomsBtn',
     'usernamePrompt', 'chatContainer', 'roomName',
   ].map((name) => [name, element()]));
   const events = {}, sent = [], toasts = [], pending = {}, timers = new Map();
@@ -63,6 +66,11 @@ function client({ native = false, vault = { token: '' }, logoutAck = { ok: true 
         return ack?.(logoutAck);
       }
       if (name === 'account session') return ack?.(sessionAck ?? { ok: true, session: { token: 'test-token', identity } });
+      if (name === 'account recent rooms') return ack?.({ ok: true, rooms: [
+        { name: 'DIZY', requiresPassword: false },
+        { name: 'Private', requiresPassword: true },
+      ] });
+      if (name === 'account clear recent rooms') return ack?.({ ok: true, rooms: [] });
     },
   };
   const window = { sessionStorage, currentRoom: null, currentUser: null, currentPassword: '',
@@ -336,4 +344,52 @@ test('existing account logout event revokes each session kind through the actual
     assert.equal(socket.principal, null);
   }
   assert.ok(documents[0].revokedAt instanceof Date, 'mobile revocation persists to its Mongo model');
+});
+
+test('registered users see recent rooms and can immediately rejoin public DIZY', () => {
+  const c = client();
+  c.run('syncAccountUi()');
+  assert.equal(c.recentRoomsPanel.hidden, true, 'guests must not see a registered account room history');
+  c.run('applyAccountSession({ token: "test-token", identity: ' + JSON.stringify(identity) + ' })');
+  assert.equal(c.recentRoomsPanel.hidden, false);
+  assert.equal(c.recentRoomsList.children.length, 2);
+  c.recentRoomsList.children[0].children[0].click();
+  const join = c.sent.find((event) => event.name === 'join room');
+  assert.equal(join?.payload.room, 'DIZY');
+  assert.equal(join?.payload.password, '');
+  assert.equal(join?.payload.username, identity.username);
+});
+
+test('private recent room prompts for its password, never storing or sending one', () => {
+  const c = client();
+  c.run('applyAccountSession({ token: "test-token", identity: ' + JSON.stringify(identity) + ' })');
+  c.passwordInput.value = 'old-password-must-not-carry';
+  c.recentRoomsList.children[1].children[0].click();
+  assert.equal(c.roomInput.value, 'Private');
+  assert.equal(c.passwordInput.value, '');
+  assert.equal(c.sent.some((event) => event.name === 'join room'), false);
+});
+
+test('logout hides recent history and clears previously entered room details', async () => {
+  const c = client();
+  c.run('applyAccountSession({ token: "test-token", identity: ' + JSON.stringify(identity) + ' })');
+  c.window.currentRoom = 'Private';
+  c.roomInput.value = 'Private';
+  c.passwordInput.value = 'session-only-password';
+  c.accountLogoutBtn.click();
+  await flush();
+  assert.equal(c.recentRoomsPanel.hidden, true);
+  assert.equal(c.recentRoomsList.children.length, 0);
+  assert.equal(c.roomInput.value, '');
+  assert.equal(c.passwordInput.value, '');
+  assert.equal(c.run('recentRoomsState.rooms.length'), 0);
+});
+
+test('clear recent rooms affects the signed-in account list only', () => {
+  const c = client();
+  c.run('applyAccountSession({ token: "test-token", identity: ' + JSON.stringify(identity) + ' })');
+  c.clearRecentRoomsBtn.click();
+  assert.equal(c.recentRoomsPanel.hidden, true);
+  assert.ok(c.sent.some((event) => event.name === 'account clear recent rooms'));
+  assert.equal(c.run('recentRoomsState.rooms.length'), 0);
 });

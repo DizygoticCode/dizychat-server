@@ -21,6 +21,7 @@ const PushDevice = require('./src/models/push-device');
 const PushRoomSubscription = require('./src/models/push-room-subscription');
 const WebPushSubscription = require('./src/models/web-push-subscription');
 const RoomReadCursor = require('./src/models/room-read-cursor');
+const RecentRoom = require('./src/models/recent-room');
 const { createAccountService } = require('./src/auth/account-service');
 const { createPushDeviceService } = require('./src/push/push-device-service');
 const { createReadStateService } = require('./src/push/read-state-service');
@@ -41,6 +42,7 @@ const { createSessionStore } = require('./src/auth/session-store');
 const { createMobileSessionService } = require('./src/auth/mobile-session-service');
 const { requireModerator, requireOwner } = require('./src/auth/authorization');
 const { createRoomPasswordService } = require('./src/rooms/room-password-service');
+const { createRecentRoomService } = require('./src/rooms/recent-room-service');
 const { createRoomAuthThrottle } = require('./src/rooms/room-auth-throttle');
 const soundboardStore = require('./src/utils/soundboard');
 const {
@@ -851,6 +853,11 @@ const roomCreationThrottle = createRoomAuthThrottle({
   maxTrackedKeys: ROOM_CREATE_MAX_TRACKED_KEYS,
 });
 const roomPasswords = new Map();
+const recentRoomService = createRecentRoomService({
+  RecentRoomModel: RecentRoom,
+  roomExists: (name) => roomPasswords.has(name),
+  roomRequiresPassword: (name) => Boolean(roomPasswords.get(name)),
+});
 const PERSISTENT_ROOMS = [
   'General Chat',
   'AJN Chat',
@@ -3783,6 +3790,44 @@ io.on('connection', socket => {
     }
   });
 
+  // Room history is private, account-scoped metadata. It is never an
+  // authorization token: each return visit still follows the ordinary join
+  // password/ban/rate-limit gates.
+  const authenticatedRecentRoomUser = async () => {
+    const session = await resolveAccountSessionToken(socket.accountSessionToken);
+    if (!session || session.principal?.kind !== 'account' ||
+        !session.principal.userId || socket.principal?.userId !== session.principal.userId) {
+      return '';
+    }
+    return String(session.principal.userId);
+  };
+
+  socket.on('account recent rooms', async (_payload = {}, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const userId = await authenticatedRecentRoomUser();
+      if (!userId) return ack({ ok: false, error: 'ACCOUNT_AUTH_REQUIRED' });
+      const rooms = await recentRoomService.list(userId);
+      ack({ ok: true, rooms });
+    } catch (error) {
+      console.warn('[Rooms] Recent room list unavailable', { code: String(error?.code || 'unexpected') });
+      ack({ ok: false, error: 'RECENT_ROOMS_UNAVAILABLE' });
+    }
+  });
+
+  socket.on('account clear recent rooms', async (_payload = {}, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const userId = await authenticatedRecentRoomUser();
+      if (!userId) return ack({ ok: false, error: 'ACCOUNT_AUTH_REQUIRED' });
+      await recentRoomService.clear(userId);
+      ack({ ok: true, rooms: [] });
+    } catch (error) {
+      console.warn('[Rooms] Recent room clear unavailable', { code: String(error?.code || 'unexpected') });
+      ack({ ok: false, error: 'RECENT_ROOMS_UNAVAILABLE' });
+    }
+  });
+
   socket.on('join room', async (payload = {}) => {
     const { room, username, password } = payload;
     const deviceId = typeof payload.deviceId === 'string' ? payload.deviceId.trim() : '';
@@ -3938,8 +3983,21 @@ io.on('connection', socket => {
     socket.emit('call token nonce', { room: roomName, token: socket.callTokenNonce, socketId: socket.id });
     console.log(`User joined room: ${roomName} as ${socket.username}`);
 
+    // Record only after password/ban admission and never let a history-store
+    // failure prevent an otherwise-authorized room join.
+    if (effectivePrincipal.kind === 'account') {
+      try {
+        const userId = await authenticatedRecentRoomUser();
+        if (userId && userId === String(effectivePrincipal.userId)) {
+          await recentRoomService.record(userId, roomName);
+        }
+      } catch (error) {
+        console.warn('[Rooms] Recent room record unavailable', { code: String(error?.code || 'unexpected') });
+      }
+    }
+
     // Emit successful room join
-    socket.emit('join room success');  // Added this line!
+    socket.emit('join room success');
     emitRoomListUpdate();
 
     // Load history and pinned messages

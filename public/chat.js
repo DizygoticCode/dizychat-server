@@ -109,6 +109,74 @@ const accountState = {
   requestTimer: null,
 };
 
+// Only room names are returned by the server. Never cache room passwords,
+// and never display one account's history under another account or a guest.
+const recentRoomsState = { userId: "", rooms: [], request: 0 };
+
+function renderRecentRooms() {
+  if (!recentRoomsPanel || !recentRoomsList) return;
+  const currentUserId = String(accountState.identity?.userId || "");
+  const rooms = currentUserId && recentRoomsState.userId === currentUserId
+    ? recentRoomsState.rooms : [];
+  recentRoomsPanel.hidden = rooms.length === 0;
+  recentRoomsList.innerHTML = "";
+
+  for (const entry of rooms) {
+    const name = String(entry?.name || "");
+    if (!name) continue;
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    const label = document.createElement("span");
+    const detail = document.createElement("span");
+    button.type = "button";
+    button.className = "recent-room-choice";
+    label.className = "recent-room-name";
+    label.textContent = "# " + name;
+    detail.className = "recent-room-detail";
+    detail.textContent = entry.requiresPassword ? "Password required" : "Public room";
+    button.appendChild(label);
+    button.appendChild(detail);
+    button.addEventListener("click", () => {
+      if (!accountState.identity || String(accountState.identity.userId) !== currentUserId) return;
+      if (roomInput) roomInput.value = name;
+      if (passwordInput) passwordInput.value = "";
+      lastRoomPassword = "";
+      syncLandingJoinFlow();
+      if (entry.requiresPassword) {
+        passwordInput?.focus();
+      } else {
+        emitJoinRequest(); // The server still checks passwords and bans.
+      }
+    });
+    item.appendChild(button);
+    recentRoomsList.appendChild(item);
+  }
+}
+
+function clearRecentRoomsUi() {
+  recentRoomsState.request += 1; // Discard any older socket acknowledgement.
+  recentRoomsState.userId = "";
+  recentRoomsState.rooms = [];
+  renderRecentRooms();
+}
+
+function refreshRecentRooms() {
+  const userId = String(accountState.identity?.userId || "");
+  if (!userId || !socket.connected) return;
+  const request = ++recentRoomsState.request;
+  socket.emit("account recent rooms", {}, (ack = {}) => {
+    if (request !== recentRoomsState.request ||
+        String(accountState.identity?.userId || "") !== userId) return;
+    if (!ack.ok) return;
+    recentRoomsState.userId = userId;
+    recentRoomsState.rooms = Array.isArray(ack.rooms)
+      ? ack.rooms.filter((room) => room && typeof room.name === "string"
+        && room.name.length > 0 && room.name.length <= 80).slice(0, 8)
+      : [];
+    renderRecentRooms();
+  });
+}
+
 function beginAccountAction() {
   const revision = ++accountState.revision;
   accountState.busy = true;
@@ -204,9 +272,21 @@ function syncAccountUi() {
   renderUserSidebar(appState.users || []);
   window.dizySoundboardImporterUi?.syncIdentity?.(identity);
   syncLandingJoinFlow();
+  renderRecentRooms();
 }
 
 function applyAccountSession(session) {
+  const previousUserId = String(accountState.identity?.userId || "");
+  const nextUserId = String(session?.identity?.userId || "");
+  if (previousUserId !== nextUserId) {
+    clearRecentRoomsUi();
+    lastRoomName = "";
+    lastRoomPassword = "";
+    if (!window.currentRoom) {
+      if (roomInput) roomInput.value = "";
+      if (passwordInput) passwordInput.value = "";
+    }
+  }
   const token = String(session?.token || "").trim();
   accountState.sessionToken = token;
   accountState.identity = session?.identity && typeof session.identity === "object" ? session.identity : null;
@@ -222,6 +302,7 @@ function applyAccountSession(session) {
   if (token) socket.auth.sessionToken = token;
   else delete socket.auth.sessionToken;
   syncAccountUi();
+  if (token && accountState.identity?.userId) refreshRecentRooms();
   if (token && window.dizychatBrowserNotificationController?.syncRegistration) {
     void window.dizychatBrowserNotificationController.syncRegistration();
   }
@@ -237,6 +318,9 @@ async function clearAccountSession({ persistent = false } = {}) {
   accountState.identity = null;
   accountState.expiresAt = 0;
   storeAccountSessionToken("");
+  clearRecentRoomsUi();
+  lastRoomName = "";
+  lastRoomPassword = "";
   socket.auth = socket.auth && typeof socket.auth === "object" ? { ...socket.auth } : {};
   delete socket.auth.sessionToken;
   syncAccountUi();
@@ -302,6 +386,9 @@ const leaveBtn = document.getElementById("leave-btn");
 const copyJoinLinkBtn = document.getElementById("copy-join-link");
 const watchPartyBtn = document.getElementById("watch-party-btn");
 const publicRoomList = document.getElementById("public-room-list");
+const recentRoomsPanel = document.getElementById("recent-rooms-panel");
+const recentRoomsList = document.getElementById("recent-rooms-list");
+const clearRecentRoomsBtn = document.getElementById("clear-recent-rooms-btn");
 const themeLogos = Array.from(document.querySelectorAll("img.logo"));
 const userSidebar = document.getElementById("user-sidebar");
 const userList = document.getElementById("user-list");
@@ -5706,6 +5793,23 @@ function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
 if (guestContinueBtn) {
   guestContinueBtn.addEventListener("click", confirmGuestIdentity);
 }
+clearRecentRoomsBtn?.addEventListener("click", () => {
+  if (!accountState.identity?.userId || !socket.connected) return;
+  const userId = String(accountState.identity.userId);
+  const request = ++recentRoomsState.request;
+  socket.emit("account clear recent rooms", {}, (ack = {}) => {
+    if (request !== recentRoomsState.request ||
+        String(accountState.identity?.userId || "") !== userId) return;
+    if (!ack.ok) {
+      showToast("Unable to clear recent rooms. Please retry.", "warn");
+      refreshRecentRooms();
+      return;
+    }
+    recentRoomsState.rooms = [];
+    recentRoomsState.userId = userId;
+    renderRecentRooms();
+  });
+});
 if (joinBtn) {
   joinBtn.addEventListener("click", emitJoinRequest);
 }
@@ -5769,6 +5873,11 @@ function signOutAccount() {
       if (!ack.ok) throw new Error("The server could not sign you out. Please try again.");
       if (!await clearAccountSession({ persistent: true })) return;
       if (window.currentRoom) socket.emit("leave room", { room: window.currentRoom });
+      // A logged-out screen must not retain a private room name or password.
+      lastRoomName = "";
+      lastRoomPassword = "";
+      if (roomInput) roomInput.value = "";
+      if (passwordInput) passwordInput.value = "";
       clearReplyTarget();
       showLanding({ focusUsername: false });
       accountUsernameInput?.focus();
@@ -6088,6 +6197,7 @@ initSoundNotifications();
 
 // Listen for successful room join
 socket.on("join room success", () => {
+  if (accountState.identity?.userId) refreshRecentRooms();
   clearReplyTarget();
   isViewingChat = true;
   if (copyJoinLinkBtn) copyJoinLinkBtn.disabled = !window.currentRoom;
