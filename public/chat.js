@@ -219,6 +219,12 @@ function syncLandingJoinFlow() {
   if (roomInput) roomInput.disabled = !identityReady;
   if (passwordInput) passwordInput.disabled = !identityReady;
   if (joinBtn) joinBtn.disabled = !identityReady || !roomReady || accountState.busy;
+  // Public room choices are accessible as buttons only after a user identity
+  // has been confirmed. Refresh existing DOM nodes when that state changes.
+  publicRoomList?.querySelectorAll?.(".public-room-item")?.forEach((choice) => {
+    choice.tabIndex = identityReady ? 0 : -1;
+    choice.setAttribute("aria-disabled", String(!identityReady));
+  });
   if (roomStepLockCopy) {
     roomStepLockCopy.textContent = accountReady
       ? `Signed in as ${accountState.identity.username}. Now choose or create a room.`
@@ -5766,7 +5772,12 @@ function renderPublicRooms(rooms = [], { state = "ready" } = {}) {
 
     item.appendChild(nameEl);
     item.appendChild(metaEl);
-    item.tabIndex = 0;
+    item.setAttribute("role", "button");
+    item.setAttribute("aria-label", "Join public room " + roomNameValue);
+    const identityReady = Boolean(accountState.identity?.username ||
+      String(window.__dizyLandingGuestName || "").trim());
+    item.tabIndex = identityReady ? 0 : -1;
+    item.setAttribute("aria-disabled", String(!identityReady));
 
     item.classList.add("clickable");
     item.title = "Join this room";

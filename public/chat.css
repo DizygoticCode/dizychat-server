@@ -625,6 +625,11 @@ section[id] {
   cursor: pointer;
 }
 
+#public-room-list li.clickable:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
 #public-room-list li.clickable:hover {
   transform: scale(1.05);
   background: var(--accent);
