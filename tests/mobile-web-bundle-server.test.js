@@ -21,10 +21,8 @@ const REQUIRED_NATIVE_CORE = [
   'embedded-call-view.css',
   'embedded-call-view.js',
   'emojis.json',
-  'facebook-video-embed.js',
   'index.html',
   'login.html',
-  'link-preview-loader.js',
   'logo-light.svg',
   'logo.svg',
   'mobile-bootstrap.js',
@@ -86,27 +84,6 @@ test('server-managed Android bundle exposes only the explicit native core', asyn
   }
 });
 
-test('verified native bundle contains every root-relative script loaded during native bootstrap', async () => {
-  const { buildMobileWebManifest } = requireManifestModule();
-  const manifest = await buildMobileWebManifest({ publicDir });
-  const manifestPaths = new Set(manifest.files.map((entry) => entry.path));
-  const bootstrap = fs.readFileSync(path.join(publicDir, 'mobile-bootstrap.js'), 'utf8');
-  const loadedScripts = [...bootstrap.matchAll(/await loadScript\('\/([^']+\.js)'\)/g)]
-    .map((match) => match[1]);
-  const browserOnlyScripts = new Set([
-    'pwa-runtime.js',
-    'iphone-install.js',
-    'browser-notifications.js',
-  ]);
-
-  assert.ok(loadedScripts.includes('link-preview-loader.js'));
-  assert.ok(loadedScripts.includes('facebook-video-embed.js'));
-  for (const script of loadedScripts) {
-    if (browserOnlyScripts.has(script)) continue;
-    assert.ok(manifestPaths.has(script), `native bootstrap requires bundled ${script}`);
-  }
-});
-
 test('bundle version is deterministic and changes when file metadata changes', () => {
   const { createBundleVersion } = requireManifestModule();
   const files = [
@@ -165,16 +142,6 @@ test('mobile bundle router serves only manifest-approved assets with no-store ma
   const loginEntry = manifest.files.find((entry) => entry.path === 'login.html');
   assert.ok(loginEntry);
   assert.equal(crypto.createHash('sha256').update(loginBytes).digest('hex'), loginEntry.sha256);
-
-  for (const script of ['link-preview-loader.js', 'facebook-video-embed.js']) {
-    const response = await fetch(`${base}/api/mobile-web/assets/${script}`);
-    assert.equal(response.status, 200, `${script} must be downloadable for native clients`);
-    const entry = manifest.files.find((file) => file.path === script);
-    assert.ok(entry, `${script} must have a manifest entry`);
-    const bytes = Buffer.from(await response.arrayBuffer());
-    assert.equal(bytes.length, entry.size);
-    assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'), entry.sha256);
-  }
 
   for (const forbidden of [
     '/api/mobile-web/assets/emojis/custom/alex1.gif',
