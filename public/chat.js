@@ -219,6 +219,12 @@ function syncLandingJoinFlow() {
   if (roomInput) roomInput.disabled = !identityReady;
   if (passwordInput) passwordInput.disabled = !identityReady;
   if (joinBtn) joinBtn.disabled = !identityReady || !roomReady || accountState.busy;
+  // Public room choices are accessible as buttons only after a user identity
+  // has been confirmed. Refresh existing DOM nodes when that state changes.
+  publicRoomList?.querySelectorAll?.(".public-room-item")?.forEach((choice) => {
+    choice.tabIndex = identityReady ? 0 : -1;
+    choice.setAttribute("aria-disabled", String(!identityReady));
+  });
   if (roomStepLockCopy) {
     roomStepLockCopy.textContent = accountReady
       ? `Signed in as ${accountState.identity.username}. Now choose or create a room.`
