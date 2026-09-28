@@ -20,6 +20,13 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
+  recentRooms: {
+    type: [{
+      name: { type: String, required: true, trim: true, maxlength: 80 },
+      joinedAt: { type: Date, default: Date.now },
+    }],
+    default: [],
+  },
   recoveryEmail: {
     type: String,
     default: '',
