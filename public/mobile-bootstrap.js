@@ -88,13 +88,10 @@
       }
     }
 
-    // These browser-only helpers are absent from the verified native bundle.
-    // Loading them at https://localhost would abort Android startup; chat.js
-    // already handles both helpers being unavailable in the native runtime.
-    if (!isNative) {
-      await loadScript('/link-preview-loader.js');
-      await loadScript('/facebook-video-embed.js');
-    }
+    // Both helpers are now included in the exact verified mobile bundle
+    // allowlist shared by Android, iOS, and the server manifest.
+    await loadScript('/link-preview-loader.js');
+    await loadScript('/facebook-video-embed.js');
     await loadScript('/chat.js');
     await loadScript('/embedded-call-view.js');
     await loadScript('/public-auth-ui.js');
