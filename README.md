@@ -413,11 +413,13 @@ passed a restore **dry run**; no full isolated restore has been established.
 
 A tested `npm ci --omit=optional` server installation and matching
 `npm audit --omit=optional --audit-level=moderate` reported **zero
-vulnerabilities for that installed dependency graph**. The default
-lockfile still retains two moderate, optional Firebase Storage
-transitive warnings: [issue #477](https://github.com/DizygoticCode/dizychat-server/issues/477).
-Do not describe this as an upstream patch or a complete live FCM
-delivery validation. Details and operator checks:
+vulnerabilities for that installed dependency graph**. That was the **28 September pre-fix host checkpoint**. The subsequent
+[scoped dependency fix in PR #480](https://github.com/DizygoticCode/dizychat-server/pull/480)
+pins patched `uuid@11.1.1` **only under `gaxios`**, rather than globally.
+The full lockfile moderate+ audit and full-install compatibility tests passed.
+This does not mean Firebase Admin or gaxios received an upstream patch, nor
+that a GitHub merge has changed the installed server dependencies. An actual
+server rollout and live FCM delivery acceptance remain separate checks. Details and operator checks:
 [Self-hosted maintenance](docs/SELF_HOSTED_MAINTENANCE.md).
 
 ## Deployment notes

@@ -35,20 +35,30 @@ Monitor structured logs prefixed with `[SecurityEvent]` for:
 
 ## Dependency security maintenance (28 September 2026)
 
-The default committed dependency tree has two moderate, transitive
-Firebase Storage / gaxios / uuid warnings tracked in
+The previously reported two moderate findings in the optional Firebase
+Storage → `gaxios@6.7.1` → `uuid@9.0.1` chain were tracked in
 [issue #477](https://github.com/DizygoticCode/dizychat-server/issues/477).
-The tested server-only `npm ci --omit=optional` install excludes that
-optional dependency chain; its omitted-optional audit reported no
-vulnerabilities at the 28 September checkpoint. CI also verified Firebase
-Messaging initialisation and 573 deterministic tests, but **not**
-end-to-end remote mobile delivery. This is not an upstream advisory fix:
-retain the issue, watch vendor updates, and retest on dependency changes.
-Avoid incompatible forced UUID overrides and unreviewed broad
-`npm audit fix` changes.
+The live server used `npm ci --omit=optional` to exclude unused optional
+Storage/Firestore packages; its installed-graph audit showed zero
+vulnerabilities at that checkpoint.
+
+[PR #480](https://github.com/DizygoticCode/dizychat-server/pull/480)
+provides a separate **locked-tree** remediation: an explicit
+`gaxios`-scoped `uuid@11.1.1` override (a pinned, tested major
+override, not a parent-library upstream patch) plus CI that gates
+the **full lockfile** at moderate severity and checks clean full
+installation, UUID boundary handling, a real loopback Gaxios
+request, Firebase Messaging module initialisation, and the
+deterministic suite. The earlier omitted-optional job remains.
+Do not infer real FCM delivery from these isolated tests, or
+assume the GitHub change has already been deployed.
+
+Retest both audit graphs after any dependency update, and monitor
+for a supported upstream parent release that permits removing the
+override. Avoid unreviewed broad `npm audit fix` changes.
 
 See [self-hosted maintenance](SELF_HOSTED_MAINTENANCE.md) for the
-exact host versions, controlled installation and verification steps.
+dated host baseline, controlled installation and verification steps.
 
 ## Post-incident actions
 

@@ -51,37 +51,51 @@ Do not commit host secrets, full logs, exported chat history or backups.
   an Ubuntu/NodeSource update appears; coordinate a tested DizyTrades
   engine/CI/build change first.
 
-## Dependency audit: what the zero means
+## Dependency audit: host mitigation and source-tree fix
 
-The default committed dependency tree still contains an optional
-Firebase Admin / Google Cloud Storage `gaxios@6.7.1` →
-`uuid@9.0.1` chain reported by the advisory checker as two
-**moderate** findings on 27 September 2026. It is tracked in
-[issue #477](https://github.com/DizygoticCode/dizychat-server/issues/477).
-Do **not** say that the upstream advisory was repaired, and do not close
-the issue on the basis of omitting optional packages.
+**Historical operator checkpoint:** on 27 September, the *old* full
+lockfile reported two moderate advisory entries along Firebase Admin's
+optional Google Cloud Storage `gaxios@6.7.1` →
+`uuid@9.0.1` chain. On 28 September the operator installed the
+already-supported `npm ci --omit=optional` graph on dizyserver:
+373 packages installed, and the moderate+ omitted-optional audit
+reported zero vulnerabilities. [PR #478](https://github.com/DizygoticCode/dizychat-server/pull/478)
+had already verified Firebase Messaging module initialisation and
+573 deterministic tests without those optional modules. The server's
+last installed dependencies do not change merely because GitHub
+later merges a lockfile.
 
-[PR #478](https://github.com/DizygoticCode/dizychat-server/pull/478)
-added an isolated CI job which ran `npm ci --omit=optional`,
-verified the unneeded optional Storage/Firestore/gaxios/uuid modules
-were not installed, initialised Firebase Messaging with inert local
-test credentials, ran the moderate+ omitted-optional audit and the
-deterministic test suite. The audit returned zero findings and all
-**573 deterministic tests passed** on that tested graph. This is
-compatibility evidence, **not** a live remote-FCM delivery test.
-The default-install high/critical audit and Self-Host CI passed too.
-Continue monitoring for a supported upstream fix; do not force an
-incompatible UUID override or downgrade Firebase merely to silence
-the warning.
+**Repository fix:** [PR #480](https://github.com/DizygoticCode/dizychat-server/pull/480)
+addresses [issue #477](https://github.com/DizygoticCode/dizychat-server/issues/477)
+by pinning patched `uuid@11.1.1` **only under gaxios**, using npm's
+package-level `overrides` rather than overriding UUID globally.
+The Gaxios 6 dependency otherwise requests `uuid ^9`. This
+*is* a deliberately bounded major-version override; it is not an
+upstream Gaxios or Firebase Admin fix. The approach has an upstream
+usage precedent in Firebase CLI's gaxios-specific override.
 
-For a future controlled deployment, compare exact Git commit and
-working-tree changes first, back up durable state, then perform the
-dependency install and service restart within the operator's
-maintenance window. Installing without optional packages must remain
-an explicit, tested server-side choice; CI/mobile development jobs
-currently retain their normal full install unless their own
-compatibility is proved. Repeat both the default lockfile audit and
-the omitted-optional installed-graph audit after dependency changes.
+The new full-dependency CI job checks a clean `npm ci`,
+`npm ls gaxios uuid`, UUID v4 and buffer-boundary contracts,
+an actual loopback HTTP request through Gaxios 6,
+Firebase Messaging initialisation without a real FCM send, and
+all deterministic tests. The full **committed lockfile** audit
+is now gated at `--audit-level=moderate`, and the separate
+`npm ci --omit=optional` compatibility and installed-graph audit
+remain in force. Passing these checks fixes the *repository's locked
+dependency finding*; it does **not** prove live remote-FCM delivery
+or remove the need to review upstream release compatibility.
+
+**Operator implications:** keep the production `npm ci --omit=optional`
+choice unless an explicitly reviewed change calls for full optional
+dependencies. A GitHub merge does not install packages, restart
+DizyChat, or change the running server automatically. For a future
+controlled deployment: check the exact commit and host-local soundboard
+changes, protect state/rollback, install the reviewed dependency
+graph, then restart only when needed and verify actual browser,
+Socket.IO and mobile push behaviour. Review upstream release notes
+periodically and remove the major override when a supported parent
+dependency no longer requires it. Never run a broad forced
+`npm audit fix` solely to silence alerts.
 
 ## Read-only verification checklist
 
@@ -89,6 +103,7 @@ the omitted-optional installed-graph audit after dependency changes.
 git status --short
 git rev-parse HEAD
 node --version
+npm audit --package-lock-only --audit-level=moderate
 npm audit --omit=optional --audit-level=moderate
 systemctl is-active ssh.socket caddy dizytrades dizychat mongod
 curl -fsS http://127.0.0.1:10001/version
