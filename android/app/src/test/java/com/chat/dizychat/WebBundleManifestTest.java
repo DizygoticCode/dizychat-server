@@ -32,6 +32,24 @@ public class WebBundleManifestTest {
         assertEquals(WebBundleManifest.REQUIRED_CORE_PATHS.size(), manifest.getFiles().size());
     }
 
+    @Test
+    public void acceptsOnlyTheExactPreviousCoreDuringInPlaceUpgrade() {
+        List<WebBundleManifest.Entry> legacy = validEntries();
+        legacy.removeIf(entry -> "link-preview-loader.js".equals(entry.getPath())
+                || "facebook-video-embed.js".equals(entry.getPath()));
+        WebBundleManifest manifest = new WebBundleManifest(1, "login.html", VERSION, legacy);
+        assertEquals(WebBundleManifest.REQUIRED_CORE_PATHS.size() - 2, manifest.getFiles().size());
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void rejectsArbitrarilyIncompleteLegacyCore() {
+        List<WebBundleManifest.Entry> legacy = validEntries();
+        legacy.removeIf(entry -> "link-preview-loader.js".equals(entry.getPath())
+                || "facebook-video-embed.js".equals(entry.getPath())
+                || "chat.js".equals(entry.getPath()));
+        new WebBundleManifest(1, "login.html", VERSION, legacy);
+    }
+
     @Test(expected = IllegalArgumentException.class)
     public void rejectsTraversalPath() {
         List<WebBundleManifest.Entry> entries = validEntries();
