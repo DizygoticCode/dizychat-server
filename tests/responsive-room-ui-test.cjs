@@ -5,7 +5,7 @@ const { chromium } = require('playwright');
 
 // Runs only against the isolated, empty-room CI server. Never collect
 // screenshots of registered accounts or live private conversations.
-const base = String(process.env.DEPLOY_URL || 'http://127.0.0.1:10000').replace(/\\/$/, '');
+const base = String(process.env.DEPLOY_URL || 'http://127.0.0.1:10000').replace(/[/]$/, '');
 const cases = [
   { name: 'phone portrait', width: 360, height: 740, mobile: true },
   { name: 'phone landscape', width: 740, height: 360, mobile: true },
