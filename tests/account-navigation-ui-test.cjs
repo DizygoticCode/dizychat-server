@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const { chromium } = require('playwright');
 const mongoose = require('mongoose');
 const User = require('../src/models/user');
+const RecentRoom = require('../src/models/recent-room');
 const { hashPassword } = require('../src/auth/passwords');
 
 const base = process.env.DEPLOY_URL || 'http://127.0.0.1:10000';
@@ -47,7 +48,8 @@ const sessionKey = 'dizychat-account-session-v2';
           await page.locator('#lobby-account-logout-btn').waitFor({ state: 'visible' });
           assert.equal(await page.evaluate((key) => sessionStorage.getItem(key), sessionKey), token);
 
-          await page.fill('#room-input', `AccountRoom${width}`);
+          const accountRoom = 'AccountRoom' + width;
+          await page.fill('#room-input', accountRoom);
           await page.press('#room-input', 'Enter');
           await page.locator('#chat-container').waitFor({ state: 'visible' });
           await page.waitForFunction((name) => document.querySelector('#user-list').textContent.includes(name), username);
@@ -56,6 +58,38 @@ const sessionKey = 'dizychat-account-session-v2';
           await page.locator('#lobby-account-logout-btn').waitFor({ state: 'visible' });
           assert.equal(await page.evaluate(() => window.currentRoom), null);
           assert.equal(await page.evaluate((key) => sessionStorage.getItem(key), sessionKey), token);
+
+          // Only successful account admission enters the recent-room list.
+          await page.locator('#recent-rooms-panel').waitFor({ state: 'visible' });
+          await page.locator('.recent-room-choice').filter({ hasText: accountRoom }).first().click();
+          await page.locator('#chat-container').waitFor({ state: 'visible' });
+          assert.equal(await page.evaluate(() => window.currentRoom), accountRoom);
+          await page.click('#leave-btn');
+
+          // Persistent public DIZY remains selectable with zero occupants.
+          const coinRoom = page.locator('.public-room-item[data-room="DIZY"]');
+          await coinRoom.waitFor({ state: 'visible' });
+          await coinRoom.click();
+          await page.locator('#chat-container').waitFor({ state: 'visible' });
+          assert.equal(await page.evaluate(() => window.currentRoom), 'DIZY');
+          await page.click('#leave-btn');
+
+          // A private recent room must prompt again, not reuse a password.
+          const privateRoom = 'AccountPrivate' + width;
+          const privatePassword = 'e2e-room-password-only';
+          await page.fill('#room-input', privateRoom);
+          await page.fill('#room-password', privatePassword);
+          await page.press('#room-password', 'Enter');
+          await page.locator('#chat-container').waitFor({ state: 'visible' });
+          await page.click('#leave-btn');
+          await page.locator('.recent-room-choice').filter({ hasText: privateRoom }).first().click();
+          assert.equal(await page.locator('#room-input').inputValue(), privateRoom);
+          assert.equal(await page.locator('#room-password').inputValue(), '');
+          assert.equal(await page.locator('#chat-container').isVisible(), false);
+          await page.fill('#room-password', privatePassword);
+          await page.press('#room-password', 'Enter');
+          await page.locator('#chat-container').waitFor({ state: 'visible' });
+          await page.click('#leave-btn');
 
           await page.locator('.public-room-item[data-room="General Chat"]').click();
           await page.locator('#chat-container').waitFor({ state: 'visible' });
@@ -68,9 +102,13 @@ const sessionKey = 'dizychat-account-session-v2';
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'landing has no horizontal overflow');
           fs.mkdirSync('ui-test-artifacts', { recursive: true });
           await page.screenshot({ path: `ui-test-artifacts/account-lobby-${route.slice(1)}-${width}.png`, fullPage: true });
+          await page.click('#clear-recent-rooms-btn');
+          await page.locator('#recent-rooms-panel').waitFor({ state: 'hidden' });
           await page.click('#lobby-account-logout-btn');
           await page.waitForFunction((key) => !sessionStorage.getItem(key), sessionKey);
           await page.locator('#guest-login').waitFor({ state: 'visible' });
+          assert.equal(await page.locator('#recent-rooms-panel').isVisible(), false);
+          assert.equal(await page.locator('#room-password').inputValue(), '');
 
           // A second socket presenting the old token must be rejected by server authority.
           const restored = await page.evaluate((oldToken) => new Promise((resolve, reject) => {
@@ -94,6 +132,7 @@ const sessionKey = 'dizychat-account-session-v2';
     }
   } finally {
     await browser?.close();
+    await RecentRoom.deleteMany({ userId: String(account._id) });
     await User.deleteOne({ _id: account._id });
     await mongoose.disconnect();
   }
