@@ -41,6 +41,7 @@ const { createSessionStore } = require('./src/auth/session-store');
 const { createMobileSessionService } = require('./src/auth/mobile-session-service');
 const { requireModerator, requireOwner } = require('./src/auth/authorization');
 const { createRoomPasswordService } = require('./src/rooms/room-password-service');
+const { createRecentRoomService } = require('./src/rooms/recent-room-service');
 const { createRoomAuthThrottle } = require('./src/rooms/room-auth-throttle');
 const soundboardStore = require('./src/utils/soundboard');
 const {
@@ -825,12 +826,22 @@ const resolveAccountSessionToken = async (token) => {
   if (browserSession) return browserSession;
   return mobileAccountSessions.resolve(token);
 };
+const resolveRecentRoomsPrincipal = async (socket) => {
+  const session = await resolveAccountSessionToken(socket.accountSessionToken);
+  const principal = session?.principal;
+  if (principal?.kind !== 'account' || !principal.userId) return null;
+  if (socket.principal?.kind !== 'account'
+    || socket.principal.userId !== principal.userId
+    || socket.principal.canonicalUsername !== principal.canonicalUsername) return null;
+  return principal;
+};
 const revokeAccountSessionToken = async (token) => {
   if (typeof token !== 'string' || !token) return false;
   if (accountSessions.revoke(token)) return true;
   return mobileAccountSessions.revoke(token);
 };
 const roomPasswordService = createRoomPasswordService({ RoomModel: Room });
+const recentRoomService = createRecentRoomService({ UserModel: User });
 const roomAuthThrottle = createRoomAuthThrottle({
   maxTrackedKeys: ROOM_AUTH_MAX_TRACKED_KEYS,
 });
@@ -851,6 +862,9 @@ const roomCreationThrottle = createRoomAuthThrottle({
   maxTrackedKeys: ROOM_CREATE_MAX_TRACKED_KEYS,
 });
 const roomPasswords = new Map();
+const recentRoomSummary = (names) => (Array.isArray(names) ? names : [])
+  .filter((name) => roomPasswords.has(name))
+  .map((name) => ({ name, requiresPassword: Boolean(roomPasswords.get(name)) }));
 const PERSISTENT_ROOMS = [
   'General Chat',
   'AJN Chat',
@@ -3733,6 +3747,38 @@ io.on('connection', socket => {
     }
   });
 
+  // Account navigation metadata: authorization is rechecked against the live
+  // browser/native session for each request, not accepted from client identity.
+  socket.on('recent rooms get', async (_payload = {}, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const principal = await resolveRecentRoomsPrincipal(socket);
+      if (!principal) return ack({ ok: false, error: 'ACCOUNT_AUTH_REQUIRED' });
+      const names = await recentRoomService.list(principal);
+      if (!names) return ack({ ok: false, error: 'ACCOUNT_AUTH_REQUIRED' });
+      ack({ ok: true, rooms: recentRoomSummary(names) });
+    } catch (error) {
+      console.warn('[Rooms] Recent room list unavailable', { code: String(error?.code || 'unexpected') });
+      ack({ ok: false, error: 'RECENT_ROOMS_UNAVAILABLE' });
+    }
+  });
+
+  socket.on('recent rooms forget', async (payload = {}, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const principal = await resolveRecentRoomsPrincipal(socket);
+      if (!principal) return ack({ ok: false, error: 'ACCOUNT_AUTH_REQUIRED' });
+      const name = normaliseRoomName(payload.room);
+      if (!name) return ack({ ok: false, error: 'ROOM_NAME_REQUIRED' });
+      const names = await recentRoomService.forget(principal, name);
+      if (!names) return ack({ ok: false, error: 'ACCOUNT_AUTH_REQUIRED' });
+      ack({ ok: true, rooms: recentRoomSummary(names) });
+    } catch (error) {
+      console.warn('[Rooms] Recent room removal unavailable', { code: String(error?.code || 'unexpected') });
+      ack({ ok: false, error: 'RECENT_ROOMS_UNAVAILABLE' });
+    }
+  });
+
   socket.on('account logout', async (payload = {}, ack) => {
     try {
       const mobileSessionId = socket.mobileSessionId;
@@ -3939,6 +3985,19 @@ io.on('connection', socket => {
 
     // Emit successful room join
     socket.emit('join room success');  // Added this line!
+    // Save only after successful room admission, and never save passwords.
+    // Failure of optional navigation metadata must not prevent room access.
+    if (effectivePrincipal.kind === 'account') {
+      try {
+        const principal = await resolveRecentRoomsPrincipal(socket);
+        if (principal) {
+          const recentRooms = await recentRoomService.record(principal, roomName);
+          if (recentRooms) socket.emit('recent rooms updated', { rooms: recentRoomSummary(recentRooms) });
+        }
+      } catch (error) {
+        console.warn('[Rooms] Recent room recording unavailable', { code: String(error?.code || 'unexpected') });
+      }
+    }
     emitRoomListUpdate();
 
     // Load history and pinned messages
