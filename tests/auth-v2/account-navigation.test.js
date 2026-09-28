@@ -393,3 +393,25 @@ test('clear recent rooms affects the signed-in account list only', () => {
   assert.ok(c.sent.some((event) => event.name === 'account clear recent rooms'));
   assert.equal(c.run('recentRoomsState.rooms.length'), 0);
 });
+
+
+test('a room deep link survives first account login without retaining a room password', () => {
+  const c = client();
+  c.run('var prefillRoom = "DIZY"; lastRoomName = "DIZY"; roomInput.value = "DIZY"; lastRoomPassword = "stale";');
+  c.passwordInput.value = 'stale';
+  c.run('applyAccountSession({ token: "test-token", identity: ' + JSON.stringify(identity) + ' })');
+  assert.equal(c.roomInput.value, 'DIZY');
+  assert.equal(c.passwordInput.value, '');
+  assert.equal(c.run('lastRoomPassword'), '');
+  assert.equal(c.recentRoomsPanel.hidden, false, 'signed-in account may still view its own recent rooms');
+});
+
+test('account change without an explicit room link clears previous room details', () => {
+  const c = client();
+  c.run('lastRoomName = "OtherAccountPrivate"; lastRoomPassword = "not-saved";');
+  c.roomInput.value = 'OtherAccountPrivate';
+  c.passwordInput.value = 'not-saved';
+  c.run('applyAccountSession({ token: "test-token", identity: ' + JSON.stringify(identity) + ' })');
+  assert.equal(c.roomInput.value, '');
+  assert.equal(c.passwordInput.value, '');
+});
