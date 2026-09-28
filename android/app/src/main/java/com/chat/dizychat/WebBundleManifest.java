@@ -32,8 +32,10 @@ public final class WebBundleManifest {
             "embedded-call-view.css",
             "embedded-call-view.js",
             "emojis.json",
+            "facebook-video-embed.js",
             "index.html",
             "login.html",
+            "link-preview-loader.js",
             "logo-light.svg",
             "logo.svg",
             "mobile-bootstrap.js",
@@ -95,7 +97,12 @@ public final class WebBundleManifest {
             validated.add(entry);
         }
 
-        if (!seen.equals(required)) {
+        // Permit only the exact previous 17-file shell or the new 19-file shell.
+        // A freshly updated APK must work before the server publishes the new bundle.
+        Set<String> legacy = new HashSet<>(required);
+        legacy.remove("link-preview-loader.js");
+        legacy.remove("facebook-video-embed.js");
+        if (!seen.equals(required) && !seen.equals(legacy)) {
             throw new IllegalArgumentException("Web bundle core is incomplete");
         }
 

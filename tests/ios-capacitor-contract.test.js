@@ -54,8 +54,10 @@ test('iOS verified WebBundle updater mirrors the Android manifest safety boundar
     'embedded-call-view.css',
     'embedded-call-view.js',
     'emojis.json',
+    'facebook-video-embed.js',
     'index.html',
     'login.html',
+    'link-preview-loader.js',
     'logo-light.svg',
     'logo.svg',
     'mobile-bootstrap.js',
@@ -67,6 +69,15 @@ test('iOS verified WebBundle updater mirrors the Android manifest safety boundar
   ]) {
     assert.equal(source.includes(`"${file}"`), true, `${file} must remain allowlisted`);
   }
+  const allowlist = source.match(/requiredCorePaths:\s*Set<String>\s*=\s*\[([\s\S]*?)\]/);
+  assert.ok(allowlist, 'iOS native verified-file allowlist must remain discoverable');
+  const nativeFiles = [...allowlist[1].matchAll(/"([^"]+)"/g)].map((item) => item[1]).sort();
+  const { MOBILE_WEB_CORE_PATHS } = require('../src/mobile-web/bundle-manifest');
+  assert.deepEqual(nativeFiles, [...MOBILE_WEB_CORE_PATHS].sort(),
+    'iOS and server must approve exactly the same verified files');
+  assert.match(source, /legacyCorePaths\.remove\("link-preview-loader\.js"\)/);
+  assert.match(source, /legacyCorePaths\.remove\("facebook-video-embed\.js"\)/);
+  assert.match(source, /seen == requiredCorePaths \|\| seen == legacyCorePaths/);
   assert.match(source, /schemaVersion = 1/);
   assert.match(source, /entryPath = "login\.html"/);
   assert.match(source, /maxFileBytes = 8 \* 1024 \* 1024/);
