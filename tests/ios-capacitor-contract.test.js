@@ -75,6 +75,9 @@ test('iOS verified WebBundle updater mirrors the Android manifest safety boundar
   const { MOBILE_WEB_CORE_PATHS } = require('../src/mobile-web/bundle-manifest');
   assert.deepEqual(nativeFiles, [...MOBILE_WEB_CORE_PATHS].sort(),
     'iOS and server must approve exactly the same verified files');
+  assert.match(source, /legacyCorePaths\\.remove\\("link-preview-loader\\.js"\\)/);
+  assert.match(source, /legacyCorePaths\\.remove\\("facebook-video-embed\\.js"\\)/);
+  assert.match(source, /seen == requiredCorePaths \\|\\| seen == legacyCorePaths/);
   assert.match(source, /schemaVersion = 1/);
   assert.match(source, /entryPath = "login\.html"/);
   assert.match(source, /maxFileBytes = 8 \* 1024 \* 1024/);
