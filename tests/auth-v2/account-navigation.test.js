@@ -46,7 +46,7 @@ function client({ native = false, vault = { token: '' }, logoutAck = { ok: true 
     'accountUsernameInput', 'accountPasswordInput', 'accountUsernameField', 'accountPasswordField',
     'registeredJoinBtn', 'registeredLogin', 'guestLogin', 'guestContinueBtn', 'guestLoginStatus',
     'roomEntryStep', 'roomStepLockCopy', 'roomInput', 'passwordInput', 'usernameInput',
-    'leaveBtn', 'publicRoomList', 'joinBtn',
+    'leaveBtn', 'publicRoomList', 'joinBtn', 'recentRoomsSection', 'recentRoomList',
     'usernamePrompt', 'chatContainer', 'roomName',
   ].map((name) => [name, element()]));
   const events = {}, sent = [], toasts = [], pending = {}, timers = new Map();
