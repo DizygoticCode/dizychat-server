@@ -15,6 +15,9 @@ test('marketing landing reflects the current home-hosted identity-first platform
   assert.match(landing, /Identity-first onboarding/i);
   assert.match(landing, /Choose your identity/i);
   assert.match(landing, /Choose or create a room/i);
+  assert.match(landing, /href="\/login\?room=DIZY"/);
+  assert.match(landing, /remains listed even when empty/i);
+  assert.match(landing, /Registered accounts can also return using private Recent Rooms shortcuts/i);
   assert.match(landing, /clean local ClamAV verdict/i);
   assert.match(landing, /GIPHY picker/i);
   assert.match(landing, /Self-hosted LiveKit/i);
@@ -35,6 +38,9 @@ test('README opens with current platform badges, status and self-hosted position
   }
 
   assert.match(readme, /Identity & rooms/);
+  assert.match(readme, /DIZY.*password-free public token-discussion room/i);
+  assert.match(readme, /up to eight previously joined room names/i);
+  assert.match(readme, /dizychat\.com\/login\?room=DIZY/i);
   assert.match(readme, /Media safety/);
   assert.match(readme, /Native iOS/);
   assert.match(readme, /current deployment uses the self-hosted LiveKit service/i);
