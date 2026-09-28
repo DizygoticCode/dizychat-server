@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   npm-audit:
-    name: npm high/critical audit
+    name: npm moderate+ full lockfile audit
     runs-on: ubuntu-latest
 
     steps:
@@ -28,7 +28,7 @@ jobs:
           cache: npm
 
       - name: Audit locked dependencies
-        run: npm audit --package-lock-only --audit-level=high
+        run: npm audit --package-lock-only --audit-level=moderate
 
   optional-firebase-runtime:
     name: Omitted optional dependencies + FCM smoke
@@ -74,4 +74,81 @@ jobs:
         run: npm audit --omit=optional --audit-level=moderate
 
       - name: Run deterministic server and push tests
+        run: npm test
+
+  full-firebase-dependency-compat:
+    name: Full dependency graph Firebase/gaxios compatibility
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install all locked dependencies
+        run: npm ci
+
+      - name: Inspect actual dependency tree
+        run: npm ls gaxios uuid
+
+      - name: Verify patched UUID and actual Gaxios HTTP request
+        run: |
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const http = require('node:http');
+          const { once } = require('node:events');
+          const pkg = require('./package.json');
+          const lock = require('./package-lock.json');
+          const { v3, v4, v5, v6 } = require('uuid');
+          const { request } = require('gaxios');
+          const { initializeApp, deleteApp } = require('firebase-admin/app');
+          const { getMessaging } = require('firebase-admin/messaging');
+
+          assert.deepEqual(pkg.overrides.gaxios, { uuid: '11.1.1' });
+          assert.equal(lock.packages['node_modules/uuid'].version, '11.1.1');
+          assert.match(v4(), /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/);
+          assert.throws(() => v3('test', v3.DNS, new Uint8Array(1)), RangeError);
+          assert.throws(() => v5('test', v5.DNS, new Uint8Array(1)), RangeError);
+          assert.throws(() => v6({ random: new Uint8Array(16) }, new Uint8Array(1)), RangeError);
+
+          (async () => {
+            const server = http.createServer((req, res) => {
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ ok: true }));
+            });
+            server.listen(0, '127.0.0.1');
+            try {
+              await once(server, 'listening');
+              const { port } = server.address();
+              const response = await request({
+                url: `http://127.0.0.1:${port}/smoke`,
+                method: 'GET',
+                retry: false,
+                timeout: 5000,
+              });
+              assert.deepEqual(response.data, { ok: true });
+            } finally {
+              await new Promise((resolve, reject) =>
+                server.close((error) => error ? reject(error) : resolve()));
+            }
+            const app = initializeApp({
+              projectId: 'dizychat-ci',
+              credential: { getAccessToken: async () => ({
+                access_token: 'ci-test-only', expires_in: 3600,
+              }) },
+            }, 'full-deps-audit-ci');
+            try {
+              assert.equal(typeof getMessaging(app).send, 'function');
+            } finally {
+              await deleteApp(app);
+            }
+          })().catch((error) => { console.error(error); process.exitCode = 1; });
+          NODE
+
+      - name: Run full deterministic server and push tests
         run: npm test
