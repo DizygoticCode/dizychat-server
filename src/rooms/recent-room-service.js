@@ -53,11 +53,12 @@ const createRecentRoomService = ({ UserModel } = {}) => {
     if (!name) return null;
     const account = await activeAccount(principal);
     if (!account) return null;
+    const previousEntries = Array.isArray(account.recentRooms) ? account.recentRooms : [];
     account.recentRooms = [
       { name, joinedAt: new Date() },
       ...roomNames(account).filter((room) => room !== name).map((room) => ({
         name: room,
-        joinedAt: new Date(0),
+        joinedAt: previousEntries.find((entry) => entry?.name === room)?.joinedAt || new Date(),
       })),
     ].slice(0, MAX_RECENT_ROOMS);
     await account.save();
