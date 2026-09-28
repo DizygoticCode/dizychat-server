@@ -81,6 +81,7 @@ External providers are deliberately scoped integrations rather than the foundati
 - Every completed upload must receive a clean local ClamAV verdict before it is atomically promoted into the public upload store.
 - Voice messages are normalized for broad browser/mobile playback compatibility.
 - Custom emoji/GIF assets, uploaded images/audio/video and soundboard audio work in normal browsers and across the native Capacitor runtime boundaries.
+- Ordinary webpage links use lazy Open Graph previews via the guarded `/link-preview` endpoint. YouTube uses its own iframe embed path, while recognised Facebook video links can use their video embed path. Native clients route preview requests to the configured backend.
 - The GIPHY picker is proxied through DizyChat so the GIPHY key stays server-side.
 - The soundboard picker has **Local** and **Web** modes: local clips come from JSON catalogs under `data/soundboards` via `/soundboard-clips`, while Web mode searches 101Soundboards from inside DizyChat, lets users browse matching boards, preview clips and send resolved clips directly into the current chat. Owner accounts can also import one clip or a whole board into the local catalog.
 
@@ -132,9 +133,12 @@ The shell connects to the production backend at `https://dizychat.com`, download
 Current tester release:
 
 - **APK:** https://github.com/DizygoticCode/dizychat-server/releases/download/v1.0.0/dizychat-v1.apk
-- **Size:** `4,693,459` bytes
-- **SHA-256:** `7a196bd500de09c545ea6ad5c1ce2ab3f9109ded1beb8903d41544fb3bb31f71`
+- **Size:** `4,693,480` bytes
+- **SHA-256:** `06134a0e8b984024a7c4bfb6b1a1261c7d6abb21485bd2defe3327f13a33073e`
 - **Package:** `com.chat.dizychat`
+- **Android revision:** `versionCode 2`; displayed `versionName 1.0` (refreshed 28 September 2026)
+
+The 28 September signed APK restores native webpage previews and Facebook video helpers. It accepts either the exact previous 17-file web bundle or the new 19-file web bundle during rollout; the earlier APK **cannot** accept the expanded bundle now served in production. Existing signed-install users should update in place, without uninstalling or clearing app data, to preserve their session.
 
 Google Play Protect may offer to scan the sideloaded APK. For the current release, allowing the scan is the straightforward install path; after the scan completes, Android can continue with the normal installation.
 
@@ -293,6 +297,8 @@ The native Android client and generated iOS path are intentionally split into tw
 
 The native updater fetches a manifest for the current server bundle, downloads only declared assets, validates paths, sizes and SHA-256 hashes before promotion, and retains a previously verified bundle as fallback. A failed/partial update must not replace the known-good local bundle.
 
+The current server manifest declares 19 fixed files, including `link-preview-loader.js` and `facebook-video-embed.js`. The refreshed native allowlists in Android and the unshipped iOS source accept **only** the exact previous 17-file set or the current 19-file set; unexpected and partial file sets remain rejected. The older Android APK rejects the 19-file set, so update signed APKs before deploying such an allowlist expansion. Once the verified current bundle is active, `mobile-bootstrap.js` loads both helpers before `chat.js`. This does not change the server's guarded outbound preview-fetch policy.
+
 Because of that split, normal frontend changes under the server-managed bundle do not justify issuing another native release. Rebuild/re-sign only when the relevant native shell itself changes.
 
 Native relative media URLs are resolved against the configured DizyChat backend inside Capacitor; ordinary browser relative URLs continue using the browser's own current origin.
@@ -427,7 +433,7 @@ server rollout and live FCM delivery acceptance remain separate checks. Details 
 - The canonical production deployment is self-hosted behind a reverse proxy; WebSocket upgrades must reach the Node/Socket.IO service.
 - Keep MongoDB, LiveKit, Firebase/FCM, Web Push VAPID and Apple/APNs/signing credentials in protected host/runtime or CI configuration rather than the Git checkout.
 - Provision persistent storage for uploads if files must survive service redeploy/replacement.
-- The native web-bundle endpoint is part of the production server contract, so deploy frontend assets atomically with the DizyChat service and retain the native clients' hash verification/fallback boundary.
+- The native web-bundle endpoint is part of the production server contract, so deploy frontend assets atomically with the DizyChat service and retain the native clients' hash verification/fallback boundary. If a future change expands the native allowlist, distribute a compatible signed shell before switching the server to the expanded manifest.
 - LiveKit remains a separate realtime-media service; see [`deploy/livekit/README.md`](deploy/livekit/README.md) for the self-hosted network/TLS boundary.
 - Preserve host-local `data/soundboards` changes across Git pulls; do not clean or hard-reset working copies as a shortcut to deploying docs or dependency changes.
 - A documentation-only merge does not require restarting the live Node, MongoDB or Caddy services; verify actual running versions and public behaviour independently.

@@ -24,12 +24,26 @@ Verified current release APK:
 
 ```text
 File:    dizychat-v1.apk
-Size:    4,693,459 bytes
-SHA-256: 7a196bd500de09c545ea6ad5c1ce2ab3f9109ded1beb8903d41544fb3bb31f71
+Size:    4,693,480 bytes
+SHA-256: 06134a0e8b984024a7c4bfb6b1a1261c7d6abb21485bd2defe3327f13a33073e
 Package: com.chat.dizychat
+versionCode: 2
+versionName: 1.0
+Asset updated: 28 September 2026
 ```
 
 This APK is the current native baseline. Server-managed DizyChat frontend changes do **not** require replacing the APK unless the native Android shell itself changes.
+
+### 28 September native preview / bundle compatibility update
+
+The signed APK was refreshed in place under the existing `v1.0.0` release and `dizychat-v1.apk` filename. This is installer revision **2** (display version **1.0**), not a change of package identity or signing key.
+
+- The production mobile web manifest now contains **19 approved files**, including `link-preview-loader.js` and `facebook-video-embed.js`. Native bootstrap loads them before `chat.js`, restoring ordinary webpage previews and supported Facebook video embeds.
+- The refreshed Android validator accepts **only** the exact previous 17-file manifest or exact current 19-file manifest, so the revised APK can install while a server still offers the old bundle. An unexpected, incomplete or extra-file manifest is still rejected.
+- The **previous APK cannot accept** the new 19-file manifest. Anyone on the previous signed build should install the updated APK **over** the existing app; do not uninstall or clear data. The native secure session is designed to survive a normal in-place update.
+- YouTube uses a separate iframe embed path; its appearance alone does not verify the ordinary `/link-preview` route. Page previews are lazy-loaded when the message is near the chat viewport, and native `/link-preview` fetches are routed to the configured backend.
+
+An in-place installation, retained login, room access and ordinary webpage preview were checked against the deployed server. This is targeted acceptance evidence, not a substitute for the full real-device checklist below.
 
 ## Thin-shell / server-managed bundle architecture
 
@@ -61,7 +75,7 @@ The production DizyChat server exposes a manifest plus the declared frontend ass
 
 A partial, malformed or failed update must not replace the last-known-good bundle or create a permanent reload/update loop.
 
-This design is why normal DizyChat web/UI changes can be deployed from the server without shipping another APK. A new APK is required when Java/native code, AndroidManifest settings, Capacitor/native plugins, signing identity or another native boundary changes.
+This design is why normal DizyChat web/UI changes can be deployed from the server without shipping another APK. A new APK is required when Java/native code, AndroidManifest settings, Capacitor/native plugins, signing identity or another native boundary changes **including changes to the fixed native bundle-file allowlist**. Distribute an APK that accepts the expanded manifest before activating that manifest on the server.
 
 ## Native media URL behaviour
 
@@ -195,7 +209,7 @@ Verify the package/signature before distributing any locally built release.
 
 ## Install or update a tester device
 
-For ordinary sideloading, download the release APK on the Android device and open it.
+For ordinary sideloading, download the release APK on the Android device and open it. Android may require permission to install from the chosen browser or file-manager app; this permission applies to the installer source. If you already have the permanently signed APK, install the replacement **in place**, without uninstalling or clearing its data.
 
 Google Play Protect may offer to scan the unknown/sideloaded app. On the current tested install flow, choosing **Scan** is the simplest path: the scan completes, Play Protect reports its result and Android continues to the normal install screen. Avoid deliberately taking a skip-scan / additional-options route merely to bypass the prompt; that alternate path is not required for the current signed release.
 
@@ -229,6 +243,8 @@ A build should not be treated as a new Android baseline solely because CI produc
 16. Where practical, test two devices/users in the same LiveKit room with one in normal voice mode and one in Music Mode.
 17. Temporarily lose network connectivity and reconnect without erasing a valid stored login.
 18. Explicitly log out, close/reopen and confirm the cleared session is not restored.
+19. Check an ordinary webpage link preview in chat, preferably alongside the same message on a desktop browser; scroll the message into view and, if needed, close/reopen the native app. Confirm the card renders without bootstrap errors.
+20. Check a YouTube iframe independently from the ordinary preview endpoint; check a recognised Facebook video link when available. A working YouTube embed alone does not prove `/link-preview` works.
 
 Web-bundle-only server deployments do not require repeating an APK signing/release ceremony, but the changed web feature should still receive appropriate browser/native runtime QA.
 
@@ -250,5 +266,6 @@ Web-bundle-only server deployments do not require repeating an APK signing/relea
 - Firebase client/native configuration that must be packaged
 - release signing/package changes
 - native bundle-updater/bootstrap changes
+- changes to the native verified-bundle allowlist (such as adding preview-helper scripts)
 
 Keeping that boundary explicit is the point of the current thin-shell architecture: frontend iteration stays server-managed while the signed native layer remains small and stable.
