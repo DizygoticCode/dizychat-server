@@ -97,6 +97,38 @@ periodically and remove the major override when a supported parent
 dependency no longer requires it. Never run a broad forced
 `npm audit fix` solely to silence alerts.
 
+## Native preview rollout checkpoint (28 September 2026)
+
+Operator-reported deployment evidence: DizyChat was pulled to commit
+`4aa5ee5ed2493f17d792ec9b396c9d6c804649d7` (merge of
+[PR #482](https://github.com/DizygoticCode/dizychat-server/pull/482)),
+`dizychat.service` restarted and observed `active`, and the local
+`/version` route responded. An updated signed Android APK was installed
+in place; the existing account session and room access survived, and
+ordinary webpage previews worked after closing/reopening the app.
+This targeted observation does **not** establish background FCM,
+notification actions, soundboard audio, LiveKit calls or an end-to-end
+backup restore; those remain separate operational acceptance checks.
+
+The server manifest expanded from 17 to 19 exact approved files by
+adding `link-preview-loader.js` and `facebook-video-embed.js`.
+The prior APK rejects this expansion. The refreshed signed APK
+(Android `versionCode 2`, `versionName 1.0`) accepts **only** the exact
+old or new file set, so publish and install the compatible APK before
+switching the manifest in future rollouts. The existing `v1.0.0`
+release asset was replaced without changing its tag or filename:
+
+```text
+File:    dizychat-v1.apk
+Size:    4,693,480 bytes
+SHA-256: 06134a0e8b984024a7c4bfb6b1a1261c7d6abb21485bd2defe3327f13a33073e
+```
+
+The operator's Git status after deployment still showed the same nine
+modified soundboard JSON/catalog files and one untracked board, which
+must not be discarded. Documentation-only follow-up commits require no
+Node/Caddy/MongoDB service restart.
+
 ## Read-only verification checklist
 
 ```bash
