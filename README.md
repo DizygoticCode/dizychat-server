@@ -71,7 +71,7 @@ External providers are deliberately scoped integrations rather than the foundati
 
 ### Accounts and recovery
 - Public users can create registered DizyChat accounts from the login UI.
-- **DIZY** is the password-free public token-discussion room; it remains visible even with zero occupants. The [DizyTrades DIZY page](https://dizytrades.tech/dizy) links directly to [DizyChat's DIZY room](https://dizychat.com/login?room=DIZY). Guests confirm a name and registered users sign in before choosing it; room access is still checked server-side.
+- **DIZY** is seeded as a persistent public token-discussion room and stays visible while empty **when configured public**. An existing password-protected DIZY room retains its password and access checks. The [DizyTrades DIZY page](https://dizytrades.tech/dizy) links directly to [DizyChat's DIZY room](https://dizychat.com/login?room=DIZY). Guests confirm a name and registered users sign in before choosing it; room access is still checked server-side.
 - Registered users have a private **Recent Rooms** list of up to eight previously joined room names. It stores no passwords or message history, guests cannot access it, and returning to private rooms still requires the room password. See [the Recent Rooms contract](docs/RECENT_ROOMS.md).
 - Registered accounts use server-authoritative authentication rather than trusting a client-supplied username.
 - Recovery email and password-reset flows are supported without exposing mail-provider credentials to the browser.
