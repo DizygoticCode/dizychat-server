@@ -16,7 +16,8 @@ test('marketing landing reflects the current home-hosted identity-first platform
   assert.match(landing, /Choose your identity/i);
   assert.match(landing, /Choose or create a room/i);
   assert.match(landing, /href="\/login\?room=DIZY"/);
-  assert.match(landing, /remains listed even when empty/i);
+  assert.match(landing, /remains listed even when empty when configured public/i);
+  assert.match(landing, /existing private-room password remains required/i);
   assert.match(landing, /Registered accounts can also return using private Recent Rooms shortcuts/i);
   assert.match(landing, /clean local ClamAV verdict/i);
   assert.match(landing, /GIPHY picker/i);
@@ -38,7 +39,8 @@ test('README opens with current platform badges, status and self-hosted position
   }
 
   assert.match(readme, /Identity & rooms/);
-  assert.match(readme, /DIZY.*password-free public token-discussion room/i);
+  assert.match(readme, /DIZY.*seeded as a persistent public token-discussion room/i);
+  assert.match(readme, /existing password-protected DIZY room retains its password/i);
   assert.match(readme, /up to eight previously joined room names/i);
   assert.match(readme, /dizychat\.com\/login\?room=DIZY/i);
   assert.match(readme, /Media safety/);
