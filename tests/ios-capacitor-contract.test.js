@@ -69,7 +69,7 @@ test('iOS verified WebBundle updater mirrors the Android manifest safety boundar
   ]) {
     assert.equal(source.includes(`"${file}"`), true, `${file} must remain allowlisted`);
   }
-  const allowlist = source.match(/requiredCorePaths:\\s*Set<String>\\s*=\\s*\\[([\\s\\S]*?)\\]/);
+  const allowlist = source.match(/requiredCorePaths:\s*Set<String>\s*=\s*\[([\s\S]*?)\]/);
   assert.ok(allowlist, 'iOS native verified-file allowlist must remain discoverable');
   const nativeFiles = [...allowlist[1].matchAll(/"([^"]+)"/g)].map((item) => item[1]).sort();
   const { MOBILE_WEB_CORE_PATHS } = require('../src/mobile-web/bundle-manifest');
