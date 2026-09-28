@@ -856,6 +856,7 @@ const PERSISTENT_ROOMS = [
   'AJN Chat',
   'Drum & Bass Chat',
   'Psybin Radio',
+  'DIZY',
 ];
 const PERSISTENT_ROOM_SET = new Set(PERSISTENT_ROOMS);
 const plaintextAdminCredentialCount = [...adminCredentials.values()].filter((item) => item.kind === 'plaintext').length;
