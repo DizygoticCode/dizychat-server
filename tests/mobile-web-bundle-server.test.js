@@ -91,7 +91,7 @@ test('verified native bundle contains every root-relative script loaded during n
   const manifest = await buildMobileWebManifest({ publicDir });
   const manifestPaths = new Set(manifest.files.map((entry) => entry.path));
   const bootstrap = fs.readFileSync(path.join(publicDir, 'mobile-bootstrap.js'), 'utf8');
-  const loadedScripts = [...bootstrap.matchAll(/await loadScript\('\\/([^']+\\.js)'\)/g)]
+  const loadedScripts = [...bootstrap.matchAll(/await loadScript\('\/([^']+\.js)'\)/g)]
     .map((match) => match[1]);
   const browserOnlyScripts = new Set([
     'pwa-runtime.js',
