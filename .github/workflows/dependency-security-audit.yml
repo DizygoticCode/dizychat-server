@@ -29,3 +29,49 @@ jobs:
 
       - name: Audit locked dependencies
         run: npm audit --package-lock-only --audit-level=high
+
+  optional-firebase-runtime:
+    name: Omitted optional dependencies + FCM smoke
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install without unused optional dependencies
+        run: npm ci --omit=optional
+
+      - name: Verify optional Storage chain absent and FCM module usable
+        run: |
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          for (const dependency of ['@google-cloud/storage', '@google-cloud/firestore', 'gaxios', 'uuid']) {
+            assert.throws(
+              () => require.resolve(dependency),
+              { code: 'MODULE_NOT_FOUND' },
+              dependency + ' must not be installed on the minimal server runtime',
+            );
+          }
+          const { initializeApp, deleteApp } = require('firebase-admin/app');
+          const { getMessaging } = require('firebase-admin/messaging');
+          (async () => {
+            const app = initializeApp({
+              projectId: 'dizychat-ci',
+              credential: { getAccessToken: async () => ({ access_token: 'ci-test-only', expires_in: 3600 }) },
+            }, 'optional-deps-ci');
+            assert.equal(typeof getMessaging(app).send, 'function');
+            await deleteApp(app);
+          })().catch((err) => { console.error(err); process.exitCode = 1; });
+          NODE
+
+      - name: Audit installed dependency graph (moderate+)
+        run: npm audit --omit=optional --audit-level=moderate
+
+      - name: Run deterministic server and push tests
+        run: npm test
