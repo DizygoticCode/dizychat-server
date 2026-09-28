@@ -52,7 +52,7 @@ External providers are deliberately scoped integrations rather than the foundati
 
 | Area | DizyChat capability |
 | --- | --- |
-| **Identity & rooms** | Registered accounts or confirmed guests first, then public/private room selection; account and room passwords remain separate |
+| **Identity & rooms** | Registered accounts or confirmed guests first, persistent public DIZY room, account-only Recent Rooms shortcuts, then password-checked room admission |
 | **Messaging** | Persistent paginated history, replies, edits, deletes, reactions, pins, stars, search, typing and read/delivery state |
 | **Media safety** | Private upload quarantine, mandatory clean local ClamAV verdict before promotion, FFmpeg normalization and native-aware media URLs |
 | **Notifications** | Browser sounds, VAPID Web Push, Android FCM actions, and the native iOS Firebase/APNs path |
@@ -71,6 +71,8 @@ External providers are deliberately scoped integrations rather than the foundati
 
 ### Accounts and recovery
 - Public users can create registered DizyChat accounts from the login UI.
+- **DIZY** is seeded as a persistent public token-discussion room and stays visible while empty **when configured public**. An existing password-protected DIZY room retains its password and access checks. The [DizyTrades DIZY page](https://dizytrades.tech/dizy) links directly to [DizyChat's DIZY room](https://dizychat.com/login?room=DIZY). Guests confirm a name and registered users sign in before choosing it; room access is still checked server-side.
+- Registered users have a private **Recent Rooms** list of up to eight previously joined room names. It stores no passwords or message history, guests cannot access it, and returning to private rooms still requires the room password. See [the Recent Rooms contract](docs/RECENT_ROOMS.md).
 - Registered accounts use server-authoritative authentication rather than trusting a client-supplied username.
 - Recovery email and password-reset flows are supported without exposing mail-provider credentials to the browser.
 - Native mobile clients use durable secure session storage: Android uses its native secure-session boundary and the iOS path uses Keychain. Closing/reopening the app does not normally force another login; explicit logout and server-declared invalid/revoked sessions clear the stored native session.
