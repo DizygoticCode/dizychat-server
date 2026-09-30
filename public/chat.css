@@ -4239,6 +4239,7 @@ body:not(.dark) #soundboard-btn {
   position: fixed;
   bottom: calc(70px + env(safe-area-inset-bottom));
   left: max(10px, env(safe-area-inset-left));
+  box-sizing: border-box;
   width: min(340px, calc(100vw - 20px));
   max-height: min(320px, calc(100vh - 120px));
   overflow-y: auto;
