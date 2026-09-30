@@ -6519,6 +6519,13 @@ if (emojiPicker) {
       emojiPicker.style.removeProperty("right");
     };
 
+    const positionInputPicker = () => {
+      if (!form || state.anchor || window.innerWidth > 768) return;
+      const rect = form.getBoundingClientRect();
+      const gap = 8;
+      emojiPicker.style.bottom = `${Math.max(8, window.innerHeight - rect.top + gap)}px`;
+    };
+
     const hide = () => {
       emojiPicker.classList.remove("show");
       emojiPicker.style.display = "none";
@@ -6544,6 +6551,9 @@ if (emojiPicker) {
       if (anchor) {
         positionToAnchor(anchor);
         requestAnimationFrame(() => positionToAnchor(anchor));
+      } else {
+        positionInputPicker();
+        requestAnimationFrame(positionInputPicker);
       }
       requestAnimationFrame(() => {
         emojiSearch.focus({ preventScroll: true });
@@ -6638,6 +6648,15 @@ if (emojiPicker) {
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && emojiPicker.classList.contains("show")) {
         hide();
+      }
+    });
+
+    window.addEventListener("resize", () => {
+      if (!emojiPicker.classList.contains("show")) return;
+      if (state.anchor) {
+        positionToAnchor(state.anchor);
+      } else if (state.mode === "input") {
+        positionInputPicker();
       }
     });
 
