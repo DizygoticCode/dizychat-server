@@ -13,7 +13,11 @@ const { createPushController } = require('../public/mobile-push-runtime');
 test('iOS Capacitor CI regenerates and compiles the native bridge on macOS', () => {
   const workflow = read('.github/workflows/ios-capacitor-ci.yml');
   assert.match(workflow, /runs-on:\s*macos-latest/);
-  assert.match(workflow, /@capacitor\/ios@7\.4\.4/);
+  // Build must use the same patched native version as @capacitor/core;
+  // never silently regress to a hard-coded vulnerable iOS platform.
+  assert.match(workflow, /CAPACITOR_CORE_VERSION/);
+  assert.match(workflow, /@capacitor\\/ios@\\$\\{CAPACITOR_CORE_VERSION\\}/);
+  assert.doesNotMatch(workflow, /@capacitor\\/ios@7\\.4\\.4/);
   assert.match(workflow, /npx cap add ios/);
   assert.match(workflow, /node scripts\/prepare-ios-firebase\.js/);
   assert.match(workflow, /node scripts\/prepare-ios-native\.js/);
