@@ -1,0 +1,54 @@
+name: Diagnose signed Android APK installation (Android 10)
+
+on:
+  push:
+    branches:
+      - diagnostics/android-v1-0-1-install-20261031
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  old-vs-new-android-10:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable accelerated Android emulator
+        run: |
+          sudo chmod 666 /dev/kvm
+      - name: Download two immutable published APKs and verify download checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p old new
+          gh release download v1.0.0 --repo "$GITHUB_REPOSITORY" --pattern dizychat-v1.apk --dir old
+          gh release download v1.0.1 --repo "$GITHUB_REPOSITORY" --pattern dizychat-v1.apk --dir new
+          gh release download v1.0.1 --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS.txt --dir new
+          (cd new && sha256sum -c SHA256SUMS.txt)
+          printf 'Old release: '; sha256sum old/dizychat-v1.apk
+          printf 'New release: '; sha256sum new/dizychat-v1.apk
+      - name: Confirm Android 10 can install both APKs, including upgrade and clean install
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          target: google_apis
+          arch: x86_64
+          profile: pixel_3a
+          disable-animations: true
+          script: |
+            set -Eeuo pipefail
+            adb shell getprop ro.build.version.release
+            echo "== Install previous working APK =="
+            adb install --no-streaming old/dizychat-v1.apk
+            adb shell dumpsys package com.chat.dizychat | grep -m1 versionCode
+            echo "== Upgrade old v1.0.0 to new v1.0.1 =="
+            adb install -r --no-streaming new/dizychat-v1.apk
+            adb shell dumpsys package com.chat.dizychat | grep -m1 versionCode
+            echo "== Fresh install new v1.0.1 after uninstall =="
+            adb uninstall com.chat.dizychat
+            adb install --no-streaming new/dizychat-v1.apk
+            adb shell dumpsys package com.chat.dizychat | grep -m1 versionCode
+            echo "== Diagnostic installs all succeeded =="
