@@ -39,7 +39,7 @@ jobs:
           profile: pixel_3a
           disable-animations: true
           script: |
-            set -Eeuo pipefail
+            set -eu
             adb shell getprop ro.build.version.release
             echo "== Install previous working APK =="
             adb install --no-streaming old/dizychat-v1.apk
