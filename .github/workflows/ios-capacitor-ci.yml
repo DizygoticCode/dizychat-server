@@ -44,8 +44,11 @@ jobs:
       - name: Prepare packaged mobile shell assets
         run: npm run android:prepare
 
-      - name: Install matching Capacitor iOS platform
-        run: npm install --no-save --package-lock=false @capacitor/ios@7.4.4
+      - name: Install matching patched Capacitor iOS platform
+        run: |
+          CAPACITOR_CORE_VERSION="$(node -p "require('./package.json').dependencies['@capacitor/core']")"
+          npm install --no-save --package-lock=false "@capacitor/ios@${CAPACITOR_CORE_VERSION}"
+          node -e "const assert=require('node:assert/strict'); const pkg=require('./package.json'); assert.equal(require('@capacitor/ios/package.json').version,pkg.dependencies['@capacitor/core'])"
 
       - name: Generate Capacitor iOS project
         run: npx cap add ios
