@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - security/remediate-npm-advisories-20261031
   pull_request:
   schedule:
     - cron: '17 4 * * 1'
@@ -153,30 +152,3 @@ jobs:
 
       - name: Run full deterministic server and push tests
         run: npm test
-
-  security-lockfile-refresh:
-    if: >-
-      github.event_name == 'push' &&
-      github.ref == 'refs/heads/security/remediate-npm-advisories-20261031'
-    permissions:
-      contents: write
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Resolve patched scoped glob override
-        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-      - name: Commit regenerated lockfile
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add package-lock.json
-          if git diff --cached --quiet; then
-            echo 'No lockfile changes'
-          else
-            git commit -m 'security(lock): resolve compatible rimraf glob'
-            git push origin HEAD:security/remediate-npm-advisories-20261031
-          fi
