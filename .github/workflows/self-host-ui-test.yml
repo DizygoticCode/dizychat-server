@@ -11,6 +11,11 @@ jobs:
     services:
       mongodb:
         image: mongo:8.0
+        # GitHub-hosted runner kernels can trip MongoDB 8.0's TCMalloc/rseq guard.
+        # Use glibc's rseq registration so the CI-only container avoids per-CPU
+        # TCMalloc caches. This does not change DizyServer's MongoDB service.
+        env:
+          GLIBC_TUNABLES: glibc.pthread.rseq=1
         ports:
           - 27017:27017
 
