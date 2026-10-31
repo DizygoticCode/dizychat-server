@@ -1,0 +1,147 @@
+name: Publish verified DizyChat Android security release
+
+# A dedicated, intentionally added marker triggers publication only after
+# operator-verified backend deployment and all source-sha CI checks are green.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/android-release/v1.0.1.json'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish-verified-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out release metadata
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify approved release and immutable source
+        id: info
+        shell: bash
+        env:
+          EXPECTED_TAG: v1.0.1
+        run: |
+          set -Eeuo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const p = JSON.parse(fs.readFileSync('.github/android-release/v1.0.1.json','utf8'));
+          if (p.tag !== process.env.EXPECTED_TAG || !/^[a-f0-9]{40}$/.test(p.source_sha)) {
+            throw new Error('Unexpected release tag or source commit SHA');
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `source_sha=${p.source_sha}\n`);
+          NODE
+          SOURCE_SHA="$(node -p "require('./.github/android-release/v1.0.1.json').source_sha")"
+          git cat-file -e "${SOURCE_SHA}^{commit}"
+          git merge-base --is-ancestor "$SOURCE_SHA" HEAD
+          test "$(git show "${SOURCE_SHA}:android/app/build.gradle" | grep -Ec 'versionCode 3')" -eq 1
+          test "$(git show "${SOURCE_SHA}:android/app/build.gradle" | grep -Ec 'versionName "1.0.1"')" -eq 1
+
+      - name: Enforce passed main-branch audit, self-host CI and Android CI for source commit
+        id: checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.info.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${SOURCE_SHA}&per_page=100" > /tmp/dizychat-release-checks.json
+          node <<'NODE'
+          const fs = require('node:fs');
+          const runs = JSON.parse(fs.readFileSync('/tmp/dizychat-release-checks.json', 'utf8')).workflow_runs || [];
+          for (const name of ['Dependency Security Audit', 'DizyChat Self-Host CI', 'Android Slice 1 CI']) {
+            const success = runs.some(r => r.name === name && r.head_branch === 'main' && r.conclusion === 'success' && r.status === 'completed');
+            if (!success) throw new Error(`Expected passing ${name} workflow for release source SHA on main`);
+          }
+          const android = runs.find(r => r.name === 'Android Slice 1 CI' && r.head_branch === 'main' && r.conclusion === 'success');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `run_id=${android.id}\n`);
+          NODE
+
+      - name: Retrieve the exact signed Android APK from passing source CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ANDROID_RUN_ID: ${{ steps.checks.outputs.run_id }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p release previous
+          gh run download "$ANDROID_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name dizychat-android-release-apk --dir release
+          test -s release/dizychat-v1.apk
+          gh release download v1.0.0 --repo "$GITHUB_REPOSITORY" \
+            --pattern dizychat-v1.apk --dir previous
+          test -s previous/dizychat-v1.apk
+
+      - name: Verify APK package, in-place upgrade version and original signing certificate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          APKSIGNER="$(find "${ANDROID_HOME:?}/build-tools" -maxdepth 2 -type f -name apksigner -print | sort -V | tail -n 1)"
+          AAPT="$(find "${ANDROID_HOME:?}/build-tools" -maxdepth 2 -type f -name aapt -print | sort -V | tail -n 1)"
+          test -n "$APKSIGNER" && test -n "$AAPT"
+          "$APKSIGNER" verify --verbose release/dizychat-v1.apk
+          "$APKSIGNER" verify --verbose previous/dizychat-v1.apk
+          ORIGINAL_CERT="$("$APKSIGNER" verify --print-certs previous/dizychat-v1.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n1)"
+          NEW_CERT="$("$APKSIGNER" verify --print-certs release/dizychat-v1.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n1)"
+          test -n "$ORIGINAL_CERT" && test "$NEW_CERT" = "$ORIGINAL_CERT"
+          "$AAPT" dump badging release/dizychat-v1.apk | grep -E "^package: name='com.chat.dizychat' versionCode='3' versionName='1.0.1'"
+          (cd release && sha256sum dizychat-v1.apk > SHA256SUMS.txt)
+
+      - name: Compose release notes with the verified APK SHA-256 and exact source commit
+        env:
+          SOURCE_SHA: ${{ steps.info.outputs.source_sha }}
+        run: |
+          set -Eeuo pipefail
+          APK_SHA256="$(cut -d ' ' -f1 release/SHA256SUMS.txt)"
+          cat > /tmp/dizychat-android-notes.md <<EOF
+          ## DizyChat Android v1.0.1 — 31 October 2026 security update
+
+          This is the updated **release-signed Android APK** for the DizyChat client at **https://dizychat.com**. The native shell now uses **Capacitor 7.6.10** (up from 7.4.4), with the updated Capacitor 7 push-notifications package. The accompanying DizyChat source also includes server dependency security fixes for uploads, sanitisation and network libraries.
+
+          ### Installation
+          - Download the **dizychat-v1.apk** file directly below and install it over the existing signed DizyChat application.
+          - **Do not uninstall the existing app or clear its data.** This is intended as an in-place upgrade retaining your login, local data and notification preferences.
+          - The **package ID** and **release signing certificate** were verified against the previous v1.0.0 GitHub APK.
+          - An older debug-signed APK cannot be upgraded directly with this release-signed APK.
+          - This is a direct GitHub APK, **not a Google Play release**.
+
+          ### Changes and verification
+          - Updated native Android/Capacitor security dependencies and kept the server-managed verified web-bundle compatibility.
+          - No downgrade to Capacitor 4 and no forced npm audit fix.
+          - Passed DizyChat server/UI, full dependency security audit and signed Android APK CI on the source commit.
+          - Preserves message and activity notification channels, inline Reply and Mark as read, FCM registration, calls, media handling and existing app identity.
+          - Android installer **versionCode 3**; displayed **versionName 1.0.1**.
+          - **Source commit SHA:** \`$SOURCE_SHA\`
+
+          ### APK SHA-256
+          File: \`dizychat-v1.apk\`
+
+          \`$APK_SHA256\`
+
+          The same digest is supplied in the downloadable \`SHA256SUMS.txt\`. To verify locally: \`sha256sum dizychat-v1.apk\`.
+
+          This release is a test/sideload build. Real-device testing of login persistence, rooms, FCM notifications, media and calls is still recommended after upgrading.
+          EOF
+
+      - name: Publish new public GitHub release with direct APK and checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.info.outputs.source_sha }}
+        run: |
+          set -Eeuo pipefail
+          if gh release view v1.0.1 --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "::error::Release v1.0.1 already exists; refuse to overwrite it."
+            exit 1
+          fi
+          gh release create v1.0.1 \
+            release/dizychat-v1.apk release/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --title 'DizyChat Android v1.0.1 — Security Update' \
+            --notes-file /tmp/dizychat-android-notes.md \
+            --latest
