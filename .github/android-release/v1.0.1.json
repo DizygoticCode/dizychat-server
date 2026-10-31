@@ -1,0 +1,5 @@
+{
+  "tag": "v1.0.1",
+  "source_sha": "7d95d3758ded7827db462bf100e2a44114094e0d",
+  "published_after": "Production DizyChat security deployment verified 2026-10-31T18:33Z: npm audit 0, npm test 592/592, service active, localhost and HTTPS /version healthy, Mongo connected."
+}
