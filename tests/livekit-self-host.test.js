@@ -12,7 +12,7 @@ const runbook = fs.readFileSync(path.join(deployment, 'README.md'), 'utf8');
 const gitignore = fs.readFileSync(path.join(root, '.gitignore'), 'utf8');
 const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'self-host-ui-test.yml'), 'utf8');
 
-assert.match(compose, /^\s*image: livekit\/livekit-server:v1\.13\.5\s*$/m, 'LiveKit image must pin the reviewed release');
+assert.match(compose, /^\s*image: livekit\/livekit-server:v1\.13\.11\s*$/m, 'LiveKit image must pin the reviewed release');
 assert.doesNotMatch(compose, /:latest\b/, 'deployment must not float on latest');
 assert.match(compose, /network_mode: host/, 'host networking avoids invalid WebRTC port translation');
 assert.match(template, /tcp_port: 7881/);
