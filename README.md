@@ -61,6 +61,8 @@ External providers are deliberately scoped integrations rather than the foundati
 
 > **UI verification:** relevant pull requests run the Self-Host browser suite, which captures current desktop/mobile screenshots and a Playwright video as GitHub Actions artifacts. See the [Self-Host CI workflow](https://github.com/DizygoticCode/dizychat-server/actions/workflows/self-host-ui-test.yml).
 
+**Current acceptance boundary (1 November 2026):** the repository-side desktop/PWA/Android UI regression programme is implemented and CI-covered, but [issue #485](https://github.com/DizygoticCode/dizychat-server/issues/485) remains open for physical-device verification. In particular, actual Android keyboard/rotation, background push, camera/microphone/file permissions, media and soundboard playback, LiveKit calls/screen sharing, and iOS Home Screen safe areas must be verified on devices before calling the audit complete. The self-hosted LiveKit server was operator-verified at **v1.13.11** on 31 October 2026; this is a service deployment checkpoint, not proof of all device/browser media paths. No new APK or server restart is necessary merely to update these documentation notes.
+
 ## Current platform
 
 ### Realtime chat and rooms
